@@ -34,6 +34,42 @@ function Avatar({ name, role, size = 'md' }) {
   );
 }
 
+// ── Reusable form primitives (defined at module level — never inside a component) ──
+function FormInput({ label, value, onChange, type = 'text', required, error }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-slate-600 mb-1">
+        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${error ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+      />
+      {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
+    </div>
+  );
+}
+
+function FormSelect({ label, value, onChange, options, required, error }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-slate-600 mb-1">
+        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={`w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 ${error ? 'border-red-400' : 'border-slate-200'}`}
+      >
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+      {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
+    </div>
+  );
+}
+
 // ── Add Employee Modal ─────────────────────────────────────────────────────────
 function AddEmployeeModal({ onSave, onCancel }) {
   const [form, setForm] = useState({
@@ -73,35 +109,6 @@ function AddEmployeeModal({ onSave, onCancel }) {
     });
   };
 
-  const Field = ({ label, k, type = 'text', required, children }) => (
-    <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1">
-        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      {children || (
-        <input
-          type={type}
-          value={form[k]}
-          onChange={e => set(k, e.target.value)}
-          className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${errors[k] ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
-        />
-      )}
-      {errors[k] && <p className="text-xs text-red-500 mt-0.5">{errors[k]}</p>}
-    </div>
-  );
-
-  const Select = ({ label, k, options, required }) => (
-    <Field label={label} k={k} required={required}>
-      <select
-        value={form[k]}
-        onChange={e => set(k, e.target.value)}
-        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white ${errors[k] ? 'border-red-400' : 'border-slate-200'}`}
-      >
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </Field>
-  );
-
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -111,42 +118,42 @@ function AddEmployeeModal({ onSave, onCancel }) {
         </div>
 
         <div className="px-6 py-5 space-y-5">
-          {/* Name row */}
+          {/* Name */}
           <div className="grid grid-cols-2 gap-4">
-            <Field label="First Name" k="firstName" required />
-            <Field label="Last Name"  k="lastName"  required />
+            <FormInput label="First Name" value={form.firstName} onChange={v => set('firstName', v)} required error={errors.firstName} />
+            <FormInput label="Last Name"  value={form.lastName}  onChange={v => set('lastName',  v)} required error={errors.lastName} />
           </div>
 
           {/* Contact */}
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Email" k="email" type="email" required />
-            <Field label="Phone" k="phone" />
+            <FormInput label="Email" value={form.email} onChange={v => set('email', v)} type="email" required error={errors.email} />
+            <FormInput label="Phone" value={form.phone} onChange={v => set('phone', v)} />
           </div>
 
           {/* Role & title */}
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Role" k="role" options={EMPLOYEE_ROLES} required />
-            <Field label="Job Title" k="jobTitle" />
+            <FormSelect label="Role" value={form.role} onChange={v => set('role', v)} options={EMPLOYEE_ROLES} required error={errors.role} />
+            <FormInput  label="Job Title" value={form.jobTitle} onChange={v => set('jobTitle', v)} />
           </div>
 
           {/* Dept & type */}
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Department"      k="department"     options={EMPLOYEE_DEPARTMENTS} />
-            <Select label="Employment Type" k="employmentType" options={EMPLOYMENT_TYPES} />
+            <FormSelect label="Department"      value={form.department}     onChange={v => set('department',     v)} options={EMPLOYEE_DEPARTMENTS} />
+            <FormSelect label="Employment Type" value={form.employmentType} onChange={v => set('employmentType', v)} options={EMPLOYMENT_TYPES} />
           </div>
 
           {/* Dates */}
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Start Date" k="startDate" type="date" />
-            <Field label="End Date"   k="endDate"   type="date" />
+            <FormInput label="Start Date" value={form.startDate} onChange={v => set('startDate', v)} type="date" />
+            <FormInput label="End Date"   value={form.endDate}   onChange={v => set('endDate',   v)} type="date" />
           </div>
 
           {/* Emergency contact */}
           <div className="pt-2 border-t border-slate-100">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Emergency Contact</p>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Contact Name"  k="emergencyContactName" />
-              <Field label="Contact Phone" k="emergencyContactPhone" />
+              <FormInput label="Contact Name"  value={form.emergencyContactName}  onChange={v => set('emergencyContactName',  v)} />
+              <FormInput label="Contact Phone" value={form.emergencyContactPhone} onChange={v => set('emergencyContactPhone', v)} />
             </div>
           </div>
 
