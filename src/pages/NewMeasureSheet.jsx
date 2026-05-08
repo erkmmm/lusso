@@ -13,7 +13,7 @@ import {
   getCustomers, getJobs,
   createJobFromMeasureSheet, getActiveEmployees, getActiveProductTypes,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
-  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, TRACK_TYPE_OPTIONS,
+  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, OPERATION_TYPE_OPTIONS,
   BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS, URGENCY_LEVELS, JOB_TYPES,
 } from '../store/data';
 import Card from '../components/Card';
@@ -878,7 +878,7 @@ export default function NewMeasureSheet() {
                       <SpecSelect label="Heading"              value={item.heading}           onChange={v => setLineItem(idx,'heading',v)}           options={HEADING_OPTIONS} />
                       <SpecSelect label="Hem"                  value={item.hem}               onChange={v => setLineItem(idx,'hem',v)}               options={HEM_OPTIONS} />
                       <SpecSelect label="Track / Base Bar Colour" value={item.trackBaseBarColour} onChange={v => setLineItem(idx,'trackBaseBarColour',v)} options={TRACK_COLOUR_OPTIONS} />
-                      <SpecSelect label="Track Type"           value={item.trackType}         onChange={v => setLineItem(idx,'trackType',v)}         options={TRACK_TYPE_OPTIONS} />
+                      <SpecSelect label="Operation Type"       value={item.trackType}         onChange={v => setLineItem(idx,'trackType',v)}         options={OPERATION_TYPE_OPTIONS} />
                       <SpecSelect label="Base Bar Type"        value={item.baseBarType}       onChange={v => setLineItem(idx,'baseBarType',v)}       options={BASE_BAR_TYPE_OPTIONS} />
                       <SpecSelect label="Chain Colour"         value={item.chainColour}       onChange={v => setLineItem(idx,'chainColour',v)}       options={CHAIN_COLOUR_OPTIONS} />
 
