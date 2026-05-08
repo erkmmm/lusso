@@ -515,6 +515,15 @@ export const deleteJob = (id, deletedBy = 'Admin') => {
   all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
   set('lusso_jobs', all);
   db.saveJob(all[idx]);
+  // Also soft-delete all linked install requests so they disappear from the calendar
+  const reqs = get('lusso_install_requests') || [];
+  const now = new Date().toISOString();
+  let changed = false;
+  const updatedReqs = reqs.map(r => {
+    if (r.jobId === id && !r.deletedAt) { changed = true; return { ...r, deletedAt: now, deletedBy }; }
+    return r;
+  });
+  if (changed) set('lusso_install_requests', updatedReqs);
 };
 
 export const bulkDeleteJobs = (ids, deletedBy = 'Admin') => {
@@ -773,7 +782,7 @@ export const saveInstaller = (installer) => {
 
 // ─── Installation Requests ────────────────────────────────────────────────────
 
-export const getInstallRequests = () => get('lusso_install_requests') || [];
+export const getInstallRequests = () => (get('lusso_install_requests') || []).filter(r => !r.deletedAt);
 export const getInstallRequest = (id) => getInstallRequests().find(r => r.id === id);
 export const getInstallRequestsByJob = (jobId) => getInstallRequests().filter(r => r.jobId === jobId);
 export const getInstallRequestsByInstaller = (installerId) => getInstallRequests().filter(r => r.installerId === installerId);
