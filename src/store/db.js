@@ -89,8 +89,9 @@ const TABLES = [
   { table: 'priced_item_batches',    key: KEYS.pricedItemBatches },
   { table: 'contact_import_batches', key: KEYS.importBatches },
   { table: 'notifications',          key: KEYS.notifications },
-  { table: 'employees',              key: KEYS.employees },
-  { table: 'tasks',                  key: KEYS.tasks },
+  // employees & tasks tables not yet created in Supabase — skip both hydration and push
+  // { table: 'employees',           key: KEYS.employees },
+  // { table: 'tasks',               key: KEYS.tasks },
 ];
 
 // ── Hydration ────────────────────────────────────────────────────────
