@@ -67,10 +67,8 @@ const EXCLUDE_COLUMNS = {
 };
 
 // ── Tables skipped during push (schema not yet aligned) ──────────────
-// measure_sheets DB schema is missing many app-level fields.
-// Sheets are preserved in localStorage; remove from this set once
-// the Supabase schema is updated via migration.
-const SKIP_PUSH_TABLES = new Set(['measure_sheets']);
+// All tables are now schema-aligned after the 2026-05-08 migration.
+const SKIP_PUSH_TABLES = new Set();
 
 // ── Table manifest (shared by hydrate + push) ────────────────────────
 const TABLES = [
@@ -142,9 +140,17 @@ export async function pushAllToSupabase() {
       exclude.forEach((col) => delete row[col]);
       return row;
     });
+    // Supabase requires all rows to have identical keys.
+    // Collect the union of all keys, then fill missing ones with null.
+    const allKeys = [...new Set(rows.flatMap(Object.keys))];
+    const normalised = rows.map((row) => {
+      const out = {};
+      allKeys.forEach((k) => { out[k] = row[k] ?? null; });
+      return out;
+    });
     const { error } = await supabase
       .from(table)
-      .upsert(rows, { onConflict: 'id' });
+      .upsert(normalised, { onConflict: 'id' });
     if (error) {
       console.warn(`[db] push ${table}:`, error.message);
       errors.push(`${table}: ${error.message}`);
@@ -183,9 +189,9 @@ export const db = {
   saveJob:            (r) => upsert('jobs', r),
   deleteJob:          (id) => remove('jobs', id),
 
-  // Measure sheets — schema not fully aligned; skip individual upserts until migration
-  saveMeasureSheet:   (_r) => Promise.resolve(),
-  deleteMeasureSheet: (_id) => Promise.resolve(),
+  // Measure sheets
+  saveMeasureSheet:   (r) => upsert('measure_sheets', r),
+  deleteMeasureSheet: (id) => remove('measure_sheets', id),
 
   // Quotes
   saveQuote:          (r) => upsert('quotes', r),
