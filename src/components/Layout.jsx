@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, Users, ClipboardList,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays,
@@ -167,10 +167,7 @@ export default function Layout({ children }) {
         <div className="fixed inset-0 z-20 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* ── Mobile + New sheet overlay ────────────────────────────────────── */}
-      {newOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setNewOpen(false)} />
-      )}
+      {/* Mobile + New sheet overlay is co-located with the sheet below ── */}
 
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
       <aside className={`fixed inset-y-0 left-0 z-30 w-64 bg-sidebar flex flex-col transform transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -413,26 +410,36 @@ export default function Layout({ children }) {
 
       {/* ── Mobile + New action sheet ─────────────────────────────────────── */}
       {newOpen && (
-        <div className="lg:hidden fixed bottom-16 left-3 right-3 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden no-print">
-          <div className="px-4 py-3 border-b border-slate-100">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Create New</p>
+        <>
+          {/* Backdrop — dismiss on tap; rendered first so sheet is always on top */}
+          <div
+            className="lg:hidden fixed inset-0 z-40"
+            aria-hidden="true"
+            onPointerDown={() => setNewOpen(false)}
+          />
+          {/* Sheet — z-50 so it sits above the backdrop */}
+          <div className="lg:hidden fixed bottom-20 left-3 right-3 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden no-print">
+            <div className="px-4 py-3 border-b border-slate-100">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Create New</p>
+            </div>
+            {NEW_ACTIONS.map(({ label, sub, to, icon: Icon, color, bg }) => (
+              <Link
+                key={to}
+                to={to}
+                onClick={() => setNewOpen(false)}
+                className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition-colors border-b border-slate-50 last:border-0"
+              >
+                <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
+                  <Icon size={18} className={color} />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">{label}</div>
+                  <div className="text-xs text-slate-400">{sub}</div>
+                </div>
+              </Link>
+            ))}
           </div>
-          {NEW_ACTIONS.map(({ label, sub, to, icon: Icon, color, bg }) => (
-            <button
-              key={to}
-              onClick={() => handleNew(to)}
-              className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 transition-colors text-left border-b border-slate-50 last:border-0"
-            >
-              <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
-                <Icon size={18} className={color} />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">{label}</div>
-                <div className="text-xs text-slate-400">{sub}</div>
-              </div>
-            </button>
-          ))}
-        </div>
+        </>
       )}
 
     </div>

@@ -216,7 +216,7 @@ function CustomisePanel({ prefs, onChange, onClose }) {
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-2 z-50 w-72 bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden"
+      className="absolute left-0 sm:left-auto sm:right-0 top-full mt-2 z-50 w-72 bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden"
     >
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
         <span className="font-semibold text-slate-800 text-sm">Customise Dashboard</span>
@@ -587,10 +587,10 @@ export default function Dashboard() {
           <p className="text-slate-500 text-sm mt-0.5">Welcome back — here's your business at a glance.</p>
         </div>
         {/* Customise button */}
-        <div className="relative self-start" ref={customiseRef}>
+        <div className="relative" ref={customiseRef}>
           <button
             onClick={() => setShowCustomise(v => !v)}
-            className={`flex items-center gap-2 text-sm font-medium rounded-lg px-4 py-2.5 border transition-colors ${
+            className={`w-full sm:w-auto flex items-center gap-2 text-sm font-medium rounded-lg px-4 py-2.5 border transition-colors ${
               showCustomise
                 ? 'bg-amber-500 text-white border-amber-500'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
