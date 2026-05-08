@@ -61,6 +61,31 @@ export default function Settings() {
         <p className="text-slate-500 text-sm mt-0.5">Platform configuration and admin controls</p>
       </div>
 
+      {/* Price Library Card */}
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+            <Library size={14} className="text-amber-500" /> Price Library
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Manage reusable priced items that can be added to any quote.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/priced-items')}
+          className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors text-left group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+            <Library size={18} className="text-amber-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm text-slate-800">Priced Items Library</p>
+            <p className="text-xs text-slate-500 mt-0.5">View, search, and manage all reusable line items used in quotes.</p>
+          </div>
+          <ArrowRight size={16} className="text-slate-300 group-hover:text-amber-500 transition-colors flex-shrink-0" />
+        </button>
+      </Card>
+
       {/* Imports Card */}
       <ImportsSection navigate={navigate} />
 

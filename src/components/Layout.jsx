@@ -3,25 +3,70 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, Users, ClipboardList,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays,
-  CheckCircle2, AlertTriangle, Info, Settings2, FileText, Library,
+  CheckCircle2, AlertTriangle, Info, Settings2, FileText,
+  ChevronDown, Home,
 } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
+  getCustomers, getJobs, getMeasureSheets, getQuotes, getInstallRequests,
 } from '../store/data';
 import { useAuth } from '../contexts/AuthContext';
 import { LogOut } from 'lucide-react';
-import { formatDistanceToNow, parseISO } from 'date-fns';
+import { formatDistanceToNow, parseISO, isSameDay } from 'date-fns';
 
-const NAV = [
-  { to: '/',                label: 'Dashboard',     icon: LayoutDashboard, exact: true },
-  { to: '/jobs',            label: 'Jobs',          icon: Briefcase },
-  { to: '/customers',       label: 'Customers',     icon: Users },
-  { to: '/measure-sheets',  label: 'Measure Sheets',icon: ClipboardList },
-  { to: '/quotes',          label: 'Quotes',        icon: FileText },
-  { to: '/priced-items',    label: 'Price Library', icon: Library },
-  { to: '/installers',      label: 'Installers',    icon: HardHat },
-  { to: '/calendar',        label: 'Calendar',      icon: CalendarDays },
-  { to: '/settings',        label: 'Settings',      icon: Settings2 },
+// ── Nav structure ─────────────────────────────────────────────────────────────
+const NAV_SECTIONS = [
+  {
+    label: 'WORKFLOW',
+    items: [
+      { to: '/',               label: 'Dashboard', icon: LayoutDashboard, exact: true },
+      { to: '/customers',      label: 'Customers', icon: Users,           countKey: 'customers' },
+      { to: '/jobs',           label: 'Jobs',      icon: Briefcase,       countKey: 'jobs' },
+      { to: '/measure-sheets', label: 'Measures',  icon: ClipboardList,   countKey: 'measures' },
+      { to: '/quotes',         label: 'Quotes',    icon: FileText,        countKey: 'quotes' },
+    ],
+  },
+  {
+    label: 'OPERATIONS',
+    items: [
+      { to: '/installers', label: 'Installers', icon: HardHat },
+      { to: '/calendar',   label: 'Calendar',   icon: CalendarDays, countKey: 'todayInstalls' },
+    ],
+  },
+  {
+    label: 'SYSTEM',
+    items: [
+      { to: '/settings', label: 'Settings', icon: Settings2 },
+    ],
+  },
+];
+
+// ── + New actions ─────────────────────────────────────────────────────────────
+const NEW_ACTIONS = [
+  {
+    label: 'New Measure',
+    sub:   'Start a site measure',
+    to:    '/measure-sheets/new',
+    icon:  ClipboardList,
+    color: 'text-teal-600',
+    bg:    'bg-teal-50',
+  },
+  {
+    label: 'New Quote',
+    sub:   'Price and quote a job',
+    to:    '/quotes',
+    icon:  FileText,
+    color: 'text-blue-600',
+    bg:    'bg-blue-50',
+  },
+  {
+    label: 'New Customer',
+    sub:   'Add to your contacts',
+    to:    '/customers',
+    icon:  Users,
+    color: 'text-purple-600',
+    bg:    'bg-purple-50',
+  },
 ];
 
 const NOTIF_ICONS = {
@@ -30,26 +75,59 @@ const NOTIF_ICONS = {
   default:          { icon: Info,          color: 'text-blue-500',  bg: 'bg-blue-50' },
 };
 
+// ── Live counts ───────────────────────────────────────────────────────────────
+function computeCounts() {
+  const today = new Date();
+  return {
+    customers:    getCustomers().length,
+    jobs:         getJobs().length,
+    measures:     getMeasureSheets().length,
+    quotes:       getQuotes().length,
+    todayInstalls: getInstallRequests().filter(
+      r => r.proposedDate && isSameDay(parseISO(r.proposedDate), today)
+    ).length,
+  };
+}
+
+// ── Nav count badge ───────────────────────────────────────────────────────────
+function CountBadge({ n, active }) {
+  if (!n || n === 0) return null;
+  return (
+    <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center leading-none ${
+      active ? 'bg-white/20 text-white' : 'bg-white/10 text-sidebar-text'
+    }`}>
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+
 export default function Layout({ children }) {
-  const [sidebarOpen, setSidebarOpen]   = useState(false);
-  const [notifOpen, setNotifOpen]       = useState(false);
-  const [notifications, setNotifs]      = useState(getNotifications);
-  const notifRef = useRef(null);
-  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notifOpen, setNotifOpen]     = useState(false);
+  const [newOpen, setNewOpen]         = useState(false);
+  const [notifications, setNotifs]    = useState(getNotifications);
+  const [counts, setCounts]           = useState(computeCounts);
+  const notifRef  = useRef(null);
+  const sideNewRef = useRef(null); // wraps sidebar + New section
+  const navigate  = useNavigate();
   const { user, signOut } = useAuth();
 
   const unread = notifications.filter(n => !n.isRead).length;
 
-  // Refresh notifications periodically
+  // Refresh notifications + counts every 2 s
   useEffect(() => {
-    const id = setInterval(() => setNotifs(getNotifications()), 2000);
+    const id = setInterval(() => {
+      setNotifs(getNotifications());
+      setCounts(computeCounts());
+    }, 2000);
     return () => clearInterval(id);
   }, []);
 
-  // Close notif panel on outside click
+  // Close popups on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
+      if (notifRef.current   && !notifRef.current.contains(e.target))   setNotifOpen(false);
+      if (sideNewRef.current && !sideNewRef.current.contains(e.target)) setNewOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -67,15 +145,28 @@ export default function Layout({ children }) {
     setNotifs(getNotifications());
   };
 
+  const handleNew = (to) => {
+    setNewOpen(false);
+    setSidebarOpen(false);
+    navigate(to);
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
-      {/* Mobile overlay */}
+
+      {/* ── Mobile sidebar overlay ─────────────────────────────────────────── */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-20 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
+      {/* ── Mobile + New sheet overlay ────────────────────────────────────── */}
+      {newOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setNewOpen(false)} />
+      )}
+
+      {/* ── Sidebar ───────────────────────────────────────────────────────── */}
       <aside className={`fixed inset-y-0 left-0 z-30 w-64 bg-sidebar flex flex-col transform transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+
         {/* Logo */}
         <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center flex-shrink-0">
@@ -90,40 +181,78 @@ export default function Layout({ children }) {
           </button>
         </div>
 
-        {/* Quick action */}
-        <div className="px-4 py-4">
+        {/* + New dropdown */}
+        <div className="px-4 py-4" ref={sideNewRef}>
           <button
-            onClick={() => { navigate('/measure-sheets/new'); setSidebarOpen(false); }}
+            onClick={() => setNewOpen(v => !v)}
             className="w-full flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
           >
             <Plus size={16} />
-            New Measure Sheet
+            <span className="flex-1 text-left">New</span>
+            <ChevronDown size={14} className={`transition-transform duration-200 ${newOpen ? 'rotate-180' : ''}`} />
           </button>
+
+          {newOpen && (
+            <div className="mt-1.5 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden z-50 relative">
+              {NEW_ACTIONS.map(({ label, sub, to, icon: Icon, color, bg }) => (
+                <button
+                  key={to}
+                  onClick={() => handleNew(to)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left border-b border-slate-50 last:border-0"
+                >
+                  <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+                    <Icon size={14} className={color} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">{label}</div>
+                    <div className="text-xs text-slate-400">{sub}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 px-3 pb-4 space-y-0.5 overflow-y-auto">
-          {NAV.map(({ to, label, icon: Icon, exact }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={exact}
-              onClick={() => setSidebarOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? 'bg-sidebar-active text-white font-medium'
-                    : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
-                }`
-              }
-            >
-              <Icon size={17} />
-              {label}
-            </NavLink>
+        {/* Grouped nav */}
+        <nav className="flex-1 px-3 pb-4 space-y-4 overflow-y-auto">
+          {NAV_SECTIONS.map(section => (
+            <div key={section.label}>
+              <p className="px-3 mb-1 text-[10px] font-semibold tracking-widest uppercase text-sidebar-text opacity-40 select-none">
+                {section.label}
+              </p>
+              <div className="space-y-0.5">
+                {section.items.map(({ to, label, icon: Icon, exact, countKey }) => {
+                  const count = countKey ? counts[countKey] : null;
+                  return (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      end={exact}
+                      onClick={() => setSidebarOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                          isActive
+                            ? 'bg-sidebar-active text-white font-medium'
+                            : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
+                        }`
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <Icon size={17} />
+                          <span className="flex-1">{label}</span>
+                          <CountBadge n={count} active={isActive} />
+                        </>
+                      )}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </nav>
 
-        {/* Footer */}
+        {/* User footer */}
         <div className="px-4 py-4 border-t border-sidebar-border">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
@@ -133,19 +262,17 @@ export default function Layout({ children }) {
               <div className="text-white text-sm font-medium leading-tight truncate">{user?.email || 'Admin'}</div>
               <div className="text-sidebar-text text-xs">Lusso</div>
             </div>
-            <button
-              onClick={signOut}
-              title="Sign out"
-              className="text-sidebar-text hover:text-white p-1 rounded transition-colors flex-shrink-0"
-            >
+            <button onClick={signOut} title="Sign out"
+              className="text-sidebar-text hover:text-white p-1 rounded transition-colors flex-shrink-0">
               <LogOut size={15} />
             </button>
           </div>
         </div>
       </aside>
 
-      {/* Main content */}
+      {/* ── Main content ──────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
         {/* Top bar */}
         <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 flex-shrink-0">
           <button className="lg:hidden text-slate-500 hover:text-slate-800" onClick={() => setSidebarOpen(true)}>
@@ -184,15 +311,12 @@ export default function Layout({ children }) {
                     <p className="text-center text-slate-400 text-sm py-8">No notifications</p>
                   ) : (
                     notifications.slice(0, 20).map(n => {
-                      const { icon: Icon, color, bg } = NOTIF_ICONS[n.type] || NOTIF_ICONS.default;
+                      const { icon: NIcon, color, bg } = NOTIF_ICONS[n.type] || NOTIF_ICONS.default;
                       return (
-                        <button
-                          key={n.id}
-                          onClick={() => handleNotifClick(n)}
-                          className={`w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left ${!n.isRead ? 'bg-amber-50/40' : ''}`}
-                        >
+                        <button key={n.id} onClick={() => handleNotifClick(n)}
+                          className={`w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left ${!n.isRead ? 'bg-amber-50/40' : ''}`}>
                           <div className={`w-7 h-7 rounded-full ${bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                            <Icon size={13} className={color} />
+                            <NIcon size={13} className={color} />
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-medium text-slate-800">{n.title}</p>
@@ -208,21 +332,101 @@ export default function Layout({ children }) {
               </div>
             )}
           </div>
-
-          <button
-            onClick={() => navigate('/measure-sheets/new')}
-            className="hidden sm:flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg px-3 py-1.5 transition-colors"
-          >
-            <Plus size={15} />
-            New Measure Sheet
-          </button>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        {/* Page content — extra bottom padding on mobile for bottom nav */}
+        <main className="flex-1 overflow-y-auto pb-16 lg:pb-0">
           {children}
         </main>
       </div>
+
+      {/* ── Mobile bottom nav ─────────────────────────────────────────────── */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-100 flex items-stretch h-16 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+        {/* Home */}
+        <NavLink to="/" end className={({ isActive }) =>
+          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
+          <Home size={20} />
+          <span>Home</span>
+        </NavLink>
+
+        {/* Jobs */}
+        <NavLink to="/jobs" className={({ isActive }) =>
+          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors relative ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
+          {({ isActive }) => (
+            <>
+              <div className="relative">
+                <Briefcase size={20} />
+                {counts.jobs > 0 && (
+                  <span className={`absolute -top-1 -right-2 text-[9px] font-bold rounded-full px-1 leading-tight ${isActive ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                    {counts.jobs > 99 ? '99+' : counts.jobs}
+                  </span>
+                )}
+              </div>
+              <span>Jobs</span>
+            </>
+          )}
+        </NavLink>
+
+        {/* + New — centre pill */}
+        <div className="flex-1 flex items-center justify-center">
+          <button
+            onClick={() => setNewOpen(v => !v)}
+            className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 flex items-center justify-center shadow-lg transition-colors -mt-4"
+          >
+            <Plus size={22} className="text-white" />
+          </button>
+        </div>
+
+        {/* Calendar */}
+        <NavLink to="/calendar" className={({ isActive }) =>
+          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors relative ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
+          {({ isActive }) => (
+            <>
+              <div className="relative">
+                <CalendarDays size={20} />
+                {counts.todayInstalls > 0 && (
+                  <span className={`absolute -top-1 -right-2 text-[9px] font-bold rounded-full px-1 leading-tight ${isActive ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                    {counts.todayInstalls}
+                  </span>
+                )}
+              </div>
+              <span>Calendar</span>
+            </>
+          )}
+        </NavLink>
+
+        {/* Customers */}
+        <NavLink to="/customers" className={({ isActive }) =>
+          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
+          <Users size={20} />
+          <span>Contacts</span>
+        </NavLink>
+      </nav>
+
+      {/* ── Mobile + New action sheet ─────────────────────────────────────── */}
+      {newOpen && (
+        <div className="lg:hidden fixed bottom-16 left-3 right-3 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Create New</p>
+          </div>
+          {NEW_ACTIONS.map(({ label, sub, to, icon: Icon, color, bg }) => (
+            <button
+              key={to}
+              onClick={() => handleNew(to)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 transition-colors text-left border-b border-slate-50 last:border-0"
+            >
+              <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
+                <Icon size={18} className={color} />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">{label}</div>
+                <div className="text-xs text-slate-400">{sub}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
     </div>
   );
 }
