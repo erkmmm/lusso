@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/* ── Lusso Brand Theme ────────────────────────────────────────────── */
+@theme {
+  /* Override Tailwind's amber scale → deep teal */
+  --color-amber-50:  #E6F0F0;
+  --color-amber-100: #C5DCDC;
+  --color-amber-200: #9EC8C8;
+  --color-amber-300: #72B0B0;
+  --color-amber-400: #3D9090;
+  --color-amber-500: #174D4D;
+  --color-amber-600: #0F3B3B;
+  --color-amber-700: #0A2A2A;
+  --color-amber-800: #071E1E;
+  --color-amber-900: #041515;
+  --color-amber-950: #020B0B;
+
+  /* Sidebar palette */
+  --color-sidebar:        #0F3535;
+  --color-sidebar-hover:  #174D4D;
+  --color-sidebar-active: #1E6060;
+  --color-sidebar-border: #1A5050;
+  --color-sidebar-text:   #9ECECE;
+}
+
+@layer base {
+  :root {
+    --lusso-primary:          #174D4D;
+    --lusso-primary-dark:     #0F3535;
+    --lusso-primary-light:    #2A6B6B;
+    --lusso-primary-soft:     #E6F0F0;
+    --lusso-accent:           #C8A96A;
+    --lusso-background:       #F7F8F6;
+    --lusso-surface:          #FFFFFF;
+    --lusso-border:           #DDE5E2;
+    --lusso-text-primary:     #1F2A2A;
+    --lusso-text-secondary:   #5E6B6B;
+    --lusso-text-muted:       #8A9696;
+    --lusso-success:          #2F7D5B;
+    --lusso-warning:          #C9832B;
+    --lusso-danger:           #B94A48;
+    --lusso-info:             #2A6B8F;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    background-color: var(--lusso-background);
+    color: var(--lusso-text-primary);
+    -webkit-font-smoothing: antialiased;
+    cursor: default;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100vh;
+    text-align: left;
+  }
+}
