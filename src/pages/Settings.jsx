@@ -4,8 +4,9 @@ import {
   Settings2, Plus, ChevronUp, ChevronDown, Edit3, Save, X,
   ToggleLeft, ToggleRight, Tag, Upload, Users, Library, History,
   ArrowRight, FileText, Cloud, CloudUpload, RefreshCw, CheckCircle2,
-  AlertTriangle,
+  AlertTriangle, Sun, Moon, Monitor, Clock,
 } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 import {
   getProductTypes, saveProductType, addProductType, reorderProductType,
   getImportBatches, getPricedItemBatches,
@@ -54,6 +55,39 @@ export default function Settings() {
   // sorted is maintained by getProductTypes (sorts by sortOrder)
   const sorted = productTypes; // already sorted
 
+  const { theme, setTheme } = useTheme();
+
+  const THEME_OPTIONS = [
+    {
+      value: 'light',
+      label: 'Light',
+      desc: 'Always use light mode.',
+      icon: Sun,
+      color: 'text-amber-500',
+    },
+    {
+      value: 'dark',
+      label: 'Dark',
+      desc: 'Always use dark mode.',
+      icon: Moon,
+      color: 'text-slate-400',
+    },
+    {
+      value: 'system',
+      label: 'System',
+      desc: "Follows your device's appearance setting.",
+      icon: Monitor,
+      color: 'text-blue-500',
+    },
+    {
+      value: 'schedule',
+      label: 'Schedule',
+      desc: 'Dark from 7 pm to 7 am, light the rest of the day.',
+      icon: Clock,
+      color: 'text-teal-500',
+    },
+  ];
+
   const handlePush = async () => {
     setSyncStatus('pushing');
     const { pushed, errors } = await pushAllToSupabase();
@@ -81,6 +115,43 @@ export default function Settings() {
         </h1>
         <p className="text-slate-500 text-sm mt-0.5">Platform configuration and admin controls</p>
       </div>
+
+      {/* Appearance Card */}
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+            <Sun size={14} className="text-amber-500" /> Appearance
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">Choose how Lusso looks on this device.</p>
+        </div>
+        <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {THEME_OPTIONS.map(({ value, label, desc, icon: Icon, color }) => {
+            const active = theme === value;
+            return (
+              <button
+                key={value}
+                onClick={() => setTheme(value)}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 text-center transition-all ${
+                  active
+                    ? 'border-amber-500 bg-amber-50/40'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${active ? 'bg-amber-100' : 'bg-slate-100'}`}>
+                  <Icon size={20} className={active ? 'text-amber-600' : color} />
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${active ? 'text-amber-700' : 'text-slate-700'}`}>{label}</p>
+                  <p className="text-xs text-slate-400 mt-0.5 leading-tight">{desc}</p>
+                </div>
+                {active && (
+                  <span className="text-[10px] font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">Active</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
 
       {/* Cloud Sync Card */}
       <Card>
