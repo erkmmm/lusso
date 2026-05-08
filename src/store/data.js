@@ -703,6 +703,7 @@ export const FIXING_OPTIONS        = ['Ceiling', 'Face', 'Reveal'];
 export const HEADING_OPTIONS       = ['Reverse Roll', 'Standard Roll', 'Wave Fold', 'Reverse Pleat', 'Gathered', 'Knife Pleat', 'Double Pinch Pleat', 'Triple Pinch Pleat'];
 export const HEM_OPTIONS           = ['Chain Weight', 'Standard', 'Double 7', 'N/A'];
 export const TRACK_COLOUR_OPTIONS  = ['Black', 'Off White', 'White', 'Anodised', 'Fabric Wrapped'];
+export const TRACK_TYPE_OPTIONS    = ['Wave Fold', 'S-Fold / Ripplefold', 'Pinch Pleat', 'Eyelet', 'Rod', 'Double Track', 'Motorised Track', 'Standard Track', 'Silent Glide', 'N/A'];
 export const BASE_BAR_TYPE_OPTIONS = ['D30 Bump', 'Oval', 'Round'];
 export const CHAIN_COLOUR_OPTIONS  = ['Black', 'White', 'Grey', 'Stainless'];
 

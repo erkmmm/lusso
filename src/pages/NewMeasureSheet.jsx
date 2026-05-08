@@ -6,15 +6,15 @@ import {
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Building2, Briefcase as BriefcaseIcon,
+  Copy, Printer,
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer,
   getCustomers, getJobs,
   createJobFromMeasureSheet, getActiveEmployees, getActiveProductTypes,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
-  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS,
-  CHAIN_COLOUR_OPTIONS, URGENCY_LEVELS, JOB_TYPES,
+  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, TRACK_TYPE_OPTIONS,
+  BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS, URGENCY_LEVELS, JOB_TYPES,
 } from '../store/data';
 import Card from '../components/Card';
 
@@ -273,8 +273,8 @@ const EMPTY_LINE_ITEM = () => ({
   id: uuidv4(), location: '', productTypeId: '', productNameSnapshot: '',
   quantity: 1, widthMm: '', dropMm: '', fabricColour: '', control: '',
   returnSide: '', motorSide: '', fixing: '', heading: '', attachedLining: false,
-  liningFabricColour: '', hem: '', trackBaseBarColour: '', baseBarType: '',
-  chainColour: '', notes: '', sortOrder: 0,
+  liningFabricColour: '', hem: '', trackBaseBarColour: '', trackType: '',
+  baseBarType: '', chainColour: '', notes: '', sortOrder: 0,
 });
 
 const EMPTY_SHEET = () => ({
@@ -377,7 +377,23 @@ export default function NewMeasureSheet() {
     return { ...s, lineItems: items };
   });
 
-  const addLineItem    = () => setSheet(s => ({ ...s, lineItems: [...s.lineItems, EMPTY_LINE_ITEM()] }));
+  const addLineItem = () => {
+    const newItem = EMPTY_LINE_ITEM();
+    setSheet(s => ({ ...s, lineItems: [...s.lineItems, newItem] }));
+    setExpandedItems(prev => new Set([...prev, newItem.id])); // auto-expand specs
+  };
+
+  const copyLineItem = (idx) => {
+    const source = sheet.lineItems[idx];
+    const copy = { ...source, id: uuidv4(), location: source.location ? `${source.location} (copy)` : '' };
+    setSheet(s => {
+      const items = [...s.lineItems];
+      items.splice(idx + 1, 0, copy); // insert right after the source
+      return { ...s, lineItems: items };
+    });
+    setExpandedItems(prev => new Set([...prev, copy.id])); // auto-expand the copy
+  };
+
   const removeLineItem = (idx) => {
     if (sheet.lineItems.length <= 1) return;
     setSheet(s => ({ ...s, lineItems: s.lineItems.filter((_, i) => i !== idx) }));
@@ -809,6 +825,10 @@ export default function NewMeasureSheet() {
                         </select>
                       </div>
                     </div>
+                    <button onClick={() => copyLineItem(idx)}
+                      className="flex-shrink-0 text-slate-300 hover:text-amber-500 transition-colors p-1 rounded" title="Copy to new line">
+                      <Copy size={15} />
+                    </button>
                     <button onClick={() => removeLineItem(idx)}
                       className="flex-shrink-0 text-slate-300 hover:text-red-400 transition-colors p-1 rounded" title="Remove item">
                       <Trash2 size={15} />
@@ -858,6 +878,7 @@ export default function NewMeasureSheet() {
                       <SpecSelect label="Heading"              value={item.heading}           onChange={v => setLineItem(idx,'heading',v)}           options={HEADING_OPTIONS} />
                       <SpecSelect label="Hem"                  value={item.hem}               onChange={v => setLineItem(idx,'hem',v)}               options={HEM_OPTIONS} />
                       <SpecSelect label="Track / Base Bar Colour" value={item.trackBaseBarColour} onChange={v => setLineItem(idx,'trackBaseBarColour',v)} options={TRACK_COLOUR_OPTIONS} />
+                      <SpecSelect label="Track Type"           value={item.trackType}         onChange={v => setLineItem(idx,'trackType',v)}         options={TRACK_TYPE_OPTIONS} />
                       <SpecSelect label="Base Bar Type"        value={item.baseBarType}       onChange={v => setLineItem(idx,'baseBarType',v)}       options={BASE_BAR_TYPE_OPTIONS} />
                       <SpecSelect label="Chain Colour"         value={item.chainColour}       onChange={v => setLineItem(idx,'chainColour',v)}       options={CHAIN_COLOUR_OPTIONS} />
 

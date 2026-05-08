@@ -63,6 +63,41 @@
   }
 }
 
+/* ── Print styles ─────────────────────────────────────────────────────
+   Triggered by window.print() on the Measure Sheet view page.
+   Hides UI chrome and renders clean black-on-white output.
+────────────────────────────────────────────────────────────────────── */
+@media print {
+  /* Hide navigation, header and action buttons */
+  aside, header, .no-print { display: none !important; }
+
+  /* Full-width content, no overflow clipping */
+  body, html { background: #ffffff !important; color: #0f172a !important; }
+  main { overflow: visible !important; padding-bottom: 0 !important; }
+  .pb-24 { padding-bottom: 0 !important; }
+
+  /* Reset dark mode colours for print */
+  .dark .bg-white,
+  .dark .bg-slate-50,
+  .dark .bg-slate-100  { background-color: #ffffff !important; }
+  .dark .text-slate-900,
+  .dark .text-slate-800,
+  .dark .text-slate-700 { color: #0f172a !important; }
+  .dark .text-slate-600,
+  .dark .text-slate-500 { color: #475569 !important; }
+  .dark .border-slate-200,
+  .dark .border-slate-100 { border-color: #e2e8f0 !important; }
+
+  /* Remove shadows for print */
+  * { box-shadow: none !important; }
+
+  /* Ensure cards have borders */
+  .rounded-xl, .rounded-2xl { border: 1px solid #e2e8f0 !important; }
+
+  /* Break pages sensibly */
+  .space-y-6 > * { break-inside: avoid; }
+}
+
 /* ── Dark Mode ────────────────────────────────────────────────────────
    Applied via .dark on <html>. Uses higher specificity (.dark .class)
    so no component files need changing.

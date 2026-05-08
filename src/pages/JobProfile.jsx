@@ -258,22 +258,23 @@ export default function JobProfile() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
-                      {['Location','Product Type','Width','Drop','Qty','Mount','Control','Notes'].map(h => (
+                      {['#','Location','Product','Width','Drop','Qty','Fabric / Colour','Control','Notes'].map(h => (
                         <th key={h} className="px-4 py-2.5 text-left font-medium text-slate-500 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {measureSheet.lineItems.map(item => (
+                    {measureSheet.lineItems.map((item, i) => (
                       <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">{item.location}</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.productType}</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-right">{item.width} mm</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-right">{item.drop} mm</td>
-                        <td className="px-4 py-3 text-slate-600 text-center">{item.quantity}</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.mountType}</td>
-                        <td className="px-4 py-3 text-slate-600">{item.controlSide}</td>
-                        <td className="px-4 py-3 text-slate-500 max-w-[160px] truncate">{item.installationNotes}</td>
+                        <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                        <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">{item.location || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.productNameSnapshot || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-right font-mono">{item.widthMm ? `${item.widthMm} mm` : '—'}</td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-right font-mono">{item.dropMm ? `${item.dropMm} mm` : '—'}</td>
+                        <td className="px-4 py-3 text-slate-600 text-center">{item.quantity || 1}</td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.fabricColour || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.control || '—'}</td>
+                        <td className="px-4 py-3 text-slate-500 max-w-[160px] truncate">{item.notes || ''}</td>
                       </tr>
                     ))}
                   </tbody>

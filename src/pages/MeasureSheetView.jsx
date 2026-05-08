@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { ArrowLeft, Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer } from 'lucide-react';
 import { getMeasureSheet, getCustomer, getJob, getQuotes, deleteMeasureSheet } from '../store/data';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -71,8 +71,12 @@ export default function MeasureSheetView() {
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
               <Edit3 size={13} /> Edit
             </button>
+            <button onClick={() => window.print()}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors no-print">
+              <Printer size={13} /> Print
+            </button>
             <button onClick={() => setShowDelete(true)}
-              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors no-print">
               <Trash2 size={13} /> Delete
             </button>
           </div>
@@ -124,6 +128,7 @@ export default function MeasureSheetView() {
                         ['Heading', item.heading],
                         ['Hem', item.hem],
                         ['Track / Base Bar', item.trackBaseBarColour || item.trackColour],
+                        ['Track Type', item.trackType],
                         ['Base Bar Type', item.baseBarType],
                         ['Chain Colour', item.chainColour],
                         ['Attached Lining', item.attachedLining ? 'Yes' : null],
