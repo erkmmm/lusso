@@ -12,7 +12,14 @@
 import { supabase } from '../lib/supabase';
 
 // ── Field name converters ────────────────────────────────────────────
-const toSnake = (s) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+// Two-pass conversion handles acronyms (GST, API, etc.) correctly:
+// Pass 1: insert _ before a run of UPPERCASE followed by Uppercase+lowercase (e.g. GSTRate → GST_Rate)
+// Pass 2: standard camelCase split (e.g. grandTotal → grand_Total)
+// Then toLowerCase throughout.
+const toSnake = (s) => s
+  .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+  .replace(/([a-z\d])([A-Z])/g, '$1_$2')
+  .toLowerCase();
 const toCamel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
 function toDb(obj) {
