@@ -87,11 +87,15 @@ export async function hydrateFromSupabase() {
     TABLES.map(async ({ table, key }) => {
       const { data, error } = await supabase.from(table).select('*').order('created_at', { ascending: true });
       if (error) { console.warn(`[db] hydrate ${table}:`, error.message); return; }
-      // Always overwrite localStorage — even with an empty array.
-      // This ensures deleted records on one device disappear on all devices.
+      // Only overwrite localStorage when Supabase actually has rows.
+      // If Supabase returns empty (table never pushed), keep local seed data.
+      // Soft-deleted records are still present in Supabase (deletedAt set),
+      // so a genuine "all gone" table in Supabase means it was never synced.
       const rows = fromDbAll(data || []);
-      LS.set(key, rows);
-      if (rows.length > 0) hadCloudData = true;
+      if (rows.length > 0) {
+        LS.set(key, rows);
+        hadCloudData = true;
+      }
     })
   );
 

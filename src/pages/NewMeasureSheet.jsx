@@ -11,7 +11,7 @@ import {
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer,
   getCustomers, getJobs, saveCustomer,
-  createJobFromMeasureSheet, getStaff, getActiveProductTypes,
+  createJobFromMeasureSheet, getActiveEmployees, getActiveProductTypes,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS,
   CHAIN_COLOUR_OPTIONS, URGENCY_LEVELS, JOB_TYPES,
@@ -294,7 +294,7 @@ export default function NewMeasureSheet() {
   const [searchParams]   = useSearchParams();
   const navigate         = useNavigate();
   const isEdit           = Boolean(id && id !== 'new');
-  const staff            = getStaff();
+  const staff            = getActiveEmployees();
   const productTypes     = getActiveProductTypes();
   const allCustomers     = useMemo(() => getCustomers(), []);
   const allJobs          = useMemo(() => getJobs(), []);
@@ -748,7 +748,7 @@ export default function NewMeasureSheet() {
           <FormField label="Salesperson / Measurer *" error={errors.measurer}>
             <select value={sheet.measurer} onChange={e => setField('measurer', e.target.value)} className={inputCls(errors.measurer)}>
               <option value="">Select staff member…</option>
-              {staff.map(s => <option key={s.id} value={s.name}>{s.name} ({s.role})</option>)}
+              {staff.map(s => <option key={s.id} value={s.fullName}>{s.fullName} — {s.role}</option>)}
             </select>
           </FormField>
           <FormField label="Access Instructions" className="sm:col-span-2">
