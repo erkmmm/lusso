@@ -222,29 +222,6 @@ function DuplicateMatchCard({ match, onUse, onViewProfile, navigate }) {
   );
 }
 
-function JobSelectCard({ job, selected, onSelect, customers }) {
-  const TERMINAL = ['Completed', 'Cancelled'];
-  const isOpen = !TERMINAL.includes(job.status);
-  return (
-    <button
-      onClick={() => onSelect(job.id)}
-      className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
-        selected ? 'border-amber-400 bg-amber-50/40' : 'border-slate-200 hover:border-slate-300 bg-white'
-      }`}
-    >
-      <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isOpen ? 'bg-green-500' : 'bg-slate-300'}`} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-sm text-slate-800">{job.jobNumber}</span>
-          <span className="text-xs text-slate-400">{job.status}</span>
-        </div>
-        {job.siteAddress && <p className="text-xs text-slate-500 truncate">{job.siteAddress}</p>}
-      </div>
-      {selected && <CheckCircle2 size={16} className="text-amber-500 flex-shrink-0" />}
-    </button>
-  );
-}
-
 // ─── Form primitives ──────────────────────────────────────────────────────────
 
 function FormField({ label, error, className = '', children }) {
@@ -353,9 +330,6 @@ export default function NewMeasureSheet() {
   const [duplicates,      setDuplicates]      = useState([]);
   const [duplicateDismissed, setDuplicateDismissed] = useState(false);
 
-  // ── Job selection state (after customer selected) ──────────────────────────
-  const [jobMode,     setJobMode]     = useState(null);   // null | 'new' | 'existing'
-  const [selectedJobId, setSelectedJobId] = useState('');
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [savedAt,        setSavedAt]        = useState(null);
@@ -370,10 +344,6 @@ export default function NewMeasureSheet() {
     [customerSearch, allCustomers]
   );
 
-  const customerJobs = useMemo(() => {
-    if (!selectedCustomer) return [];
-    return allJobs.filter(j => j.customerId === selectedCustomer.id && !['Completed','Cancelled'].includes(j.status));
-  }, [selectedCustomer, allJobs]);
 
   // ── Real-time duplicate detection (new customer mode) ─────────────────────
   useEffect(() => {
@@ -434,8 +404,6 @@ export default function NewMeasureSheet() {
   const handleClearCustomer = () => {
     setSelectedCustomer(null);
     setCustomerSearch('');
-    setJobMode(null);
-    setSelectedJobId('');
     setSheet(s => ({ ...s, customerId: null, customerName: '', phone: '', email: '', siteAddress: '', billingAddress: '', customerNotes: '' }));
   };
 
@@ -499,14 +467,7 @@ export default function NewMeasureSheet() {
     const finalSheet = { ...sheet, customerId: customer.id, status: 'Submitted' };
     saveMeasureSheet(finalSheet);
 
-    // Resolve job
-    let job;
-    if (jobMode === 'existing' && selectedJobId) {
-      job = allJobs.find(j => j.id === selectedJobId);
-    } else {
-      // 'new' or no selection — always create a new job
-      job = createJobFromMeasureSheet(sheet, customer);
-    }
+    const job = createJobFromMeasureSheet(sheet, customer);
 
     saveMeasureSheet({ ...finalSheet, jobId: job?.id });
     setSheet(finalSheet);
@@ -522,7 +483,7 @@ export default function NewMeasureSheet() {
         </div>
         <h2 className="text-xl font-bold text-slate-900 mb-2">Measure Sheet Submitted!</h2>
         <p className="text-slate-500 text-sm mb-6 max-w-sm">
-          The measure sheet has been saved and {jobMode === 'existing' ? 'attached to the selected job' : 'a new job has been created automatically'}.
+          The measure sheet has been saved and a new job has been created automatically.
         </p>
         <div className="flex gap-3">
           <button onClick={() => navigate('/jobs')}
@@ -636,83 +597,10 @@ export default function NewMeasureSheet() {
                       navigate={navigate}
                     />
 
-                    {/* Job selection */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden">
-                      <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-                        <p className="text-sm font-semibold text-slate-700">Job</p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {customerJobs.length > 0
-                            ? `This customer has ${customerJobs.length} open job${customerJobs.length !== 1 ? 's' : ''}. Create a new job or attach to an existing one.`
-                            : 'A new job will be created when you submit this measure sheet.'}
-                        </p>
-                      </div>
-
-                      {/* Job mode buttons */}
-                      <div className="p-3 flex gap-2">
-                        <button
-                          onClick={() => { setJobMode('new'); setSelectedJobId(''); }}
-                          className={`flex-1 py-2.5 text-sm font-medium rounded-xl border-2 transition-all ${
-                            jobMode === 'new'
-                              ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                              : 'border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-700'
-                          }`}
-                        >
-                          + Create New Job
-                        </button>
-                        {customerJobs.length > 0 && (
-                          <button
-                            onClick={() => setJobMode('existing')}
-                            className={`flex-1 py-2.5 text-sm font-medium rounded-xl border-2 transition-all ${
-                              jobMode === 'existing'
-                                ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                                : 'border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-700'
-                            }`}
-                          >
-                            Add to Existing Job ({customerJobs.length})
-                          </button>
-                        )}
-                      </div>
-
-                      {/* New job confirmation */}
-                      {jobMode === 'new' && (
-                        <div className="mx-3 mb-3 flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
-                          <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
-                          <p className="text-xs text-green-700 font-medium">
-                            A new job will be created automatically when you submit this measure sheet.
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Existing jobs list */}
-                      {jobMode === 'existing' && (
-                        <div className="px-3 pb-3 space-y-2">
-                          {customerJobs.length > 0 ? (
-                            <>
-                              {customerJobs.map(job => (
-                                <JobSelectCard
-                                  key={job.id}
-                                  job={job}
-                                  selected={selectedJobId === job.id}
-                                  onSelect={setSelectedJobId}
-                                />
-                              ))}
-                              {!selectedJobId && (
-                                <p className="text-xs text-amber-600 font-medium px-1">Select a job above to attach this measure sheet.</p>
-                              )}
-                            </>
-                          ) : (
-                            <p className="text-xs text-slate-400 px-1 pb-1">No open jobs found for this customer.</p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Prompt if nothing chosen yet */}
-                      {jobMode === null && (
-                        <div className="mx-3 mb-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
-                          <AlertCircle size={14} className="text-blue-400 flex-shrink-0" />
-                          <p className="text-xs text-blue-600">Choose whether to create a new job or attach to an existing one.</p>
-                        </div>
-                      )}
+                    {/* Job note */}
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                      <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
+                      <p className="text-xs text-slate-600">A new job will be created automatically when you submit this measure sheet.</p>
                     </div>
                   </>
                 ) : (
