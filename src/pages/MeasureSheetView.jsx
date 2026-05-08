@@ -216,16 +216,6 @@ function PrintView({ sheet, customer, job }) {
         </div>
       )}
 
-      {/* ── Installer sign-off ── */}
-      <div style={{ marginTop: '16px', borderTop: '1px solid #ddd', paddingTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-        {['Installer Name', 'Date', 'Signature'].map(label => (
-          <div key={label}>
-            <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px' }}>{label}</div>
-            <div style={{ borderBottom: '1px solid #999', height: '24px' }} />
-          </div>
-        ))}
-      </div>
-
       {/* ── Footer ── */}
       <div style={{ marginTop: '10px', textAlign: 'center', fontSize: '9px', color: '#999', borderTop: '1px solid #eee', paddingTop: '6px' }}>
         Lusso Job Management · Measure Sheet · Printed {format(new Date(), 'd MMM yyyy h:mm a')}

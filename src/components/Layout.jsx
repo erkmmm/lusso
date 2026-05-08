@@ -349,7 +349,7 @@ export default function Layout({ children }) {
       </div>
 
       {/* ── Mobile bottom nav ─────────────────────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-100 flex items-stretch h-16 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-100 flex items-stretch h-16 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] no-print">
         {/* Home */}
         <NavLink to="/" end className={({ isActive }) =>
           `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
@@ -413,7 +413,7 @@ export default function Layout({ children }) {
 
       {/* ── Mobile + New action sheet ─────────────────────────────────────── */}
       {newOpen && (
-        <div className="lg:hidden fixed bottom-16 left-3 right-3 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="lg:hidden fixed bottom-16 left-3 right-3 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden no-print">
           <div className="px-4 py-3 border-b border-slate-100">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Create New</p>
           </div>
