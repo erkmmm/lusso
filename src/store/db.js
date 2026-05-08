@@ -58,6 +58,20 @@ const KEYS = {
   tasks:                'lusso_tasks',
 };
 
+// ── Per-table column exclusions ──────────────────────────────────────
+// Fields that exist in app data but not yet in the DB schema.
+// Listed as snake_case so they can be stripped after toDb() conversion.
+const EXCLUDE_COLUMNS = {
+  // customers DB uses a single 'name' field; app may store first_name/last_name separately
+  customers: ['first_name', 'last_name'],
+};
+
+// ── Tables skipped during push (schema not yet aligned) ──────────────
+// measure_sheets DB schema is missing many app-level fields.
+// Sheets are preserved in localStorage; remove from this set once
+// the Supabase schema is updated via migration.
+const SKIP_PUSH_TABLES = new Set(['measure_sheets']);
+
 // ── Table manifest (shared by hydrate + push) ────────────────────────
 const TABLES = [
   { table: 'customers',              key: KEYS.customers },
@@ -119,11 +133,18 @@ export async function pushAllToSupabase() {
   const errors = [];
 
   for (const { table, key } of TABLES) {
+    if (SKIP_PUSH_TABLES.has(table)) continue;
     const records = LS.get(key);
     if (!records || records.length === 0) continue;
+    const exclude = EXCLUDE_COLUMNS[table] || [];
+    const rows = records.map((r) => {
+      const row = toDb(r);
+      exclude.forEach((col) => delete row[col]);
+      return row;
+    });
     const { error } = await supabase
       .from(table)
-      .upsert(records.map(toDb), { onConflict: 'id' });
+      .upsert(rows, { onConflict: 'id' });
     if (error) {
       console.warn(`[db] push ${table}:`, error.message);
       errors.push(`${table}: ${error.message}`);
@@ -138,7 +159,9 @@ export async function pushAllToSupabase() {
 // ── Generic upsert / delete ──────────────────────────────────────────
 async function upsert(table, record) {
   if (!supabase || !record?.id) return;
-  const { error } = await supabase.from(table).upsert(toDb(record), { onConflict: 'id' });
+  const row = toDb(record);
+  (EXCLUDE_COLUMNS[table] || []).forEach((col) => delete row[col]);
+  const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
   if (error) console.warn(`[db] upsert ${table}:`, error.message);
 }
 
@@ -160,9 +183,9 @@ export const db = {
   saveJob:            (r) => upsert('jobs', r),
   deleteJob:          (id) => remove('jobs', id),
 
-  // Measure sheets
-  saveMeasureSheet:   (r) => upsert('measure_sheets', r),
-  deleteMeasureSheet: (id) => remove('measure_sheets', id),
+  // Measure sheets — schema not fully aligned; skip individual upserts until migration
+  saveMeasureSheet:   (_r) => Promise.resolve(),
+  deleteMeasureSheet: (_id) => Promise.resolve(),
 
   // Quotes
   saveQuote:          (r) => upsert('quotes', r),
