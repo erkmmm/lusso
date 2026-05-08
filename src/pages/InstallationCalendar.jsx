@@ -7,11 +7,12 @@ import {
 } from 'date-fns';
 import {
   ChevronLeft, ChevronRight, CalendarDays, HardHat,
-  CheckCircle2, Clock, X, AlertTriangle, Filter, Package,
+  CheckCircle2, Clock, X, AlertTriangle, Filter, Package, Trash2, ExternalLink,
 } from 'lucide-react';
 import {
   getInstallRequests, getInstallers, getJobs, getCustomers,
   getInstaller, getJob, getCustomer, INSTALL_REQUEST_STATUS_COLORS,
+  deleteJob,
 } from '../store/data';
 
 const pickupBadge = (req) => {
@@ -43,6 +44,8 @@ export default function InstallationCalendar() {
   const [view, setView]         = useState('Month');
   const [filterInstaller, setFilterInstaller] = useState('');
   const [filterStatus, setFilterStatus]       = useState('');
+  const [selectedEvent, setSelectedEvent]     = useState(null); // install request
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const requests   = getInstallRequests();
   const installers = getInstallers();
@@ -81,6 +84,13 @@ export default function InstallationCalendar() {
   const title = view === 'Month' ? format(current, 'MMMM yyyy')
     : view === 'Week' ? `${format(weekDays[0], 'd MMM')} – ${format(weekDays[6], 'd MMM yyyy')}`
     : format(current, 'MMMM yyyy');
+
+  const handleDeleteJob = () => {
+    if (!selectedEvent) return;
+    deleteJob(selectedEvent.jobId);
+    setShowDeleteConfirm(false);
+    setSelectedEvent(null);
+  };
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-4">
@@ -176,7 +186,7 @@ export default function InstallationCalendar() {
                       return (
                         <button
                           key={ev.id}
-                          onClick={() => navigate(`/jobs/${ev.jobId}`)}
+                          onClick={() => setSelectedEvent(ev)}
                           className="w-full text-left"
                         >
                           <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs truncate hover:opacity-80 transition-opacity ${INSTALL_REQUEST_STATUS_COLORS[ev.status] || 'bg-slate-100 text-slate-600'}`}>
@@ -226,7 +236,7 @@ export default function InstallationCalendar() {
                       return (
                         <button
                           key={ev.id}
-                          onClick={() => navigate(`/jobs/${ev.jobId}`)}
+                          onClick={() => setSelectedEvent(ev)}
                           className={`w-full text-left rounded-lg p-2 border text-xs hover:opacity-90 transition-opacity ${INSTALL_REQUEST_STATUS_COLORS[ev.status] || 'bg-slate-100'}`}
                         >
                           <div className="font-semibold truncate">{cust?.name || 'Customer'}</div>
@@ -278,7 +288,7 @@ export default function InstallationCalendar() {
                 return (
                   <button
                     key={req.id}
-                    onClick={() => navigate(`/jobs/${req.jobId}`)}
+                    onClick={() => setSelectedEvent(req)}
                     className="w-full bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center gap-4 hover:shadow-md hover:border-slate-300 transition-all text-left group"
                   >
                     {/* Date block */}
@@ -317,6 +327,123 @@ export default function InstallationCalendar() {
 
       {/* Unscheduled jobs needing installer */}
       <NeedsInstaller navigate={navigate} />
+
+      {/* Event detail modal */}
+      {selectedEvent && !showDeleteConfirm && (() => {
+        const job  = getJob(selectedEvent.jobId);
+        const cust = job ? getCustomer(job.customerId) : null;
+        const inst = getInstaller(selectedEvent.installerId);
+        const badge = pickupBadge(selectedEvent);
+        const statusCls = INSTALL_REQUEST_STATUS_COLORS[selectedEvent.status] || 'bg-slate-100 text-slate-600';
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setSelectedEvent(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-900 text-base truncate">{cust?.name || 'Customer'}</h3>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    {job && <span className="text-xs text-slate-400">{job.jobNumber}</span>}
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusCls}`}>{selectedEvent.status}</span>
+                    {badge && (
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1 ${badge.cls}`}>
+                        <Package size={10} /> {badge.label}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setSelectedEvent(null)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Details */}
+              <div className="text-sm text-slate-600 space-y-1.5">
+                {selectedEvent.proposedDate && (
+                  <div className="flex items-center gap-2">
+                    <CalendarDays size={14} className="text-slate-400" />
+                    <span>{format(parseISO(selectedEvent.proposedDate), 'EEEE, d MMMM yyyy')}</span>
+                  </div>
+                )}
+                {inst && (
+                  <div className="flex items-center gap-2">
+                    <HardHat size={14} className="text-slate-400" />
+                    <span>{inst.name}</span>
+                  </div>
+                )}
+                {selectedEvent.arrivalTime && (
+                  <div className="flex items-center gap-2">
+                    <Clock size={14} className="text-slate-400" />
+                    <span>{selectedEvent.arrivalTime}{selectedEvent.expectedDuration ? ` · ${selectedEvent.expectedDuration}` : ''}</span>
+                  </div>
+                )}
+                {selectedEvent.suburb && (
+                  <div className="text-slate-500 text-xs pl-0.5">{selectedEvent.suburb}</div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => { setSelectedEvent(null); navigate(`/jobs/${selectedEvent.jobId}`); }}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                >
+                  <ExternalLink size={14} /> View Job
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center justify-center gap-1.5 border border-red-200 text-red-500 hover:bg-red-50 text-sm font-medium px-4 py-2.5 rounded-xl transition-colors"
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Delete confirmation modal */}
+      {selectedEvent && showDeleteConfirm && (() => {
+        const job  = getJob(selectedEvent.jobId);
+        const cust = job ? getCustomer(job.customerId) : null;
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Trash2 size={18} className="text-red-500" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Delete this job?</h3>
+                  <p className="text-sm text-slate-500 mt-1">
+                    You're about to permanently delete <strong>{cust?.name || 'this job'}</strong>{job?.jobNumber ? ` (${job.jobNumber})` : ''}. This action cannot be undone.
+                  </p>
+                  <div className="mt-3 flex items-start gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5">
+                    <AlertTriangle size={14} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-yellow-700 leading-relaxed">
+                      <strong>Disclaimer:</strong> Deleting this job will also affect all linked records — including measure sheets, quotes, and installation requests. This data cannot be recovered.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteJob}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                >
+                  Delete Job
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

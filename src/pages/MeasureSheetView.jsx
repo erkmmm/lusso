@@ -1,16 +1,25 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { ArrowLeft, Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin } from 'lucide-react';
-import { getMeasureSheet, getCustomer, getJob } from '../store/data';
+import { ArrowLeft, Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle } from 'lucide-react';
+import { getMeasureSheet, getCustomer, getJob, getQuotes, deleteMeasureSheet } from '../store/data';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 
 export default function MeasureSheetView() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [showDelete, setShowDelete] = useState(false);
   const sheet    = getMeasureSheet(id);
   const customer = sheet ? getCustomer(sheet.customerId) : null;
   const job      = sheet ? getJob(sheet.jobId) : null;
+  const quotes   = getQuotes();
+  const isLinked = quotes.some(q => q.measureSheetId === id) || Boolean(sheet?.jobId);
+
+  const handleDelete = () => {
+    deleteMeasureSheet(id);
+    navigate('/measure-sheets');
+  };
 
   if (!sheet) {
     return (
@@ -51,7 +60,7 @@ export default function MeasureSheetView() {
               {sheet.createdAt && <span>Created {format(parseISO(sheet.createdAt), 'd MMM yyyy')}</span>}
             </div>
           </div>
-          <div className="flex gap-2 flex-shrink-0">
+          <div className="flex gap-2 flex-shrink-0 flex-wrap">
             {job && (
               <button onClick={() => navigate(`/jobs/${job.id}`)}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
@@ -61,6 +70,10 @@ export default function MeasureSheetView() {
             <button onClick={() => navigate(`/measure-sheets/${id}/edit`)}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
               <Edit3 size={13} /> Edit
+            </button>
+            <button onClick={() => setShowDelete(true)}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+              <Trash2 size={13} /> Delete
             </button>
           </div>
         </div>
@@ -207,6 +220,43 @@ export default function MeasureSheetView() {
           )}
         </div>
       </div>
+
+      {/* Delete confirmation modal */}
+      {showDelete && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Trash2 size={18} className="text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Delete this measure sheet?</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Are you sure you want to delete this measure sheet? This action cannot be undone.
+                </p>
+                {isLinked && (
+                  <div className="mt-3 flex items-start gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                    <AlertTriangle size={14} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-yellow-700">
+                      This measure sheet is linked to quotes, jobs, or installations. Deleting may affect historical records.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setShowDelete(false)}
+                className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium py-2.5 rounded-xl transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleDelete}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors">
+                Delete Measure Sheet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

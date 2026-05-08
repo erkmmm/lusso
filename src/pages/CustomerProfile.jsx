@@ -119,7 +119,7 @@ export default function CustomerProfile() {
                 <Briefcase size={15} /> Jobs ({jobs.length})
               </h2>
               <button
-                onClick={() => navigate('/measure-sheets/new')}
+                onClick={() => navigate(`/measure-sheets/new?customerId=${id}`)}
                 className="text-xs bg-amber-500 hover:bg-amber-400 text-white font-medium px-3 py-1.5 rounded-lg transition-colors"
               >
                 + New Measure Sheet

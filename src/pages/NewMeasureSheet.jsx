@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ArrowLeft, Plus, Trash2, Save, Send, CheckCircle2,
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
-  ClipboardList, AlertCircle,
+  ClipboardList, AlertCircle, Edit3,
 } from 'lucide-react';
 import {
-  saveMeasureSheet, getMeasureSheet, findOrCreateCustomer,
+  saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer,
   createJobFromMeasureSheet, getStaff, getActiveProductTypes,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
@@ -66,12 +66,31 @@ const EMPTY_SHEET = () => ({
 
 export default function NewMeasureSheet() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const isEdit = Boolean(id && id !== 'new');
   const staff = getStaff();
 
+  // Customer pre-linking (from ?customerId= query param)
+  const prelinkedCustomerId = searchParams.get('customerId') || null;
+  const prelinkedCustomer   = prelinkedCustomerId ? getCustomer(prelinkedCustomerId) : null;
+
   const [sheet, setSheet] = useState(() => {
     if (isEdit) return getMeasureSheet(id) || EMPTY_SHEET();
+    // Pre-fill from linked customer
+    if (prelinkedCustomer) {
+      return {
+        ...EMPTY_SHEET(),
+        customerId:      prelinkedCustomer.id,
+        customerName:    prelinkedCustomer.name    || '',
+        phone:           prelinkedCustomer.phone   || '',
+        email:           prelinkedCustomer.email   || '',
+        siteAddress:     prelinkedCustomer.address || '',
+        billingAddress:  prelinkedCustomer.billingAddress || '',
+        preferredContact: prelinkedCustomer.preferredContact || 'Phone',
+        customerNotes:   prelinkedCustomer.notes   || '',
+      };
+    }
     return EMPTY_SHEET();
   });
   const [savedAt, setSavedAt] = useState(null);
@@ -116,9 +135,12 @@ export default function NewMeasureSheet() {
 
   const validate = () => {
     const e = {};
-    if (!sheet.customerName.trim()) e.customerName = 'Customer name is required';
-    if (!sheet.phone.trim() && !sheet.email.trim()) e.phone = 'Phone or email is required';
-    if (!sheet.siteAddress.trim()) e.siteAddress = 'Site address is required';
+    // Skip customer validation when pre-linked — customer already exists
+    if (!prelinkedCustomer) {
+      if (!sheet.customerName.trim()) e.customerName = 'Customer name is required';
+      if (!sheet.phone.trim() && !sheet.email.trim()) e.phone = 'Phone or email is required';
+      if (!sheet.siteAddress.trim()) e.siteAddress = 'Site address is required';
+    }
     if (!sheet.measurer.trim()) e.measurer = 'Measurer is required';
     sheet.lineItems.forEach((item, i) => {
       if (!item.location.trim()) e[`item_${i}_location`] = 'Location required';
@@ -138,7 +160,9 @@ export default function NewMeasureSheet() {
       setOpenSections({ customer: true, job: true, items: true });
       return;
     }
-    const customer = findOrCreateCustomer({
+    // If launched from a customer profile, use that customer directly — no duplicate risk.
+    // Otherwise find-or-create based on entered details.
+    const customer = prelinkedCustomer || findOrCreateCustomer({
       name: sheet.customerName,
       phone: sheet.phone,
       email: sheet.email,
@@ -154,7 +178,6 @@ export default function NewMeasureSheet() {
     };
     saveMeasureSheet(finalSheet);
     const job = createJobFromMeasureSheet(sheet, customer);
-    // Update sheet with jobId
     saveMeasureSheet({ ...finalSheet, jobId: job.id });
     setSheet(finalSheet);
     setSubmitted(true);
@@ -196,7 +219,13 @@ export default function NewMeasureSheet() {
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-slate-900">{isEdit ? 'Edit Measure Sheet' : 'New Measure Sheet'}</h1>
+          <h1 className="text-xl font-bold text-slate-900">
+            {isEdit
+              ? 'Edit Measure Sheet'
+              : prelinkedCustomer
+                ? `New Measure Sheet for ${prelinkedCustomer.name}`
+                : 'New Measure Sheet'}
+          </h1>
           <div className="flex items-center gap-3 mt-0.5">
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${sheet.status === 'Submitted' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
               {sheet.status}
@@ -220,6 +249,33 @@ export default function NewMeasureSheet() {
       )}
 
       {/* ── SECTION 1: Customer Details ── */}
+      {prelinkedCustomer ? (
+        /* Locked customer banner — launched from a customer profile */
+        <Card className="px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <User size={16} className="text-amber-600" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Customer</p>
+                <p className="font-semibold text-slate-900">{prelinkedCustomer.name}</p>
+                <div className="mt-1 space-y-0.5 text-sm text-slate-500">
+                  {prelinkedCustomer.phone && <p>{prelinkedCustomer.phone}</p>}
+                  {prelinkedCustomer.email && <p>{prelinkedCustomer.email}</p>}
+                  {prelinkedCustomer.address && <p>{prelinkedCustomer.address}</p>}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate(`/customers/${prelinkedCustomer.id}`)}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors flex-shrink-0"
+            >
+              <Edit3 size={12} /> Edit Customer
+            </button>
+          </div>
+        </Card>
+      ) : (
       <Section
         title="Customer Details"
         icon={<User size={15} />}
@@ -258,6 +314,7 @@ export default function NewMeasureSheet() {
           </FormField>
         </div>
       </Section>
+      )} {/* end prelinkedCustomer ternary */}
 
       {/* ── SECTION 2: Job Details ── */}
       <Section

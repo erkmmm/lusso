@@ -325,6 +325,13 @@ export default function PricedItems() {
     setDeleteConfirm(null);
   };
 
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
+  const handleDeleteAll = () => {
+    getPricedItems().forEach(p => deletePricedItem(p.id));
+    reload();
+    setShowDeleteAll(false);
+  };
+
   // ── File handling ────────────────────────────────────────────────────────
 
   const handleFile = useCallback((file) => {
@@ -465,7 +472,48 @@ export default function PricedItems() {
               <option value="active">Active only</option>
               <option value="inactive">Inactive only</option>
             </select>
+            {getPricedItems().length > 0 && (
+              <button
+                onClick={() => setShowDeleteAll(true)}
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 border border-red-200 text-red-500 hover:bg-red-50 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <Trash2 size={13} /> Delete All
+              </button>
+            )}
           </Card>
+
+          {/* Delete All confirmation modal */}
+          {showDeleteAll && (
+            <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                    <Trash2 size={18} className="text-red-500" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900">Delete all priced items?</h3>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      This will permanently delete all {getPricedItems().length} items from the library. This cannot be undone.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setShowDeleteAll(false)}
+                    className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteAll}
+                    className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                  >
+                    Yes, delete all
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Items table */}
           <Card>

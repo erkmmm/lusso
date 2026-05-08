@@ -452,9 +452,22 @@ export const initStore = () => {
 
 // ─── Customers ────────────────────────────────────────────────────────────────
 
-export const getCustomers = () => get('lusso_customers') || [];
+export const getCustomers = () => (get('lusso_customers') || []).filter(c => !c.deletedAt);
 
-export const getCustomer = (id) => getCustomers().find(c => c.id === id);
+export const deleteCustomer = (id, deletedBy = 'Admin') => {
+  const all = get('lusso_customers') || [];
+  const idx = all.findIndex(c => c.id === id);
+  if (idx < 0) return;
+  all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
+  set('lusso_customers', all);
+  db.saveCustomer(all[idx]);
+};
+
+export const bulkDeleteCustomers = (ids, deletedBy = 'Admin') => {
+  ids.forEach(id => deleteCustomer(id, deletedBy));
+};
+
+export const getCustomer = (id) => (get('lusso_customers') || []).find(c => c.id === id);
 
 export const findOrCreateCustomer = (data) => {
   const customers = getCustomers();
@@ -493,9 +506,22 @@ export const saveCustomer = (customer) => {
 
 // ─── Jobs ─────────────────────────────────────────────────────────────────────
 
-export const getJobs = () => get('lusso_jobs') || [];
+export const getJobs = () => (get('lusso_jobs') || []).filter(j => !j.deletedAt);
 
-export const getJob = (id) => getJobs().find(j => j.id === id);
+export const deleteJob = (id, deletedBy = 'Admin') => {
+  const all = get('lusso_jobs') || [];
+  const idx = all.findIndex(j => j.id === id);
+  if (idx < 0) return;
+  all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
+  set('lusso_jobs', all);
+  db.saveJob(all[idx]);
+};
+
+export const bulkDeleteJobs = (ids, deletedBy = 'Admin') => {
+  ids.forEach(id => deleteJob(id, deletedBy));
+};
+
+export const getJob = (id) => (get('lusso_jobs') || []).find(j => j.id === id);
 
 export const getJobsByCustomer = (customerId) => getJobs().filter(j => j.customerId === customerId);
 
@@ -556,12 +582,25 @@ export const updateJobStatus = (jobId, newStatus, user = 'System') => {
 
 // ─── Measure Sheets ───────────────────────────────────────────────────────────
 
-export const getMeasureSheets = () => get('lusso_measure_sheets') || [];
+export const getMeasureSheets = () => (get('lusso_measure_sheets') || []).filter(ms => !ms.deletedAt);
 
-export const getMeasureSheet = (id) => getMeasureSheets().find(ms => ms.id === id);
+export const getMeasureSheet = (id) => (get('lusso_measure_sheets') || []).find(ms => ms.id === id);
 
 export const getMeasureSheetByJob        = (jobId) => getMeasureSheets().find(ms => ms.jobId === jobId);
 export const getMeasureSheetsByCustomer  = (customerId) => getMeasureSheets().filter(ms => ms.customerId === customerId);
+
+export const deleteMeasureSheet = (id, deletedBy = 'Admin') => {
+  const all = get('lusso_measure_sheets') || [];
+  const idx = all.findIndex(ms => ms.id === id);
+  if (idx < 0) return;
+  all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
+  set('lusso_measure_sheets', all);
+  db.saveMeasureSheet(all[idx]);
+};
+
+export const bulkDeleteMeasureSheets = (ids, deletedBy = 'Admin') => {
+  ids.forEach(id => deleteMeasureSheet(id, deletedBy));
+};
 
 export const saveMeasureSheet = (sheet) => {
   const sheets = getMeasureSheets();
@@ -702,8 +741,21 @@ export const INSTALL_REQUEST_STATUS_COLORS = {
   Completed:   'bg-teal-100 text-teal-700',
 };
 
-export const getInstallers = () => get('lusso_installers') || [];
-export const getInstaller = (id) => getInstallers().find(i => i.id === id);
+export const getInstallers = () => (get('lusso_installers') || []).filter(i => !i.deletedAt);
+
+export const deleteInstaller = (id, deletedBy = 'Admin') => {
+  const all = get('lusso_installers') || [];
+  const idx = all.findIndex(i => i.id === id);
+  if (idx < 0) return;
+  all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
+  set('lusso_installers', all);
+  db.saveInstaller(all[idx]);
+};
+
+export const bulkDeleteInstallers = (ids, deletedBy = 'Admin') => {
+  ids.forEach(id => deleteInstaller(id, deletedBy));
+};
+export const getInstaller = (id) => (get('lusso_installers') || []).find(i => i.id === id);
 export const getActiveInstallers = () => getInstallers().filter(i => i.isActive);
 
 export const saveInstaller = (installer) => {
