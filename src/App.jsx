@@ -27,6 +27,8 @@ import CustomerQuotePage from './pages/CustomerQuotePage';
 import ImportContacts from './pages/ImportContacts';
 import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
+import Employees from './pages/Employees';
+import EmployeeProfile from './pages/EmployeeProfile';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -97,6 +99,8 @@ function AppRoutes() {
               <Route path="/quotes/new"                 element={<QuoteBuilder />} />
               <Route path="/quotes/:id"                 element={<QuoteView />} />
               <Route path="/quotes/:id/edit"            element={<QuoteBuilder />} />
+              <Route path="/employees"                  element={<Employees />} />
+              <Route path="/employees/:id"              element={<EmployeeProfile />} />
               <Route path="*"                           element={<Dashboard />} />
             </Routes>
           </Layout>

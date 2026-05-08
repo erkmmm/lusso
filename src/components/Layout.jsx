@@ -4,11 +4,12 @@ import {
   LayoutDashboard, Briefcase, Users, ClipboardList,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
-  ChevronDown, Home,
+  ChevronDown, Home, UserCog,
 } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
   getCustomers, getJobs, getMeasureSheets, getQuotes, getInstallRequests,
+  getActiveEmployees,
 } from '../store/data';
 import { useAuth } from '../contexts/AuthContext';
 import { LogOut } from 'lucide-react';
@@ -31,6 +32,12 @@ const NAV_SECTIONS = [
     items: [
       { to: '/installers', label: 'Installers', icon: HardHat },
       { to: '/calendar',   label: 'Calendar',   icon: CalendarDays, countKey: 'todayInstalls' },
+    ],
+  },
+  {
+    label: 'TEAM',
+    items: [
+      { to: '/employees', label: 'Employees', icon: UserCog, countKey: 'employees' },
     ],
   },
   {
@@ -83,6 +90,7 @@ function computeCounts() {
     jobs:         getJobs().length,
     measures:     getMeasureSheets().length,
     quotes:       getQuotes().length,
+    employees:    getActiveEmployees().length,
     todayInstalls: getInstallRequests().filter(
       r => r.proposedDate && isSameDay(parseISO(r.proposedDate), today)
     ).length,

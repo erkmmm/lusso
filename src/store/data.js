@@ -448,6 +448,8 @@ export const initStore = () => {
   initIfEmpty('lusso_saved_items', SEED_SAVED_ITEMS);
   initIfEmpty('lusso_quote_templates', SEED_QUOTE_TEMPLATES);
   initIfEmpty('lusso_quote_settings', DEFAULT_QUOTE_SETTINGS);
+  initIfEmpty('lusso_employees', SEED_EMPLOYEES);
+  initIfEmpty('lusso_tasks', SEED_TASKS);
 };
 
 // ─── Customers ────────────────────────────────────────────────────────────────
@@ -1707,4 +1709,153 @@ export const runContactImport = (batchId, rows) => {
   };
   saveImportBatch(updatedBatch);
   return updatedBatch;
+};
+
+// ─── Employees ────────────────────────────────────────────────────────────────
+
+export const EMPLOYEE_ROLES        = ['Admin', 'Manager', 'Office Staff', 'Salesperson', 'Measurer', 'Installer'];
+export const EMPLOYMENT_TYPES      = ['Full-time', 'Part-time', 'Casual', 'Contractor'];
+export const EMPLOYEE_DEPARTMENTS  = ['Admin', 'Management', 'Sales', 'Office', 'Measuring', 'Installations'];
+
+export const EMPLOYEE_ROLE_COLORS = {
+  'Admin':        'bg-red-100 text-red-700',
+  'Manager':      'bg-purple-100 text-purple-700',
+  'Office Staff': 'bg-blue-100 text-blue-700',
+  'Salesperson':  'bg-green-100 text-green-700',
+  'Measurer':     'bg-amber-100 text-amber-700',
+  'Installer':    'bg-teal-100 text-teal-700',
+};
+
+const SEED_EMPLOYEES = [
+  {
+    id: 'emp-1',
+    firstName: 'Sarah', lastName: 'Mitchell', fullName: 'Sarah Mitchell',
+    email: 'sarah@lusso.com.au', phone: '0412 345 678',
+    jobTitle: 'Sales Manager', role: 'Manager', department: 'Sales',
+    employmentType: 'Full-time', startDate: '2022-03-01', endDate: null,
+    isActive: true,
+    emergencyContactName: 'John Mitchell', emergencyContactPhone: '0413 111 222',
+    notes: '',
+    createdAt: '2022-03-01T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'emp-2',
+    firstName: 'James', lastName: 'Chen', fullName: 'James Chen',
+    email: 'james@lusso.com.au', phone: '0423 456 789',
+    jobTitle: 'Senior Measurer', role: 'Measurer', department: 'Measuring',
+    employmentType: 'Full-time', startDate: '2023-06-15', endDate: null,
+    isActive: true,
+    emergencyContactName: '', emergencyContactPhone: '',
+    notes: '',
+    createdAt: '2023-06-15T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'emp-3',
+    firstName: 'Emma', lastName: 'Walsh', fullName: 'Emma Walsh',
+    email: 'emma@lusso.com.au', phone: '0434 567 890',
+    jobTitle: 'Office Coordinator', role: 'Office Staff', department: 'Office',
+    employmentType: 'Part-time', startDate: '2024-01-10', endDate: null,
+    isActive: true,
+    emergencyContactName: '', emergencyContactPhone: '',
+    notes: '',
+    createdAt: '2024-01-10T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z',
+  },
+];
+
+export const getEmployees    = () => (get('lusso_employees') || []).filter(e => !e.deletedAt);
+export const getEmployee     = (id) => (get('lusso_employees') || []).find(e => e.id === id);
+export const getActiveEmployees = () => getEmployees().filter(e => e.isActive);
+
+export const saveEmployee = (emp) => {
+  const list = get('lusso_employees') || [];
+  const now  = new Date().toISOString();
+  const idx  = list.findIndex(e => e.id === emp.id);
+  const record = { ...emp, updatedAt: now };
+  if (idx >= 0) { list[idx] = record; } else { list.push({ ...record, createdAt: now }); }
+  set('lusso_employees', list);
+  return record;
+};
+
+export const toggleEmployeeActive = (id) => {
+  const list = get('lusso_employees') || [];
+  const idx  = list.findIndex(e => e.id === id);
+  if (idx < 0) return;
+  list[idx] = { ...list[idx], isActive: !list[idx].isActive, updatedAt: new Date().toISOString() };
+  set('lusso_employees', list);
+};
+
+// ─── Tasks ────────────────────────────────────────────────────────────────────
+
+export const TASK_STATUSES   = ['To Do', 'In Progress', 'Waiting', 'Completed', 'Cancelled'];
+export const TASK_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
+
+export const TASK_STATUS_COLORS = {
+  'To Do':       'bg-slate-100 text-slate-600',
+  'In Progress': 'bg-blue-100 text-blue-700',
+  'Waiting':     'bg-amber-100 text-amber-700',
+  'Completed':   'bg-green-100 text-green-700',
+  'Cancelled':   'bg-red-100 text-red-600',
+};
+
+export const TASK_PRIORITY_COLORS = {
+  Low:    'bg-slate-100 text-slate-500',
+  Medium: 'bg-blue-100 text-blue-600',
+  High:   'bg-orange-100 text-orange-600',
+  Urgent: 'bg-red-100 text-red-600',
+};
+
+const SEED_TASKS = [
+  {
+    id: 'task-1',
+    title: 'Follow up on pending quote',
+    description: 'Quote has been sitting for 2 weeks — check in with customer.',
+    customerId: null, jobId: null,
+    assignedEmployeeId: 'emp-1', createdByEmployeeId: null,
+    dueDate: '2026-05-20', priority: 'High', status: 'To Do',
+    notes: '', completedAt: null,
+    createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z',
+  },
+  {
+    id: 'task-2',
+    title: 'Book measure for new enquiry',
+    description: 'Customer called requesting a site measure this week.',
+    customerId: null, jobId: null,
+    assignedEmployeeId: 'emp-2', createdByEmployeeId: null,
+    dueDate: '2026-05-12', priority: 'Urgent', status: 'In Progress',
+    notes: '', completedAt: null,
+    createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z',
+  },
+];
+
+export const getTasks             = () => (get('lusso_tasks') || []).filter(t => !t.deletedAt);
+export const getTask              = (id) => (get('lusso_tasks') || []).find(t => t.id === id);
+export const getTasksByEmployee   = (empId) => getTasks().filter(t => t.assignedEmployeeId === empId);
+export const getTasksByJob        = (jobId) => getTasks().filter(t => t.jobId === jobId);
+export const getTasksByCustomer   = (cId) => getTasks().filter(t => t.customerId === cId);
+
+export const saveTask = (task) => {
+  const list = get('lusso_tasks') || [];
+  const now  = new Date().toISOString();
+  const idx  = list.findIndex(t => t.id === task.id);
+  const record = { ...task, updatedAt: now };
+  if (idx >= 0) { list[idx] = record; } else { list.push({ ...record, createdAt: now }); }
+  set('lusso_tasks', list);
+  return record;
+};
+
+export const deleteTask = (id) => {
+  const list = get('lusso_tasks') || [];
+  const idx  = list.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  list[idx] = { ...list[idx], deletedAt: new Date().toISOString() };
+  set('lusso_tasks', list);
+};
+
+export const completeTask = (id) => {
+  const list = get('lusso_tasks') || [];
+  const idx  = list.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  const now  = new Date().toISOString();
+  list[idx]  = { ...list[idx], status: 'Completed', completedAt: now, updatedAt: now };
+  set('lusso_tasks', list);
 };
