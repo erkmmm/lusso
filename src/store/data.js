@@ -418,8 +418,15 @@ const set = (key, value) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
 
+// Standard init: only seeds if key is null/undefined (not empty array)
 const initIfEmpty = (key, seed) => {
   if (!get(key)) set(key, seed);
+};
+
+// Config init: also reseeds if the array is empty (handles Supabase wipe of reference data)
+const initConfigTable = (key, seed) => {
+  const existing = get(key);
+  if (!existing || (Array.isArray(existing) && existing.length === 0)) set(key, seed);
 };
 
 export const initStore = () => {
@@ -432,7 +439,7 @@ export const initStore = () => {
   initIfEmpty('lusso_installers', SEED_INSTALLERS);
   initIfEmpty('lusso_install_requests', SEED_INSTALL_REQUESTS);
   initIfEmpty('lusso_notifications', SEED_NOTIFICATIONS);
-  initIfEmpty('lusso_product_types', SEED_PRODUCT_TYPES);
+  initConfigTable('lusso_product_types', SEED_PRODUCT_TYPES); // reseed if wiped
 
   // Schema v2: new margin-based pricing fields. Force reseed quotes & saved items.
   if (localStorage.getItem('lusso_schema_version') !== '2') {
@@ -804,6 +811,7 @@ export const saveInstallRequest = (req) => {
     list.push({ ...req, createdAt: now, updatedAt: now });
   }
   set('lusso_install_requests', list);
+  db.saveInstallRequest(req);
 };
 
 export const createInstallRequest = (data) => {
@@ -1773,6 +1781,7 @@ export const saveEmployee = (emp) => {
   const record = { ...emp, updatedAt: now };
   if (idx >= 0) { list[idx] = record; } else { list.push({ ...record, createdAt: now }); }
   set('lusso_employees', list);
+  db.saveEmployee(record);
   return record;
 };
 
@@ -1782,6 +1791,7 @@ export const toggleEmployeeActive = (id) => {
   if (idx < 0) return;
   list[idx] = { ...list[idx], isActive: !list[idx].isActive, updatedAt: new Date().toISOString() };
   set('lusso_employees', list);
+  db.saveEmployee(list[idx]);
 };
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
@@ -1840,6 +1850,7 @@ export const saveTask = (task) => {
   const record = { ...task, updatedAt: now };
   if (idx >= 0) { list[idx] = record; } else { list.push({ ...record, createdAt: now }); }
   set('lusso_tasks', list);
+  db.saveTask(record);
   return record;
 };
 
@@ -1849,6 +1860,7 @@ export const deleteTask = (id) => {
   if (idx < 0) return;
   list[idx] = { ...list[idx], deletedAt: new Date().toISOString() };
   set('lusso_tasks', list);
+  db.saveTask(list[idx]);
 };
 
 export const completeTask = (id) => {
@@ -1858,4 +1870,5 @@ export const completeTask = (id) => {
   const now  = new Date().toISOString();
   list[idx]  = { ...list[idx], status: 'Completed', completedAt: now, updatedAt: now };
   set('lusso_tasks', list);
+  db.saveTask(list[idx]);
 };

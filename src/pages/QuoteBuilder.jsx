@@ -9,7 +9,7 @@ import {
   AlertCircle, CheckCircle2, X, Loader2, ExternalLink,
 } from 'lucide-react';
 import {
-  getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob, getStaff,
+  getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob, getActiveEmployees,
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
@@ -372,7 +372,7 @@ export default function QuoteBuilder() {
   const settings      = getQuoteSettings();
   const productTypes  = getActiveProductTypes();
   const customers     = getCustomers();
-  const staff         = getStaff();
+  const staff         = getActiveEmployees();
   const savedItems    = getSavedItems();
   const pricedItems   = getPricedItems().filter(p => p.isActive !== false);
   const templates     = getQuoteTemplates();
@@ -863,7 +863,7 @@ export default function QuoteBuilder() {
                   <select value={form.salesperson} onChange={e => set('salesperson', e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
                     <option value="">Select staff member…</option>
-                    {staff.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    {staff.map(s => <option key={s.id} value={s.fullName}>{s.fullName}</option>)}
                   </select>
                 </div>
                 <div>

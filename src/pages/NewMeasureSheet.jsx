@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer,
-  getCustomers, getJobs, saveCustomer,
+  getCustomers, getJobs,
   createJobFromMeasureSheet, getActiveEmployees, getActiveProductTypes,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS,

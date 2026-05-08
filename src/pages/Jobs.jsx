@@ -4,7 +4,7 @@ import {
   Search, Filter, Plus, Briefcase, SlidersHorizontal, X,
   Trash2, CheckSquare, Square, AlertTriangle,
 } from 'lucide-react';
-import { getJobs, getCustomers, JOB_STATUSES, getStaff, deleteJob, bulkDeleteJobs } from '../store/data';
+import { getJobs, getCustomers, JOB_STATUSES, getActiveEmployees, deleteJob, bulkDeleteJobs } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
 import EmptyState from '../components/EmptyState';
@@ -79,7 +79,7 @@ export default function Jobs() {
 
   const jobs      = getJobs();
   const customers = getCustomers();
-  const staffList = getStaff();
+  const staffList = getActiveEmployees();
 
   const filtered = useMemo(() => {
     return jobs.filter(job => {
@@ -215,7 +215,7 @@ export default function Jobs() {
               <select value={staff} onChange={e => setStaff(e.target.value)}
                 className="border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
                 <option value="">All staff</option>
-                {staffList.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                {staffList.map(s => <option key={s.id} value={s.fullName}>{s.fullName}</option>)}
               </select>
             </div>
             {hasFilters && (

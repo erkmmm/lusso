@@ -47,13 +47,15 @@ const KEYS = {
   measureSheets:        'lusso_measure_sheets',
   quotes:               'lusso_quotes',
   installers:           'lusso_installers',
-  installRequests:      'lusso_install_requests',   // fix: was 'lusso_installations'
+  installRequests:      'lusso_install_requests',
   staff:                'lusso_staff',
   productTypes:         'lusso_product_types',
   pricedItems:          'lusso_priced_items',
   pricedItemBatches:    'lusso_priced_item_batches',
   importBatches:        'lusso_import_batches',
   notifications:        'lusso_notifications',
+  employees:            'lusso_employees',
+  tasks:                'lusso_tasks',
 };
 
 // ── Table manifest (shared by hydrate + push) ────────────────────────
@@ -70,6 +72,8 @@ const TABLES = [
   { table: 'priced_item_batches',    key: KEYS.pricedItemBatches },
   { table: 'contact_import_batches', key: KEYS.importBatches },
   { table: 'notifications',          key: KEYS.notifications },
+  { table: 'employees',              key: KEYS.employees },
+  { table: 'tasks',                  key: KEYS.tasks },
 ];
 
 // ── Hydration ────────────────────────────────────────────────────────
@@ -190,4 +194,15 @@ export const db = {
   // Notifications
   saveNotification:     (r) => upsert('notifications', r),
   deleteNotification:   (id) => remove('notifications', id),
+
+  // Employees
+  saveEmployee:         (r) => upsert('employees', r),
+  deleteEmployee:       (id) => remove('employees', id),
+
+  // Tasks
+  saveTask:             (r) => upsert('tasks', r),
+  deleteTask:           (id) => remove('tasks', id),
+
+  // Install requests
+  saveInstallRequest:   (r) => upsert('installations', r),
 };
