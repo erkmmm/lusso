@@ -6,6 +6,235 @@ import { getMeasureSheet, getCustomer, getJob, getQuotes, deleteMeasureSheet } f
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 
+// ── Print-only installer document ────────────────────────────────────────────
+function PrintView({ sheet, customer, job }) {
+  const fmt = (dateStr) => {
+    try { return format(parseISO(dateStr), 'd MMM yyyy'); } catch { return dateStr || ''; }
+  };
+
+  const ALL_SPECS = [
+    ['Control',        v => v.control],
+    ['Return',         v => v.returnSide],
+    ['Motor Side',     v => v.motorSide],
+    ['Fixing',         v => v.fixing],
+    ['Heading',        v => v.heading],
+    ['Hem',            v => v.hem],
+    ['Track Colour',   v => v.trackBaseBarColour],
+    ['Track Type',     v => v.trackType],
+    ['Base Bar',       v => v.baseBarType],
+    ['Chain',          v => v.chainColour],
+    ['Lining',         v => v.attachedLining ? (v.liningFabricColour ? `Yes — ${v.liningFabricColour}` : 'Yes') : null],
+  ];
+
+  return (
+    <div className="print-only" style={{ fontFamily: 'Arial, sans-serif', color: '#000', background: '#fff', padding: '20px', fontSize: '11px', lineHeight: '1.4' }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #174D4D', paddingBottom: '10px', marginBottom: '12px' }}>
+        <div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#174D4D', letterSpacing: '-0.5px' }}>LUSSO</div>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '1px' }}>Job Management Platform</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#174D4D' }}>MEASURE SHEET</div>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+            {job?.jobNumber && <span style={{ fontWeight: 'bold', marginRight: '10px' }}>Job: {job.jobNumber}</span>}
+            Printed: {format(new Date(), 'd MMM yyyy')}
+          </div>
+          <div style={{ fontSize: '10px', color: job?.status === 'Completed' ? '#16a34a' : '#ca8a04', fontWeight: 'bold', marginTop: '2px' }}>
+            Status: {sheet.status}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Customer + Job details ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+
+        {/* Customer */}
+        <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#174D4D', borderBottom: '1px solid #eee', paddingBottom: '4px', marginBottom: '6px' }}>
+            Customer
+          </div>
+          <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '4px' }}>{customer?.name || '—'}</div>
+          {customer?.company && <div style={{ marginBottom: '2px' }}>{customer.company}</div>}
+          {(customer?.phone || sheet.phone) && (
+            <div style={{ marginBottom: '2px' }}>📞 {customer?.phone || sheet.phone}</div>
+          )}
+          {(customer?.mobile) && (
+            <div style={{ marginBottom: '2px' }}>📱 {customer.mobile}</div>
+          )}
+          {(customer?.email || sheet.email) && (
+            <div style={{ marginBottom: '2px' }}>✉ {customer?.email || sheet.email}</div>
+          )}
+          {(sheet.siteAddress || customer?.address) && (
+            <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #eee' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '10px', color: '#666', marginBottom: '2px' }}>SITE ADDRESS</div>
+              <div>{sheet.siteAddress || customer?.address}</div>
+            </div>
+          )}
+          {sheet.billingAddress && sheet.billingAddress !== sheet.siteAddress && (
+            <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #eee' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '10px', color: '#666', marginBottom: '2px' }}>BILLING ADDRESS</div>
+              <div>{sheet.billingAddress}</div>
+            </div>
+          )}
+          {customer?.preferredContact && (
+            <div style={{ marginTop: '4px', fontSize: '10px', color: '#666' }}>Preferred contact: {customer.preferredContact}</div>
+          )}
+        </div>
+
+        {/* Job & measure info */}
+        <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#174D4D', borderBottom: '1px solid #eee', paddingBottom: '4px', marginBottom: '6px' }}>
+            Job & Measure Details
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <tbody>
+              {job?.jobNumber    && <tr><td style={{ color: '#666', paddingBottom: '3px', width: '45%' }}>Job Number</td><td style={{ fontWeight: 'bold', paddingBottom: '3px' }}>{job.jobNumber}</td></tr>}
+              {sheet.measurer   && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Measurer</td><td style={{ fontWeight: 'bold', paddingBottom: '3px' }}>{sheet.measurer}</td></tr>}
+              {sheet.measureDate && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Measure Date</td><td style={{ fontWeight: 'bold', paddingBottom: '3px' }}>{fmt(sheet.measureDate)}</td></tr>}
+              {sheet.createdAt  && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Sheet Created</td><td style={{ paddingBottom: '3px' }}>{fmt(sheet.createdAt)}</td></tr>}
+              {job?.jobType     && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Job Type</td><td style={{ paddingBottom: '3px' }}>{job.jobType}</td></tr>}
+              {sheet.urgency && sheet.urgency !== 'Normal' && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Urgency</td><td style={{ fontWeight: 'bold', color: '#dc2626', paddingBottom: '3px' }}>{sheet.urgency}</td></tr>}
+              <tr><td style={{ color: '#666' }}>Items</td><td style={{ fontWeight: 'bold' }}>{sheet.lineItems?.length || 0}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Site notes ── */}
+      {(sheet.accessInstructions || sheet.parkingNotes || sheet.siteConditionNotes) && (
+        <div style={{ border: '1px solid #f59e0b', borderRadius: '4px', padding: '10px', marginBottom: '12px', background: '#fffbeb' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#b45309', marginBottom: '6px' }}>
+            ⚠ Site Notes
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+            {sheet.accessInstructions && (
+              <div>
+                <div style={{ fontWeight: 'bold', fontSize: '10px', color: '#666', marginBottom: '2px' }}>ACCESS</div>
+                <div>{sheet.accessInstructions}</div>
+              </div>
+            )}
+            {sheet.parkingNotes && (
+              <div>
+                <div style={{ fontWeight: 'bold', fontSize: '10px', color: '#666', marginBottom: '2px' }}>PARKING</div>
+                <div>{sheet.parkingNotes}</div>
+              </div>
+            )}
+            {sheet.siteConditionNotes && (
+              <div>
+                <div style={{ fontWeight: 'bold', fontSize: '10px', color: '#666', marginBottom: '2px' }}>SITE CONDITION</div>
+                <div>{sheet.siteConditionNotes}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Line items ── */}
+      <div style={{ fontWeight: 'bold', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#174D4D', borderBottom: '2px solid #174D4D', paddingBottom: '4px', marginBottom: '8px' }}>
+        Product / Opening Details ({sheet.lineItems?.length || 0} items)
+      </div>
+
+      {(sheet.lineItems || []).map((item, i) => {
+        const product = item.productNameSnapshot || item.productType || '—';
+        const width   = item.widthMm || item.width;
+        const drop    = item.dropMm  || item.drop;
+        const filledSpecs = ALL_SPECS.map(([label, fn]) => [label, fn(item)]).filter(([, v]) => v);
+
+        return (
+          <div key={item.id || i} style={{ border: '1px solid #ddd', borderRadius: '4px', marginBottom: '8px', breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+            {/* Item header bar */}
+            <div style={{ background: '#f0f9f6', borderBottom: '1px solid #ddd', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ background: '#174D4D', color: '#fff', borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', flexShrink: 0 }}>
+                {i + 1}
+              </span>
+              <span style={{ fontWeight: 'bold', fontSize: '12px' }}>{item.location || 'Location not specified'}</span>
+              <span style={{ color: '#555', marginLeft: '4px' }}>—</span>
+              <span style={{ color: '#174D4D', fontWeight: 'bold', fontSize: '12px' }}>{product}</span>
+              {item.quantity > 1 && <span style={{ marginLeft: 'auto', background: '#174D4D', color: '#fff', borderRadius: '3px', padding: '1px 6px', fontSize: '10px', fontWeight: 'bold' }}>×{item.quantity}</span>}
+            </div>
+
+            <div style={{ padding: '8px 10px' }}>
+              {/* Core dimensions */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: filledSpecs.length > 0 || item.notes ? '8px' : '0', paddingBottom: filledSpecs.length > 0 || item.notes ? '8px' : '0', borderBottom: filledSpecs.length > 0 || item.notes ? '1px dashed #e5e7eb' : 'none' }}>
+                <div>
+                  <div style={{ fontSize: '9px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase' }}>Width</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '13px', fontFamily: 'monospace' }}>{width ? `${width} mm` : '—'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '9px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase' }}>Drop</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '13px', fontFamily: 'monospace' }}>{drop ? `${drop} mm` : '—'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '9px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase' }}>Qty</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{item.quantity || 1}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '9px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase' }}>Fabric / Colour</div>
+                  <div style={{ fontWeight: 'bold' }}>{item.fabricColour || '—'}</div>
+                </div>
+              </div>
+
+              {/* All specifications */}
+              {filledSpecs.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: item.notes ? '6px' : '0' }}>
+                  {filledSpecs.map(([label, val]) => (
+                    <div key={label}>
+                      <div style={{ fontSize: '9px', color: '#666', textTransform: 'uppercase', fontWeight: 'bold' }}>{label}</div>
+                      <div style={{ fontSize: '11px' }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Item notes */}
+              {(item.notes || item.installationNotes) && (
+                <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed #e5e7eb', background: '#fafafa', padding: '4px 6px', borderRadius: '3px' }}>
+                  <span style={{ fontWeight: 'bold', fontSize: '10px', color: '#666' }}>NOTES: </span>
+                  <span>{item.notes || item.installationNotes}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* ── Internal notes ── */}
+      {sheet.internalNotes && (
+        <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '10px', marginTop: '8px' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase', color: '#666', marginBottom: '4px' }}>Internal Notes</div>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{sheet.internalNotes}</div>
+        </div>
+      )}
+
+      {/* ── Customer notes ── */}
+      {sheet.customerNotes && (
+        <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '10px', marginTop: '8px' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '10px', textTransform: 'uppercase', color: '#666', marginBottom: '4px' }}>Customer Notes</div>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{sheet.customerNotes}</div>
+        </div>
+      )}
+
+      {/* ── Installer sign-off ── */}
+      <div style={{ marginTop: '16px', borderTop: '1px solid #ddd', paddingTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+        {['Installer Name', 'Date', 'Signature'].map(label => (
+          <div key={label}>
+            <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px' }}>{label}</div>
+            <div style={{ borderBottom: '1px solid #999', height: '24px' }} />
+          </div>
+        ))}
+      </div>
+
+      {/* ── Footer ── */}
+      <div style={{ marginTop: '10px', textAlign: 'center', fontSize: '9px', color: '#999', borderTop: '1px solid #eee', paddingTop: '6px' }}>
+        Lusso Job Management · Measure Sheet · Printed {format(new Date(), 'd MMM yyyy h:mm a')}
+        {job?.jobNumber ? ` · ${job.jobNumber}` : ''} · {customer?.name || ''}
+      </div>
+    </div>
+  );
+}
+
 export default function MeasureSheetView() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -34,6 +263,13 @@ export default function MeasureSheetView() {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
+
+      {/* Print-only installer document — hidden on screen, shown on print */}
+      <PrintView sheet={sheet} customer={customer} job={job} />
+
+      {/* Screen-only content — hidden on print */}
+      <div className="screen-only">
+
       {/* Back */}
       <button onClick={() => navigate('/measure-sheets')} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
         <ArrowLeft size={15} /> Back to Measure Sheets
@@ -225,6 +461,8 @@ export default function MeasureSheetView() {
           )}
         </div>
       </div>
+
+      </div>{/* end screen-only */}
 
       {/* Delete confirmation modal */}
       {showDelete && (

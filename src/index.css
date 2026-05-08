@@ -67,35 +67,30 @@
    Triggered by window.print() on the Measure Sheet view page.
    Hides UI chrome and renders clean black-on-white output.
 ────────────────────────────────────────────────────────────────────── */
+/* print-only elements hidden on screen */
+.print-only { display: none; }
+
 @media print {
-  /* Hide navigation, header and action buttons */
+  /* Show print template, hide everything else */
+  .print-only  { display: block !important; }
+  .screen-only { display: none !important; }
+
+  /* Hide all UI chrome */
   aside, header, .no-print { display: none !important; }
 
-  /* Full-width content, no overflow clipping */
-  body, html { background: #ffffff !important; color: #0f172a !important; }
-  main { overflow: visible !important; padding-bottom: 0 !important; }
-  .pb-24 { padding-bottom: 0 !important; }
+  /* Full-width, no clipping */
+  body, html { background: #ffffff !important; color: #000 !important; margin: 0; padding: 0; }
+  main        { overflow: visible !important; padding: 0 !important; }
+  #root       { overflow: visible !important; }
 
-  /* Reset dark mode colours for print */
-  .dark .bg-white,
-  .dark .bg-slate-50,
-  .dark .bg-slate-100  { background-color: #ffffff !important; }
-  .dark .text-slate-900,
-  .dark .text-slate-800,
-  .dark .text-slate-700 { color: #0f172a !important; }
-  .dark .text-slate-600,
-  .dark .text-slate-500 { color: #475569 !important; }
-  .dark .border-slate-200,
-  .dark .border-slate-100 { border-color: #e2e8f0 !important; }
+  /* Page setup — A4, no extra margins */
+  @page { margin: 10mm; size: A4; }
 
-  /* Remove shadows for print */
-  * { box-shadow: none !important; }
+  /* Preserve colours in print */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 
-  /* Ensure cards have borders */
-  .rounded-xl, .rounded-2xl { border: 1px solid #e2e8f0 !important; }
-
-  /* Break pages sensibly */
-  .space-y-6 > * { break-inside: avoid; }
+  /* Keep items together — prevent line items splitting across pages */
+  .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
 }
 
 /* ── Dark Mode ────────────────────────────────────────────────────────
