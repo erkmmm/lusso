@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import {
   Settings2, Plus, ChevronUp, ChevronDown, Edit3, Save, X,
   ToggleLeft, ToggleRight, Tag, Upload, Users, Library, History,
-  ArrowRight, FileText,
+  ArrowRight, FileText, Cloud, CloudUpload, RefreshCw, CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   getProductTypes, saveProductType, addProductType, reorderProductType,
   getImportBatches, getPricedItemBatches,
 } from '../store/data';
+import { pushAllToSupabase, hydrateFromSupabase } from '../store/db';
 import Card from '../components/Card';
 
 export default function Settings() {
@@ -18,6 +20,7 @@ export default function Settings() {
   const [newName, setNewName]           = useState('');
   const [editingId, setEditingId]       = useState(null);
   const [editName, setEditName]         = useState('');
+  const [syncStatus, setSyncStatus]     = useState(null); // null | 'pushing' | 'pulling' | {ok,msg} | {err,msg}
 
   const refresh = () => setProductTypes(getProductTypes());
 
@@ -51,6 +54,24 @@ export default function Settings() {
   // sorted is maintained by getProductTypes (sorts by sortOrder)
   const sorted = productTypes; // already sorted
 
+  const handlePush = async () => {
+    setSyncStatus('pushing');
+    const { pushed, errors } = await pushAllToSupabase();
+    if (errors.length > 0) {
+      setSyncStatus({ err: true, msg: `${pushed} records pushed. ${errors.length} error(s): ${errors[0]}` });
+    } else {
+      setSyncStatus({ ok: true, msg: `${pushed} records pushed to cloud successfully.` });
+    }
+    setTimeout(() => setSyncStatus(null), 5000);
+  };
+
+  const handlePull = async () => {
+    setSyncStatus('pulling');
+    await hydrateFromSupabase();
+    setSyncStatus({ ok: true, msg: 'Data pulled from cloud. Refresh the page to see updates.' });
+    setTimeout(() => setSyncStatus(null), 5000);
+  };
+
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-6">
       {/* Header */}
@@ -60,6 +81,68 @@ export default function Settings() {
         </h1>
         <p className="text-slate-500 text-sm mt-0.5">Platform configuration and admin controls</p>
       </div>
+
+      {/* Cloud Sync Card */}
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+            <Cloud size={14} className="text-amber-500" /> Cloud Sync
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Keep all your devices in sync. Data automatically syncs on every change — use these controls if you need to force a full sync.
+          </p>
+        </div>
+
+        <div className="divide-y divide-slate-50">
+          {/* Push */}
+          <button
+            onClick={handlePush}
+            disabled={syncStatus === 'pushing' || syncStatus === 'pulling'}
+            className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors text-left group disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center flex-shrink-0">
+              <CloudUpload size={18} className="text-teal-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm text-slate-800">Push to Cloud</p>
+              <p className="text-xs text-slate-500 mt-0.5">Upload all data from this device to the cloud. Use this on the device that has your latest data.</p>
+            </div>
+            {syncStatus === 'pushing'
+              ? <RefreshCw size={16} className="text-slate-400 animate-spin flex-shrink-0" />
+              : <ArrowRight size={16} className="text-slate-300 group-hover:text-teal-500 transition-colors flex-shrink-0" />}
+          </button>
+
+          {/* Pull */}
+          <button
+            onClick={handlePull}
+            disabled={syncStatus === 'pushing' || syncStatus === 'pulling'}
+            className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors text-left group disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+              <RefreshCw size={18} className="text-blue-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm text-slate-800">Pull from Cloud</p>
+              <p className="text-xs text-slate-500 mt-0.5">Replace this device's data with whatever is in the cloud. Use this on a device that has outdated data.</p>
+            </div>
+            {syncStatus === 'pulling'
+              ? <RefreshCw size={16} className="text-slate-400 animate-spin flex-shrink-0" />
+              : <ArrowRight size={16} className="text-slate-300 group-hover:text-blue-500 transition-colors flex-shrink-0" />}
+          </button>
+        </div>
+
+        {/* Status message */}
+        {syncStatus && typeof syncStatus === 'object' && (
+          <div className={`mx-5 mb-4 flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs ${
+            syncStatus.ok ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'
+          }`}>
+            {syncStatus.ok
+              ? <CheckCircle2 size={13} className="flex-shrink-0 mt-0.5" />
+              : <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />}
+            {syncStatus.msg}
+          </div>
+        )}
+      </Card>
 
       {/* Price Library Card */}
       <Card>

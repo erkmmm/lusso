@@ -47,7 +47,7 @@ const KEYS = {
   measureSheets:        'lusso_measure_sheets',
   quotes:               'lusso_quotes',
   installers:           'lusso_installers',
-  installations:        'lusso_installations',
+  installRequests:      'lusso_install_requests',   // fix: was 'lusso_installations'
   staff:                'lusso_staff',
   productTypes:         'lusso_product_types',
   pricedItems:          'lusso_priced_items',
@@ -56,38 +56,75 @@ const KEYS = {
   notifications:        'lusso_notifications',
 };
 
+// ── Table manifest (shared by hydrate + push) ────────────────────────
+const TABLES = [
+  { table: 'customers',              key: KEYS.customers },
+  { table: 'jobs',                   key: KEYS.jobs },
+  { table: 'measure_sheets',         key: KEYS.measureSheets },
+  { table: 'quotes',                 key: KEYS.quotes },
+  { table: 'installers',             key: KEYS.installers },
+  { table: 'installations',          key: KEYS.installRequests },
+  { table: 'staff',                  key: KEYS.staff },
+  { table: 'product_types',          key: KEYS.productTypes },
+  { table: 'priced_items',           key: KEYS.pricedItems },
+  { table: 'priced_item_batches',    key: KEYS.pricedItemBatches },
+  { table: 'contact_import_batches', key: KEYS.importBatches },
+  { table: 'notifications',          key: KEYS.notifications },
+];
+
 // ── Hydration ────────────────────────────────────────────────────────
 /**
- * Pull all data from Supabase into localStorage.
- * Called once on app mount. Merges — Supabase wins on conflict.
+ * Pull ALL data from Supabase into localStorage.
+ * Supabase always wins — overwrites local data completely.
+ * Returns { hadCloudData: bool }
  */
 export async function hydrateFromSupabase() {
-  if (!supabase) return;
+  if (!supabase) return { hadCloudData: false };
 
-  const tables = [
-    { table: 'customers',              key: KEYS.customers },
-    { table: 'jobs',                   key: KEYS.jobs },
-    { table: 'measure_sheets',         key: KEYS.measureSheets },
-    { table: 'quotes',                 key: KEYS.quotes },
-    { table: 'installers',             key: KEYS.installers },
-    { table: 'installations',          key: KEYS.installations },
-    { table: 'staff',                  key: KEYS.staff },
-    { table: 'product_types',          key: KEYS.productTypes },
-    { table: 'priced_items',           key: KEYS.pricedItems },
-    { table: 'priced_item_batches',    key: KEYS.pricedItemBatches },
-    { table: 'contact_import_batches', key: KEYS.importBatches },
-    { table: 'notifications',          key: KEYS.notifications },
-  ];
+  let hadCloudData = false;
 
   await Promise.all(
-    tables.map(async ({ table, key }) => {
+    TABLES.map(async ({ table, key }) => {
       const { data, error } = await supabase.from(table).select('*').order('created_at', { ascending: true });
       if (error) { console.warn(`[db] hydrate ${table}:`, error.message); return; }
-      if (data && data.length > 0) {
-        LS.set(key, fromDbAll(data));
-      }
+      // Always overwrite localStorage — even with an empty array.
+      // This ensures deleted records on one device disappear on all devices.
+      const rows = fromDbAll(data || []);
+      LS.set(key, rows);
+      if (rows.length > 0) hadCloudData = true;
     })
   );
+
+  return { hadCloudData };
+}
+
+// ── Push all local data up to Supabase ───────────────────────────────
+/**
+ * Upload everything currently in localStorage to Supabase.
+ * Use this once from the device that has the "good" data.
+ * Returns { pushed: number, errors: string[] }
+ */
+export async function pushAllToSupabase() {
+  if (!supabase) return { pushed: 0, errors: ['No Supabase connection'] };
+
+  let pushed = 0;
+  const errors = [];
+
+  for (const { table, key } of TABLES) {
+    const records = LS.get(key);
+    if (!records || records.length === 0) continue;
+    const { error } = await supabase
+      .from(table)
+      .upsert(records.map(toDb), { onConflict: 'id' });
+    if (error) {
+      console.warn(`[db] push ${table}:`, error.message);
+      errors.push(`${table}: ${error.message}`);
+    } else {
+      pushed += records.length;
+    }
+  }
+
+  return { pushed, errors };
 }
 
 // ── Generic upsert / delete ──────────────────────────────────────────
@@ -127,9 +164,9 @@ export const db = {
   saveInstaller:      (r) => upsert('installers', r),
   deleteInstaller:    (id) => remove('installers', id),
 
-  // Installations (calendar)
-  saveInstallation:   (r) => upsert('installations', r),
-  deleteInstallation: (id) => remove('installations', id),
+  // Install requests (calendar)
+  saveInstallRequest:   (r) => upsert('installations', r),
+  deleteInstallRequest: (id) => remove('installations', id),
 
   // Staff
   saveStaff:          (r) => upsert('staff', r),

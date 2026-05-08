@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { initStore } from './store/data';
 import { hydrateFromSupabase } from './store/db';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -30,17 +30,26 @@ import PricedItems from './pages/PricedItems';
 
 function AppRoutes() {
   const { user } = useAuth();
+  const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
     initStore();
-    if (user) hydrateFromSupabase();
+    if (user) {
+      setHydrating(true);
+      hydrateFromSupabase().finally(() => setHydrating(false));
+    }
   }, [user]);
 
-  // Still loading session
-  if (user === undefined) {
+  // Still loading auth session OR syncing from cloud
+  if (user === undefined || hydrating) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F7F8F6]">
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 animate-pulse" />
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[#0F3535]">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center animate-pulse">
+          <span className="text-white font-bold text-lg">L</span>
+        </div>
+        {hydrating && (
+          <p className="text-teal-300 text-sm font-medium animate-pulse">Syncing from cloud…</p>
+        )}
       </div>
     );
   }
