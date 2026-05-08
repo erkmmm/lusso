@@ -64,11 +64,16 @@ const KEYS = {
 const EXCLUDE_COLUMNS = {
   // customers DB uses a single 'name' field; app may store first_name/last_name separately
   customers: ['first_name', 'last_name'],
+  // quotes — app has extra fields not in the DB schema
+  quotes: [
+    'version', 'measure_sheet_id', 'site_address', 'terms_and_conditions',
+    'internal_notes', 'follow_up_date', 'show_sizes_to_client',
+    'viewed_at', 'declined_at', 'accepted_by', 'activity',
+  ],
 };
 
-// ── Tables skipped during push (schema not yet aligned) ──────────────
-// All tables are now schema-aligned after the 2026-05-08 migration.
-const SKIP_PUSH_TABLES = new Set();
+// ── Tables skipped during push (DB table doesn't exist yet) ──────────
+const SKIP_PUSH_TABLES = new Set(['employees', 'tasks']);
 
 // ── Table manifest (shared by hydrate + push) ────────────────────────
 const TABLES = [
