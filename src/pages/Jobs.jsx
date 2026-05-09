@@ -4,7 +4,8 @@ import {
   Search, Filter, Plus, Briefcase, SlidersHorizontal, X,
   Trash2, CheckSquare, Square, AlertTriangle,
 } from 'lucide-react';
-import { getJobs, getCustomers, JOB_STATUSES, getActiveEmployees, deleteJob, bulkDeleteJobs } from '../store/data';
+import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, getActiveEmployees, deleteJob, bulkDeleteJobs } from '../store/data';
+import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
 import EmptyState from '../components/EmptyState';
@@ -77,7 +78,8 @@ export default function Jobs() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [toast, setToast]           = useState(null);
 
-  const jobs      = getJobs();
+  const { isAM = true, displayName = '' } = useProfile() || {};
+  const jobs      = getJobsFiltered(isAM, displayName);
   const customers = getCustomers();
   const staffList = getActiveEmployees();
 

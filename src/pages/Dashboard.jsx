@@ -13,9 +13,11 @@ import {
   SlidersHorizontal, Eye, EyeOff, MapPin,
 } from 'lucide-react';
 import {
-  getJobs, getCustomers, getActivity, getQuotes, computeQuoteTotals,
+  getJobs, getJobsFiltered, getCustomers, getCustomersFiltered,
+  getActivity, getQuotes, getQuotesFiltered, computeQuoteTotals,
   getInstallRequests, getInstaller, getCustomer,
 } from '../store/data';
+import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
 
@@ -491,10 +493,11 @@ function StalledJobs({ jobs, customers, navigate }) {
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const navigate  = useNavigate();
-  const jobs      = getJobs();
-  const customers = getCustomers();
+  const { isAM = true, displayName = '', isSP } = useProfile() || {};
+  const jobs      = getJobsFiltered(isAM, displayName);
+  const customers = getCustomersFiltered(isAM, displayName);
   const activity  = getActivity();
-  const quotes    = getQuotes();
+  const quotes    = getQuotesFiltered(isAM, displayName);
 
   const [globalRange, setGlobalRange] = useState('thisfy');
   const [prefs, setPrefs]             = useState(loadPrefs);
@@ -584,7 +587,16 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Welcome back — here's your business at a glance.</p>
+          {isSP ? (
+            <p className="text-slate-500 text-sm mt-0.5">Welcome back, {displayName} — your personal pipeline.</p>
+          ) : (
+            <p className="text-slate-500 text-sm mt-0.5">Welcome back — here's your business at a glance.</p>
+          )}
+          {isAM && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-0.5 mt-1">
+              Full team view
+            </span>
+          )}
         </div>
         {/* Customise button */}
         <div className="relative" ref={customiseRef}>

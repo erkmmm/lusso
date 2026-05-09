@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, FileText, Search, X, Eye, Edit3, Copy, Send, CheckCircle2, XCircle, MoreHorizontal, TrendingUp, Clock, DollarSign, ChevronRight, AlertCircle } from 'lucide-react';
 import { format, parseISO, isPast } from 'date-fns';
 import {
-  getQuotes, getCustomers, QUOTE_STATUSES, QUOTE_STATUS_COLORS,
+  getQuotes, getQuotesFiltered, getCustomers, QUOTE_STATUSES, QUOTE_STATUS_COLORS,
   computeQuoteTotals, sendQuote, duplicateQuote, deleteQuote,
 } from '../store/data';
+import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
 
@@ -18,10 +19,11 @@ export default function Quotes() {
   const [search, setSearch]           = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [openMenuId, setOpenMenuId]   = useState(null);
-  const [quotes, setQuotes]           = useState(getQuotes);
+  const { isAM = true, displayName = '' } = useProfile() || {};
+  const [quotes, setQuotes]           = useState(() => getQuotesFiltered(isAM, displayName));
   const customers                     = getCustomers();
 
-  const refresh = () => setQuotes(getQuotes());
+  const refresh = () => setQuotes(getQuotesFiltered(isAM, displayName));
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase();

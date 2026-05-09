@@ -4,6 +4,8 @@ import { initStore } from './store/data';
 import { hydrateFromSupabase } from './store/db';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { UserProfileProvider } from './contexts/UserProfileContext';
+import Users from './pages/Users';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -102,6 +104,7 @@ function AppRoutes() {
               <Route path="/quotes/:id/edit"            element={<QuoteBuilder />} />
               <Route path="/employees"                  element={<Employees />} />
               <Route path="/employees/:id"              element={<EmployeeProfile />} />
+              <Route path="/users"                      element={<Users />} />
               <Route path="*"                           element={<Dashboard />} />
             </Routes>
           </Layout>
@@ -115,7 +118,9 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
-          <AppRoutes />
+          <UserProfileProvider>
+            <AppRoutes />
+          </UserProfileProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>

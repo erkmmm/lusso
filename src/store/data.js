@@ -602,6 +602,12 @@ export const updateJobStatus = (jobId, newStatus, user = 'System') => {
 
 export const getMeasureSheets = () => (get('lusso_measure_sheets') || []).filter(ms => !ms.deletedAt);
 
+// ── Role-filtered getters ──────────────────────────────────────────────────────
+export const getJobsFiltered          = (isAM, name) => getJobs().filter(j => isAM || j.assignedStaff === name);
+export const getCustomersFiltered     = (isAM, name) => getCustomers().filter(c => isAM || !c.assignedTo || c.assignedTo === name);
+export const getQuotesFiltered        = (isAM, name) => (getQuotes() || []).filter(q => !q.deletedAt && (isAM || q.salesperson === name));
+export const getMeasureSheetsFiltered = (isAM, name) => getMeasureSheets().filter(ms => isAM || ms.measurer === name);
+
 export const getMeasureSheet = (id) => (get('lusso_measure_sheets') || []).find(ms => ms.id === id);
 
 export const getMeasureSheetByJob        = (jobId) => getMeasureSheets().find(ms => ms.jobId === jobId);

@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import {
-  getMeasureSheets, getCustomers, getJobs, getQuotes,
+  getMeasureSheets, getMeasureSheetsFiltered, getCustomers, getJobs, getQuotes,
   deleteMeasureSheet, bulkDeleteMeasureSheets,
 } from '../store/data';
+import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
 
@@ -81,7 +82,8 @@ export default function MeasureSheets() {
 
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()); };
 
-  const sheets    = getMeasureSheets();
+  const { isAM = true, displayName = '' } = useProfile() || {};
+  const sheets    = getMeasureSheetsFiltered(isAM, displayName);
   const customers = getCustomers();
   const jobs      = getJobs();
   const quotes    = getQuotes();

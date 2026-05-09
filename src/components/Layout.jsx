@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Briefcase, Users, ClipboardList,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
-  ChevronDown, Home, UserCog,
+  ChevronDown, Home, UserCog, Users2,
 } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
@@ -12,6 +12,7 @@ import {
   getActiveEmployees,
 } from '../store/data';
 import { useAuth } from '../contexts/AuthContext';
+import { useProfile } from '../contexts/UserProfileContext';
 import { LogOut } from 'lucide-react';
 import { formatDistanceToNow, parseISO, isSameDay } from 'date-fns';
 
@@ -38,6 +39,7 @@ const NAV_SECTIONS = [
     label: 'TEAM',
     items: [
       { to: '/employees', label: 'Employees', icon: UserCog, countKey: 'employees' },
+      { to: '/users',     label: 'Users',     icon: Users2,  amOnly: true },
     ],
   },
   {
@@ -119,6 +121,7 @@ export default function Layout({ children }) {
   const sideNewRef = useRef(null); // wraps sidebar + New section
   const navigate  = useNavigate();
   const { user, signOut } = useAuth();
+  const { isAM, displayName, profile } = useProfile() || {};
 
   const unread = notifications.filter(n => !n.isRead).length;
 
@@ -226,7 +229,8 @@ export default function Layout({ children }) {
                 {section.label}
               </p>
               <div className="space-y-0.5">
-                {section.items.map(({ to, label, icon: Icon, exact, countKey }) => {
+                {section.items.map(({ to, label, icon: Icon, exact, countKey, amOnly }) => {
+                  if (amOnly && !isAM) return null;
                   const count = countKey ? counts[countKey] : null;
                   return (
                     <NavLink
@@ -261,11 +265,21 @@ export default function Layout({ children }) {
         <div className="px-4 py-4 border-t border-sidebar-border">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-              {user?.email?.[0]?.toUpperCase() || 'A'}
+              {(displayName || user?.email || 'A')[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-white text-sm font-medium leading-tight truncate">{user?.email || 'Admin'}</div>
-              <div className="text-sidebar-text text-xs">Lusso</div>
+              <div className="text-white text-sm font-medium leading-tight truncate">
+                {displayName || user?.email || 'User'}
+              </div>
+              {isAM ? (
+                <span className="inline-flex items-center text-[10px] font-medium bg-amber-500/20 text-amber-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                  Account Manager
+                </span>
+              ) : (
+                <span className="inline-flex items-center text-[10px] font-medium bg-slate-500/20 text-slate-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                  Salesperson
+                </span>
+              )}
             </div>
             <button onClick={signOut} title="Sign out"
               className="text-sidebar-text hover:text-white p-1 rounded transition-colors flex-shrink-0">

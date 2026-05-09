@@ -5,7 +5,8 @@ import {
   Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { getCustomers, getJobsByCustomer, saveCustomer, deleteCustomer, bulkDeleteCustomers } from '../store/data';
+import { getCustomers, getCustomersFiltered, getJobsByCustomer, saveCustomer, deleteCustomer, bulkDeleteCustomers } from '../store/data';
+import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -84,7 +85,8 @@ export default function Customers() {
   const [addErrors, setAddErrors]   = useState({});
   const [, forceUpdate]             = useState(0);
 
-  const customers = getCustomers();
+  const { isAM = true, displayName = '' } = useProfile() || {};
+  const customers = getCustomersFiltered(isAM, displayName);
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
@@ -102,7 +104,7 @@ export default function Customers() {
     if (!newCustomer.phone.trim() && !newCustomer.email.trim()) e.phone = 'Phone or email required';
     setAddErrors(e);
     if (Object.keys(e).length > 0) return;
-    saveCustomer({ ...newCustomer, id: uuidv4(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    saveCustomer({ ...newCustomer, id: uuidv4(), assignedTo: displayName, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     setShowAdd(false);
     setNewCustomer(EMPTY_CUSTOMER());
     setAddErrors({});
