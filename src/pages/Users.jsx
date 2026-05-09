@@ -79,7 +79,7 @@ function AddUserModal({ onSave, onCancel }) {
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
           <Info size={15} className="text-blue-500 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-blue-700">
-            New users should use <strong>Forgot Password</strong> on the login page to set their password.
+            New team members should use the <strong>Create account</strong> tab on the login page to sign up with their work email and a password. Come back here to assign their role once they've signed up.
           </p>
         </div>
 
@@ -304,7 +304,7 @@ export default function Users() {
         <Info size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
         <p className="text-sm text-blue-700">
           New users should use <strong>Forgot Password</strong> on the login page to set their password.
-          They will receive a reset link to the email address listed here.
+          Once signed up, search for their name here and assign their role.
         </p>
       </div>
 
