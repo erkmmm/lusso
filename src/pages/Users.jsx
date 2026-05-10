@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users2, Plus, Info, X, Shield, UserCheck, UserX, Edit2 } from 'lucide-react';
+import { Users2, Plus, Info, X, Shield, UserCheck, UserX, Edit2, RefreshCw } from 'lucide-react';
 import {
-  getProfiles, createProfile, saveProfile, deactivateProfile, reactivateProfile,
+  getProfiles, saveProfile, deactivateProfile, reactivateProfile,
+  fetchProfilesFromSupabase, createProfileInSupabase, updateProfileInSupabase,
 } from '../store/profiles';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
@@ -49,11 +50,11 @@ function AddUserModal({ onSave, onCancel }) {
     return e;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const e2 = validate();
     if (Object.keys(e2).length > 0) { setErrors(e2); return; }
-    const profile = createProfile({
+    const { profile } = await createProfileInSupabase({
       email: form.email.trim().toLowerCase(),
       displayName: form.displayName.trim(),
       role: form.role,
@@ -141,10 +142,11 @@ function AddUserModal({ onSave, onCancel }) {
 function EditRoleModal({ profile, onSave, onCancel }) {
   const [role, setRole] = useState(profile.role);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const updated = saveProfile({ ...profile, role });
-    onSave(updated);
+    const updated = await updateProfileInSupabase(profile.id, { role });
+    saveProfile({ ...profile, role }); // localStorage cache
+    onSave(updated || { ...profile, role });
   };
 
   return (
@@ -240,38 +242,49 @@ function UserCard({ profile, onDeactivate, onReactivate, onEditRole }) {
 
 // ── Users Page ─────────────────────────────────────────────────────────────────
 export default function Users() {
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
   const { profile, isAM } = useProfile() || {};
-  const [profiles, setProfiles] = useState(() => getProfiles());
-  const [showAdd, setShowAdd] = useState(false);
+  const [profiles, setProfiles]           = useState(() => getProfiles());
+  const [loading, setLoading]             = useState(true);
+  const [showAdd, setShowAdd]             = useState(false);
   const [editingProfile, setEditingProfile] = useState(null);
 
   useEffect(() => {
     if (profile && !isAM) navigate('/');
   }, [profile, isAM, navigate]);
 
-  const refresh = () => setProfiles(getProfiles());
+  // Load from Supabase on mount
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const data = await fetchProfilesFromSupabase();
+    setProfiles(data);
+    setLoading(false);
+  }, []);
 
-  const handleAdd = (newProfile) => {
+  useEffect(() => { if (isAM) refresh(); }, [isAM, refresh]);
+
+  const handleAdd = async (newProfile) => {
     setShowAdd(false);
-    refresh();
+    await refresh();
   };
 
   const handleEditRole = (p) => setEditingProfile(p);
 
-  const handleRoleSaved = () => {
+  const handleRoleSaved = async () => {
     setEditingProfile(null);
-    refresh();
+    await refresh();
   };
 
-  const handleDeactivate = (id) => {
-    deactivateProfile(id);
-    refresh();
+  const handleDeactivate = async (id) => {
+    await updateProfileInSupabase(id, { active: false });
+    deactivateProfile(id); // localStorage
+    await refresh();
   };
 
-  const handleReactivate = (id) => {
-    reactivateProfile(id);
-    refresh();
+  const handleReactivate = async (id) => {
+    await updateProfileInSupabase(id, { active: true });
+    reactivateProfile(id); // localStorage
+    await refresh();
   };
 
   const activeProfiles   = profiles.filter(p => p.active);
@@ -303,8 +316,8 @@ export default function Users() {
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
         <Info size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
         <p className="text-sm text-blue-700">
-          New users should use <strong>Forgot Password</strong> on the login page to set their password.
-          Once signed up, search for their name here and assign their role.
+          New team members should use the <strong>Create account</strong> tab on the login page to sign up.
+          Their profile will automatically appear here once they do — then assign their role below.
         </p>
       </div>
 
