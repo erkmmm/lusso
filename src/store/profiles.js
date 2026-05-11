@@ -280,6 +280,35 @@ export async function reactivateUser(targetUserId) {
   set(list);
 }
 
+/**
+ * Synchronous count of employees from the localStorage profiles cache.
+ * Used by the sidebar badge — avoids an async call on every 2 s interval.
+ * Only counts is_employee=true AND status in active/suspended (not pending).
+ */
+export function getEmployeeCountSync() {
+  return get().filter(
+    p => p.isEmployee === true && (p.status === 'active' || p.status === 'suspended')
+  ).length;
+}
+
+/** Fetch a single employee profile from Supabase by UUID. */
+export async function getEmployeeByIdFromSupabase(id) {
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', id)
+      .eq('is_employee', true)
+      .in('status', ['active', 'suspended'])
+      .single();
+    if (!error && data) return fromSupabaseRow(data);
+  }
+  // Fallback to localStorage cache
+  return get().find(
+    p => p.id === id && p.isEmployee && (p.status === 'active' || p.status === 'suspended')
+  ) || null;
+}
+
 // ── Legacy sync helpers (kept for backward compat) ─────────────────────────────
 export function createProfile({ email, displayName, role = 'salesperson' }) {
   const p = { id: uuidv4(), email, displayName, role, active: true, createdAt: new Date().toISOString() };

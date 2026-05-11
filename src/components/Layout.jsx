@@ -9,8 +9,8 @@ import {
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
   getCustomers, getJobs, getMeasureSheets, getQuotes, getInstallRequests,
-  getActiveEmployees,
 } from '../store/data';
+import { getEmployeeCountSync } from '../store/profiles';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfile } from '../contexts/UserProfileContext';
 import { LogOut } from 'lucide-react';
@@ -92,7 +92,7 @@ function computeCounts() {
     jobs:         getJobs().length,
     measures:     getMeasureSheets().length,
     quotes:       getQuotes().length,
-    employees:    getActiveEmployees().length,
+    employees:    getEmployeeCountSync(),
     todayInstalls: getInstallRequests().filter(
       r => r.proposedDate && isSameDay(parseISO(r.proposedDate), today)
     ).length,
