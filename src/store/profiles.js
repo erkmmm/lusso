@@ -42,18 +42,23 @@ function toSupabaseRow(profile) {
 
 function fromSupabaseRow(row) {
   return {
-    id:            row.id,
-    email:         row.email,
-    displayName:   row.display_name || '',
-    role:          row.role,
-    status:        row.status,
-    isEmployee:    row.is_employee ?? false,
-    phone:         row.phone || '',
-    positionTitle: row.position_title || '',
-    approvedAt:    row.approved_at,
-    approvedBy:    row.approved_by,
-    createdAt:     row.created_at,
-    updatedAt:     row.updated_at,
+    id:                       row.id,
+    email:                    row.email,
+    displayName:              row.display_name || '',
+    role:                     row.role,
+    status:                   row.status,
+    isEmployee:               row.is_employee ?? false,
+    phone:                    row.phone || '',
+    positionTitle:            row.position_title || '',
+    address:                  row.address || '',
+    emergencyContactName:     row.emergency_contact_name || '',
+    emergencyContactPhone:    row.emergency_contact_phone || '',
+    profilePhotoUrl:          row.profile_photo_url || '',
+    employeeProfileCompleted: row.employee_profile_completed ?? false,
+    approvedAt:               row.approved_at,
+    approvedBy:               row.approved_by,
+    createdAt:                row.created_at,
+    updatedAt:                row.updated_at,
   };
 }
 
