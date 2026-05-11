@@ -32,9 +32,12 @@ import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
 import Employees from './pages/Employees';
 import EmployeeProfile from './pages/EmployeeProfile';
+import PendingApproval from './pages/PendingApproval';
+import { useProfile } from './contexts/UserProfileContext';
 
 function AppRoutes() {
   const { user } = useAuth();
+  const { profile } = useProfile() || {};
   const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
@@ -68,6 +71,17 @@ function AppRoutes() {
         <Route path="/forgot-password"          element={<ForgotPassword />} />
         <Route path="/reset-password"           element={<ResetPassword />} />
         <Route path="*"                         element={<Login />} />
+      </Routes>
+    );
+  }
+
+  // Pending user — show waiting screen regardless of route
+  if (profile?.role === 'pending' || profile?.status === 'pending') {
+    return (
+      <Routes>
+        <Route path="/install-response/:token" element={<InstallResponse />} />
+        <Route path="/quotes/:id/preview"      element={<CustomerQuotePage />} />
+        <Route path="*"                        element={<PendingApproval />} />
       </Routes>
     );
   }

@@ -97,12 +97,13 @@ export function UserProfileProvider({ children }) {
     setProfile(updated);
   };
 
-  const isAM = profile?.role === 'account_manager';
-  const isSP = profile?.role === 'salesperson';
+  const isAM      = profile?.role === 'account_manager' && profile?.status === 'active';
+  const isSP      = profile?.role === 'salesperson'     && profile?.status === 'active';
+  const isPending = profile?.role === 'pending'         || profile?.status === 'pending';
   const displayName = profile?.displayName || '';
 
   return (
-    <ProfileCtx.Provider value={{ profile, isAM, isSP, displayName, refreshProfile, updateProfile, toSupabase }}>
+    <ProfileCtx.Provider value={{ profile, isAM, isSP, isPending, displayName, refreshProfile, updateProfile, toSupabase }}>
       {children}
     </ProfileCtx.Provider>
   );

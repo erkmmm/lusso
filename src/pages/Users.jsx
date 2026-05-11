@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users2, Plus, Info, X, Shield, UserCheck, UserX, Edit2, RefreshCw } from 'lucide-react';
+import { Users2, Plus, Info, X, Shield, UserCheck, UserX, Edit2, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
   getProfiles, saveProfile, deactivateProfile, reactivateProfile,
   fetchProfilesFromSupabase, createProfileInSupabase, updateProfileInSupabase,
+  approveUser, suspendUser, reactivateUser,
 } from '../store/profiles';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
@@ -138,6 +139,78 @@ function AddUserModal({ onSave, onCancel }) {
   );
 }
 
+// ── Approve Modal ─────────────────────────────────────────────────────────────
+function ApproveModal({ profile, onSave, onCancel }) {
+  const [role, setRole]       = useState('salesperson');
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      await approveUser(profile.id, role);
+      onSave();
+    } catch (err) {
+      setError(err.message || 'Failed to approve user.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">Approve User</h2>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 p-1 rounded">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <p className="text-sm font-medium text-amber-800">{profile.displayName || profile.email}</p>
+          <p className="text-xs text-amber-600">{profile.email}</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Assign role</label>
+            <select
+              value={role}
+              onChange={e => setRole(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+            >
+              <option value="salesperson">Salesperson — own records only</option>
+              <option value="account_manager">Account Manager — full access</option>
+            </select>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
+              <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-red-600">{error}</p>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button type="button" onClick={onCancel}
+              className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-60 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors flex items-center justify-center gap-1.5">
+              <CheckCircle2 size={14} />
+              {loading ? 'Approving…' : 'Approve & Activate'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Edit Role Modal ────────────────────────────────────────────────────────────
 function EditRoleModal({ profile, onSave, onCancel }) {
   const [role, setRole] = useState(profile.role);
@@ -244,10 +317,11 @@ function UserCard({ profile, onDeactivate, onReactivate, onEditRole }) {
 export default function Users() {
   const navigate  = useNavigate();
   const { profile, isAM } = useProfile() || {};
-  const [profiles, setProfiles]           = useState(() => getProfiles());
-  const [loading, setLoading]             = useState(true);
-  const [showAdd, setShowAdd]             = useState(false);
+  const [profiles, setProfiles]             = useState(() => getProfiles());
+  const [loading, setLoading]               = useState(true);
+  const [showAdd, setShowAdd]               = useState(false);
   const [editingProfile, setEditingProfile] = useState(null);
+  const [approvingProfile, setApprovingProfile] = useState(null);
 
   useEffect(() => {
     if (profile && !isAM) navigate('/');
@@ -275,20 +349,26 @@ export default function Users() {
     await refresh();
   };
 
+  const handleApproved = async () => {
+    setApprovingProfile(null);
+    await refresh();
+  };
+
   const handleDeactivate = async (id) => {
-    await updateProfileInSupabase(id, { active: false });
-    deactivateProfile(id); // localStorage
+    await suspendUser(id);
+    deactivateProfile(id);
     await refresh();
   };
 
   const handleReactivate = async (id) => {
-    await updateProfileInSupabase(id, { active: true });
-    reactivateProfile(id); // localStorage
+    await reactivateUser(id);
+    reactivateProfile(id);
     await refresh();
   };
 
-  const activeProfiles   = profiles.filter(p => p.active);
-  const inactiveProfiles = profiles.filter(p => !p.active);
+  const pendingProfiles   = profiles.filter(p => p.role === 'pending' || p.status === 'pending');
+  const activeProfiles    = profiles.filter(p => p.status === 'active');
+  const inactiveProfiles  = profiles.filter(p => p.status === 'suspended');
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
@@ -320,6 +400,38 @@ export default function Users() {
           Their profile will automatically appear here once they do — then assign their role below.
         </p>
       </div>
+
+      {/* Pending approval panel */}
+      {pendingProfiles.length > 0 && (
+        <div>
+          <h2 className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Clock size={12} />
+            Pending Approval ({pendingProfiles.length})
+          </h2>
+          <div className="space-y-2">
+            {pendingProfiles.map(p => (
+              <Card key={p.id} className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <Clock size={16} className="text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900">{p.displayName || p.email}</p>
+                    <p className="text-xs text-slate-500 truncate">{p.email}</p>
+                  </div>
+                  <button
+                    onClick={() => setApprovingProfile(p)}
+                    className="flex items-center gap-1.5 text-xs bg-green-500 hover:bg-green-400 text-white font-medium rounded-lg px-3 py-1.5 transition-colors"
+                  >
+                    <CheckCircle2 size={12} />
+                    Approve
+                  </button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Active users */}
       <div>
@@ -367,6 +479,13 @@ export default function Users() {
 
       {/* Modals */}
       {showAdd && <AddUserModal onSave={handleAdd} onCancel={() => setShowAdd(false)} />}
+      {approvingProfile && (
+        <ApproveModal
+          profile={approvingProfile}
+          onSave={handleApproved}
+          onCancel={() => setApprovingProfile(null)}
+        />
+      )}
       {editingProfile && (
         <EditRoleModal
           profile={editingProfile}

@@ -136,6 +136,40 @@ export async function updateProfileInSupabase(id, updates) {
   return list.find(p => p.id === id);
 }
 
+/** Approve a pending user — calls the secure DB function (AM only) */
+export async function approveUser(targetUserId, newRole) {
+  if (!supabase) throw new Error('No Supabase connection');
+  const { data, error } = await supabase.rpc('approve_user', {
+    target_user_id: targetUserId,
+    new_role: newRole,
+  });
+  if (error) throw error;
+  // Update local cache
+  const list = get().map(p =>
+    p.id === targetUserId ? { ...p, role: newRole, status: 'active' } : p
+  );
+  set(list);
+  return data;
+}
+
+/** Suspend a user — calls the secure DB function (AM only) */
+export async function suspendUser(targetUserId) {
+  if (!supabase) throw new Error('No Supabase connection');
+  const { error } = await supabase.rpc('suspend_user', { target_user_id: targetUserId });
+  if (error) throw error;
+  const list = get().map(p => p.id === targetUserId ? { ...p, status: 'suspended' } : p);
+  set(list);
+}
+
+/** Reactivate a suspended user — calls the secure DB function (AM only) */
+export async function reactivateUser(targetUserId) {
+  if (!supabase) throw new Error('No Supabase connection');
+  const { error } = await supabase.rpc('reactivate_user', { target_user_id: targetUserId });
+  if (error) throw error;
+  const list = get().map(p => p.id === targetUserId ? { ...p, status: 'active' } : p);
+  set(list);
+}
+
 // ── Legacy sync helpers (kept for backward compat) ─────────────────────────────
 export function createProfile({ email, displayName, role = 'salesperson' }) {
   const p = { id: uuidv4(), email, displayName, role, active: true, createdAt: new Date().toISOString() };
