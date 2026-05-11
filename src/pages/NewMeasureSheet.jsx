@@ -285,7 +285,7 @@ const EMPTY_LINE_ITEM = () => ({
 const EMPTY_SHEET = () => ({
   id: uuidv4(), status: 'Draft', createdAt: new Date().toISOString(),
   customerName: '', phone: '', email: '', siteAddress: '', billingAddress: '',
-  preferredContact: 'Phone', customerNotes: '',
+  preferredContact: 'Any', customerNotes: '',
   jobType: '', measureDate: new Date().toISOString().slice(0, 10),
   measurer: '', urgency: 'Normal', accessInstructions: '', parkingNotes: '',
   siteConditionNotes: '', internalNotes: '',
@@ -321,7 +321,7 @@ export default function NewMeasureSheet() {
         email:        prelinkedCustomer.email   || '',
         siteAddress:  prelinkedCustomer.address || '',
         billingAddress: prelinkedCustomer.billingAddress || '',
-        preferredContact: prelinkedCustomer.preferredContact || 'Phone',
+        preferredContact: prelinkedCustomer.preferredContact || 'Any',
         customerNotes: prelinkedCustomer.notes  || '',
       };
     }
@@ -340,6 +340,7 @@ export default function NewMeasureSheet() {
   // ── UI state ───────────────────────────────────────────────────────────────
   const [savedAt,        setSavedAt]        = useState(null);
   const [submitted,      setSubmitted]      = useState(false);
+  const [submittedJobId, setSubmittedJobId] = useState(null);
   const [errors,         setErrors]         = useState({});
   const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true });
   const [expandedItems,  setExpandedItems]  = useState(() => new Set(sheet.lineItems.map(li => li.id)));
@@ -418,7 +419,7 @@ export default function NewMeasureSheet() {
       email:         customer.email   || '',
       siteAddress:   customer.address || '',
       billingAddress: customer.billingAddress || '',
-      preferredContact: customer.preferredContact || 'Phone',
+      preferredContact: customer.preferredContact || 'Any',
       customerNotes: customer.notes   || '',
     }));
   };
@@ -493,6 +494,7 @@ export default function NewMeasureSheet() {
 
     saveMeasureSheet({ ...finalSheet, jobId: job?.id });
     setSheet(finalSheet);
+    setSubmittedJobId(job?.id || null);
     setSubmitted(true);
   };
 
@@ -507,10 +509,16 @@ export default function NewMeasureSheet() {
         <p className="text-slate-500 text-sm mb-6 max-w-sm">
           The measure sheet has been saved and a new job has been created automatically.
         </p>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 justify-center">
+          {submittedJobId && (
+            <button onClick={() => navigate(`/jobs/${submittedJobId}`)}
+              className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
+              View Job
+            </button>
+          )}
           <button onClick={() => navigate('/jobs')}
-            className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
-            View Jobs
+            className="border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
+            View All Jobs
           </button>
           <button onClick={() => navigate('/measure-sheets/new')}
             className="border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">

@@ -122,7 +122,12 @@ export async function hydrateFromSupabase() {
       // so a genuine "all gone" table in Supabase means it was never synced.
       const rows = fromDbAll(data || []);
       if (rows.length > 0) {
-        LS.set(key, rows);
+        // Merge: Supabase wins for any record it knows about, but preserve
+        // local-only records that haven't synced yet (e.g. a failed background write).
+        const supabaseIds = new Set(rows.map(r => r.id));
+        const local = LS.get(key) || [];
+        const localOnly = local.filter(r => r.id && !supabaseIds.has(r.id));
+        LS.set(key, [...rows, ...localOnly]);
         hadCloudData = true;
       }
     })
