@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { getActiveSalespeople } from '../store/profiles';
+import { getActiveEmployeesFromSupabase } from '../store/profiles';
 
 /**
- * Returns active salespeople from Supabase profiles.
- * Only includes: is_employee=true, status=active, role=salesperson.
- * Pending and suspended users are never included.
+ * Returns all active employees for staff/measurer dropdowns.
+ * Includes both salespeople and account managers.
  * Falls back to localStorage cache if Supabase is unavailable.
  */
 export function useActiveSalespeople() {
@@ -13,8 +12,16 @@ export function useActiveSalespeople() {
 
   useEffect(() => {
     let cancelled = false;
-    getActiveSalespeople().then(data => {
-      if (!cancelled) { setSalespeople(data); setLoading(false); }
+    getActiveEmployeesFromSupabase().then(data => {
+      if (!cancelled) {
+        // Normalise: ensure every entry has fullName for backward-compat
+        const normalised = data.map(p => ({
+          ...p,
+          fullName: p.displayName || p.fullName || '',
+        }));
+        setSalespeople(normalised);
+        setLoading(false);
+      }
     });
     return () => { cancelled = true; };
   }, []);

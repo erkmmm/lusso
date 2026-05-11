@@ -481,9 +481,9 @@ export const getCustomer = (id) => (get('lusso_customers') || []).find(c => c.id
 export const findOrCreateCustomer = (data) => {
   const customers = getCustomers();
   const existing = customers.find(c =>
-    (data.email && c.email.toLowerCase() === data.email.toLowerCase()) ||
-    (data.phone && c.phone.replace(/\s/g, '') === data.phone.replace(/\s/g, '')) ||
-    (data.address && c.address.toLowerCase() === data.address.toLowerCase())
+    (data.email && c.email && c.email.toLowerCase() === data.email.toLowerCase()) ||
+    (data.phone && c.phone && c.phone.replace(/\s/g, '') === data.phone.replace(/\s/g, '')) ||
+    (data.address && c.address && c.address.toLowerCase() === data.address.toLowerCase())
   );
   if (existing) {
     // Update if new info

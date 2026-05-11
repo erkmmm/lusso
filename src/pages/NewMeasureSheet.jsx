@@ -341,6 +341,7 @@ export default function NewMeasureSheet() {
   const [savedAt,        setSavedAt]        = useState(null);
   const [submitted,      setSubmitted]      = useState(false);
   const [submittedJobId, setSubmittedJobId] = useState(null);
+  const [submitting,     setSubmitting]     = useState(false);
   const [errors,         setErrors]         = useState({});
   const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true });
   const [expandedItems,  setExpandedItems]  = useState(() => new Set(sheet.lineItems.map(li => li.id)));
@@ -463,39 +464,48 @@ export default function NewMeasureSheet() {
   };
 
   const handleSubmit = () => {
+    if (submitting) return;
     if (!validate()) {
       setOpenSections({ customer: true, job: true, items: true });
       return;
     }
 
-    // Resolve customer
-    let customer;
-    if (prelinkedCustomer) {
-      customer = prelinkedCustomer;
-    } else if (selectedCustomer) {
-      customer = selectedCustomer;
-    } else {
-      // Create new customer
-      customer = findOrCreateCustomer({
-        name:           sheet.customerName,
-        phone:          sheet.phone,
-        email:          sheet.email,
-        address:        sheet.siteAddress,
-        billingAddress: sheet.billingAddress || sheet.siteAddress,
-        preferredContact: sheet.preferredContact,
-        notes:          sheet.customerNotes,
-      });
+    setSubmitting(true);
+    try {
+      // Resolve customer
+      let customer;
+      if (prelinkedCustomer) {
+        customer = prelinkedCustomer;
+      } else if (selectedCustomer) {
+        customer = selectedCustomer;
+      } else {
+        customer = findOrCreateCustomer({
+          name:             sheet.customerName,
+          phone:            sheet.phone,
+          email:            sheet.email,
+          address:          sheet.siteAddress,
+          billingAddress:   sheet.billingAddress || sheet.siteAddress,
+          preferredContact: sheet.preferredContact,
+          notes:            sheet.customerNotes,
+        });
+      }
+
+      const finalSheet = { ...sheet, customerId: customer.id, status: 'Submitted' };
+      saveMeasureSheet(finalSheet);
+
+      const job = createJobFromMeasureSheet(sheet, customer);
+
+      saveMeasureSheet({ ...finalSheet, jobId: job?.id });
+      setSheet(finalSheet);
+      setSubmittedJobId(job?.id || null);
+      setSubmitted(true);
+    } catch (err) {
+      console.error('[handleSubmit]', err);
+      setErrors(e => ({ ...e, _submit: err.message || 'Submission failed. Please try again.' }));
+      setOpenSections({ customer: true, job: true, items: true });
+    } finally {
+      setSubmitting(false);
     }
-
-    const finalSheet = { ...sheet, customerId: customer.id, status: 'Submitted' };
-    saveMeasureSheet(finalSheet);
-
-    const job = createJobFromMeasureSheet(sheet, customer);
-
-    saveMeasureSheet({ ...finalSheet, jobId: job?.id });
-    setSheet(finalSheet);
-    setSubmittedJobId(job?.id || null);
-    setSubmitted(true);
   };
 
   // ── Submitted screen ───────────────────────────────────────────────────────
@@ -785,7 +795,11 @@ export default function NewMeasureSheet() {
           <FormField label="Salesperson / Measurer *" error={errors.measurer}>
             <select value={sheet.measurer} onChange={e => setField('measurer', e.target.value)} className={inputCls(errors.measurer)}>
               <option value="">Select staff member…</option>
-              {staff.map(s => <option key={s.id} value={s.fullName}>{s.fullName} — {s.role}</option>)}
+              {staff.map(s => (
+                <option key={s.id} value={s.fullName || s.displayName}>
+                  {s.fullName || s.displayName}{s.positionTitle ? ` — ${s.positionTitle}` : ''}
+                </option>
+              ))}
             </select>
           </FormField>
           <FormField label="Access Instructions" className="sm:col-span-2">
@@ -946,18 +960,25 @@ export default function NewMeasureSheet() {
         )}
       </Section>
 
-      {/* Sticky action bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 flex items-center justify-between gap-3 z-10 lg:pl-72">
-        <button onClick={handleSaveDraft}
-          className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors">
-          <Save size={15} /> Save Draft
-        </button>
-        <div className="flex items-center gap-2">
-          {savedAt && <span className="text-xs text-slate-400 hidden sm:block">Saved {savedAt.toLocaleTimeString()}</span>}
-          <button onClick={handleSubmit}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg px-5 py-2.5 transition-colors">
-            <Send size={15} /> Submit & Create Job
+      {/* Sticky action bar — sits above the mobile bottom nav (64px) on small screens */}
+      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-20 lg:pl-72">
+        {errors._submit && (
+          <p className="text-xs text-red-600 text-center mb-2 flex items-center justify-center gap-1">
+            <AlertCircle size={12} /> {errors._submit}
+          </p>
+        )}
+        <div className="flex items-center justify-between gap-3">
+          <button onClick={handleSaveDraft} disabled={submitting}
+            className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50">
+            <Save size={15} /> Save Draft
           </button>
+          <div className="flex items-center gap-2">
+            {savedAt && <span className="text-xs text-slate-400 hidden sm:block">Saved {savedAt.toLocaleTimeString()}</span>}
+            <button onClick={handleSubmit} disabled={submitting}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg px-5 py-2.5 transition-colors">
+              {submitting ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Submitting…</> : <><Send size={15} /> Submit & Create Job</>}
+            </button>
+          </div>
         </div>
       </div>
     </div>
