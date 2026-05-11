@@ -69,18 +69,21 @@ const KEYS = {
 // Fields that exist in app data but not yet in the DB schema.
 // Listed as snake_case so they can be stripped after toDb() conversion.
 const EXCLUDE_COLUMNS = {
-  // customers DB uses a single 'name' field; app may store first_name/last_name separately
-  customers: ['first_name', 'last_name'],
-  // quotes — app has extra fields not in the DB schema
+  customers:     ['first_name', 'last_name', 'deleted_by', 'suburb', 'company'],
+  jobs:          ['deleted_by'],
+  measure_sheets:['deleted_by'],
+  installers:    ['availability_notes', 'business_name', 'deleted_by'],
+  installations: ['access_notes', 'arrival_time', 'deleted_by'],
+  notifications: ['install_request_id'],
   quotes: [
     'version', 'measure_sheet_id', 'site_address', 'terms_and_conditions',
     'internal_notes', 'follow_up_date', 'show_sizes_to_client',
-    'viewed_at', 'declined_at', 'accepted_by', 'activity',
+    'viewed_at', 'declined_at', 'accepted_by', 'activity', 'deleted_by',
   ],
 };
 
 // ── Tables skipped during push (DB table doesn't exist yet) ──────────
-const SKIP_PUSH_TABLES = new Set(['employees', 'tasks']);
+const SKIP_PUSH_TABLES = new Set(['employees', 'tasks', 'notifications']);
 
 // ── Table manifest (shared by hydrate + push) ────────────────────────
 const TABLES = [
@@ -122,12 +125,23 @@ export async function hydrateFromSupabase() {
       // so a genuine "all gone" table in Supabase means it was never synced.
       const rows = fromDbAll(data || []);
       if (rows.length > 0) {
-        // Merge: Supabase wins for any record it knows about, but preserve
-        // local-only records that haven't synced yet (e.g. a failed background write).
-        const supabaseIds = new Set(rows.map(r => r.id));
         const local = LS.get(key) || [];
+        const localById = new Map(local.map(r => [r.id, r]));
+        const supabaseIds = new Set(rows.map(r => r.id));
+
+        // For records in both: keep whichever has the newer updatedAt.
+        // This protects local edits that failed to sync (single-device use).
+        const merged = rows.map(sbRow => {
+          const localRow = localById.get(sbRow.id);
+          if (!localRow) return sbRow;
+          const sbMs = new Date(sbRow.updatedAt || 0).getTime();
+          const locMs = new Date(localRow.updatedAt || 0).getTime();
+          return locMs > sbMs ? localRow : sbRow;
+        });
+
+        // Preserve local-only records (never reached Supabase yet).
         const localOnly = local.filter(r => r.id && !supabaseIds.has(r.id));
-        LS.set(key, [...rows, ...localOnly]);
+        LS.set(key, [...merged, ...localOnly]);
         hadCloudData = true;
       }
     })

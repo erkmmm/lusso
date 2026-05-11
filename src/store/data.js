@@ -498,6 +498,7 @@ export const findOrCreateCustomer = (data) => {
     updatedAt: new Date().toISOString(),
   };
   set('lusso_customers', [...customers, customer]);
+  db.saveCustomer(customer);
   return customer;
 };
 
