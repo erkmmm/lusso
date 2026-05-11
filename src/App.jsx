@@ -32,6 +32,7 @@ import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
 import Employees from './pages/Employees';
 import EmployeeProfile from './pages/EmployeeProfile';
+import QuoteFromJob from './pages/QuoteFromJob';
 import PendingApproval from './pages/PendingApproval';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import { useProfile } from './contexts/UserProfileContext';
@@ -125,9 +126,10 @@ function AppRoutes() {
               <Route path="/import-history"             element={<ImportHistory />} />
               <Route path="/priced-items"               element={<PricedItems />} />
               <Route path="/quotes"                     element={<Quotes />} />
-              <Route path="/quotes/new"                 element={<QuoteBuilder />} />
-              <Route path="/quotes/:id"                 element={<QuoteView />} />
-              <Route path="/quotes/:id/edit"            element={<QuoteBuilder />} />
+              <Route path="/quotes/new"                        element={<QuoteBuilder />} />
+              <Route path="/quotes/new-from-job/:jobId"        element={<QuoteFromJob />} />
+              <Route path="/quotes/:id"                        element={<QuoteView />} />
+              <Route path="/quotes/:id/edit"                   element={<QuoteBuilder />} />
               <Route path="/employees"                  element={<Employees />} />
               <Route path="/employees/:id"              element={<EmployeeProfile />} />
               <Route path="/users"                      element={<Users />} />

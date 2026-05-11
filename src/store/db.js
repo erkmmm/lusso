@@ -147,23 +147,22 @@ export async function hydrateFromSupabase() {
     })
   );
 
-  // Sync job counter: ensure local counter is >= the highest number in Supabase
-  // so nextJobNumber() never generates a duplicate.
+  // Sync numeric counters so generated numbers never collide with Supabase records.
   try {
-    const { data: jobRows } = await supabase
-      .from('jobs')
-      .select('job_number')
-      .order('created_at', { ascending: false })
-      .limit(50);
+    const { data: jobRows } = await supabase.from('jobs').select('job_number').limit(100);
     if (jobRows?.length) {
-      const maxNum = jobRows.reduce((max, r) => {
-        const n = parseInt((r.job_number || '').replace(/\D/g, ''), 10);
-        return isNaN(n) ? max : Math.max(max, n);
-      }, 0);
-      const localCounter = LS.get('lusso_job_counter') || 0;
-      if (maxNum > localCounter) LS.set('lusso_job_counter', maxNum);
+      const max = jobRows.reduce((m, r) => Math.max(m, parseInt((r.job_number || '').replace(/\D/g, ''), 10) || 0), 0);
+      if (max > (LS.get('lusso_job_counter') || 0)) LS.set('lusso_job_counter', max);
     }
   } catch (e) { console.warn('[db] job counter sync:', e.message); }
+
+  try {
+    const { data: quoteRows } = await supabase.from('quotes').select('quote_number').limit(200);
+    if (quoteRows?.length) {
+      const max = quoteRows.reduce((m, r) => Math.max(m, parseInt((r.quote_number || '').replace(/\D/g, ''), 10) || 0), 0);
+      if (max > (LS.get('lusso_quote_counter') || 0)) LS.set('lusso_quote_counter', max);
+    }
+  } catch (e) { console.warn('[db] quote counter sync:', e.message); }
 
   return { hadCloudData };
 }

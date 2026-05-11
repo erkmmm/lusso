@@ -612,6 +612,7 @@ export const getMeasureSheetsFiltered = (isAM, name) => getMeasureSheets().filte
 export const getMeasureSheet = (id) => (get('lusso_measure_sheets') || []).find(ms => ms.id === id);
 
 export const getMeasureSheetByJob        = (jobId) => getMeasureSheets().find(ms => ms.jobId === jobId);
+export const getMeasureSheetsByJob       = (jobId) => getMeasureSheets().filter(ms => ms.jobId === jobId);
 export const getMeasureSheetsByCustomer  = (customerId) => getMeasureSheets().filter(ms => ms.customerId === customerId);
 
 export const deleteMeasureSheet = (id, deletedBy = 'Admin') => {

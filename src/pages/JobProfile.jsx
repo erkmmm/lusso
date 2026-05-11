@@ -5,11 +5,11 @@ import {
   ArrowLeft, Edit3, Save, X, User, MapPin, Phone, Mail,
   Calendar, ClipboardList, Package, Wrench, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
-  AlertTriangle, StickyNote, ChevronDown, HardHat,
+  AlertTriangle, StickyNote, ChevronDown, HardHat, Plus,
 } from 'lucide-react';
 import {
   getJob, getCustomer, getMeasureSheetByJob, getActivityByJob,
-  updateJobStatus, saveJob, JOB_STATUSES, STATUS_COLORS,
+  updateJobStatus, saveJob, JOB_STATUSES, STATUS_COLORS, getQuotesByJob,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -36,6 +36,7 @@ export default function JobProfile() {
   const [customer, setCustomer]     = useState(getCustomer(job?.customerId));
   const [measureSheet]              = useState(getMeasureSheetByJob(id));
   const [activity, setActivity]     = useState(getActivityByJob(id));
+  const [quotes, setQuotes]         = useState(() => getQuotesByJob(id));
   const [editingStatus, setEditingStatus] = useState(false);
   const [editingNotes, setEditingNotes]   = useState(false);
   const [notesValue, setNotesValue]       = useState(job?.internalNotes || '');
@@ -54,6 +55,7 @@ export default function JobProfile() {
   const refresh = () => {
     setJob(getJob(id));
     setActivity(getActivityByJob(id));
+    setQuotes(getQuotesByJob(id));
   };
 
   const handleStatusChange = (newStatus) => {
@@ -106,6 +108,12 @@ export default function JobProfile() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 flex-shrink-0">
+            <button
+              onClick={() => navigate(`/quotes/new-from-job/${id}`)}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white transition-colors"
+            >
+              <Plus size={14} /> New Quote
+            </button>
             <button
               onClick={() => setEditingStatus(!editingStatus)}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
@@ -282,6 +290,57 @@ export default function JobProfile() {
               </div>
             </Card>
           )}
+
+          {/* Quotes section */}
+          <Card>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                <FileText size={15} /> Quotes ({quotes.filter(q => !q.deletedAt).length})
+              </h2>
+              <button
+                onClick={() => navigate(`/quotes/new-from-job/${id}`)}
+                className="flex items-center gap-1 text-xs font-medium text-amber-600 hover:text-amber-700 transition-colors"
+              >
+                <Plus size={13} /> New Quote
+              </button>
+            </div>
+            {quotes.filter(q => !q.deletedAt).length === 0 ? (
+              <div className="px-5 py-6 text-center">
+                <p className="text-sm text-slate-400">No quotes yet.</p>
+                <button
+                  onClick={() => navigate(`/quotes/new-from-job/${id}`)}
+                  className="mt-2 text-xs text-amber-600 hover:underline"
+                >
+                  Create first quote →
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {quotes.filter(q => !q.deletedAt).map(q => (
+                  <button
+                    key={q.id}
+                    onClick={() => navigate(`/quotes/${q.id}`)}
+                    className="w-full text-left flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{q.quoteNumber}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{q.title}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        q.status === 'Accepted' ? 'bg-green-100 text-green-700' :
+                        q.status === 'Sent'     ? 'bg-blue-100 text-blue-700' :
+                        q.status === 'Draft'    ? 'bg-slate-100 text-slate-600' :
+                        q.status === 'Declined' ? 'bg-red-100 text-red-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>{q.status}</span>
+                      <ChevronRight size={14} className="text-slate-400" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Card>
 
           {/* Installation section */}
           <InstallationSection jobId={id} customer={customer} />
