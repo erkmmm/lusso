@@ -1,186 +1,28 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  UserCog, Plus, Search, X, Users, Mail, Phone,
-  CheckSquare, Square, ToggleLeft, ToggleRight, ChevronRight,
+  UserCog, Search, X, Mail, Phone,
+  ToggleLeft, ToggleRight, ChevronRight,
 } from 'lucide-react';
-import {
-  getEmployees, saveEmployee, toggleEmployeeActive,
-  EMPLOYEE_ROLES, EMPLOYEE_DEPARTMENTS, EMPLOYMENT_TYPES,
-  EMPLOYEE_ROLE_COLORS,
-} from '../store/data';
-import { v4 as uuidv4 } from 'uuid';
+import { fetchEmployeesFromSupabase, suspendUser, reactivateUser } from '../store/profiles';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
 
-// ── Role avatar colour ────────────────────────────────────────────────────────
-const AVATAR_COLORS = {
-  'Admin':        'bg-red-500',
-  'Manager':      'bg-purple-500',
-  'Office Staff': 'bg-blue-500',
-  'Salesperson':  'bg-green-500',
-  'Measurer':     'bg-amber-500',
-  'Installer':    'bg-teal-500',
+const ROLE_COLORS = {
+  account_manager: 'bg-amber-100 text-amber-700',
+  salesperson:     'bg-slate-100 text-slate-600',
+};
+const ROLE_LABELS = {
+  account_manager: 'Account Manager',
+  salesperson:     'Salesperson',
 };
 
-function Avatar({ name, role, size = 'md' }) {
+function Avatar({ name, size = 'md' }) {
   const initials = name ? name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?';
-  const bg = AVATAR_COLORS[role] || 'bg-slate-400';
   const sz = size === 'lg' ? 'w-14 h-14 text-xl' : size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
   return (
-    <div className={`${sz} ${bg} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}>
+    <div className={`${sz} bg-amber-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}>
       {initials}
-    </div>
-  );
-}
-
-// ── Reusable form primitives (defined at module level — never inside a component) ──
-function FormInput({ label, value, onChange, type = 'text', required, error }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1">
-        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      <input
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${error ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
-      />
-      {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
-    </div>
-  );
-}
-
-function FormSelect({ label, value, onChange, options, required, error }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1">
-        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className={`w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 ${error ? 'border-red-400' : 'border-slate-200'}`}
-      >
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-      {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
-    </div>
-  );
-}
-
-// ── Add Employee Modal ─────────────────────────────────────────────────────────
-function AddEmployeeModal({ onSave, onCancel }) {
-  const [form, setForm] = useState({
-    firstName: '', lastName: '', email: '', phone: '',
-    jobTitle: '', role: 'Office Staff', department: 'Office',
-    employmentType: 'Full-time', startDate: '', endDate: '',
-    emergencyContactName: '', emergencyContactPhone: '', notes: '',
-  });
-  const [errors, setErrors] = useState({});
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const validate = () => {
-    const e = {};
-    if (!form.firstName.trim()) e.firstName = 'Required';
-    if (!form.lastName.trim())  e.lastName  = 'Required';
-    if (!form.email.trim())     e.email     = 'Required';
-    if (!form.role)             e.role      = 'Required';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleSave = () => {
-    if (!validate()) return;
-    const now = new Date().toISOString();
-    const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`;
-    onSave({
-      id: uuidv4(),
-      ...form,
-      firstName: form.firstName.trim(),
-      lastName:  form.lastName.trim(),
-      fullName,
-      email:  form.email.trim(),
-      phone:  form.phone.trim(),
-      isActive: true,
-      createdAt: now, updatedAt: now,
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
-          <h2 className="font-bold text-slate-900 text-base">Add Employee</h2>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
-        </div>
-
-        <div className="px-6 py-5 space-y-5">
-          {/* Name */}
-          <div className="grid grid-cols-2 gap-4">
-            <FormInput label="First Name" value={form.firstName} onChange={v => set('firstName', v)} required error={errors.firstName} />
-            <FormInput label="Last Name"  value={form.lastName}  onChange={v => set('lastName',  v)} required error={errors.lastName} />
-          </div>
-
-          {/* Contact */}
-          <div className="grid grid-cols-2 gap-4">
-            <FormInput label="Email" value={form.email} onChange={v => set('email', v)} type="email" required error={errors.email} />
-            <FormInput label="Phone" value={form.phone} onChange={v => set('phone', v)} />
-          </div>
-
-          {/* Role & title */}
-          <div className="grid grid-cols-2 gap-4">
-            <FormSelect label="Role" value={form.role} onChange={v => set('role', v)} options={EMPLOYEE_ROLES} required error={errors.role} />
-            <FormInput  label="Job Title" value={form.jobTitle} onChange={v => set('jobTitle', v)} />
-          </div>
-
-          {/* Dept & type */}
-          <div className="grid grid-cols-2 gap-4">
-            <FormSelect label="Department"      value={form.department}     onChange={v => set('department',     v)} options={EMPLOYEE_DEPARTMENTS} />
-            <FormSelect label="Employment Type" value={form.employmentType} onChange={v => set('employmentType', v)} options={EMPLOYMENT_TYPES} />
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-4">
-            <FormInput label="Start Date" value={form.startDate} onChange={v => set('startDate', v)} type="date" />
-            <FormInput label="End Date"   value={form.endDate}   onChange={v => set('endDate',   v)} type="date" />
-          </div>
-
-          {/* Emergency contact */}
-          <div className="pt-2 border-t border-slate-100">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Emergency Contact</p>
-            <div className="grid grid-cols-2 gap-4">
-              <FormInput label="Contact Name"  value={form.emergencyContactName}  onChange={v => set('emergencyContactName',  v)} />
-              <FormInput label="Contact Phone" value={form.emergencyContactPhone} onChange={v => set('emergencyContactPhone', v)} />
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-            <textarea
-              rows={3}
-              value={form.notes}
-              onChange={e => set('notes', e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
-              placeholder="Optional notes…"
-            />
-          </div>
-        </div>
-
-        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 sticky bottom-0 bg-white">
-          <button onClick={onCancel}
-            className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium py-2.5 rounded-xl transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSave}
-            className="flex-1 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors">
-            Add Employee
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -188,41 +30,41 @@ function AddEmployeeModal({ onSave, onCancel }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Employees() {
   const navigate = useNavigate();
-  const [search,     setSearch]     = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
-  const [deptFilter, setDeptFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('active'); // 'all' | 'active' | 'inactive'
-  const [showAdd,    setShowAdd]    = useState(false);
-  const [employees,  setEmployees]  = useState(getEmployees);
-  const [toast,      setToast]      = useState(null);
-
-  const refresh = () => setEmployees(getEmployees());
+  const [search,       setSearch]       = useState('');
+  const [roleFilter,   setRoleFilter]   = useState('');
+  const [statusFilter, setStatusFilter] = useState('active');
+  const [employees,    setEmployees]    = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [toast,        setToast]        = useState(null);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const data = await fetchEmployeesFromSupabase();
+    setEmployees(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
     return employees.filter(e => {
-      if (statusFilter === 'active'   && !e.isActive) return false;
-      if (statusFilter === 'inactive' &&  e.isActive) return false;
-      if (roleFilter && e.role !== roleFilter) return false;
-      if (deptFilter && e.department !== deptFilter) return false;
-      if (term && !`${e.fullName} ${e.email} ${e.jobTitle} ${e.role} ${e.department}`.toLowerCase().includes(term)) return false;
+      if (statusFilter === 'active'   && e.status !== 'active')    return false;
+      if (statusFilter === 'inactive' && e.status === 'active')    return false;
+      if (roleFilter && e.role !== roleFilter)                      return false;
+      if (term && !`${e.displayName} ${e.email} ${e.positionTitle} ${e.role}`.toLowerCase().includes(term)) return false;
       return true;
-    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [employees, search, roleFilter, deptFilter, statusFilter]);
+    }).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+  }, [employees, search, roleFilter, statusFilter]);
 
-  const handleAdd = (emp) => {
-    saveEmployee(emp);
-    refresh();
-    setShowAdd(false);
-    showToast(`${emp.fullName} added successfully.`);
-  };
-
-  const handleToggle = (id, name, isActive) => {
-    toggleEmployeeActive(id);
-    refresh();
-    showToast(`${name} marked ${isActive ? 'inactive' : 'active'}.`);
+  const handleToggle = async (emp) => {
+    const isActive = emp.status === 'active';
+    if (isActive) await suspendUser(emp.id);
+    else           await reactivateUser(emp.id);
+    showToast(`${emp.displayName} marked ${isActive ? 'inactive' : 'active'}.`);
+    await refresh();
   };
 
   return (
@@ -232,21 +74,13 @@ export default function Employees() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Employees</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            {filtered.length} employee{filtered.length !== 1 ? 's' : ''}
-            {statusFilter === 'active' ? ' active' : statusFilter === 'inactive' ? ' inactive' : ''}
+            {loading ? 'Loading…' : `${filtered.length} employee${filtered.length !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors self-start"
-        >
-          <Plus size={16} /> Add Employee
-        </button>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
-        {/* Search */}
         <div className="relative flex-1 min-w-48">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -262,21 +96,13 @@ export default function Employees() {
           )}
         </div>
 
-        {/* Role filter */}
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
           className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
           <option value="">All roles</option>
-          {EMPLOYEE_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+          <option value="salesperson">Salesperson</option>
+          <option value="account_manager">Account Manager</option>
         </select>
 
-        {/* Dept filter */}
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-          <option value="">All departments</option>
-          {EMPLOYEE_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-
-        {/* Status toggle */}
         <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white text-sm">
           {[['active','Active'],['all','All'],['inactive','Inactive']].map(([val, label]) => (
             <button key={val} onClick={() => setStatusFilter(val)}
@@ -287,92 +113,76 @@ export default function Employees() {
         </div>
       </div>
 
-      {/* Employee grid */}
-      {filtered.length === 0 ? (
+      {/* Grid */}
+      {loading ? (
+        <div className="text-center py-16 text-slate-400 text-sm">Loading…</div>
+      ) : filtered.length === 0 ? (
         <Card>
           <EmptyState
             icon={UserCog}
             title="No employees found"
-            description={search || roleFilter || deptFilter ? 'Try adjusting your filters.' : 'Add your first team member to get started.'}
-            action={!search && !roleFilter && !deptFilter && (
-              <button onClick={() => setShowAdd(true)}
-                className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-                Add Employee
-              </button>
-            )}
+            description={search || roleFilter ? 'Try adjusting your filters.' : 'Approved team members appear here automatically.'}
           />
         </Card>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(emp => (
-            <div
-              key={emp.id}
-              className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all group ${emp.isActive ? 'border-slate-200 hover:border-slate-300' : 'border-slate-100 opacity-70'}`}
-            >
-              {/* Card body — navigate on click */}
-              <button
-                onClick={() => navigate(`/employees/${emp.id}`)}
-                className="w-full text-left p-4 flex items-start gap-3"
+          {filtered.map(emp => {
+            const isActive = emp.status === 'active';
+            return (
+              <div
+                key={emp.id}
+                className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all group ${isActive ? 'border-slate-200 hover:border-slate-300' : 'border-slate-100 opacity-70'}`}
               >
-                <Avatar name={emp.fullName} role={emp.role} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm text-slate-800 truncate">{emp.fullName}</span>
-                    {!emp.isActive && (
-                      <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">Inactive</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${EMPLOYEE_ROLE_COLORS[emp.role] || 'bg-slate-100 text-slate-600'}`}>
-                      {emp.role}
-                    </span>
-                    {emp.department && (
-                      <span className="text-xs text-slate-400">{emp.department}</span>
-                    )}
-                  </div>
-                  {emp.jobTitle && (
-                    <p className="text-xs text-slate-500 mt-1 truncate">{emp.jobTitle}</p>
-                  )}
-                  <div className="mt-2 space-y-0.5">
-                    {emp.email && (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-400 truncate">
-                        <Mail size={11} className="flex-shrink-0" />{emp.email}
-                      </div>
-                    )}
-                    {emp.phone && (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                        <Phone size={11} className="flex-shrink-0" />{emp.phone}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <ChevronRight size={15} className="text-slate-300 group-hover:text-amber-500 transition-colors flex-shrink-0 mt-1" />
-              </button>
-
-              {/* Card footer */}
-              <div className="px-4 pb-3 flex items-center justify-between border-t border-slate-50 pt-2.5">
-                <span className="text-xs text-slate-400">
-                  {emp.employmentType || 'Employee'}
-                </span>
                 <button
-                  onClick={() => handleToggle(emp.id, emp.fullName, emp.isActive)}
-                  className={`flex items-center gap-1 text-xs font-medium transition-colors ${emp.isActive ? 'text-green-600 hover:text-red-500' : 'text-slate-400 hover:text-green-600'}`}
-                  title={emp.isActive ? 'Mark inactive' : 'Mark active'}
+                  onClick={() => navigate(`/employees/${emp.id}`)}
+                  className="w-full text-left p-4 flex items-start gap-3"
                 >
-                  {emp.isActive
-                    ? <><ToggleRight size={16} /> Active</>
-                    : <><ToggleLeft  size={16} /> Inactive</>}
+                  <Avatar name={emp.displayName} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm text-slate-800 truncate">{emp.displayName || emp.email}</span>
+                      {!isActive && (
+                        <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">Suspended</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROLE_COLORS[emp.role] || 'bg-slate-100 text-slate-600'}`}>
+                        {ROLE_LABELS[emp.role] || emp.role}
+                      </span>
+                    </div>
+                    {emp.positionTitle && (
+                      <p className="text-xs text-slate-500 mt-1 truncate">{emp.positionTitle}</p>
+                    )}
+                    <div className="mt-2 space-y-0.5">
+                      {emp.email && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400 truncate">
+                          <Mail size={11} className="flex-shrink-0" />{emp.email}
+                        </div>
+                      )}
+                      {emp.phone && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                          <Phone size={11} className="flex-shrink-0" />{emp.phone}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight size={15} className="text-slate-300 group-hover:text-amber-500 transition-colors flex-shrink-0 mt-1" />
                 </button>
+
+                <div className="px-4 pb-3 flex items-center justify-end border-t border-slate-50 pt-2.5">
+                  <button
+                    onClick={() => handleToggle(emp)}
+                    className={`flex items-center gap-1 text-xs font-medium transition-colors ${isActive ? 'text-green-600 hover:text-red-500' : 'text-slate-400 hover:text-green-600'}`}
+                  >
+                    {isActive ? <><ToggleRight size={16} /> Active</> : <><ToggleLeft size={16} /> Suspended</>}
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* Add modal */}
-      {showAdd && <AddEmployeeModal onSave={handleAdd} onCancel={() => setShowAdd(false)} />}
-
-      {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-xl">
           {toast}
