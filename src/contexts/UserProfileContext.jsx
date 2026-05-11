@@ -9,24 +9,31 @@ const ProfileCtx = createContext(null);
 function fromSupabase(row) {
   if (!row) return null;
   return {
-    id:          row.id,
-    email:       row.email,
-    displayName: row.display_name || row.displayName || '',
-    role:        row.role,
-    active:      row.active,
-    createdAt:   row.created_at,
-    updatedAt:   row.updated_at,
+    id:            row.id,
+    email:         row.email,
+    displayName:   row.display_name || row.displayName || '',
+    role:          row.role,
+    status:        row.status,
+    isEmployee:    row.is_employee ?? false,
+    phone:         row.phone || '',
+    positionTitle: row.position_title || '',
+    approvedAt:    row.approved_at,
+    approvedBy:    row.approved_by,
+    createdAt:     row.created_at,
+    updatedAt:     row.updated_at,
   };
 }
 
-// Convert app profile → Supabase snake_case row
 function toSupabase(profile) {
   return {
-    id:           profile.id,
-    email:        profile.email,
-    display_name: profile.displayName || '',
-    role:         profile.role,
-    active:       profile.active !== undefined ? profile.active : true,
+    id:             profile.id,
+    email:          profile.email,
+    display_name:   profile.displayName || '',
+    role:           profile.role,
+    status:         profile.status,
+    is_employee:    profile.isEmployee ?? false,
+    phone:          profile.phone || null,
+    position_title: profile.positionTitle || null,
   };
 }
 

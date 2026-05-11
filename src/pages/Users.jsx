@@ -1,17 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users2, Plus, Info, X, Shield, UserCheck, UserX, Edit2, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
-  getProfiles, saveProfile, deactivateProfile, reactivateProfile,
-  fetchProfilesFromSupabase, createProfileInSupabase, updateProfileInSupabase,
+  Users2, Plus, X, Shield, UserCheck, UserX, Clock,
+  CheckCircle2, AlertTriangle, Edit2, Phone, Briefcase, Info,
+} from 'lucide-react';
+import {
+  getProfiles, saveProfile,
+  fetchProfilesFromSupabase, fetchEmployeesFromSupabase,
+  createProfileInSupabase, updateEmployeeProfile,
   approveUser, suspendUser, reactivateUser,
 } from '../store/profiles';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
 
-// ── Avatar ─────────────────────────────────────────────────────────────────────
-function UserAvatar({ displayName, email, size = 'md' }) {
-  const letter = (displayName || email || '?')[0].toUpperCase();
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+function Avatar({ name, email, size = 'md' }) {
+  const letter = (name || email || '?')[0].toUpperCase();
   const sz = size === 'lg' ? 'w-12 h-12 text-lg' : size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
   return (
     <div className={`${sz} rounded-full bg-amber-500 flex items-center justify-center text-white font-bold flex-shrink-0`}>
@@ -20,180 +24,68 @@ function UserAvatar({ displayName, email, size = 'md' }) {
   );
 }
 
-// ── Role badge ─────────────────────────────────────────────────────────────────
+// ─── Role badge ───────────────────────────────────────────────────────────────
 function RoleBadge({ role }) {
-  if (role === 'account_manager') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
-        <Shield size={10} />
-        Account Manager
-      </span>
-    );
-  }
-  return (
+  if (role === 'account_manager') return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+      <Shield size={10} /> Account Manager
+    </span>
+  );
+  if (role === 'salesperson') return (
     <span className="inline-flex items-center gap-1 text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 rounded-full px-2 py-0.5">
-      <UserCheck size={10} />
-      Salesperson
+      <UserCheck size={10} /> Salesperson
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium bg-orange-50 text-orange-600 border border-orange-200 rounded-full px-2 py-0.5">
+      <Clock size={10} /> Pending
     </span>
   );
 }
 
-// ── Add User Modal ─────────────────────────────────────────────────────────────
-function AddUserModal({ onSave, onCancel }) {
-  const [form, setForm] = useState({ displayName: '', email: '', role: 'salesperson' });
-  const [errors, setErrors] = useState({});
-
-  const validate = () => {
-    const e = {};
-    if (!form.displayName.trim()) e.displayName = 'Display name is required';
-    if (!form.email.trim()) e.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Enter a valid email';
-    return e;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const e2 = validate();
-    if (Object.keys(e2).length > 0) { setErrors(e2); return; }
-    const { profile } = await createProfileInSupabase({
-      email: form.email.trim().toLowerCase(),
-      displayName: form.displayName.trim(),
-      role: form.role,
-    });
-    onSave(profile);
-  };
-
-  const field = (key) => ({
-    value: form[key],
-    onChange: (e) => setForm(f => ({ ...f, [key]: e.target.value })),
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Add User</h2>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 p-1 rounded transition-colors">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
-          <Info size={15} className="text-blue-500 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-700">
-            New team members should use the <strong>Create account</strong> tab on the login page to sign up with their work email and a password. Come back here to assign their role once they've signed up.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Display Name <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              {...field('displayName')}
-              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${errors.displayName ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
-              placeholder="Jane Smith"
-            />
-            {errors.displayName && <p className="text-xs text-red-500 mt-0.5">{errors.displayName}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Email <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="email"
-              {...field('email')}
-              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${errors.email ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
-              placeholder="jane@example.com"
-            />
-            {errors.email && <p className="text-xs text-red-500 mt-0.5">{errors.email}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
-            <select
-              {...field('role')}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-            >
-              <option value="salesperson">Salesperson</option>
-              <option value="account_manager">Account Manager</option>
-            </select>
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onCancel}
-              className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors">
-              Cancel
-            </button>
-            <button type="submit"
-              className="flex-1 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors">
-              Add User
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ── Approve Modal ─────────────────────────────────────────────────────────────
+// ─── Approve Modal ────────────────────────────────────────────────────────────
 function ApproveModal({ profile, onSave, onCancel }) {
-  const [role, setRole]       = useState('salesperson');
+  const [role, setRole]     = useState('salesperson');
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const [error, setError]   = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
       await approveUser(profile.id, role);
       onSave();
     } catch (err) {
-      setError(err.message || 'Failed to approve user.');
-    } finally {
-      setLoading(false);
-    }
+      setError(err.message || 'Failed to approve.');
+    } finally { setLoading(false); }
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Approve User</h2>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 p-1 rounded">
-            <X size={18} />
-          </button>
+          <h2 className="text-lg font-semibold text-slate-900">Approve & Activate</h2>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
-
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <p className="text-sm font-medium text-amber-800">{profile.displayName || profile.email}</p>
           <p className="text-xs text-amber-600">{profile.email}</p>
         </div>
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Assign role</label>
-            <select
-              value={role}
-              onChange={e => setRole(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-            >
+            <select value={role} onChange={e => setRole(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
               <option value="salesperson">Salesperson — own records only</option>
               <option value="account_manager">Account Manager — full access</option>
             </select>
           </div>
-
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex gap-2">
               <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
               <p className="text-xs text-red-600">{error}</p>
             </div>
           )}
-
           <div className="flex gap-3">
             <button type="button" onClick={onCancel}
               className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors">
@@ -202,7 +94,7 @@ function ApproveModal({ profile, onSave, onCancel }) {
             <button type="submit" disabled={loading}
               className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-60 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors flex items-center justify-center gap-1.5">
               <CheckCircle2 size={14} />
-              {loading ? 'Approving…' : 'Approve & Activate'}
+              {loading ? 'Approving…' : 'Approve & Add to Team'}
             </button>
           </div>
         </form>
@@ -211,100 +103,141 @@ function ApproveModal({ profile, onSave, onCancel }) {
   );
 }
 
-// ── Edit Role Modal ────────────────────────────────────────────────────────────
-function EditRoleModal({ profile, onSave, onCancel }) {
-  const [role, setRole] = useState(profile.role);
+// ─── Edit Employee Modal ───────────────────────────────────────────────────────
+function EditEmployeeModal({ employee, onSave, onCancel }) {
+  const [form, setForm] = useState({
+    displayName:   employee.displayName   || '',
+    role:          employee.role          || 'salesperson',
+    phone:         employee.phone         || '',
+    positionTitle: employee.positionTitle || '',
+    status:        employee.status        || 'active',
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const updated = await updateProfileInSupabase(profile.id, { role });
-    saveProfile({ ...profile, role }); // localStorage cache
-    onSave(updated || { ...profile, role });
+    setLoading(true); setError('');
+    try {
+      await updateEmployeeProfile(employee.id, form);
+      saveProfile({ ...employee, ...form });
+      onSave();
+    } catch (err) {
+      setError(err.message || 'Failed to update.');
+    } finally { setLoading(false); }
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Edit Role</h2>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 p-1 rounded transition-colors">
-            <X size={18} />
-          </button>
+          <h2 className="text-lg font-semibold text-slate-900">Edit Team Member</h2>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
-        <div>
-          <p className="text-sm text-slate-500 mb-3">
-            Changing role for <strong className="text-slate-700">{profile.displayName}</strong>
-          </p>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <select
-              value={role}
-              onChange={e => setRole(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-            >
-              <option value="salesperson">Salesperson</option>
-              <option value="account_manager">Account Manager</option>
-            </select>
-            <div className="flex gap-3">
-              <button type="button" onClick={onCancel}
-                className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors">
-                Cancel
-              </button>
-              <button type="submit"
-                className="flex-1 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors">
-                Save
-              </button>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Full Name</label>
+              <input value={form.displayName} onChange={set('displayName')}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
             </div>
-          </form>
-        </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
+              <select value={form.role} onChange={set('role')}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <option value="salesperson">Salesperson</option>
+                <option value="account_manager">Account Manager</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Access Status</label>
+              <select value={form.status} onChange={set('status')}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Phone</label>
+              <input value={form.phone} onChange={set('phone')} placeholder="04xx xxx xxx"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Position</label>
+              <input value={form.positionTitle} onChange={set('positionTitle')} placeholder="e.g. Senior Salesperson"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex gap-2">
+              <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-red-600">{error}</p>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onCancel}
+              className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors">
+              {loading ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
 
-// ── User Card ──────────────────────────────────────────────────────────────────
-function UserCard({ profile, onDeactivate, onReactivate, onEditRole }) {
+// ─── Employee card ────────────────────────────────────────────────────────────
+function EmployeeCard({ emp, onEdit, onSuspend, onReactivate }) {
+  const isSuspended = emp.status === 'suspended';
   return (
     <Card className="p-4">
-      <div className="flex items-center gap-4">
-        <UserAvatar displayName={profile.displayName} email={profile.email} />
+      <div className="flex items-center gap-3">
+        <Avatar name={emp.displayName} email={emp.email} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-slate-900 text-sm">{profile.displayName}</span>
-            {!profile.active && (
-              <span className="text-xs bg-red-50 text-red-600 border border-red-200 rounded-full px-2 py-0.5 font-medium">
-                Inactive
+            <span className="font-medium text-slate-900 text-sm">{emp.displayName || emp.email}</span>
+            {isSuspended && (
+              <span className="text-xs bg-red-50 text-red-600 border border-red-200 rounded-full px-2 py-0.5 font-medium">Suspended</span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 truncate">{emp.email}</p>
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <RoleBadge role={emp.role} />
+            {emp.positionTitle && (
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                <Briefcase size={10} /> {emp.positionTitle}
+              </span>
+            )}
+            {emp.phone && (
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                <Phone size={10} /> {emp.phone}
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-500 mt-0.5 truncate">{profile.email}</p>
-          <div className="mt-1.5">
-            <RoleBadge role={profile.role} />
-          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={() => onEditRole(profile)}
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 border border-slate-200 hover:border-slate-300 rounded-lg px-2.5 py-1.5 transition-colors"
-            title="Edit role"
-          >
-            <Edit2 size={12} />
-            Role
+          <button onClick={() => onEdit(emp)}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 border border-slate-200 hover:border-slate-300 rounded-lg px-2.5 py-1.5 transition-colors">
+            <Edit2 size={12} /> Edit
           </button>
-          {profile.active ? (
-            <button
-              onClick={() => onDeactivate(profile.id)}
-              className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition-colors"
-            >
-              <UserX size={12} />
-              Deactivate
+          {isSuspended ? (
+            <button onClick={() => onReactivate(emp.id)}
+              className="flex items-center gap-1.5 text-xs text-green-600 hover:text-green-800 border border-green-200 hover:border-green-300 rounded-lg px-2.5 py-1.5 transition-colors">
+              <UserCheck size={12} /> Restore
             </button>
           ) : (
-            <button
-              onClick={() => onReactivate(profile.id)}
-              className="flex items-center gap-1.5 text-xs text-green-600 hover:text-green-800 border border-green-200 hover:border-green-300 rounded-lg px-2.5 py-1.5 transition-colors"
-            >
-              <UserCheck size={12} />
-              Reactivate
+            <button onClick={() => onSuspend(emp.id)}
+              className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition-colors">
+              <UserX size={12} /> Suspend
             </button>
           )}
         </div>
@@ -313,65 +246,137 @@ function UserCard({ profile, onDeactivate, onReactivate, onEditRole }) {
   );
 }
 
-// ── Users Page ─────────────────────────────────────────────────────────────────
+// ─── Add User Modal ───────────────────────────────────────────────────────────
+function AddUserModal({ onSave, onCancel }) {
+  const [form, setForm]   = useState({ displayName: '', email: '', role: 'salesperson' });
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  const validate = () => {
+    const e = {};
+    if (!form.displayName.trim()) e.displayName = 'Name is required';
+    if (!form.email.trim()) e.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Enter a valid email';
+    return e;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const errs = validate();
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    setLoading(true);
+    const { profile } = await createProfileInSupabase({
+      email: form.email.trim().toLowerCase(),
+      displayName: form.displayName.trim(),
+      role: form.role,
+    });
+    setLoading(false);
+    onSave(profile);
+  };
+
+  const field = (k) => ({ value: form[k], onChange: (e) => setForm(f => ({ ...f, [k]: e.target.value })) });
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">Add Team Member</h2>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex gap-2">
+          <Info size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-700">
+            New team members should use the <strong>Create account</strong> tab on the login page.
+            Their profile appears here automatically — then approve and assign their role.
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Full Name <span className="text-red-400">*</span></label>
+            <input type="text" {...field('displayName')} placeholder="Jane Smith"
+              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${errors.displayName ? 'border-red-400' : 'border-slate-200'}`} />
+            {errors.displayName && <p className="text-xs text-red-500 mt-0.5">{errors.displayName}</p>}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Email <span className="text-red-400">*</span></label>
+            <input type="email" {...field('email')} placeholder="jane@lusso.com.au"
+              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${errors.email ? 'border-red-400' : 'border-slate-200'}`} />
+            {errors.email && <p className="text-xs text-red-500 mt-0.5">{errors.email}</p>}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
+            <select {...field('role')} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <option value="salesperson">Salesperson</option>
+              <option value="account_manager">Account Manager</option>
+            </select>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onCancel}
+              className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors">
+              {loading ? 'Adding…' : 'Add User'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function Users() {
-  const navigate  = useNavigate();
-  const { profile, isAM } = useProfile() || {};
-  const [profiles, setProfiles]             = useState(() => getProfiles());
-  const [loading, setLoading]               = useState(true);
-  const [showAdd, setShowAdd]               = useState(false);
-  const [editingProfile, setEditingProfile] = useState(null);
+  const navigate = useNavigate();
+  const { profile: currentProfile, isAM } = useProfile() || {};
+
+  const [tab, setTab]                     = useState('team');
+  const [pendingList, setPendingList]     = useState([]);
+  const [teamList, setTeamList]           = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [showAdd, setShowAdd]             = useState(false);
   const [approvingProfile, setApprovingProfile] = useState(null);
+  const [editingEmployee, setEditingEmployee]   = useState(null);
 
   useEffect(() => {
-    if (profile && !isAM) navigate('/');
-  }, [profile, isAM, navigate]);
+    if (currentProfile && !isAM) navigate('/');
+  }, [currentProfile, isAM, navigate]);
 
-  // Load from Supabase on mount
   const refresh = useCallback(async () => {
     setLoading(true);
-    const data = await fetchProfilesFromSupabase();
-    setProfiles(data);
+    const all  = await fetchProfilesFromSupabase();
+    const team = await fetchEmployeesFromSupabase();
+    setPendingList(all.filter(p => p.role === 'pending' || p.status === 'pending'));
+    setTeamList(team);
     setLoading(false);
   }, []);
 
   useEffect(() => { if (isAM) refresh(); }, [isAM, refresh]);
 
-  const handleAdd = async (newProfile) => {
-    setShowAdd(false);
-    await refresh();
-  };
+  // Auto-switch to Pending tab when there are new signups
+  useEffect(() => {
+    if (pendingList.length > 0 && tab === 'team') setTab('pending');
+  }, [pendingList.length]);
 
-  const handleEditRole = (p) => setEditingProfile(p);
+  const handleApproved = async () => { setApprovingProfile(null); await refresh(); };
+  const handleEditSaved = async () => { setEditingEmployee(null); await refresh(); };
 
-  const handleRoleSaved = async () => {
-    setEditingProfile(null);
-    await refresh();
-  };
-
-  const handleApproved = async () => {
-    setApprovingProfile(null);
-    await refresh();
-  };
-
-  const handleDeactivate = async (id) => {
+  const handleSuspend = async (id) => {
     await suspendUser(id);
-    deactivateProfile(id);
     await refresh();
   };
-
   const handleReactivate = async (id) => {
     await reactivateUser(id);
-    reactivateProfile(id);
     await refresh();
   };
 
-  const pendingProfiles   = profiles.filter(p => p.role === 'pending' || p.status === 'pending');
-  const activeProfiles    = profiles.filter(p => p.status === 'active');
-  const inactiveProfiles  = profiles.filter(p => p.status === 'suspended');
+  const activeTeam    = teamList.filter(e => e.status === 'active');
+  const suspendedTeam = teamList.filter(e => e.status === 'suspended');
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-24">
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -379,120 +384,126 @@ export default function Users() {
             <Users2 size={20} className="text-amber-600" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Users</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Manage team access and roles</p>
+            <h1 className="text-2xl font-bold text-slate-900">Users & Team</h1>
+            <p className="text-slate-500 text-sm mt-0.5">Manage access, roles, and employee profiles</p>
           </div>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
-        >
-          <Plus size={16} />
-          Add User
+        <button onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors">
+          <Plus size={16} /> Add User
         </button>
       </div>
 
-      {/* Info banner */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
-        <Info size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-blue-700">
-          New team members should use the <strong>Create account</strong> tab on the login page to sign up.
-          Their profile will automatically appear here once they do — then assign their role below.
-        </p>
+      {/* Tabs */}
+      <div className="flex bg-slate-100 rounded-xl p-1 w-fit">
+        <button onClick={() => setTab('pending')}
+          className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+            tab === 'pending' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}>
+          <Clock size={14} />
+          Pending
+          {pendingList.length > 0 && (
+            <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
+              {pendingList.length}
+            </span>
+          )}
+        </button>
+        <button onClick={() => setTab('team')}
+          className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+            tab === 'team' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}>
+          <UserCheck size={14} />
+          Team Members
+          <span className="bg-slate-200 text-slate-600 text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
+            {activeTeam.length}
+          </span>
+        </button>
       </div>
 
-      {/* Pending approval panel */}
-      {pendingProfiles.length > 0 && (
-        <div>
-          <h2 className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Clock size={12} />
-            Pending Approval ({pendingProfiles.length})
-          </h2>
-          <div className="space-y-2">
-            {pendingProfiles.map(p => (
+      {loading && (
+        <div className="text-center py-12 text-slate-400 text-sm">Loading…</div>
+      )}
+
+      {/* ── PENDING TAB ── */}
+      {!loading && tab === 'pending' && (
+        <div className="space-y-3">
+          {pendingList.length === 0 ? (
+            <Card className="p-10 text-center">
+              <CheckCircle2 size={32} className="text-green-400 mx-auto mb-3" />
+              <p className="text-slate-500 text-sm">No pending signups — you're all caught up.</p>
+            </Card>
+          ) : (
+            pendingList.map(p => (
               <Card key={p.id} className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                    <Clock size={16} className="text-amber-600" />
+                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <Clock size={18} className="text-amber-600" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{p.displayName || p.email}</p>
-                    <p className="text-xs text-slate-500 truncate">{p.email}</p>
+                    <p className="text-xs text-slate-500">{p.email}</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Awaiting approval · not yet an employee</p>
                   </div>
-                  <button
-                    onClick={() => setApprovingProfile(p)}
-                    className="flex items-center gap-1.5 text-xs bg-green-500 hover:bg-green-400 text-white font-medium rounded-lg px-3 py-1.5 transition-colors"
-                  >
-                    <CheckCircle2 size={12} />
-                    Approve
+                  <button onClick={() => setApprovingProfile(p)}
+                    className="flex items-center gap-1.5 text-xs bg-green-500 hover:bg-green-400 text-white font-medium rounded-lg px-3 py-1.5 transition-colors flex-shrink-0">
+                    <CheckCircle2 size={12} /> Approve
                   </button>
                 </div>
               </Card>
-            ))}
-          </div>
+            ))
+          )}
         </div>
       )}
 
-      {/* Active users */}
-      <div>
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Active Users ({activeProfiles.length})
-        </h2>
-        {activeProfiles.length === 0 ? (
-          <Card className="p-8 text-center">
-            <p className="text-slate-400 text-sm">No active users yet.</p>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {activeProfiles.map(p => (
-              <UserCard
-                key={p.id}
-                profile={p}
-                onDeactivate={handleDeactivate}
-                onReactivate={handleReactivate}
-                onEditRole={handleEditRole}
-              />
-            ))}
+      {/* ── TEAM TAB ── */}
+      {!loading && tab === 'team' && (
+        <div className="space-y-6">
+          {/* Active employees */}
+          <div>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Active ({activeTeam.length})
+            </h2>
+            {activeTeam.length === 0 ? (
+              <Card className="p-8 text-center">
+                <p className="text-slate-400 text-sm">No active team members yet. Approve a pending user to add them.</p>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {activeTeam.map(emp => (
+                  <EmployeeCard key={emp.id} emp={emp}
+                    onEdit={setEditingEmployee}
+                    onSuspend={handleSuspend}
+                    onReactivate={handleReactivate}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Inactive users */}
-      {inactiveProfiles.length > 0 && (
-        <div>
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-            Inactive Users ({inactiveProfiles.length})
-          </h2>
-          <div className="space-y-3">
-            {inactiveProfiles.map(p => (
-              <UserCard
-                key={p.id}
-                profile={p}
-                onDeactivate={handleDeactivate}
-                onReactivate={handleReactivate}
-                onEditRole={handleEditRole}
-              />
-            ))}
-          </div>
+          {/* Suspended employees */}
+          {suspendedTeam.length > 0 && (
+            <div>
+              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                Suspended ({suspendedTeam.length})
+              </h2>
+              <div className="space-y-2">
+                {suspendedTeam.map(emp => (
+                  <EmployeeCard key={emp.id} emp={emp}
+                    onEdit={setEditingEmployee}
+                    onSuspend={handleSuspend}
+                    onReactivate={handleReactivate}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Modals */}
-      {showAdd && <AddUserModal onSave={handleAdd} onCancel={() => setShowAdd(false)} />}
-      {approvingProfile && (
-        <ApproveModal
-          profile={approvingProfile}
-          onSave={handleApproved}
-          onCancel={() => setApprovingProfile(null)}
-        />
-      )}
-      {editingProfile && (
-        <EditRoleModal
-          profile={editingProfile}
-          onSave={handleRoleSaved}
-          onCancel={() => setEditingProfile(null)}
-        />
-      )}
+      {showAdd && <AddUserModal onSave={() => { setShowAdd(false); refresh(); }} onCancel={() => setShowAdd(false)} />}
+      {approvingProfile && <ApproveModal profile={approvingProfile} onSave={handleApproved} onCancel={() => setApprovingProfile(null)} />}
+      {editingEmployee  && <EditEmployeeModal employee={editingEmployee} onSave={handleEditSaved} onCancel={() => setEditingEmployee(null)} />}
     </div>
   );
 }

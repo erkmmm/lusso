@@ -29,23 +29,31 @@ export function saveProfile(profile) {
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 function toSupabaseRow(profile) {
   return {
-    id:           profile.id,
-    email:        profile.email,
-    display_name: profile.displayName || '',
-    role:         profile.role || 'salesperson',
-    active:       profile.active !== undefined ? profile.active : true,
+    id:             profile.id,
+    email:          profile.email,
+    display_name:   profile.displayName || '',
+    role:           profile.role || 'salesperson',
+    status:         profile.status || 'active',
+    is_employee:    profile.isEmployee ?? false,
+    phone:          profile.phone || null,
+    position_title: profile.positionTitle || null,
   };
 }
 
 function fromSupabaseRow(row) {
   return {
-    id:          row.id,
-    email:       row.email,
-    displayName: row.display_name || '',
-    role:        row.role,
-    active:      row.active,
-    createdAt:   row.created_at,
-    updatedAt:   row.updated_at,
+    id:            row.id,
+    email:         row.email,
+    displayName:   row.display_name || '',
+    role:          row.role,
+    status:        row.status,
+    isEmployee:    row.is_employee ?? false,
+    phone:         row.phone || '',
+    positionTitle: row.position_title || '',
+    approvedAt:    row.approved_at,
+    approvedBy:    row.approved_by,
+    createdAt:     row.created_at,
+    updatedAt:     row.updated_at,
   };
 }
 
@@ -134,6 +142,36 @@ export async function updateProfileInSupabase(id, updates) {
   const list = get().map(p => p.id === id ? { ...p, ...updates } : p);
   set(list);
   return list.find(p => p.id === id);
+}
+
+/** Fetch only active employees (is_employee=true) */
+export async function fetchEmployeesFromSupabase() {
+  if (!supabase) return getProfiles().filter(p => p.isEmployee);
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('is_employee', true)
+    .order('display_name');
+  if (error || !data) return getProfiles().filter(p => p.isEmployee);
+  return data.map(fromSupabaseRow);
+}
+
+/** Update employee details — calls secure DB function (AM only) */
+export async function updateEmployeeProfile(targetUserId, updates) {
+  if (!supabase) throw new Error('No Supabase connection');
+  const { data, error } = await supabase.rpc('update_employee_profile', {
+    target_user_id: targetUserId,
+    p_display_name: updates.displayName   || null,
+    p_role:         updates.role          || null,
+    p_phone:        updates.phone         || null,
+    p_position:     updates.positionTitle || null,
+    p_status:       updates.status        || null,
+  });
+  if (error) throw error;
+  // Update local cache
+  const list = get().map(p => p.id === targetUserId ? { ...p, ...updates } : p);
+  set(list);
+  return data;
 }
 
 /** Approve a pending user — calls the secure DB function (AM only) */
