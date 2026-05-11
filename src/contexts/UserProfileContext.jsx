@@ -97,8 +97,12 @@ export function UserProfileProvider({ children }) {
     setProfile(updated);
   };
 
-  const isAM      = profile?.role === 'account_manager' && profile?.status === 'active';
-  const isSP      = profile?.role === 'salesperson'     && profile?.status === 'active';
+  // status may be absent in old localStorage cache — treat undefined as 'active'
+  // so legacy data doesn't accidentally lock out existing users.
+  // Pending is explicit: role === 'pending' OR status === 'pending'.
+  const effectiveStatus = profile?.status ?? 'active';
+  const isAM      = profile?.role === 'account_manager' && effectiveStatus === 'active';
+  const isSP      = profile?.role === 'salesperson'     && effectiveStatus === 'active';
   const isPending = profile?.role === 'pending'         || profile?.status === 'pending';
   const displayName = profile?.displayName || '';
 
