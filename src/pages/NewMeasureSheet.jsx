@@ -97,7 +97,10 @@ function findDuplicates(name, phone, email, address, customers) {
 
 // ─── Module-level sub-components (no focus-loss bug) ─────────────────────────
 
-function CustomerSearchInput({ value, onChange, placeholder }) {
+function CustomerSearchInput({ value, onChange, onEnter, placeholder }) {
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && onEnter) onEnter();
+  };
   return (
     <div className="relative">
       <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -105,6 +108,7 @@ function CustomerSearchInput({ value, onChange, placeholder }) {
         autoFocus
         value={value}
         onChange={e => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder || 'Search by name, phone, email, address…'}
         className="w-full pl-9 pr-9 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
       />
@@ -630,6 +634,13 @@ export default function NewMeasureSheet() {
                       value={customerSearch}
                       onChange={setCustomerSearch}
                       placeholder="Search by name, phone, email or address…"
+                      onEnter={() => {
+                        if (customerSearch.trim() && searchResults.length === 0) {
+                          setField('customerName', customerSearch.trim());
+                          setCustomerMode('new');
+                          setSelectedCustomer(null);
+                        }
+                      }}
                     />
 
                     {customerSearch.length >= 2 && (
