@@ -33,11 +33,12 @@ import PricedItems from './pages/PricedItems';
 import Employees from './pages/Employees';
 import EmployeeProfile from './pages/EmployeeProfile';
 import PendingApproval from './pages/PendingApproval';
+import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import { useProfile } from './contexts/UserProfileContext';
 
 function AppRoutes() {
   const { user } = useAuth();
-  const { profile } = useProfile() || {};
+  const { profile, needsOnboarding } = useProfile() || {};
   const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
@@ -82,6 +83,17 @@ function AppRoutes() {
         <Route path="/install-response/:token" element={<InstallResponse />} />
         <Route path="/quotes/:id/preview"      element={<CustomerQuotePage />} />
         <Route path="*"                        element={<PendingApproval />} />
+      </Routes>
+    );
+  }
+
+  // Approved employee who hasn't completed their profile yet
+  if (needsOnboarding) {
+    return (
+      <Routes>
+        <Route path="/install-response/:token" element={<InstallResponse />} />
+        <Route path="/quotes/:id/preview"      element={<CustomerQuotePage />} />
+        <Route path="*"                        element={<EmployeeOnboarding />} />
       </Routes>
     );
   }

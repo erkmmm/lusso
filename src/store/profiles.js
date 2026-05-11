@@ -242,6 +242,30 @@ export async function suspendUser(targetUserId) {
   set(list);
 }
 
+/**
+ * Employee completes their own onboarding profile — calls secure DB function.
+ * Only updates safe fields; cannot change role/status/is_employee.
+ */
+export async function completeEmployeeProfile(updates) {
+  if (!supabase) throw new Error('No Supabase connection');
+  const { data, error } = await supabase.rpc('complete_employee_profile', {
+    p_display_name:          updates.displayName          || null,
+    p_phone:                 updates.phone                || null,
+    p_address:               updates.address              || null,
+    p_emergency_contact_name:  updates.emergencyContactName  || null,
+    p_emergency_contact_phone: updates.emergencyContactPhone || null,
+    p_profile_photo_url:     updates.profilePhotoUrl      || null,
+  });
+  if (error) throw error;
+  // Update local cache
+  const list = get().map(p => p.id === updates.id
+    ? { ...p, ...updates, employeeProfileCompleted: true }
+    : p
+  );
+  set(list);
+  return data;
+}
+
 /** Reactivate a suspended user — calls the secure DB function (AM only) */
 export async function reactivateUser(targetUserId) {
   if (!supabase) throw new Error('No Supabase connection');

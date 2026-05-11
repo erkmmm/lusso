@@ -198,6 +198,7 @@ function EditEmployeeModal({ employee, onSave, onCancel }) {
 // ─── Employee card ────────────────────────────────────────────────────────────
 function EmployeeCard({ emp, onEdit, onSuspend, onReactivate }) {
   const isSuspended = emp.status === 'suspended';
+  const needsOnboarding = emp.isEmployee && !emp.employeeProfileCompleted;
   return (
     <Card className="p-4">
       <div className="flex items-center gap-3">
@@ -207,6 +208,9 @@ function EmployeeCard({ emp, onEdit, onSuspend, onReactivate }) {
             <span className="font-medium text-slate-900 text-sm">{emp.displayName || emp.email}</span>
             {isSuspended && (
               <span className="text-xs bg-red-50 text-red-600 border border-red-200 rounded-full px-2 py-0.5 font-medium">Suspended</span>
+            )}
+            {needsOnboarding && !isSuspended && (
+              <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-full px-2 py-0.5 font-medium">Onboarding pending</span>
             )}
           </div>
           <p className="text-xs text-slate-500 truncate">{emp.email}</p>

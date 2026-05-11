@@ -9,18 +9,23 @@ const ProfileCtx = createContext(null);
 function fromSupabase(row) {
   if (!row) return null;
   return {
-    id:            row.id,
-    email:         row.email,
-    displayName:   row.display_name || row.displayName || '',
-    role:          row.role,
-    status:        row.status,
-    isEmployee:    row.is_employee ?? false,
-    phone:         row.phone || '',
-    positionTitle: row.position_title || '',
-    approvedAt:    row.approved_at,
-    approvedBy:    row.approved_by,
-    createdAt:     row.created_at,
-    updatedAt:     row.updated_at,
+    id:                       row.id,
+    email:                    row.email,
+    displayName:              row.display_name || row.displayName || '',
+    role:                     row.role,
+    status:                   row.status,
+    isEmployee:               row.is_employee ?? false,
+    phone:                    row.phone || '',
+    positionTitle:            row.position_title || '',
+    address:                  row.address || '',
+    emergencyContactName:     row.emergency_contact_name || '',
+    emergencyContactPhone:    row.emergency_contact_phone || '',
+    profilePhotoUrl:          row.profile_photo_url || '',
+    employeeProfileCompleted: row.employee_profile_completed ?? false,
+    approvedAt:               row.approved_at,
+    approvedBy:               row.approved_by,
+    createdAt:                row.created_at,
+    updatedAt:                row.updated_at,
   };
 }
 
@@ -112,9 +117,13 @@ export function UserProfileProvider({ children }) {
   const isSP      = profile?.role === 'salesperson'     && effectiveStatus === 'active';
   const isPending = profile?.role === 'pending'         || profile?.status === 'pending';
   const displayName = profile?.displayName || '';
+  const needsOnboarding = profile?.isEmployee === true
+    && effectiveStatus === 'active'
+    && !isPending
+    && profile?.employeeProfileCompleted === false;
 
   return (
-    <ProfileCtx.Provider value={{ profile, isAM, isSP, isPending, displayName, refreshProfile, updateProfile, toSupabase }}>
+    <ProfileCtx.Provider value={{ profile, isAM, isSP, isPending, needsOnboarding, displayName, refreshProfile, updateProfile, toSupabase }}>
       {children}
     </ProfileCtx.Provider>
   );
