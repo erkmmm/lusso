@@ -32,7 +32,8 @@ function toSupabaseRow(profile) {
     id:             profile.id,
     email:          profile.email,
     display_name:   profile.displayName || '',
-    role:           profile.role || 'salesperson',
+    role:           profile.role || 'standard_user',
+    employee_role:  profile.employeeRole || null,
     status:         profile.status || 'active',
     is_employee:    profile.isEmployee ?? false,
     phone:          profile.phone || null,
@@ -45,7 +46,8 @@ function fromSupabaseRow(row) {
     id:                       row.id,
     email:                    row.email,
     displayName:              row.display_name || '',
-    role:                     row.role,
+    role:                     row.role,           // account type: pending_user | standard_user | account_manager
+    employeeRole:             row.employee_role || null, // job role: salesperson | account_manager
     status:                   row.status,
     isEmployee:               row.is_employee ?? false,
     phone:                    row.phone || '',
@@ -125,9 +127,10 @@ export async function createProfileInSupabase({ email, displayName, role = 'sale
 /** Update a profile's role and/or active status in Supabase */
 export async function updateProfileInSupabase(id, updates) {
   const dbUpdates = {};
-  if (updates.role        !== undefined) dbUpdates.role         = updates.role;
-  if (updates.displayName !== undefined) dbUpdates.display_name = updates.displayName;
-  if (updates.active      !== undefined) dbUpdates.active       = updates.active;
+  if (updates.role         !== undefined) dbUpdates.role          = updates.role;
+  if (updates.employeeRole !== undefined) dbUpdates.employee_role = updates.employeeRole;
+  if (updates.displayName  !== undefined) dbUpdates.display_name  = updates.displayName;
+  if (updates.active       !== undefined) dbUpdates.active        = updates.active;
 
   if (supabase) {
     const { data, error } = await supabase
@@ -168,8 +171,8 @@ export async function getActiveSalespeople() {
       }));
     }
   }
-  // Fallback: localStorage cache filtered to active salespeople
-  return get().filter(p => p.isEmployee && p.status === 'active' && p.role === 'salesperson');
+  // Fallback: localStorage cache filtered to active salespeople by employee_role
+  return get().filter(p => p.isEmployee && p.status === 'active' && p.employeeRole === 'salesperson');
 }
 
 /**
@@ -208,12 +211,13 @@ export async function fetchEmployeesFromSupabase() {
 export async function updateEmployeeProfile(targetUserId, updates) {
   if (!supabase) throw new Error('No Supabase connection');
   const { data, error } = await supabase.rpc('update_employee_profile', {
-    target_user_id: targetUserId,
-    p_display_name: updates.displayName   || null,
-    p_role:         updates.role          || null,
-    p_phone:        updates.phone         || null,
-    p_position:     updates.positionTitle || null,
-    p_status:       updates.status        || null,
+    target_user_id:  targetUserId,
+    p_display_name:  updates.displayName   || null,
+    p_role:          updates.role          || null,
+    p_phone:         updates.phone         || null,
+    p_position:      updates.positionTitle || null,
+    p_status:        updates.status        || null,
+    p_employee_role: updates.employeeRole  || null,
   });
   if (error) throw error;
   // Update local cache

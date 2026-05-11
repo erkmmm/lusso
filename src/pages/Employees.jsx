@@ -8,13 +8,19 @@ import { fetchEmployeesFromSupabase, suspendUser, reactivateUser } from '../stor
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
 
-const ROLE_COLORS = {
+const ACCOUNT_TYPE_COLORS = {
   account_manager: 'bg-amber-100 text-amber-700',
+  standard_user:   'bg-slate-100 text-slate-600',
   salesperson:     'bg-slate-100 text-slate-600',
 };
-const ROLE_LABELS = {
+const ACCOUNT_TYPE_LABELS = {
   account_manager: 'Account Manager',
+  standard_user:   'Standard User',
+  salesperson:     'Standard User',
+};
+const EMPLOYEE_ROLE_LABELS = {
   salesperson:     'Salesperson',
+  account_manager: 'Account Manager',
 };
 
 function Avatar({ name, size = 'md' }) {
@@ -98,8 +104,8 @@ export default function Employees() {
 
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
           className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-          <option value="">All roles</option>
-          <option value="salesperson">Salesperson</option>
+          <option value="">All types</option>
+          <option value="standard_user">Standard User</option>
           <option value="account_manager">Account Manager</option>
         </select>
 
@@ -146,9 +152,14 @@ export default function Employees() {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROLE_COLORS[emp.role] || 'bg-slate-100 text-slate-600'}`}>
-                        {ROLE_LABELS[emp.role] || emp.role}
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ACCOUNT_TYPE_COLORS[emp.role] || 'bg-slate-100 text-slate-600'}`}>
+                        {ACCOUNT_TYPE_LABELS[emp.role] || emp.role}
                       </span>
+                      {emp.employeeRole && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">
+                          {EMPLOYEE_ROLE_LABELS[emp.employeeRole] || emp.employeeRole}
+                        </span>
+                      )}
                     </div>
                     {emp.positionTitle && (
                       <p className="text-xs text-slate-500 mt-1 truncate">{emp.positionTitle}</p>

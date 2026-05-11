@@ -31,9 +31,9 @@ function RoleBadge({ role }) {
       <Shield size={10} /> Account Manager
     </span>
   );
-  if (role === 'salesperson') return (
+  if (role === 'standard_user' || role === 'salesperson') return (
     <span className="inline-flex items-center gap-1 text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 rounded-full px-2 py-0.5">
-      <UserCheck size={10} /> Salesperson
+      <UserCheck size={10} /> Standard User
     </span>
   );
   return (
@@ -45,7 +45,7 @@ function RoleBadge({ role }) {
 
 // ─── Approve Modal ────────────────────────────────────────────────────────────
 function ApproveModal({ profile, onSave, onCancel }) {
-  const [role, setRole]     = useState('salesperson');
+  const [role, setRole]     = useState('standard_user');
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
 
@@ -73,10 +73,10 @@ function ApproveModal({ profile, onSave, onCancel }) {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Assign role</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Account type</label>
             <select value={role} onChange={e => setRole(e.target.value)}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-              <option value="salesperson">Salesperson — own records only</option>
+              <option value="standard_user">Standard User — own records only</option>
               <option value="account_manager">Account Manager — full access</option>
             </select>
           </div>
@@ -107,7 +107,7 @@ function ApproveModal({ profile, onSave, onCancel }) {
 function EditEmployeeModal({ employee, onSave, onCancel }) {
   const [form, setForm] = useState({
     displayName:   employee.displayName   || '',
-    role:          employee.role          || 'salesperson',
+    role:          employee.role          || 'standard_user',
     phone:         employee.phone         || '',
     positionTitle: employee.positionTitle || '',
     status:        employee.status        || 'active',
@@ -145,10 +145,10 @@ function EditEmployeeModal({ employee, onSave, onCancel }) {
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Account Type</label>
               <select value={form.role} onChange={set('role')}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-                <option value="salesperson">Salesperson</option>
+                <option value="standard_user">Standard User</option>
                 <option value="account_manager">Account Manager</option>
               </select>
             </div>

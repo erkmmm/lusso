@@ -10,13 +10,19 @@ import {
   suspendUser, reactivateUser,
 } from '../store/profiles';
 
-const ROLE_LABELS = {
+const ACCOUNT_TYPE_LABELS = {
   account_manager: 'Account Manager',
-  salesperson:     'Salesperson',
+  standard_user:   'Standard User',
+  salesperson:     'Standard User', // legacy fallback
 };
-const ROLE_COLORS = {
+const ACCOUNT_TYPE_COLORS = {
   account_manager: 'bg-amber-100 text-amber-700',
+  standard_user:   'bg-slate-100 text-slate-600',
   salesperson:     'bg-slate-100 text-slate-600',
+};
+const EMPLOYEE_ROLE_LABELS = {
+  salesperson:     'Salesperson',
+  account_manager: 'Account Manager',
 };
 
 function Avatar({ name }) {
@@ -112,7 +118,7 @@ export default function EmployeeProfile() {
   const isActive = emp.status === 'active';
 
   const startEdit = () => {
-    setForm({ ...emp });
+    setForm({ ...emp, employeeRole: emp.employeeRole || '' });
     setEditing(true);
     setError('');
   };
@@ -127,14 +133,15 @@ export default function EmployeeProfile() {
     setError('');
     try {
       await updateEmployeeProfile(emp.id, {
-        displayName:          form.displayName.trim(),
-        role:                 form.role,
-        phone:                form.phone,
-        positionTitle:        form.positionTitle,
-        address:              form.address,
+        displayName:           form.displayName.trim(),
+        role:                  form.role,
+        employeeRole:          form.employeeRole || null,
+        phone:                 form.phone,
+        positionTitle:         form.positionTitle,
+        address:               form.address,
         emergencyContactName:  form.emergencyContactName,
         emergencyContactPhone: form.emergencyContactPhone,
-        status:               form.status,
+        status:                form.status,
       });
       await load();
       setEditing(false);
@@ -175,9 +182,14 @@ export default function EmployeeProfile() {
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <h1 className="text-xl font-bold text-slate-900">{emp.displayName || emp.email}</h1>
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROLE_COLORS[emp.role] || 'bg-slate-100 text-slate-600'}`}>
-                {ROLE_LABELS[emp.role] || emp.role}
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ACCOUNT_TYPE_COLORS[emp.role] || 'bg-slate-100 text-slate-600'}`}>
+                {ACCOUNT_TYPE_LABELS[emp.role] || emp.role}
               </span>
+              {emp.employeeRole && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">
+                  {EMPLOYEE_ROLE_LABELS[emp.employeeRole] || emp.employeeRole}
+                </span>
+              )}
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                 {isActive ? 'Active' : 'Suspended'}
               </span>
@@ -218,16 +230,19 @@ export default function EmployeeProfile() {
           </div>
           {editing ? (
             <div className="px-5 py-4 space-y-3">
-              <EditInput    label="Full Name"     value={form.displayName}   onChange={setF('displayName')} />
-              <EditInput    label="Position Title" value={form.positionTitle} onChange={setF('positionTitle')} />
-              <EditSelect   label="Role"           value={form.role}          onChange={setF('role')}
-                options={[['salesperson','Salesperson'],['account_manager','Account Manager']]} />
+              <EditInput  label="Full Name"      value={form.displayName}   onChange={setF('displayName')} />
+              <EditInput  label="Position Title" value={form.positionTitle} onChange={setF('positionTitle')} />
+              <EditSelect label="Account Type"   value={form.role}          onChange={setF('role')}
+                options={[['standard_user','Standard User'],['account_manager','Account Manager']]} />
+              <EditSelect label="Employee Role"  value={form.employeeRole || ''}  onChange={setF('employeeRole')}
+                options={[['','— Not assigned —'],['salesperson','Salesperson'],['account_manager','Account Manager']]} />
             </div>
           ) : (
             <div className="px-5 py-2">
               <InfoRow label="Full Name"      value={emp.displayName}   icon={User} />
               <InfoRow label="Position Title" value={emp.positionTitle} icon={Briefcase} />
-              <InfoRow label="System Role"    value={ROLE_LABELS[emp.role] || emp.role} icon={UserCog} />
+              <InfoRow label="Account Type"   value={ACCOUNT_TYPE_LABELS[emp.role] || emp.role} icon={UserCog} />
+              <InfoRow label="Employee Role"  value={EMPLOYEE_ROLE_LABELS[emp.employeeRole] || '— Not assigned —'} icon={Shield} />
             </div>
           )}
         </div>

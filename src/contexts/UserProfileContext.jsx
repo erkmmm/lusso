@@ -114,8 +114,10 @@ export function UserProfileProvider({ children }) {
   // Pending is explicit: role === 'pending' OR status === 'pending'.
   const effectiveStatus = profile?.status ?? 'active';
   const isAM      = profile?.role === 'account_manager' && effectiveStatus === 'active';
-  const isSP      = profile?.role === 'salesperson'     && effectiveStatus === 'active';
-  const isPending = profile?.role === 'pending'         || profile?.status === 'pending';
+  // standard_user is the new name for an approved non-AM account (was 'salesperson')
+  // keep 'salesperson' fallback for any cached profiles not yet migrated
+  const isSP      = (profile?.role === 'standard_user' || profile?.role === 'salesperson') && effectiveStatus === 'active';
+  const isPending = profile?.role === 'pending' || profile?.role === 'pending_user' || profile?.status === 'pending';
   const displayName = profile?.displayName || '';
   const needsOnboarding = profile?.isEmployee === true
     && effectiveStatus === 'active'
