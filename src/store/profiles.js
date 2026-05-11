@@ -144,6 +144,49 @@ export async function updateProfileInSupabase(id, updates) {
   return list.find(p => p.id === id);
 }
 
+/**
+ * Returns active salespeople only — use this for quote/measure sheet dropdowns.
+ * Pending and suspended users are never included.
+ */
+export async function getActiveSalespeople() {
+  if (supabase) {
+    const { data, error } = await supabase.rpc('get_active_salespeople');
+    if (!error && data) {
+      return data.map(r => ({
+        id:            r.id,
+        displayName:   r.display_name || '',
+        email:         r.email || '',
+        positionTitle: r.position_title || '',
+        phone:         r.phone || '',
+        fullName:      r.display_name || '', // compat alias
+        role:          'salesperson',
+      }));
+    }
+  }
+  // Fallback: localStorage cache filtered to active salespeople
+  return get().filter(p => p.isEmployee && p.status === 'active' && p.role === 'salesperson');
+}
+
+/**
+ * Returns all active employees — use for AM-level assignment dropdowns.
+ */
+export async function getActiveEmployeesFromSupabase() {
+  if (supabase) {
+    const { data, error } = await supabase.rpc('get_active_employees');
+    if (!error && data) {
+      return data.map(r => ({
+        id:            r.id,
+        displayName:   r.display_name || '',
+        fullName:      r.display_name || '',
+        email:         r.email || '',
+        role:          r.role,
+        positionTitle: r.position_title || '',
+      }));
+    }
+  }
+  return get().filter(p => p.isEmployee && p.status === 'active');
+}
+
 /** Fetch only active employees (is_employee=true) */
 export async function fetchEmployeesFromSupabase() {
   if (!supabase) return getProfiles().filter(p => p.isEmployee);

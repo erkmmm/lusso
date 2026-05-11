@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -11,7 +12,7 @@ import {
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer,
   getCustomers, getJobs,
-  createJobFromMeasureSheet, getActiveEmployees, getActiveProductTypes,
+  createJobFromMeasureSheet, getActiveProductTypes,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, OPERATION_TYPE_OPTIONS,
   BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS, URGENCY_LEVELS, JOB_TYPES,
@@ -294,7 +295,8 @@ export default function NewMeasureSheet() {
   const [searchParams]   = useSearchParams();
   const navigate         = useNavigate();
   const isEdit           = Boolean(id && id !== 'new');
-  const staff            = getActiveEmployees();
+  // Active salespeople from Supabase — pending/suspended never appear here
+  const { salespeople: staff } = useActiveSalespeople();
   const productTypes     = getActiveProductTypes();
   const allCustomers     = useMemo(() => getCustomers(), []);
   const allJobs          = useMemo(() => getJobs(), []);

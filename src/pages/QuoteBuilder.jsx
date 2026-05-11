@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { format } from 'date-fns';
@@ -9,7 +10,7 @@ import {
   AlertCircle, CheckCircle2, X, Loader2, ExternalLink,
 } from 'lucide-react';
 import {
-  getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob, getActiveEmployees,
+  getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
@@ -372,7 +373,8 @@ export default function QuoteBuilder() {
   const settings      = getQuoteSettings();
   const productTypes  = getActiveProductTypes();
   const customers     = getCustomers();
-  const staff         = getActiveEmployees();
+  // Active salespeople from Supabase — pending/suspended users never appear here
+  const { salespeople: staff } = useActiveSalespeople();
   const savedItems    = getSavedItems();
   const pricedItems   = getPricedItems().filter(p => p.isActive !== false);
   const templates     = getQuoteTemplates();
