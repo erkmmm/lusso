@@ -11,12 +11,12 @@ import {
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer,
-  getCustomers, getJobs,
-  createJobFromMeasureSheet, getActiveProductTypes,
+  getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, OPERATION_TYPE_OPTIONS,
   BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS, URGENCY_LEVELS, JOB_TYPES,
 } from '../store/data';
+import { syncNow } from '../store/db';
 import Card from '../components/Card';
 
 // ─── Customer search & duplicate helpers ──────────────────────────────────────
@@ -463,7 +463,7 @@ export default function NewMeasureSheet() {
     setSavedAt(new Date());
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (submitting) return;
     if (!validate()) {
       setOpenSections({ customer: true, job: true, items: true });
@@ -472,7 +472,7 @@ export default function NewMeasureSheet() {
 
     setSubmitting(true);
     try {
-      // Resolve customer
+      // Resolve / create customer
       let customer;
       if (prelinkedCustomer) {
         customer = prelinkedCustomer;
@@ -494,8 +494,17 @@ export default function NewMeasureSheet() {
       saveMeasureSheet(finalSheet);
 
       const job = createJobFromMeasureSheet(sheet, customer);
+      const finalSheetWithJob = { ...finalSheet, jobId: job?.id };
+      saveMeasureSheet(finalSheetWithJob);
 
-      saveMeasureSheet({ ...finalSheet, jobId: job?.id });
+      // Wait for Supabase confirmation before showing success.
+      // Sequential order respects FK constraints: customer → job → measure_sheet.
+      await syncNow([
+        { table: 'customers',      record: customer },
+        { table: 'jobs',           record: job },
+        { table: 'measure_sheets', record: finalSheetWithJob },
+      ], { sequential: true });
+
       setSheet(finalSheet);
       setSubmittedJobId(job?.id || null);
       setSubmitted(true);

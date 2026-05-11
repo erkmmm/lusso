@@ -147,6 +147,24 @@ export async function hydrateFromSupabase() {
     })
   );
 
+  // Sync job counter: ensure local counter is >= the highest number in Supabase
+  // so nextJobNumber() never generates a duplicate.
+  try {
+    const { data: jobRows } = await supabase
+      .from('jobs')
+      .select('job_number')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (jobRows?.length) {
+      const maxNum = jobRows.reduce((max, r) => {
+        const n = parseInt((r.job_number || '').replace(/\D/g, ''), 10);
+        return isNaN(n) ? max : Math.max(max, n);
+      }, 0);
+      const localCounter = LS.get('lusso_job_counter') || 0;
+      if (maxNum > localCounter) LS.set('lusso_job_counter', maxNum);
+    }
+  } catch (e) { console.warn('[db] job counter sync:', e.message); }
+
   return { hadCloudData };
 }
 
@@ -192,6 +210,31 @@ export async function pushAllToSupabase() {
   }
 
   return { pushed, errors };
+}
+
+// ── Awaitable multi-record sync ──────────────────────────────────────
+// Use this in critical submit flows where the caller MUST wait for
+// Supabase confirmation before showing a success screen.
+// sequential: true writes entries one-by-one (needed when FK deps exist).
+export async function syncNow(entries, { sequential = false } = {}) {
+  if (!supabase) return { errors: [] };
+  const errors = [];
+  const write = async ({ table, record }) => {
+    if (!record?.id) return;
+    const row = toDb(record);
+    (EXCLUDE_COLUMNS[table] || []).forEach(col => delete row[col]);
+    const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn(`[db] syncNow ${table}:`, error.message);
+      errors.push(`${table}: ${error.message}`);
+    }
+  };
+  if (sequential) {
+    for (const entry of entries) await write(entry);
+  } else {
+    await Promise.all(entries.map(write));
+  }
+  return { errors };
 }
 
 // ── Generic upsert / delete ──────────────────────────────────────────
