@@ -467,7 +467,8 @@ export const deleteCustomer = (id, deletedBy = 'Admin') => {
   const all = get('lusso_customers') || [];
   const idx = all.findIndex(c => c.id === id);
   if (idx < 0) return;
-  all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
+  const now = new Date().toISOString();
+  all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_customers', all);
   db.saveCustomer(all[idx]);
 };
@@ -522,12 +523,12 @@ export const deleteJob = (id, deletedBy = 'Admin') => {
   const all = get('lusso_jobs') || [];
   const idx = all.findIndex(j => j.id === id);
   if (idx < 0) return;
-  all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
+  const now = new Date().toISOString();
+  all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_jobs', all);
   db.saveJob(all[idx]);
   // Also soft-delete all linked install requests so they disappear from the calendar
   const reqs = get('lusso_install_requests') || [];
-  const now = new Date().toISOString();
   let changed = false;
   const updatedReqs = reqs.map(r => {
     if (r.jobId === id && !r.deletedAt) { changed = true; return { ...r, deletedAt: now, deletedBy }; }
@@ -619,7 +620,8 @@ export const deleteMeasureSheet = (id, deletedBy = 'Admin') => {
   const all = get('lusso_measure_sheets') || [];
   const idx = all.findIndex(ms => ms.id === id);
   if (idx < 0) return;
-  all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
+  const now = new Date().toISOString();
+  all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_measure_sheets', all);
   db.saveMeasureSheet(all[idx]);
 };
@@ -795,7 +797,8 @@ export const deleteInstaller = (id, deletedBy = 'Admin') => {
   const all = get('lusso_installers') || [];
   const idx = all.findIndex(i => i.id === id);
   if (idx < 0) return;
-  all[idx] = { ...all[idx], deletedAt: new Date().toISOString(), deletedBy };
+  const now = new Date().toISOString();
+  all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_installers', all);
   db.saveInstaller(all[idx]);
 };
@@ -1321,9 +1324,9 @@ const DEFAULT_QUOTE_SETTINGS = {
   showSizesToClient: false,
 };
 
-export const getQuotes        = () => get('lusso_quotes') || [];
-export const getQuote         = (id) => getQuotes().find(q => q.id === id);
-export const getQuotesByJob   = (jobId) => getQuotes().filter(q => q.jobId === jobId);
+export const getQuotes           = () => (get('lusso_quotes') || []).filter(q => !q.deletedAt);
+export const getQuote            = (id) => (get('lusso_quotes') || []).find(q => q.id === id); // raw (includes deleted, for direct URL access)
+export const getQuotesByJob      = (jobId) => getQuotes().filter(q => q.jobId === jobId);
 export const getQuotesByCustomer = (customerId) => getQuotes().filter(q => q.customerId === customerId);
 
 export const getNextQuoteNumber = () => {
@@ -1488,9 +1491,14 @@ export const addQuoteComment = (quoteId, type, author, message) => {
   return comment;
 };
 
-export const deleteQuote = (quoteId) => {
-  const list = getQuotes().filter(q => q.id !== quoteId);
-  set('lusso_quotes', list);
+export const deleteQuote = (quoteId, deletedBy = 'System') => {
+  const all = get('lusso_quotes') || [];
+  const idx = all.findIndex(q => q.id === quoteId);
+  if (idx < 0) return;
+  const now = new Date().toISOString();
+  all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
+  set('lusso_quotes', all);
+  db.saveQuote(all[idx]);
 };
 
 // ─── Saved Items ──────────────────────────────────────────────────────────────
@@ -1888,7 +1896,8 @@ export const deleteTask = (id) => {
   const list = get('lusso_tasks') || [];
   const idx  = list.findIndex(t => t.id === id);
   if (idx < 0) return;
-  list[idx] = { ...list[idx], deletedAt: new Date().toISOString() };
+  const now = new Date().toISOString();
+  list[idx] = { ...list[idx], deletedAt: now, updatedAt: now };
   set('lusso_tasks', list);
   db.saveTask(list[idx]);
 };

@@ -117,13 +117,19 @@ export async function hydrateFromSupabase() {
 
   await Promise.all(
     TABLES.map(async ({ table, key }) => {
-      const { data, error } = await supabase.from(table).select('*').order('created_at', { ascending: true });
-      if (error) { console.warn(`[db] hydrate ${table}:`, error.message); return; }
-      // Only overwrite localStorage when Supabase actually has rows.
-      // If Supabase returns empty (table never pushed), keep local seed data.
-      // Soft-deleted records are still present in Supabase (deletedAt set),
-      // so a genuine "all gone" table in Supabase means it was never synced.
-      const rows = fromDbAll(data || []);
+      // Fetch only non-deleted records so soft-deleted items stay gone after refresh.
+      // Fall back to unfiltered fetch for tables without a deleted_at column.
+      let fetchedData = null;
+      const { data: d1, error: e1 } = await supabase
+        .from(table).select('*').is('deleted_at', null).order('created_at', { ascending: true });
+      if (e1) {
+        const { data: d2, error: e2 } = await supabase.from(table).select('*').order('created_at', { ascending: true });
+        if (e2) { console.warn(`[db] hydrate ${table}:`, e2.message); return; }
+        fetchedData = d2;
+      } else {
+        fetchedData = d1;
+      }
+      const rows = fromDbAll(fetchedData || []);
       if (rows.length > 0) {
         const local = LS.get(key) || [];
         const localById = new Map(local.map(r => [r.id, r]));
