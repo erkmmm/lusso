@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { db } from './db';
+import { db, batchUpsertCustomers, batchUpsertPricedItems } from './db';
+import { supabase } from '../lib/supabase';
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -416,6 +417,7 @@ const get = (key) => {
 
 const set = (key, value) => {
   localStorage.setItem(key, JSON.stringify(value));
+  window.dispatchEvent(new CustomEvent('lusso:data-changed', { detail: { key } }));
 };
 
 // Standard init: only seeds if key is null/undefined (not empty array)
@@ -430,18 +432,30 @@ const initConfigTable = (key, seed) => {
 };
 
 export const initStore = () => {
-  initIfEmpty('lusso_customers', SEED_CUSTOMERS);
-  initIfEmpty('lusso_jobs', SEED_JOBS);
-  initIfEmpty('lusso_measure_sheets', SEED_MEASURE_SHEETS);
-  initIfEmpty('lusso_activity', SEED_ACTIVITY);
-  initIfEmpty('lusso_staff', SEED_STAFF);
-  initIfEmpty('lusso_job_counter', 5);
-  initIfEmpty('lusso_installers', SEED_INSTALLERS);
-  initIfEmpty('lusso_install_requests', SEED_INSTALL_REQUESTS);
-  initIfEmpty('lusso_notifications', SEED_NOTIFICATIONS);
-  initConfigTable('lusso_product_types', SEED_PRODUCT_TYPES); // reseed if wiped
+  // When Supabase is configured this is a cloud app — do NOT seed business
+  // records with demo data. Real records come from Supabase via hydration.
+  // When Supabase is not configured (offline/demo build) use seed data.
+  const cloud = Boolean(supabase);
+  const empty = [];
 
-  // Schema v2: new margin-based pricing fields. Force reseed quotes & saved items.
+  initIfEmpty('lusso_customers',       cloud ? empty : SEED_CUSTOMERS);
+  initIfEmpty('lusso_jobs',            cloud ? empty : SEED_JOBS);
+  initIfEmpty('lusso_measure_sheets',  cloud ? empty : SEED_MEASURE_SHEETS);
+  initIfEmpty('lusso_installers',      cloud ? empty : SEED_INSTALLERS);
+  initIfEmpty('lusso_install_requests',cloud ? empty : SEED_INSTALL_REQUESTS);
+  initIfEmpty('lusso_staff',           cloud ? empty : SEED_STAFF);
+  initIfEmpty('lusso_notifications',   cloud ? empty : SEED_NOTIFICATIONS);
+
+  // Activity log is localStorage-only (not synced to Supabase)
+  initIfEmpty('lusso_activity', SEED_ACTIVITY);
+
+  // Job counter — set a safe default (hydration will raise it if Supabase has higher)
+  initIfEmpty('lusso_job_counter', 0);
+
+  // Product types: reseed if empty (config data synced from Supabase on hydration)
+  initConfigTable('lusso_product_types', cloud ? empty : SEED_PRODUCT_TYPES);
+
+  // Schema v2: new margin-based pricing fields.
   if (localStorage.getItem('lusso_schema_version') !== '2') {
     localStorage.removeItem('lusso_quotes');
     localStorage.removeItem('lusso_saved_items');
@@ -450,13 +464,14 @@ export const initStore = () => {
     localStorage.setItem('lusso_schema_version', '2');
   }
 
-  initIfEmpty('lusso_quotes', SEED_QUOTES);
-  initIfEmpty('lusso_quote_counter', 3);
-  initIfEmpty('lusso_saved_items', SEED_SAVED_ITEMS);
-  initIfEmpty('lusso_quote_templates', SEED_QUOTE_TEMPLATES);
-  initIfEmpty('lusso_quote_settings', DEFAULT_QUOTE_SETTINGS);
-  initIfEmpty('lusso_employees', SEED_EMPLOYEES);
-  initIfEmpty('lusso_tasks', SEED_TASKS);
+  initIfEmpty('lusso_quotes',          cloud ? empty : SEED_QUOTES);
+  initIfEmpty('lusso_quote_counter',   0);
+  initIfEmpty('lusso_saved_items',     cloud ? empty : SEED_SAVED_ITEMS);
+  initIfEmpty('lusso_quote_templates', cloud ? empty : SEED_QUOTE_TEMPLATES);
+  initIfEmpty('lusso_quote_settings',  DEFAULT_QUOTE_SETTINGS);
+  initIfEmpty('lusso_employees',       cloud ? empty : SEED_EMPLOYEES);
+  initIfEmpty('lusso_tasks',           cloud ? empty : SEED_TASKS);
+  initIfEmpty('lusso_calendar_events', empty); // always empty — user-created only
 };
 
 // ─── Customers ────────────────────────────────────────────────────────────────
@@ -470,7 +485,9 @@ export const deleteCustomer = (id, deletedBy = 'Admin') => {
   const now = new Date().toISOString();
   all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_customers', all);
-  db.saveCustomer(all[idx]);
+  // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
+  // The local soft-delete above keeps the record hidden on this device until next reload.
+  db.deleteCustomer(id);
 };
 
 export const bulkDeleteCustomers = (ids, deletedBy = 'Admin') => {
@@ -526,12 +543,17 @@ export const deleteJob = (id, deletedBy = 'Admin') => {
   const now = new Date().toISOString();
   all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_jobs', all);
-  db.saveJob(all[idx]);
-  // Also soft-delete all linked install requests so they disappear from the calendar
+  // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
+  db.deleteJob(id);
+  // Also delete all linked install requests from Supabase and mark deleted locally
   const reqs = get('lusso_install_requests') || [];
   let changed = false;
   const updatedReqs = reqs.map(r => {
-    if (r.jobId === id && !r.deletedAt) { changed = true; return { ...r, deletedAt: now, deletedBy }; }
+    if (r.jobId === id && !r.deletedAt) {
+      changed = true;
+      db.deleteInstallRequest(r.id);
+      return { ...r, deletedAt: now, deletedBy };
+    }
     return r;
   });
   if (changed) set('lusso_install_requests', updatedReqs);
@@ -562,6 +584,31 @@ export const saveJob = (job) => {
   }
   set('lusso_jobs', jobs);
   db.saveJob(jobs[jobs.findIndex(j => j.id === job.id)]);
+};
+
+export const createJob = (data) => {
+  const id = uuidv4();
+  const job = {
+    id,
+    customerId: data.customerId,
+    jobNumber: nextJobNumber(),
+    title: data.title || '',
+    status: 'New Enquiry',
+    jobType: data.jobType || '',
+    assignedStaff: data.assignedStaff || '',
+    urgency: data.urgency || 'Normal',
+    measureDate: data.measureDate || null,
+    quoteDueDate: data.quoteDueDate || null,
+    installDate: data.installDate || null,
+    siteAddress: data.siteAddress || '',
+    accessInstructions: data.accessInstructions || '',
+    parkingNotes: data.parkingNotes || '',
+    siteConditionNotes: data.siteConditionNotes || '',
+    internalNotes: data.internalNotes || '',
+  };
+  saveJob(job);
+  addActivity({ jobId: id, type: 'job_created', message: 'Job created', user: data.createdBy || 'Admin' });
+  return job;
 };
 
 export const createJobFromMeasureSheet = (measureSheet, customer) => {
@@ -623,7 +670,8 @@ export const deleteMeasureSheet = (id, deletedBy = 'Admin') => {
   const now = new Date().toISOString();
   all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_measure_sheets', all);
-  db.saveMeasureSheet(all[idx]);
+  // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
+  db.deleteMeasureSheet(id);
 };
 
 export const bulkDeleteMeasureSheets = (ids, deletedBy = 'Admin') => {
@@ -665,6 +713,65 @@ export const addActivity = ({ jobId, type, message, user }) => {
 // ─── Staff ────────────────────────────────────────────────────────────────────
 
 export const getStaff = () => get('lusso_staff') || [];
+
+// ─── Calendar Events ──────────────────────────────────────────────────────────
+
+export const getCalendarEvents = () =>
+  (get('lusso_calendar_events') || []).filter(e => !e.isDeleted);
+
+export const getCalendarEvent = (id) =>
+  (get('lusso_calendar_events') || []).find(e => e.id === id);
+
+export const getCalendarEventsByJob = (jobId) =>
+  getCalendarEvents().filter(e => e.jobId === jobId).sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+
+export const getCalendarEventsByCustomer = (customerId) =>
+  getCalendarEvents().filter(e => e.customerId === customerId).sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+
+export const saveCalendarEvent = (event, actorName = 'System') => {
+  const all = get('lusso_calendar_events') || [];
+  const idx = all.findIndex(e => e.id === event.id);
+  const now = new Date().toISOString();
+  let isNew = false;
+  let record;
+  if (idx >= 0) {
+    record = { ...all[idx], ...event, updatedAt: now };
+    all[idx] = record;
+  } else {
+    isNew = true;
+    record = { ...event, createdAt: now, updatedAt: now };
+    all.push(record);
+  }
+  set('lusso_calendar_events', all);
+  db.saveCalendarEvent(record);
+
+  // Write activity log when linked to a job
+  if (event.jobId) {
+    addActivity({
+      jobId: event.jobId,
+      type: isNew ? 'calendar_event_created' : 'calendar_event_updated',
+      message: isNew
+        ? `Calendar entry created: ${event.title || event.eventType}`
+        : `Calendar entry updated: ${event.title || event.eventType}`,
+      user: actorName,
+    });
+  }
+  window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+  return record;
+};
+
+export const deleteCalendarEvent = (id, deletedBy = 'System') => {
+  const all = get('lusso_calendar_events') || [];
+  const idx = all.findIndex(e => e.id === id);
+  if (idx < 0) return;
+  const now = new Date().toISOString();
+  const record = { ...all[idx], isDeleted: true, deletedAt: now, deletedBy, updatedAt: now };
+  all[idx] = record;
+  set('lusso_calendar_events', all);
+  // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
+  db.deleteCalendarEvent(id);
+  window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -800,7 +907,8 @@ export const deleteInstaller = (id, deletedBy = 'Admin') => {
   const now = new Date().toISOString();
   all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_installers', all);
-  db.saveInstaller(all[idx]);
+  // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
+  db.deleteInstaller(id);
 };
 
 export const bulkDeleteInstallers = (ids, deletedBy = 'Admin') => {
@@ -1498,7 +1606,12 @@ export const deleteQuote = (quoteId, deletedBy = 'System') => {
   const now = new Date().toISOString();
   all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_quotes', all);
-  db.saveQuote(all[idx]);
+  // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
+  db.deleteQuote(quoteId);
+};
+
+export const bulkDeleteQuotes = (ids, deletedBy = 'Admin') => {
+  ids.forEach(id => deleteQuote(id, deletedBy));
 };
 
 // ─── Saved Items ──────────────────────────────────────────────────────────────
@@ -1535,7 +1648,10 @@ export const saveQuoteSettings = (s) => set('lusso_quote_settings', { ...getQuot
 
 export const getPricedItems      = () => get('lusso_priced_items') || [];
 export const getPricedItem       = (id) => getPricedItems().find(p => p.id === id);
-export const deletePricedItem    = (id) => set('lusso_priced_items', getPricedItems().filter(p => p.id !== id));
+export const deletePricedItem    = (id) => {
+  set('lusso_priced_items', getPricedItems().filter(p => p.id !== id));
+  db.deletePricedItem(id);
+};
 
 export const savePricedItem = (item) => {
   const list = getPricedItems();
@@ -1578,12 +1694,15 @@ export const createPricedItemBatch = (fileName, totalRows) => {
   return savePricedItemBatch(batch);
 };
 
-export const runPricedItemImport = (batchId, rows) => {
+export const runPricedItemImport = async (batchId, rows) => {
   const batch = getPricedItemBatch(batchId);
   if (!batch) return null;
 
   const allItems = [...getPricedItems()];
   let imported = 0, updated = 0, dups = 0, errors = 0, skipped = 0;
+
+  // Track which items need to be written to Supabase
+  const toUpsert = [];
 
   for (const row of rows) {
     if (row.status === 'error' || row.status === 'empty') { errors++; continue; }
@@ -1633,9 +1752,27 @@ export const runPricedItemImport = (batchId, rows) => {
       allItems.push(item);
       imported++;
     }
+
+    toUpsert.push(item);
   }
 
+  // 1. Save to localStorage immediately so UI updates right away
   set('lusso_priced_items', allItems);
+  window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+
+  // 2. Write directly to Supabase in batches — no manual Push needed
+  let supabaseInserted = 0;
+  let supabaseErrors   = [];
+  if (supabase && toUpsert.length > 0) {
+    const { inserted, errors: sbErrors } = await batchUpsertPricedItems(toUpsert);
+    supabaseInserted = inserted;
+    supabaseErrors   = sbErrors;
+    if (sbErrors.length) {
+      console.warn('[import] Priced items Supabase write errors:', sbErrors);
+    } else {
+      console.info(`[import] ✓ ${supabaseInserted} priced items saved to Supabase`);
+    }
+  }
 
   const updatedBatch = {
     ...batch,
@@ -1645,6 +1782,8 @@ export const runPricedItemImport = (batchId, rows) => {
     duplicateCount: dups,
     errorCount: errors,
     skippedCount: skipped,
+    supabaseInserted,
+    supabaseErrors,
     completedAt: new Date().toISOString(),
   };
   savePricedItemBatch(updatedBatch);
@@ -1684,12 +1823,15 @@ export const createImportBatch = (fileName, totalRows) => {
   return saveImportBatch(batch);
 };
 
-export const runContactImport = (batchId, rows) => {
+export const runContactImport = async (batchId, rows) => {
   const batch = getImportBatch(batchId);
   if (!batch) return null;
 
   const allCustomers = [...getCustomers()];
   let imported = 0, updated = 0, dups = 0, errors = 0, skipped = 0;
+
+  // Track which customers need to be written to Supabase
+  const toUpsert = [];
 
   for (const row of rows) {
     if (row.status === 'error' || row.status === 'empty') { errors++; continue; }
@@ -1739,9 +1881,27 @@ export const runContactImport = (batchId, rows) => {
       allCustomers.push(customer);
       imported++;
     }
+
+    toUpsert.push(customer);
   }
 
+  // 1. Save to localStorage immediately so UI updates right away
   set('lusso_customers', allCustomers);
+  window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+
+  // 2. Write directly to Supabase in batches — no manual Push needed
+  let supabaseInserted = 0;
+  let supabaseErrors   = [];
+  if (supabase && toUpsert.length > 0) {
+    const { inserted, errors: sbErrors } = await batchUpsertCustomers(toUpsert);
+    supabaseInserted = inserted;
+    supabaseErrors   = sbErrors;
+    if (sbErrors.length) {
+      console.warn('[import] Supabase write errors:', sbErrors);
+    } else {
+      console.info(`[import] ✓ ${supabaseInserted} customers saved to Supabase`);
+    }
+  }
 
   const updatedBatch = {
     ...batch,
@@ -1751,6 +1911,8 @@ export const runContactImport = (batchId, rows) => {
     duplicateCount: dups,
     errorCount: errors,
     skippedCount: skipped,
+    supabaseInserted,
+    supabaseErrors,
     completedAt: new Date().toISOString(),
   };
   saveImportBatch(updatedBatch);

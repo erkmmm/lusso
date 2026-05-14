@@ -12,7 +12,8 @@ function fromSupabase(row) {
     id:                       row.id,
     email:                    row.email,
     displayName:              row.display_name || row.displayName || '',
-    role:                     row.role,
+    accountType:              row.account_type || row.role || 'pending_user',
+    employeeRole:             row.employee_role || null,
     status:                   row.status,
     isEmployee:               row.is_employee ?? false,
     phone:                    row.phone || '',
@@ -33,11 +34,11 @@ function toSupabase(profile) {
   return {
     id:             profile.id,
     email:          profile.email,
-    display_name:   profile.displayName || '',
-    role:           profile.role,
+    display_name:   profile.displayName  || '',
+    account_type:   profile.accountType  || 'pending_user',
     status:         profile.status,
-    is_employee:    profile.isEmployee ?? false,
-    phone:          profile.phone || null,
+    is_employee:    profile.isEmployee   ?? false,
+    phone:          profile.phone        || null,
     position_title: profile.positionTitle || null,
   };
 }
@@ -47,13 +48,12 @@ export function UserProfileProvider({ children }) {
   const [profile, setProfile] = useState(undefined); // undefined = loading
 
   useEffect(() => {
-    if (user === undefined) return; // auth still resolving
+    if (user === undefined) return;
     if (!user) { setProfile(null); return; }
 
     let cancelled = false;
 
     const load = async () => {
-      // 1. Try Supabase first (single source of truth)
       if (supabase) {
         const { data, error } = await supabase
           .from('profiles')
@@ -64,14 +64,13 @@ export function UserProfileProvider({ children }) {
         if (!cancelled) {
           if (data && !error) {
             const p = fromSupabase(data);
-            saveProfile(p); // keep localStorage in sync
+            saveProfile(p);
             setProfile(p);
             return;
           }
         }
       }
 
-      // 2. Fallback to localStorage cache
       if (!cancelled) {
         const meta = user.user_metadata || {};
         const fallbackName = meta.full_name || meta.name || user.email.split('@')[0];
@@ -98,34 +97,82 @@ export function UserProfileProvider({ children }) {
   const updateProfile = async (updates) => {
     if (!profile) return;
     const updated = { ...profile, ...updates };
-
-    // Write to Supabase
     if (supabase) {
       await supabase.from('profiles').upsert(toSupabase(updated), { onConflict: 'id' });
     }
-
-    // Keep localStorage in sync
     saveProfile(updated);
     setProfile(updated);
   };
 
+  // ── Role booleans — based solely on the real logged-in user's account ─────────
   // status may be absent in old localStorage cache — treat undefined as 'active'
-  // so legacy data doesn't accidentally lock out existing users.
-  // Pending is explicit: role === 'pending' OR status === 'pending'.
   const effectiveStatus = profile?.status ?? 'active';
-  const isAM      = profile?.role === 'account_manager' && effectiveStatus === 'active';
-  // standard_user is the new name for an approved non-AM account (was 'salesperson')
-  // keep 'salesperson' fallback for any cached profiles not yet migrated
-  const isSP      = (profile?.role === 'standard_user' || profile?.role === 'salesperson') && effectiveStatus === 'active';
-  const isPending = profile?.role === 'pending' || profile?.role === 'pending_user' || profile?.status === 'pending';
+
+  /** Admin access — account_type = account_manager AND status = active */
+  const isAM = profile?.accountType === 'account_manager' && effectiveStatus === 'active';
+
+  /** Normal approved user — account_type = standard_user AND status = active */
+  const isStandardUser = profile?.accountType === 'standard_user' && effectiveStatus === 'active';
+
+  /** Kept for backward compat — same as isStandardUser */
+  const isSP = isStandardUser;
+
+  /** Sales work — employee_role = salesperson, is_employee, active */
+  const isSalesperson = (
+    profile?.employeeRole === 'salesperson' &&
+    profile?.isEmployee   === true &&
+    effectiveStatus       === 'active'
+  );
+
+  /** Install work — employee_role = installer, is_employee, active */
+  const isInstallerRole = (
+    profile?.employeeRole === 'installer' &&
+    profile?.isEmployee   === true &&
+    effectiveStatus       === 'active'
+  );
+
+  /** Any active employee */
+  const isActiveEmployee = profile?.isEmployee === true && effectiveStatus === 'active';
+
+  /**
+   * Pending — account hasn't been approved yet.
+   * Transition-safe: checks both accountType and legacy role/status fields.
+   */
+  const isPending = (
+    profile?.accountType === 'pending_user' ||
+    profile?.accountType === 'pending'      || // legacy
+    profile?.role        === 'pending'      || // legacy localStorage cache
+    profile?.role        === 'pending_user' || // legacy localStorage cache
+    profile?.status      === 'pending'
+  );
+
   const displayName = profile?.displayName || '';
-  const needsOnboarding = profile?.isEmployee === true
-    && effectiveStatus === 'active'
-    && !isPending
-    && profile?.employeeProfileCompleted === false;
+
+  const needsOnboarding = (
+    profile?.isEmployee             === true &&
+    effectiveStatus                 === 'active' &&
+    !isPending &&
+    profile?.employeeProfileCompleted === false
+  );
 
   return (
-    <ProfileCtx.Provider value={{ profile, isAM, isSP, isPending, needsOnboarding, displayName, refreshProfile, updateProfile, toSupabase }}>
+    <ProfileCtx.Provider value={{
+      profile,
+      displayName,
+      refreshProfile,
+      updateProfile,
+      toSupabase,
+      // Role booleans — always the real logged-in user, never overridden
+      isAM,
+      isSP,
+      isPending,
+      needsOnboarding,
+      isAccountManager:  isAM,
+      isStandardUser,
+      isSalesperson,
+      isInstaller:       isInstallerRole,
+      isActiveEmployee,
+    }}>
       {children}
     </ProfileCtx.Provider>
   );

@@ -5,7 +5,7 @@ import {
   Upload, FileText, ChevronRight, AlertTriangle, CheckCircle2,
   XCircle, SkipForward, RefreshCw, Download, History, ArrowRight,
   Info, X, Loader2, Library, Plus, Search, Edit2, Trash2,
-  ToggleLeft, ToggleRight, DollarSign, Tag, ChevronDown,
+  ToggleLeft, ToggleRight, DollarSign, Tag, ChevronDown, Cloud, CloudOff,
 } from 'lucide-react';
 import {
   getPricedItems, savePricedItem, deletePricedItem,
@@ -13,6 +13,7 @@ import {
   savePricedItemBatch,
 } from '../store/data';
 import Card from '../components/Card';
+import BackButton from '../components/BackButton';
 import { v4 as uuidv4 } from 'uuid';
 
 // ─── Field definitions ────────────────────────────────────────────────────────
@@ -369,7 +370,8 @@ export default function PricedItems() {
     setImporting(true);
     await new Promise(r => setTimeout(r, 60));
     const batch = createPricedItemBatch(fileName, previewRows.filter(r => r.status !== 'empty').length);
-    const res   = runPricedItemImport(batch.id, previewRows);
+    // runPricedItemImport is async — awaits Supabase batch upsert before returning
+    const res = await runPricedItemImport(batch.id, previewRows);
     setResult(res);
     reload();
     setImporting(false);
@@ -399,15 +401,28 @@ export default function PricedItems() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
+
+      {/* Back button — guards against leaving mid-import */}
+      <BackButton
+        fallback="/settings"
+        guard={() => {
+          // Warn if the user is mid-import (file selected, not yet done)
+          if (activeTab === 'import' && step !== 'upload' && step !== 'done') {
+            return window.confirm('You have an import in progress. Leave this page?');
+          }
+          return true;
+        }}
+      />
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900">Priced Items</h1>
           <p className="text-slate-500 text-sm mt-0.5">Manage your reusable pricing library and import from CSV.</p>
         </div>
         {activeTab === 'library' && !editItem && (
           <button
             onClick={() => setEditItem(EMPTY_ITEM())}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors self-start"
+            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors flex-shrink-0"
           >
             <Plus size={15}/> Add Item
           </button>
@@ -806,6 +821,25 @@ export default function PricedItems() {
                   </div>
                 ))}
               </div>
+              {/* Cloud sync confirmation */}
+              {result.supabaseErrors?.length > 0 ? (
+                <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl mb-4 text-sm">
+                  <CloudOff size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-red-700">Cloud save failed for some records</p>
+                    <p className="text-red-500 text-xs mt-0.5">{result.supabaseErrors.join('; ')}</p>
+                    <p className="text-red-400 text-xs mt-1">Items were saved locally. Use Advanced Diagnostics in Settings → Push to Cloud to retry.</p>
+                  </div>
+                </div>
+              ) : result.supabaseInserted != null ? (
+                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl mb-4 text-sm">
+                  <Cloud size={16} className="text-green-600 flex-shrink-0" />
+                  <p className="text-green-700 font-medium">
+                    {result.supabaseInserted} item{result.supabaseInserted !== 1 ? 's' : ''} saved to cloud — all devices will sync automatically.
+                  </p>
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap gap-3">
                 <button onClick={() => { setActiveTab('library'); resetWizard(); reload(); }} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg flex items-center gap-2"><Library size={14}/>View Library</button>
                 {result.errorCount > 0 && <button onClick={() => downloadErrorReport(previewRows, result.fileName)} className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm rounded-lg flex items-center gap-2"><Download size={14}/>Error Report</button>}

@@ -1,26 +1,64 @@
 /**
  * Frontend email helpers.
- * Calls Netlify Functions which hold the Resend API key server-side.
+ * Calls Cloudflare Pages Functions which hold the Resend API key server-side.
+ *
+ * Routes:
+ *   POST /api/send-quote      → functions/api/send-quote.js
+ *   POST /api/send-installer  → functions/api/send-installer.js
+ *
+ * These are same-origin calls in both dev (Vite dev server) and production
+ * (Cloudflare Pages), so no cross-origin issues and no BASE URL needed.
  */
 
-const BASE = import.meta.env.DEV
-  ? 'http://localhost:8888'  // netlify dev
-  : '';                       // same origin in production
+/**
+ * Safe HTTP POST to a local API route.
+ * Handles empty / non-JSON responses gracefully so a bad body never
+ * throws the cryptic "Unexpected end of JSON input" error.
+ */
+async function post(path, body) {
+  let res;
+  try {
+    res = await fetch(`/api/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (networkErr) {
+    throw new Error('Network error — could not reach the email service. Please check your connection and try again.');
+  }
 
-async function post(fn, body) {
-  const res = await fetch(`${BASE}/.netlify/functions/${fn}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Email send failed');
-  return data;
+  // Read raw text first so we never crash on an empty body
+  const text = await res.text();
+
+  // Try to parse as JSON
+  let data = null;
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Server returned non-JSON (e.g. a Cloudflare 404 HTML page)
+      if (!res.ok) {
+        throw new Error(
+          res.status === 404
+            ? 'Email API route not found (404). Ensure the Cloudflare Pages Function is deployed.'
+            : `Email service error ${res.status}: ${text.slice(0, 200)}`
+        );
+      }
+      // 2xx but non-JSON — treat as success with no data
+      return { success: true };
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(data?.error || data?.message || text || `Email service returned HTTP ${res.status}`);
+  }
+
+  return data || { success: true };
 }
 
 /**
  * Send a quote email to the customer.
- * @param {object} quote  - full quote object
+ * @param {object} quote    - full quote object
  * @param {object} customer - customer object (must have .email)
  */
 export async function sendQuoteEmail(quote, customer) {

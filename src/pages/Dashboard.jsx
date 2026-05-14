@@ -10,7 +10,7 @@ import {
   AlertTriangle, TrendingUp, Users, ArrowRight, Plus,
   CalendarDays, Package, Wrench, Star, DollarSign,
   ChevronDown, BarChart2, TrendingDown, HardHat, Percent,
-  SlidersHorizontal, Eye, EyeOff, MapPin,
+  SlidersHorizontal, Eye, EyeOff, MapPin, Wand2,
 } from 'lucide-react';
 import {
   getJobs, getJobsFiltered, getCustomers, getCustomersFiltered,
@@ -35,12 +35,19 @@ const WIDGET_DEFS = [
 
 const DEFAULT_WIDGETS = Object.fromEntries(WIDGET_DEFS.map(w => [w.key, true]));
 const PREFS_KEY = 'lusso_dashboard_prefs';
+const LARP_KEY  = 'lusso_larp_mode';
 
 function loadPrefs() {
   try { return { ...DEFAULT_WIDGETS, ...JSON.parse(localStorage.getItem(PREFS_KEY)) }; }
   catch { return DEFAULT_WIDGETS; }
 }
 function savePrefs(p) { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }
+
+function loadLarp() {
+  try { return localStorage.getItem(LARP_KEY) === 'true'; }
+  catch { return false; }
+}
+function saveLarp(v) { localStorage.setItem(LARP_KEY, v ? 'true' : 'false'); }
 
 // ─── Pipeline config ───────────────────────────────────────────────────────────
 const STAT_GROUPS = [
@@ -144,6 +151,24 @@ function fmt$(value) {
   }).format(value);
 }
 
+// Compact currency — keeps large numbers readable inside cards
+function fmtCompact(value) {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) {
+    const v = value / 1_000_000_000;
+    return `$${(abs >= 100_000_000_000 ? v.toFixed(0) : abs >= 10_000_000_000 ? v.toFixed(1) : v.toFixed(2))}B`;
+  }
+  if (abs >= 1_000_000) {
+    const v = value / 1_000_000;
+    return `$${(abs >= 100_000_000 ? v.toFixed(0) : abs >= 10_000_000 ? v.toFixed(1) : v.toFixed(2))}M`;
+  }
+  if (abs >= 100_000) {
+    const v = value / 1_000;
+    return `$${v.toFixed(0)}K`;
+  }
+  return fmt$(value);
+}
+
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 function DateRangeSelect({ value, onChange }) {
@@ -204,29 +229,18 @@ function HeroStat({ label, value, icon: Icon, color, bg, onClick }) {
 }
 
 // ─── Customise panel ──────────────────────────────────────────────────────────
-function CustomisePanel({ prefs, onChange, onClose }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [onClose]);
-
-  const allOn  = WIDGET_DEFS.every(w => prefs[w.key]);
-  const allOff = WIDGET_DEFS.every(w => !prefs[w.key]);
+function CustomisePanel({ prefs, onChange, onClose, isAM, larpMode, onLarpToggle }) {
+  const allOn = WIDGET_DEFS.every(w => prefs[w.key]);
 
   return (
     <div
-      ref={ref}
-      className="absolute left-0 sm:left-auto sm:right-0 top-full mt-2 z-50 w-72 bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden"
+      onClick={e => e.stopPropagation()}   /* prevent clicks inside reaching backdrop */
+      className="absolute right-0 top-full mt-2 z-50 w-72 bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden"
     >
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
         <span className="font-semibold text-slate-800 text-sm">Customise Dashboard</span>
         <button
-          onClick={() => {
-            const next = Object.fromEntries(WIDGET_DEFS.map(w => [w.key, !allOn]));
-            onChange(next);
-          }}
+          onClick={() => onChange(Object.fromEntries(WIDGET_DEFS.map(w => [w.key, !allOn])))}
           className="text-xs text-amber-600 hover:underline"
         >
           {allOn ? 'Hide all' : 'Show all'}
@@ -243,6 +257,15 @@ function CustomisePanel({ prefs, onChange, onClose }) {
           </div>
         ))}
       </div>
+
+      {/* LARP Mode — Account Managers only */}
+      {isAM && (
+        <div className="border-t border-slate-200 flex items-center gap-3 px-4 py-3">
+          <p className="text-sm font-medium text-slate-800 flex-1">LARP Mode</p>
+          <Toggle on={larpMode} onChange={onLarpToggle} />
+        </div>
+      )}
+
       <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
         <p className="text-xs text-slate-400">Preferences saved automatically.</p>
       </div>
@@ -334,7 +357,7 @@ function TodaySchedule({ navigate }) {
 }
 
 // ─── Monthly Revenue Trend ─────────────────────────────────────────────────────
-function MonthlyTrend({ quotes, navigate }) {
+function MonthlyTrend({ quotes, navigate, larpMul = 1 }) {
   const now    = new Date();
   const months = Array.from({ length: 12 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
@@ -366,11 +389,11 @@ function MonthlyTrend({ quotes, navigate }) {
           <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
             <BarChart2 size={15} className="text-amber-500" /> Monthly Revenue Trend
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">Last 12 months · {fmt$(totalVal)} total</p>
+          <p className="text-xs text-slate-400 mt-0.5">Last 12 months · {fmt$(totalVal * larpMul)} total</p>
         </div>
         {bestMon.value > 0 && (
           <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded-lg">
-            Best: {bestMon.label} {bestMon.value !== totalVal && fmt$(bestMon.value)}
+            Best: {bestMon.label} {bestMon.value !== totalVal && fmt$(bestMon.value * larpMul)}
           </span>
         )}
       </div>
@@ -390,7 +413,7 @@ function MonthlyTrend({ quotes, navigate }) {
                                   'bg-slate-200 hover:bg-slate-300'
                     }`}
                     style={{ height: `${Math.max(barPct, barPct > 0 ? 5 : 0)}%` }}
-                    title={`${m.label}: ${fmt$(m.value)} (${m.count} quotes)`}
+                    title={`${m.label}: ${fmt$(m.value * larpMul)} (${m.count} quotes)`}
                   />
                 </div>
                 <span className={`text-[10px] truncate w-full text-center ${isCurrent ? 'text-teal-600 font-semibold' : 'text-slate-400'}`}>
@@ -501,10 +524,26 @@ export default function Dashboard() {
 
   const [globalRange, setGlobalRange] = useState('thisfy');
   const [prefs, setPrefs]             = useState(loadPrefs);
+  const [larpMode, setLarpMode]       = useState(loadLarp);
   const [showCustomise, setShowCustomise] = useState(false);
-  const customiseRef = useRef(null);
+
+  // Escape key closes the customise panel
+  useEffect(() => {
+    if (!showCustomise) return;
+    const handler = (e) => { if (e.key === 'Escape') setShowCustomise(false); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [showCustomise]);
 
   const updatePrefs = (next) => { setPrefs(next); savePrefs(next); };
+  const updateLarp  = (v)    => { setLarpMode(v); saveLarp(v); };
+
+  // Inflation helpers — only active for AMs with larpMode on; never touch real data
+  const larpActive = larpMode && isAM;
+  const lI = (n) => larpActive ? Math.round((n || 0) * 87)  : (n || 0);
+  const lM = (v) => larpActive ? ((v || 0) * 237)           : (v || 0);
+  const lW = (p) => (larpActive && p !== null) ? Math.min(100, p * 1.5) : p;
+  const larpMul = larpActive ? 237 : 1;
 
   const visible = (key) => prefs[key] !== false;
 
@@ -583,9 +622,22 @@ export default function Dashboard() {
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
 
+      {/* ── Customise backdrop ───────────────────────────────────────────────
+           Fixed fullscreen layer that sits BEHIND the panel (z-40) but ABOVE
+           the rest of the page. Clicking it closes the panel and consumes the
+           click so nothing underneath activates. */}
+      {showCustomise && (
+        <div
+          className="fixed inset-0 z-40"
+          aria-hidden="true"
+          onClick={() => setShowCustomise(false)}
+        />
+      )}
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
+      {/* Single row at all sizes — Customise stays right-aligned, never stacks */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
           {isSP ? (
             <p className="text-slate-500 text-sm mt-0.5">Welcome back, {displayName} — your personal pipeline.</p>
@@ -598,35 +650,54 @@ export default function Dashboard() {
             </span>
           )}
         </div>
-        {/* Customise button */}
-        <div className="relative" ref={customiseRef}>
+        {/* Customise button — icon-only on mobile, labelled on sm+ */}
+        <div className="relative z-50 flex-shrink-0">
           <button
             onClick={() => setShowCustomise(v => !v)}
-            className={`w-full sm:w-auto flex items-center gap-2 text-sm font-medium rounded-lg px-4 py-2.5 border transition-colors ${
+            className={`flex items-center gap-2 text-sm font-medium rounded-lg px-3 sm:px-4 py-2.5 border transition-colors ${
               showCustomise
                 ? 'bg-amber-500 text-white border-amber-500'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             }`}
           >
             <SlidersHorizontal size={15} />
-            Customise
+            <span className="hidden sm:inline">Customise</span>
           </button>
           {showCustomise && (
             <CustomisePanel
               prefs={prefs}
               onChange={updatePrefs}
               onClose={() => setShowCustomise(false)}
+              isAM={isAM}
+              larpMode={larpMode}
+              onLarpToggle={updateLarp}
             />
           )}
         </div>
       </div>
 
+      {/* ── LARP Mode indicator ──────────────────────────────────────────────── */}
+      {larpActive && (
+        <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="text-xs font-semibold text-amber-700 tracking-wide uppercase">LARP</span>
+          </div>
+          <button
+            onClick={() => updateLarp(false)}
+            className="text-xs text-amber-600 hover:text-amber-800 font-medium transition-colors"
+          >
+            Disable
+          </button>
+        </div>
+      )}
+
       {/* ── Hero stats (always visible) ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <HeroStat label="Active Jobs"          value={stats.active}                 icon={Briefcase}    color="text-amber-600" bg="bg-amber-50"  onClick={() => navigate('/jobs')} />
-        <HeroStat label="Total Customers"      value={customers.length}             icon={Users}        color="text-blue-600"  bg="bg-blue-50"   onClick={() => navigate('/customers')} />
-        <HeroStat label="Urgent / High Priority" value={stats.urgent}               icon={AlertTriangle} color="text-red-500"  bg="bg-red-50"    onClick={() => navigate('/jobs')} />
-        <HeroStat label="Completed Jobs"       value={stats.counts['Completed'] || 0} icon={CheckCircle2} color="text-green-600" bg="bg-green-50" onClick={() => navigate('/jobs')} />
+        <HeroStat label="Active Jobs"            value={lI(stats.active)}                   icon={Briefcase}     color="text-amber-600" bg="bg-amber-50"  onClick={() => navigate('/jobs')} />
+        <HeroStat label="Total Customers"       value={lI(customers.length)}               icon={Users}         color="text-blue-600"  bg="bg-blue-50"   onClick={() => navigate('/customers')} />
+        <HeroStat label="Urgent / High Priority" value={lI(stats.urgent)}                  icon={AlertTriangle} color="text-red-500"   bg="bg-red-50"    onClick={() => navigate('/jobs')} />
+        <HeroStat label="Completed Jobs"         value={lI(stats.counts['Completed'] || 0)} icon={CheckCircle2}  color="text-green-600" bg="bg-green-50"  onClick={() => navigate('/jobs')} />
       </div>
 
       {/* ── Today's Schedule ─────────────────────────────────────────────────── */}
@@ -642,7 +713,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
 
             {/* Win Rate */}
-            <Card className="p-5 flex flex-col gap-3">
+            <Card className="p-5 flex flex-col gap-3 min-w-0">
               <div className="flex items-center justify-between">
                 <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
                   <Percent size={17} className="text-purple-600" />
@@ -653,19 +724,19 @@ export default function Dashboard() {
               </div>
               <div>
                 <div className="text-3xl font-bold text-slate-900">
-                  {analytics.winRate !== null ? `${analytics.winRate.toFixed(0)}%` : '—'}
+                  {analytics.winRate !== null ? `${lW(analytics.winRate).toFixed(0)}%` : '—'}
                 </div>
                 <div className="text-sm text-slate-500 mt-0.5">Win Rate</div>
               </div>
               <div className="text-xs text-slate-400">
                 {analytics.decisions > 0
-                  ? `${analytics.decisions} decision${analytics.decisions !== 1 ? 's' : ''} in period`
+                  ? `${lI(analytics.decisions)} decision${lI(analytics.decisions) !== 1 ? 's' : ''} in period`
                   : 'No accepted/declined quotes yet'}
               </div>
             </Card>
 
             {/* Quotes Accepted */}
-            <Card className="p-5 flex flex-col gap-3">
+            <Card className="p-5 flex flex-col gap-3 min-w-0">
               <div className="flex items-center justify-between">
                 <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
                   <CheckCircle2 size={18} className="text-green-600" />
@@ -673,49 +744,66 @@ export default function Dashboard() {
                 <DeltaBadge current={analytics.acceptedCount} previous={analytics.acceptedCountPrev} />
               </div>
               <div>
-                <div className="text-3xl font-bold text-slate-900">{analytics.acceptedCount}</div>
+                <div className="text-3xl font-bold text-slate-900">{lI(analytics.acceptedCount)}</div>
                 <div className="text-sm text-slate-500 mt-0.5">Quotes Accepted</div>
               </div>
-              <div className="text-xs text-slate-400">vs {analytics.acceptedCountPrev} in previous period</div>
+              <div className="text-xs text-slate-400">vs {lI(analytics.acceptedCountPrev)} in previous period</div>
             </Card>
 
             {/* Pipeline Value */}
-            <Card className="p-5 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+            <Card className="p-5 flex flex-col gap-3 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
                   <BarChart2 size={18} className="text-blue-600" />
                 </div>
-                <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                  {analytics.pipelineCount} active
+                <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                  {lI(analytics.pipelineCount)} active
                 </span>
               </div>
-              <div>
-                <div className="text-3xl font-bold text-slate-900">{fmt$(analytics.pipelineValue)}</div>
+              <div className="min-w-0">
+                <div
+                  className="text-3xl font-bold text-slate-900 leading-tight truncate"
+                  title={fmt$(lM(analytics.pipelineValue))}
+                >
+                  {fmtCompact(lM(analytics.pipelineValue))}
+                </div>
                 <div className="text-sm text-slate-500 mt-0.5">Pipeline Value</div>
+                {/* Show full value as subtitle when compact kicks in */}
+                {Math.abs(lM(analytics.pipelineValue)) >= 100_000 && (
+                  <div className="text-xs text-slate-400 mt-0.5 tabular-nums">{fmt$(lM(analytics.pipelineValue))}</div>
+                )}
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {analytics.pipelineByStatus.filter(s => s.count > 0).map(s => (
                   <span key={s.status} className="text-xs text-slate-400">
-                    <span className="font-medium text-slate-600">{s.count}</span> {s.status}
+                    <span className="font-medium text-slate-600">{lI(s.count)}</span> {s.status}
                   </span>
                 ))}
               </div>
             </Card>
 
             {/* Accepted Value */}
-            <Card className="p-5 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+            <Card className="p-5 flex flex-col gap-3 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
                   <DollarSign size={18} className="text-amber-600" />
                 </div>
                 <DeltaBadge current={analytics.acceptedValue} previous={analytics.acceptedValuePrev} />
               </div>
-              <div>
-                <div className="text-3xl font-bold text-slate-900">{fmt$(analytics.acceptedValue)}</div>
+              <div className="min-w-0">
+                <div
+                  className="text-3xl font-bold text-slate-900 leading-tight truncate"
+                  title={fmt$(lM(analytics.acceptedValue))}
+                >
+                  {fmtCompact(lM(analytics.acceptedValue))}
+                </div>
                 <div className="text-sm text-slate-500 mt-0.5">Accepted Quote Value</div>
+                {Math.abs(lM(analytics.acceptedValue)) >= 100_000 && (
+                  <div className="text-xs text-slate-400 mt-0.5 tabular-nums">{fmt$(lM(analytics.acceptedValue))}</div>
+                )}
               </div>
-              <div className="text-xs text-slate-400">
-                Avg {fmt$(analytics.acceptedAvg)} · vs {fmt$(analytics.acceptedValuePrev)} prior
+              <div className="text-xs text-slate-400 min-w-0 truncate">
+                Avg {fmtCompact(lM(analytics.acceptedAvg))} · vs {fmtCompact(lM(analytics.acceptedValuePrev))} prior
               </div>
             </Card>
           </div>
@@ -723,7 +811,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Monthly Revenue Trend ─────────────────────────────────────────────── */}
-      {visible('monthlyTrend') && <MonthlyTrend quotes={quotes} navigate={navigate} />}
+      {visible('monthlyTrend') && <MonthlyTrend quotes={quotes} navigate={navigate} larpMul={larpMul} />}
 
       {/* ── Stalled Jobs ─────────────────────────────────────────────────────── */}
       {visible('stalledJobs') && <StalledJobs jobs={jobs} customers={customers} navigate={navigate} />}
@@ -747,7 +835,7 @@ export default function Dashboard() {
                       <div
                         className="w-full bg-amber-400 rounded-t-md transition-all duration-500 hover:bg-amber-500"
                         style={{ height: `${Math.max(barPct, barPct > 0 ? 4 : 0)}%` }}
-                        title={`${row.label}: ${fmt$(row.value)}`}
+                        title={`${row.label}: ${fmt$(lM(row.value))}`}
                       />
                     </div>
                     <span className="text-xs text-slate-400 truncate w-full text-center">{row.label}</span>
@@ -770,9 +858,9 @@ export default function Dashboard() {
                 {analytics.yearlyRows.map(row => (
                   <tr key={row.year} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3 font-medium text-slate-700">{row.label}</td>
-                    <td className="px-5 py-3 text-right text-slate-600">{row.count}</td>
-                    <td className="px-5 py-3 text-right font-medium text-slate-800">{fmt$(row.value)}</td>
-                    <td className="px-5 py-3 text-right text-slate-600">{row.count > 0 ? fmt$(row.avg) : '—'}</td>
+                    <td className="px-5 py-3 text-right text-slate-600">{lI(row.count)}</td>
+                    <td className="px-5 py-3 text-right font-medium text-slate-800">{fmt$(lM(row.value))}</td>
+                    <td className="px-5 py-3 text-right text-slate-600">{row.count > 0 ? fmt$(lM(row.avg)) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -782,33 +870,64 @@ export default function Dashboard() {
       )}
 
       {/* ── Job Pipeline ─────────────────────────────────────────────────────── */}
-      {visible('jobPipeline') && (
-        <Card>
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-800 text-sm">Job Pipeline</h2>
-            <button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
-              View all <ArrowRight size={12} />
-            </button>
-          </div>
-          <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {STAT_GROUPS.map(({ label, key, icon: Icon, color, bg }) => (
-              <button
-                key={key}
-                onClick={() => navigate(`/jobs?status=${encodeURIComponent(key)}`)}
-                className="flex flex-col gap-2 p-3 rounded-lg border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all text-left"
-              >
-                <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center`}>
-                  <Icon size={15} className={color} />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-slate-800 leading-tight">{stats.counts[key] || 0}</div>
-                  <div className="text-xs text-slate-500 leading-tight mt-0.5">{label}</div>
-                </div>
+      {visible('jobPipeline') && (() => {
+        const phases = [
+          { label: 'Discovery', bar: 'bg-slate-400',  text: 'text-slate-500',  keys: ['New Enquiry', 'Measure Booked', 'Measured'] },
+          { label: 'Quoting',   bar: 'bg-blue-400',   text: 'text-blue-600',   keys: ['Quote Required', 'Quoted', 'Awaiting Approval'] },
+          { label: 'Active',    bar: 'bg-amber-500',  text: 'text-amber-600',  keys: ['Approved', 'Ordered', 'Installation Booked'] },
+          { label: 'Done',      bar: 'bg-green-500',  text: 'text-green-600',  keys: ['Installed', 'Completed'] },
+        ];
+        const dc = larpActive
+          ? Object.fromEntries(Object.entries(stats.counts).map(([k, v]) => [k, Math.round(v * 91)]))
+          : stats.counts;
+        const maxCount = Math.max(...STAT_GROUPS.map(s => dc[s.key] || 0), 1);
+        const total = STAT_GROUPS.reduce((sum, s) => sum + (dc[s.key] || 0), 0);
+        return (
+          <Card>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h2 className="font-semibold text-slate-800 text-sm">Job Pipeline</h2>
+                <span className="text-xs text-slate-400">{total} total</span>
+              </div>
+              <button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
+                View all <ArrowRight size={12} />
               </button>
-            ))}
-          </div>
-        </Card>
-      )}
+            </div>
+            <div className="px-5 py-4 space-y-5">
+              {phases.map(phase => {
+                const phaseTotal = phase.keys.reduce((sum, k) => sum + (dc[k] || 0), 0);
+                return (
+                  <div key={phase.label}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`text-[10px] font-bold tracking-widest uppercase ${phase.text}`}>{phase.label}</span>
+                      <span className="text-xs text-slate-400">{phaseTotal} job{phaseTotal !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {phase.keys.map(key => {
+                        const count = dc[key] || 0;
+                        const barWidth = `${Math.max((count / maxCount) * 100, count > 0 ? 3 : 0)}%`;
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => navigate(`/jobs?status=${encodeURIComponent(key)}`)}
+                            className="w-full flex items-center gap-3 py-1 hover:bg-slate-50 rounded-lg px-2 -mx-2 transition-colors text-left"
+                          >
+                            <span className="text-xs text-slate-600 w-36 flex-shrink-0 truncate">{key}</span>
+                            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`h-full ${phase.bar} rounded-full transition-all duration-500`} style={{ width: barWidth }} />
+                            </div>
+                            <span className={`text-sm font-bold w-6 text-right tabular-nums ${count > 0 ? 'text-slate-800' : 'text-slate-300'}`}>{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* ── Recent Jobs + Activity ────────────────────────────────────────────── */}
       {(visible('recentJobs') || visible('recentActivity')) && (
@@ -831,7 +950,7 @@ export default function Dashboard() {
                       onClick={() => navigate(`/jobs/${job.id}`)}
                       className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
                     >
-                      <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-100 to-amber-200 flex items-center justify-center flex-shrink-0">
+                      <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
                         <span className="text-amber-700 font-bold text-xs">{customer?.name?.charAt(0) || 'J'}</span>
                       </div>
                       <div className="min-w-0 flex-1">

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle } from 'lucide-react';
+import { ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle, Upload } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import {
   getMeasureSheets, getMeasureSheetsFiltered, getCustomers, getJobs, getQuotes,
@@ -161,10 +161,10 @@ export default function MeasureSheets() {
             )
           )}
           <button
-            onClick={() => navigate('/measure-sheets/new')}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
+            onClick={() => navigate('/measure-sheets/import')}
+            className="flex items-center gap-2 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
           >
-            <Plus size={16} /> New Measure Sheet
+            <Upload size={15} /> Import Measure Sheet
           </button>
         </div>
       </div>
@@ -212,11 +212,11 @@ export default function MeasureSheets() {
           <EmptyState
             icon={ClipboardList}
             title="No measure sheets yet"
-            description="Create a new measure sheet to get started."
+            description="Open a Job Workspace to create or import a measure sheet — it will link automatically."
             action={
-              <button onClick={() => navigate('/measure-sheets/new')}
+              <button onClick={() => navigate('/jobs')}
                 className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-                New Measure Sheet
+                Go to Jobs
               </button>
             }
           />
@@ -263,7 +263,7 @@ export default function MeasureSheets() {
                   onClick={() => navigate(`/measure-sheets/${sheet.id}`)}
                   className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3 py-4 pr-4 text-left min-w-0"
                 >
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center flex-shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
                     <ClipboardList size={16} className="text-amber-600" />
                   </div>
                   <div className="flex-1 min-w-0">

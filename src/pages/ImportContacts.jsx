@@ -4,12 +4,13 @@ import { format, parseISO } from 'date-fns';
 import {
   Upload, FileText, ChevronRight, ChevronDown, AlertTriangle,
   CheckCircle2, XCircle, SkipForward, RefreshCw, Users,
-  Download, History, ArrowRight, Info, X, Loader2,
+  Download, History, ArrowRight, Info, X, Loader2, Cloud, CloudOff,
 } from 'lucide-react';
 import {
   getCustomers, createImportBatch, runContactImport,
   saveImportBatch, getImportBatches,
 } from '../store/data';
+import BackButton from '../components/BackButton';
 import Card from '../components/Card';
 
 // ─── Field definitions ─────────────────────────────────────────────────────────
@@ -325,7 +326,9 @@ export default function ImportContacts() {
     const batch = createImportBatch(fileName, importable.length);
     setBatchId(batch.id);
 
-    const finalResult = runContactImport(batch.id, previewRows);
+    // runContactImport is async — it writes to localStorage immediately,
+    // then awaits Supabase batch upsert before returning.
+    const finalResult = await runContactImport(batch.id, previewRows);
     setResult(finalResult);
     setBatches(getImportBatches());
     setImporting(false);
@@ -359,6 +362,7 @@ export default function ImportContacts() {
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
+      <BackButton fallback="/customers" />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Import Contacts</h1>
@@ -621,6 +625,25 @@ export default function ImportContacts() {
                     </div>
                   ))}
                 </div>
+
+                {/* Cloud sync confirmation */}
+                {result.supabaseErrors?.length > 0 ? (
+                  <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl mb-4 text-sm">
+                    <CloudOff size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-red-700">Cloud save failed for some records</p>
+                      <p className="text-red-500 text-xs mt-0.5">{result.supabaseErrors.join('; ')}</p>
+                      <p className="text-red-400 text-xs mt-1">Records were saved locally. Use Advanced Diagnostics in Settings → Push to Cloud to retry.</p>
+                    </div>
+                  </div>
+                ) : result.supabaseInserted != null ? (
+                  <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl mb-4 text-sm">
+                    <Cloud size={16} className="text-green-600 flex-shrink-0" />
+                    <p className="text-green-700 font-medium">
+                      {result.supabaseInserted} contact{result.supabaseInserted !== 1 ? 's' : ''} saved to cloud — all devices will sync automatically.
+                    </p>
+                  </div>
+                ) : null}
 
                 <div className="flex flex-wrap gap-3">
                   <button onClick={() => navigate('/customers')} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2">

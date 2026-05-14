@@ -307,7 +307,7 @@ export default function Installers() {
                   className={`w-full p-5 text-left group ${selectMode ? 'pl-9' : ''}`}
                 >
                   <div className="flex items-start gap-3 mb-3">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${installer.isActive ? 'bg-gradient-to-br from-amber-100 to-amber-200' : 'bg-slate-100'}`}>
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${installer.isActive ? 'bg-amber-100' : 'bg-slate-100'}`}>
                       <HardHat size={20} className={installer.isActive ? 'text-amber-700' : 'text-slate-400'} />
                     </div>
                     <div className="min-w-0 flex-1">

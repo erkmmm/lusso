@@ -4,11 +4,12 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { format } from 'date-fns';
 import {
-  ArrowLeft, Plus, Trash2, ChevronDown, ChevronUp, Eye, Send, Save,
+  Plus, Trash2, ChevronDown, ChevronUp, Eye, Send, Save,
   User, FileText, Settings, DollarSign, ChevronRight, GripVertical,
   Package, ClipboardList, BookOpen, Sparkles, Info, Check, Copy,
   AlertCircle, CheckCircle2, X, Loader2, ExternalLink,
 } from 'lucide-react';
+import BackButton from '../components/BackButton';
 import {
   getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
@@ -178,17 +179,27 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove }
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
       {/* Card header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200">
-        <div className="w-7 h-7 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-          {idx + 1}
+      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+        {/* Row 1: badge · title · total · remove */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-7 h-7 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+            {idx + 1}
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-semibold text-slate-700 truncate block">
+              {item.location || 'New Item'}{item.productNameSnapshot ? ` · ${item.productNameSnapshot}` : ''}
+            </span>
+          </div>
+          <span className="text-sm font-bold text-slate-800 flex-shrink-0">{fmt(lineTotal)}</span>
+          {canRemove && (
+            <button type="button" onClick={() => onRemove(idx)}
+              className="text-slate-400 hover:text-red-500 transition-colors flex-shrink-0 p-1">
+              <Trash2 size={14} />
+            </button>
+          )}
         </div>
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-slate-700">
-            {item.location || 'New Item'} {item.productNameSnapshot ? `· ${item.productNameSnapshot}` : ''}
-          </span>
-        </div>
-        {/* Item type selector */}
-        <div className="flex gap-1">
+        {/* Row 2: item type buttons — wrap on mobile */}
+        <div className="flex flex-wrap gap-1 mt-2">
           {QUOTE_ITEM_TYPES.map(t => (
             <button
               key={t}
@@ -202,14 +213,6 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove }
             </button>
           ))}
         </div>
-        {/* Line total */}
-        <span className="text-sm font-bold text-slate-800 flex-shrink-0">{fmt(lineTotal)}</span>
-        {canRemove && (
-          <button type="button" onClick={() => onRemove(idx)}
-            className="text-slate-400 hover:text-red-500 transition-colors flex-shrink-0 p-1">
-            <Trash2 size={14} />
-          </button>
-        )}
       </div>
 
       {/* Body */}
@@ -313,10 +316,10 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove }
               </div>
             </div>
             {/* GP row */}
-            <div className="flex items-center gap-6 px-1 pt-0.5 border-t border-slate-200">
-              <span className="text-xs text-slate-400">Total Cost: <span className="font-medium text-slate-600">{fmt(totalCost * (Number(item.quantity)||1))}</span></span>
-              <span className="text-xs text-slate-400">Gross Profit: <span className={`font-semibold ${grossProfit * (Number(item.quantity)||1) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(grossProfit * (Number(item.quantity)||1))}</span></span>
-              <span className="text-xs text-slate-400">GP %: <span className={`font-semibold ${gpPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{gpPercent.toFixed(1)}%</span></span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pt-1.5 border-t border-slate-200">
+              <span className="text-xs text-slate-400">Cost: <span className="font-medium text-slate-600">{fmt(totalCost * (Number(item.quantity)||1))}</span></span>
+              <span className="text-xs text-slate-400">GP: <span className={`font-semibold ${grossProfit * (Number(item.quantity)||1) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(grossProfit * (Number(item.quantity)||1))}</span></span>
+              <span className="text-xs text-slate-400">GP%: <span className={`font-semibold ${gpPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{gpPercent.toFixed(1)}%</span></span>
             </div>
           </div>
         )}
@@ -450,7 +453,7 @@ export default function QuoteBuilder() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Quote not found.</p>
-        <button onClick={() => navigate('/quotes')} className="text-amber-600 hover:underline mt-2 text-sm">Back to Quotes</button>
+        <BackButton fallback="/quotes" className="mt-2" />
       </div>
     );
   }
@@ -689,7 +692,7 @@ export default function QuoteBuilder() {
   const selectedCustomer = customers.find(c => c.id === form.customerId);
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto overflow-x-hidden">
 
       {/* Toast notification */}
       {toast && (
@@ -704,45 +707,49 @@ export default function QuoteBuilder() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/quotes')} className="text-slate-400 hover:text-slate-700">
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">{isEdit ? 'Edit Quote' : 'New Quote'}</h1>
+      {/* Header — buttons show icon+label on sm+, icon-only on mobile */}
+      <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
+          <BackButton fallback={form?.jobId ? `/jobs/${form.jobId}` : '/quotes'} />
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-slate-900 truncate">{isEdit ? 'Edit Quote' : 'New Quote'}</h1>
             {form.quoteNumber && <p className="text-sm text-slate-400">{form.quoteNumber}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {saved && (
-            <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
+            <span className="hidden sm:flex items-center gap-1 text-green-600 text-sm font-medium mr-1">
               <Check size={14} /> Saved
             </span>
           )}
           <button
             type="button"
             onClick={handlePreview}
-            className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50"
+            className="flex items-center gap-1.5 text-sm font-medium px-2.5 sm:px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50"
+            title="Preview"
           >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />} Preview
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+            <span className="hidden sm:inline">Preview</span>
           </button>
           <button
             type="button"
             onClick={handleSaveDraft}
             disabled={saving}
-            className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
+            className="flex items-center gap-1.5 text-sm font-medium px-2.5 sm:px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
+            title="Save Draft"
           >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Draft
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            <span className="hidden sm:inline">Save Draft</span>
           </button>
           <button
             type="button"
             onClick={handleSaveAndSend}
             disabled={saving}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold px-3 sm:px-4 py-2 rounded-lg transition-colors"
+            title="Save & Send"
           >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Save & Send
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            <span className="hidden sm:inline">Save &amp; Send</span>
           </button>
         </div>
       </div>
@@ -1043,7 +1050,7 @@ export default function QuoteBuilder() {
                     <BookOpen size={12} /> Item Library
                   </button>
                   {showSavedItems && (
-                    <div className="absolute right-0 top-full mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden flex flex-col">
+                    <div className="absolute right-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden flex flex-col">
                       <div className="px-3 py-2 border-b border-slate-100">
                         <input
                           autoFocus

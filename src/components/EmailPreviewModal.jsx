@@ -60,7 +60,7 @@ export default function EmailPreviewModal({ request, installer, job, customer, o
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             {/* Lusso header */}
             <div className="bg-sidebar px-6 py-4 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center">
                 <span className="text-white font-bold text-sm">L</span>
               </div>
               <span className="text-white font-semibold">Lusso</span>

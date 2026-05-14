@@ -2,9 +2,10 @@ import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  ArrowLeft, FileText, CheckSquare, Square,
+  FileText, CheckSquare, Square,
   AlertCircle, ClipboardList,
 } from 'lucide-react';
+import BackButton from '../components/BackButton';
 import {
   getJob, getCustomer, getMeasureSheetsByJob,
   createQuote, saveQuote, addActivity, getQuotesByJob,
@@ -162,7 +163,7 @@ export default function QuoteFromJob() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Job not found.</p>
-        <button onClick={() => navigate('/jobs')} className="mt-2 text-amber-600 hover:underline text-sm">Back to Jobs</button>
+        <BackButton fallback="/jobs" className="mt-2" />
       </div>
     );
   }
@@ -225,12 +226,7 @@ export default function QuoteFromJob() {
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-5 pb-32">
       {/* Back */}
-      <button
-        onClick={() => navigate(`/jobs/${jobId}`)}
-        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-      >
-        <ArrowLeft size={15} /> Back to Job
-      </button>
+      <BackButton fallback={jobId ? `/jobs/${jobId}` : '/jobs'} />
 
       {/* Header */}
       <div>
@@ -346,7 +342,7 @@ export default function QuoteFromJob() {
             <AlertCircle size={12} /> {error}
           </p>
         )}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <button
             onClick={() => navigate(`/jobs/${jobId}`)}
             className="border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
@@ -356,7 +352,7 @@ export default function QuoteFromJob() {
           <button
             onClick={handleCreate}
             disabled={creating || !selectedSheet || (lineItems.length > 0 && noneChecked)}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-6 py-2.5 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 sm:px-6 py-2.5 rounded-lg transition-colors whitespace-nowrap"
           >
             {creating
               ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Creating…</>

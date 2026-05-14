@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { ArrowLeft, Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer } from 'lucide-react';
-import { getMeasureSheet, getCustomer, getJob, getQuotes, deleteMeasureSheet } from '../store/data';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link } from 'lucide-react';
+import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, createJobFromMeasureSheet } from '../store/data';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
+import BackButton from '../components/BackButton';
 
 // ── Print-only installer document ────────────────────────────────────────────
 function PrintView({ sheet, customer, job }) {
@@ -228,12 +229,34 @@ function PrintView({ sheet, customer, job }) {
 export default function MeasureSheetView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [showDelete, setShowDelete] = useState(false);
+  const [showDelete,   setShowDelete]   = useState(false);
+  const [linkJobId,    setLinkJobId]    = useState('');
+  const [showJobPanel, setShowJobPanel] = useState(false);
   const sheet    = getMeasureSheet(id);
   const customer = sheet ? getCustomer(sheet.customerId) : null;
-  const job      = sheet ? getJob(sheet.jobId) : null;
+  const [job, setJob] = useState(() => sheet ? getJob(sheet.jobId) : null);
   const quotes   = getQuotes();
   const isLinked = quotes.some(q => q.measureSheetId === id) || Boolean(sheet?.jobId);
+
+  const customerJobs = sheet?.customerId
+    ? getJobs().filter(j => j.customerId === sheet.customerId && j.id !== sheet.jobId)
+    : [];
+
+  const handleCreateJob = () => {
+    if (!sheet || !customer) return;
+    const newJob = createJobFromMeasureSheet(sheet, customer);
+    saveMeasureSheet({ ...sheet, jobId: newJob.id, status: 'Submitted' });
+    setJob(newJob);
+    setShowJobPanel(false);
+  };
+
+  const handleLinkJob = () => {
+    if (!linkJobId || !sheet) return;
+    saveMeasureSheet({ ...sheet, jobId: linkJobId, status: 'Submitted' });
+    setJob(getJob(linkJobId));
+    setLinkJobId('');
+    setShowJobPanel(false);
+  };
 
   const handleDelete = () => {
     deleteMeasureSheet(id);
@@ -244,9 +267,7 @@ export default function MeasureSheetView() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Measure sheet not found.</p>
-        <button onClick={() => navigate('/measure-sheets')} className="text-amber-600 hover:underline mt-2 text-sm">
-          Back to measure sheets
-        </button>
+        <BackButton fallback="/measure-sheets" className="mt-2" />
       </div>
     );
   }
@@ -261,9 +282,7 @@ export default function MeasureSheetView() {
       <div className="screen-only">
 
       {/* Back */}
-      <button onClick={() => navigate('/measure-sheets')} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={15} /> Back to Measure Sheets
-      </button>
+      <BackButton fallback={sheet?.jobId ? `/jobs/${sheet.jobId}` : '/measure-sheets'} />
 
       {/* Header */}
       <Card className="p-5">
@@ -308,6 +327,76 @@ export default function MeasureSheetView() {
           </div>
         </div>
       </Card>
+
+      {/* ── No job linked — create or link ───────────────────────────────── */}
+      {!job && (
+        <Card className="p-4">
+          {!showJobPanel ? (
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+                <Briefcase size={16} className="text-amber-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800">No job linked</p>
+                <p className="text-xs text-slate-400 mt-0.5">Create a new job or link to an existing one</p>
+              </div>
+              <button
+                onClick={() => setShowJobPanel(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-white px-3 py-2 rounded-lg transition-colors flex-shrink-0"
+              >
+                <Plus size={13} /> Link Job
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-800">Link to a Job</p>
+                <button onClick={() => setShowJobPanel(false)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+              </div>
+
+              {/* Create new job */}
+              <button
+                onClick={handleCreateJob}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-xl text-left transition-colors"
+              >
+                <div className="w-8 h-8 rounded-lg bg-amber-200 flex items-center justify-center flex-shrink-0">
+                  <Plus size={14} className="text-amber-700" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Create new job from this sheet</p>
+                  <p className="text-xs text-amber-600">Creates a job in "Measured" status and links it here</p>
+                </div>
+              </button>
+
+              {/* Link to existing job */}
+              {customerJobs.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-slate-500">— or link to an existing job —</p>
+                  <div className="flex gap-2">
+                    <select
+                      value={linkJobId}
+                      onChange={e => setLinkJobId(e.target.value)}
+                      className="flex-1 border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <option value="">Select a job…</option>
+                      {customerJobs.map(j => (
+                        <option key={j.id} value={j.id}>{j.jobNumber} — {j.jobType} ({j.status})</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleLinkJob}
+                      disabled={!linkJobId}
+                      className="flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <Link size={12} /> Link
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">

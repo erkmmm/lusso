@@ -2,9 +2,10 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO, subDays, subMonths, startOfYear } from 'date-fns';
 import {
-  History, ArrowLeft, Users, Library, Download, Search,
+  History, Users, Library, Download, Search,
   ChevronDown, Filter, FileText,
 } from 'lucide-react';
+import BackButton from '../components/BackButton';
 import { getImportBatches, getPricedItemBatches } from '../store/data';
 import Card from '../components/Card';
 
@@ -121,12 +122,7 @@ export default function ImportHistory() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/settings')}
-            className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-          >
-            <ArrowLeft size={16}/>
-          </button>
+          <BackButton fallback="/settings" />
           <div>
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
               <History size={20} className="text-amber-500"/> Import History

@@ -31,7 +31,7 @@ function toDb(obj) {
   return out;
 }
 
-function fromDb(obj) {
+export function fromDb(obj) {
   if (!obj || typeof obj !== 'object') return obj;
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -69,21 +69,75 @@ const KEYS = {
 // Fields that exist in app data but not yet in the DB schema.
 // Listed as snake_case so they can be stripped after toDb() conversion.
 const EXCLUDE_COLUMNS = {
-  customers:     ['first_name', 'last_name', 'deleted_by', 'suburb', 'company'],
-  jobs:          ['deleted_by'],
-  measure_sheets:['deleted_by'],
-  installers:    ['availability_notes', 'business_name', 'deleted_by'],
-  installations: ['access_notes', 'arrival_time', 'deleted_by'],
+  customers: [
+    'first_name', 'last_name', 'deleted_by',
+    'suburb', 'state', 'postcode', 'country',
+    'company', 'mobile', 'billing_address', 'business_name',
+    'preferred_contact', 'xero_contact_id', 'assigned_to',
+    'import_batch_id', 'source', 'tags',
+  ],
+  jobs: [
+    'deleted_by', 'activity', 'address', 'notes',
+    'assigned_to_profile', 'title', 'xero_invoice_id',
+  ],
+  measure_sheets: [
+    'deleted_by', 'notes', 'assigned_to_profile',
+    'billing_address', 'customer_name', 'customer_notes',
+    'email', 'phone', 'preferred_contact', 'internal_notes',
+    'imported_from_excel', 'original_file_name', 'imported_at', 'import_notes', 'import_status',
+  ],
+  installers: [
+    // is_active IS a real DB column — do NOT exclude it
+    'availability_notes', 'business_name', 'deleted_by',
+    'internal_notes', 'service_areas', 'services_offered',
+  ],
+  installations: [
+    'access_notes', 'arrival_time', 'deleted_by', 'assigned_salesperson',
+    'created_by', 'expected_duration', 'installation_notes',
+    'parking_notes', 'pickup_locations', 'pickup_type', 'product_summary',
+    'reveal_full_details', 'secure_accept_token', 'secure_decline_token',
+    'site_notes', 'suburb',
+  ],
   notifications: ['install_request_id'],
+  product_types: [
+    'is_active', 'sort_order', 'slug',
+  ],
+  // priced_items: batchUpsertPricedItems uses its own explicit mapper (toPricedItemDbRow)
+  // so toDb() + EXCLUDE_COLUMNS is NOT used for this table during import.
+  // pushAllToSupabase still uses toDb() so we list the app-only fields here:
+  priced_items: [
+    'sku',            // DB has no sku column
+    'notes',          // DB has no notes column
+    'tags',           // DB has no tags column
+    'unit_type',      // DB uses 'unit' — handled by toPricedItemDbRow rename
+    'import_batch_id',// DB uses 'batch_id' — handled by toPricedItemDbRow rename
+  ],
+  priced_item_batches: [
+    'error_count', 'skipped_count',
+  ],
+  calendar_events: [
+    // assignees is a JS array — PostgreSQL text[] handles it natively via Supabase
+    // No exclusions needed: DB schema designed to match app fields exactly
+  ],
   quotes: [
     'version', 'measure_sheet_id', 'site_address', 'terms_and_conditions',
     'internal_notes', 'follow_up_date', 'show_sizes_to_client',
     'viewed_at', 'declined_at', 'accepted_by', 'activity', 'deleted_by',
+    'assigned_to_profile', 'comments', 'grand_total', 'gst_amount',
+    'public_token', 'selected_line_item_ids', 'total_cost', 'total_sell',
+    'xero_invoice_id', 'salesperson_id',
   ],
 };
 
 // ── Tables skipped during push (DB table doesn't exist yet) ──────────
 const SKIP_PUSH_TABLES = new Set(['employees', 'tasks', 'notifications']);
+
+// ── Per-table upsert conflict column override ─────────────────────────
+// quotes has a unique constraint on quote_number, so upsert on that
+// column to avoid duplicate key errors when re-pushing.
+const TABLE_CONFLICT_COL = {
+  quotes: 'quote_number',
+};
 
 // ── Table manifest (shared by hydrate + push) ────────────────────────
 const TABLES = [
@@ -99,10 +153,40 @@ const TABLES = [
   { table: 'priced_item_batches',    key: KEYS.pricedItemBatches },
   { table: 'contact_import_batches', key: KEYS.importBatches },
   { table: 'notifications',          key: KEYS.notifications },
+  { table: 'calendar_events',        key: 'lusso_calendar_events' },
   // employees & tasks tables not yet created in Supabase — skip both hydration and push
   // { table: 'employees',           key: KEYS.employees },
   // { table: 'tasks',               key: KEYS.tasks },
 ];
+
+// ── Pagination helper ─────────────────────────────────────────────────────────
+/**
+ * Fetch ALL rows from a table using sequential range pages.
+ * Supabase / PostgREST defaults to returning at most 1000 rows without an
+ * explicit range, so tables larger than 1000 rows need this helper.
+ */
+const PAGE_SIZE = 1000;
+
+async function fetchAllPages(table, useDeletedFilter) {
+  let all = [];
+  let from = 0;
+
+  while (true) {
+    let q = supabase.from(table).select('*');
+    if (useDeletedFilter) q = q.is('deleted_at', null);
+    q = q.order('created_at', { ascending: true }).range(from, from + PAGE_SIZE - 1);
+
+    const { data, error } = await q;
+    if (error) return { data: null, error };
+
+    const page = data || [];
+    all = all.concat(page);
+    if (page.length < PAGE_SIZE) break; // reached last page
+    from += PAGE_SIZE;
+  }
+
+  return { data: all, error: null };
+}
 
 // ── Hydration ────────────────────────────────────────────────────────
 /**
@@ -119,11 +203,11 @@ export async function hydrateFromSupabase() {
     TABLES.map(async ({ table, key }) => {
       // Fetch only non-deleted records so soft-deleted items stay gone after refresh.
       // Fall back to unfiltered fetch for tables without a deleted_at column.
+      // fetchAllPages handles >1000 rows via range-based pagination.
       let fetchedData = null;
-      const { data: d1, error: e1 } = await supabase
-        .from(table).select('*').is('deleted_at', null).order('created_at', { ascending: true });
+      const { data: d1, error: e1 } = await fetchAllPages(table, true);
       if (e1) {
-        const { data: d2, error: e2 } = await supabase.from(table).select('*').order('created_at', { ascending: true });
+        const { data: d2, error: e2 } = await fetchAllPages(table, false);
         if (e2) { console.warn(`[db] hydrate ${table}:`, e2.message); return; }
         fetchedData = d2;
       } else {
@@ -145,8 +229,12 @@ export async function hydrateFromSupabase() {
           return locMs > sbMs ? localRow : sbRow;
         });
 
-        // Preserve local-only records (never reached Supabase yet).
-        const localOnly = local.filter(r => r.id && !supabaseIds.has(r.id));
+        // Preserve local-only records (created on this device, not yet synced).
+        // Exclude soft-deleted records — if they're not in Supabase they were
+        // hard-deleted by another device, so we don't want them back.
+        const localOnly = local.filter(r =>
+          r.id && !supabaseIds.has(r.id) && !r.deletedAt && !r.isDeleted
+        );
         LS.set(key, [...merged, ...localOnly]);
         hadCloudData = true;
       }
@@ -189,28 +277,82 @@ export async function pushAllToSupabase() {
     if (SKIP_PUSH_TABLES.has(table)) continue;
     const records = LS.get(key);
     if (!records || records.length === 0) continue;
-    const exclude = EXCLUDE_COLUMNS[table] || [];
+    const excludeSet = new Set(EXCLUDE_COLUMNS[table] || []);
     const rows = records.map((r) => {
       const row = toDb(r);
-      exclude.forEach((col) => delete row[col]);
-      return row;
+      return Object.fromEntries(Object.entries(row).filter(([k]) => !excludeSet.has(k)));
     });
     // Supabase requires all rows to have identical keys.
     // Collect the union of all keys, then fill missing ones with null.
     const allKeys = [...new Set(rows.flatMap(Object.keys))];
-    const normalised = rows.map((row) => {
+    let normalised = rows.map((row) => {
       const out = {};
       allKeys.forEach((k) => { out[k] = row[k] ?? null; });
       return out;
     });
-    const { error } = await supabase
-      .from(table)
-      .upsert(normalised, { onConflict: 'id' });
-    if (error) {
-      console.warn(`[db] push ${table}:`, error.message);
-      errors.push(`${table}: ${error.message}`);
+    // Deduplicate quotes by quote_number — keep most recently updated.
+    // Supabase rejects batches where onConflict would update the same row twice.
+    if (table === 'quotes') {
+      const byNumber = new Map();
+      normalised.forEach(row => {
+        if (!row.quote_number) return;
+        const existing = byNumber.get(row.quote_number);
+        if (!existing || (row.updated_at || '') > (existing.updated_at || '')) {
+          byNumber.set(row.quote_number, row);
+        }
+      });
+      normalised = [...byNumber.values()];
+    }
+    const conflictCol = TABLE_CONFLICT_COL[table] || 'id';
+
+    // Self-healing + chunked upsert:
+    //  Phase 1 — probe with the first row to discover unknown columns, stripping
+    //             them one-by-one until the probe succeeds (up to 10 attempts).
+    //  Phase 2 — batch upsert the full payload in CHUNK_SIZE chunks so large
+    //             tables (>1000 rows) are fully pushed, not silently truncated.
+    const CHUNK_SIZE = 500;
+    let payload      = normalised;
+    let autoStripped = [];
+    let lastError    = null;
+
+    // Phase 1: column discovery via single-row probe
+    if (payload.length > 0) {
+      let probe = [{ ...payload[0] }];
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const { error } = await supabase.from(table).upsert(probe, { onConflict: conflictCol });
+        if (!error) break;
+        const colMatch = error.message.match(/Could not find the '([^']+)' column/);
+        if (colMatch) {
+          const badCol = colMatch[1];
+          autoStripped.push(badCol);
+          console.warn(`[db] push ${table}: auto-stripping unknown column '${badCol}'`);
+          const strip = (r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== badCol));
+          probe   = [strip(probe[0])];
+          payload = payload.map(strip);
+        } else {
+          lastError = error;
+          break;
+        }
+      }
+    }
+
+    // Phase 2: chunked upsert (idempotent — first row already upserted above)
+    if (!lastError) {
+      for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
+        const chunk = payload.slice(i, i + CHUNK_SIZE);
+        const { error } = await supabase.from(table).upsert(chunk, { onConflict: conflictCol });
+        if (error) { lastError = error; break; }
+      }
+    }
+
+    if (lastError) {
+      console.warn(`[db] push ${table}:`, lastError.message);
+      errors.push(`${table}: ${lastError.message}`);
     } else {
       pushed += records.length;
+      if (autoStripped.length) {
+        console.info(`[db] push ${table}: auto-stripped [${autoStripped.join(', ')}] — add to EXCLUDE_COLUMNS`);
+      }
     }
   }
 
@@ -226,12 +368,22 @@ export async function syncNow(entries, { sequential = false } = {}) {
   const errors = [];
   const write = async ({ table, record }) => {
     if (!record?.id) return;
-    const row = toDb(record);
-    (EXCLUDE_COLUMNS[table] || []).forEach(col => delete row[col]);
-    const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
-    if (error) {
-      console.warn(`[db] syncNow ${table}:`, error.message);
-      errors.push(`${table}: ${error.message}`);
+    const raw = toDb(record);
+    const excludeSet = new Set(EXCLUDE_COLUMNS[table] || []);
+    let row = Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
+      if (!error) return;
+      const colMatch = error.message.match(/Could not find the '([^']+)' column/);
+      if (colMatch) {
+        const badCol = colMatch[1];
+        const { [badCol]: _dropped, ...rest } = row;
+        row = rest;
+      } else {
+        console.warn(`[db] syncNow ${table}:`, error.message);
+        errors.push(`${table}: ${error.message}`);
+        return;
+      }
     }
   };
   if (sequential) {
@@ -245,10 +397,28 @@ export async function syncNow(entries, { sequential = false } = {}) {
 // ── Generic upsert / delete ──────────────────────────────────────────
 async function upsert(table, record) {
   if (!supabase || !record?.id) return;
-  const row = toDb(record);
-  (EXCLUDE_COLUMNS[table] || []).forEach((col) => delete row[col]);
-  const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
-  if (error) console.warn(`[db] upsert ${table}:`, error.message);
+  const raw = toDb(record);
+  const excludeSet = new Set(EXCLUDE_COLUMNS[table] || []);
+  let row = Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
+
+  // Self-healing: if Supabase rejects an unknown column (e.g. an app-only
+  // field not yet in EXCLUDE_COLUMNS, or a column that was never added to the
+  // DB), strip it and retry up to 10 times so soft-deletes and other writes
+  // never fail silently.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
+    if (!error) return;
+    const colMatch = error.message.match(/Could not find the '([^']+)' column/);
+    if (colMatch) {
+      const badCol = colMatch[1];
+      console.warn(`[db] upsert ${table}: auto-stripping unknown column '${badCol}' — add to EXCLUDE_COLUMNS`);
+      const { [badCol]: _dropped, ...rest } = row;
+      row = rest;
+    } else {
+      console.warn(`[db] upsert ${table}:`, error.message);
+      return;
+    }
+  }
 }
 
 async function remove(table, id) {
@@ -314,4 +484,151 @@ export const db = {
 
   // Install requests
   saveInstallRequest:   (r) => upsert('installations', r),
+
+  // Calendar events
+  saveCalendarEvent:    (r) => upsert('calendar_events', r),
+  deleteCalendarEvent:  (id) => remove('calendar_events', id),
 };
+
+// ── Batch upsert for bulk imports ────────────────────────────────────────────
+/**
+ * Upsert a large batch of customer records directly into Supabase.
+ * Used by runContactImport so CSV imports write to the DB immediately
+ * (not relying on a later manual "Push to Cloud").
+ *
+ * Applies EXCLUDE_COLUMNS transformation, self-heals unknown columns,
+ * and sends records in chunks of 500 to stay well under PostgREST limits.
+ *
+ * Returns { inserted: number, errors: string[] }
+ */
+export async function batchUpsertCustomers(customers) {
+  if (!supabase || !customers.length) return { inserted: 0, errors: [] };
+
+  const excludeSet = new Set(EXCLUDE_COLUMNS.customers || []);
+  const rows = customers.map(r => {
+    const raw = toDb(r);
+    return Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
+  });
+
+  // Normalise to a uniform key set (Supabase requires identical keys per batch)
+  const allKeys = [...new Set(rows.flatMap(Object.keys))];
+  let payload = rows.map(row => {
+    const out = {};
+    allKeys.forEach(k => { out[k] = row[k] ?? null; });
+    return out;
+  });
+
+  let autoStripped = [];
+  let lastError    = null;
+
+  // Phase 1: column discovery via single-row probe
+  if (payload.length > 0) {
+    let probe = [{ ...payload[0] }];
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const { error } = await supabase.from('customers').upsert(probe, { onConflict: 'id' });
+      if (!error) break;
+      const colMatch = error.message.match(/Could not find the '([^']+)' column/);
+      if (colMatch) {
+        const badCol = colMatch[1];
+        autoStripped.push(badCol);
+        const strip = (r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== badCol));
+        probe   = [strip(probe[0])];
+        payload = payload.map(strip);
+      } else {
+        lastError = error;
+        break;
+      }
+    }
+  }
+
+  if (autoStripped.length) {
+    console.info(`[db] batchUpsertCustomers: auto-stripped [${autoStripped.join(', ')}] — add to EXCLUDE_COLUMNS.customers`);
+  }
+
+  let inserted = 0;
+  const errors = [];
+
+  if (lastError) {
+    errors.push(lastError.message);
+    return { inserted, errors };
+  }
+
+  // Phase 2: chunked upsert
+  const CHUNK = 500;
+  for (let i = 0; i < payload.length; i += CHUNK) {
+    const chunk = payload.slice(i, i + CHUNK);
+    const { error } = await supabase.from('customers').upsert(chunk, { onConflict: 'id' });
+    if (error) {
+      console.warn('[db] batchUpsertCustomers chunk error:', error.message);
+      errors.push(error.message);
+      break;
+    }
+    inserted += chunk.length;
+  }
+
+  return { inserted, errors };
+}
+
+// ── Priced-item field mapper ──────────────────────────────────────────────────
+/**
+ * Converts an app priced-item object to the exact shape the DB expects.
+ * Handles two field-name mismatches vs. generic toDb():
+ *   unitType  → unit      (DB column is "unit", not "unit_type")
+ *   importBatchId → batch_id  (DB column is "batch_id", not "import_batch_id")
+ * Omits sku / notes / tags which are app-only fields with no DB column.
+ */
+function toPricedItemDbRow(item) {
+  return {
+    id:             item.id,
+    item_name:      item.itemName      || '',
+    item_code:      item.itemCode      || item.sku || '',
+    description:    item.description   || '',
+    category:       item.category      || '',
+    supplier:       item.supplier      || '',
+    cost_price:     item.costPrice     ?? null,
+    labour_cost:    item.labourCost    ?? null,
+    sell_price:     item.sellPrice     ?? null,
+    margin_percent: item.marginPercent ?? null,
+    markup_percent: item.markupPercent ?? null,
+    tax_rate:       item.taxRate       ?? 10,
+    gst_applicable: item.gstApplicable !== false,
+    unit:           item.unitType      || item.unit || '',
+    is_active:      item.isActive      !== false,
+    source:         item.source        || '',
+    batch_id:       item.importBatchId || item.batchId || null,
+    created_at:     item.createdAt     || new Date().toISOString(),
+    updated_at:     item.updatedAt     || new Date().toISOString(),
+  };
+}
+
+// ── Batch upsert for bulk priced-item imports ────────────────────────────────
+/**
+ * Upsert a large batch of priced-item records directly into Supabase.
+ * Uses toPricedItemDbRow() so field names always match the DB schema exactly.
+ * Sends records in chunks of 500 to stay under PostgREST limits.
+ *
+ * Returns { inserted: number, errors: string[] }
+ */
+export async function batchUpsertPricedItems(items) {
+  if (!supabase || !items.length) return { inserted: 0, errors: [] };
+
+  const payload = items.map(toPricedItemDbRow);
+
+  let inserted = 0;
+  const errors = [];
+
+  const CHUNK = 500;
+  for (let i = 0; i < payload.length; i += CHUNK) {
+    const chunk = payload.slice(i, i + CHUNK);
+    const { error } = await supabase.from('priced_items').upsert(chunk, { onConflict: 'id' });
+    if (error) {
+      console.warn('[db] batchUpsertPricedItems chunk error:', error.message);
+      errors.push(error.message);
+      break;
+    }
+    inserted += chunk.length;
+  }
+
+  if (inserted) console.info(`[db] batchUpsertPricedItems: ✓ ${inserted} rows saved to Supabase`);
+  return { inserted, errors };
+}

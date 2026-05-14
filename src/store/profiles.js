@@ -1,42 +1,51 @@
 /**
  * User profile store — Supabase as source of truth, localStorage as cache.
  *
- * Supabase `profiles` table uses snake_case (display_name, created_at).
- * App profile objects use camelCase (displayName, createdAt).
+ * Supabase `profiles` table uses snake_case.
+ * App profile objects use camelCase.
+ *
+ * Field naming:
+ *   DB: account_type  →  App: accountType   (was: role)
+ *   DB: employee_role →  App: employeeRole
+ *   DB: status        →  App: status         (pending | active | suspended)
+ *
+ * Transition safety: fromSupabaseRow reads account_type OR the legacy role
+ * column so that profiles written before the DB migration still work.
  */
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../lib/supabase';
 
 // ── localStorage cache ────────────────────────────────────────────────────────
 const KEY = 'lusso_user_profiles';
-function get()      { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
-function set(arr)   { localStorage.setItem(KEY, JSON.stringify(arr)); }
+function get()    { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
+function set(arr) { localStorage.setItem(KEY, JSON.stringify(arr)); }
 
-export function getProfiles()          { return get(); }
+export function getProfiles()           { return get(); }
 export function getProfileByEmail(email) {
   return get().find(p => p.email?.toLowerCase() === email?.toLowerCase());
 }
 
 export function saveProfile(profile) {
   const list = get();
-  const idx = list.findIndex(p => p.id === profile.id);
+  const idx  = list.findIndex(p => p.id === profile.id);
   if (idx >= 0) list[idx] = { ...list[idx], ...profile };
   else list.push(profile);
   set(list);
   return profile;
 }
 
-// ── Supabase helpers ──────────────────────────────────────────────────────────
+// ── Field converters ──────────────────────────────────────────────────────────
+
 function toSupabaseRow(profile) {
   return {
     id:             profile.id,
     email:          profile.email,
-    display_name:   profile.displayName || '',
-    role:           profile.role || 'standard_user',
+    display_name:   profile.displayName  || '',
+    account_type:   profile.accountType  || 'pending_user',
     employee_role:  profile.employeeRole || null,
-    status:         profile.status || 'active',
-    is_employee:    profile.isEmployee ?? false,
-    phone:          profile.phone || null,
+    status:         profile.status       || 'active',
+    is_employee:    profile.isEmployee   ?? false,
+    phone:          profile.phone        || null,
     position_title: profile.positionTitle || null,
   };
 }
@@ -46,9 +55,10 @@ function fromSupabaseRow(row) {
     id:                       row.id,
     email:                    row.email,
     displayName:              row.display_name || '',
-    role:                     row.role,           // account type: pending_user | standard_user | account_manager
-    employeeRole:             row.employee_role || null, // job role: salesperson | account_manager
-    status:                   row.status,
+    // Transition-safe: prefer account_type; fall back to legacy role column
+    accountType:              row.account_type || row.role || 'pending_user',
+    employeeRole:             row.employee_role || null,
+    status:                   row.status || 'pending',
     isEmployee:               row.is_employee ?? false,
     phone:                    row.phone || '',
     positionTitle:            row.position_title || '',
@@ -64,40 +74,62 @@ function fromSupabaseRow(row) {
   };
 }
 
+// ── Role helper functions ─────────────────────────────────────────────────────
+// Pass a profile object; returns boolean.
+
+/** Admin/full access: account_type = account_manager AND status = active */
+export function isAccountManager(profile) {
+  return profile?.accountType === 'account_manager' && profile?.status === 'active';
+}
+
+/** Normal approved user: account_type = standard_user AND status = active */
+export function isStandardUser(profile) {
+  return profile?.accountType === 'standard_user' && profile?.status === 'active';
+}
+
+/** Active employee (any role): is_employee = true AND status = active */
+export function isActiveEmployee(profile) {
+  return profile?.isEmployee === true && profile?.status === 'active';
+}
+
+/** Sales work: employee_role = salesperson AND is_employee AND active */
+export function isSalesperson(profile) {
+  return (
+    profile?.employeeRole === 'salesperson' &&
+    profile?.isEmployee   === true &&
+    profile?.status       === 'active'
+  );
+}
+
+/** Install work: employee_role = installer AND is_employee AND active */
+export function isInstaller(profile) {
+  return (
+    profile?.employeeRole === 'installer' &&
+    profile?.isEmployee   === true &&
+    profile?.status       === 'active'
+  );
+}
+
 // ── Supabase-backed CRUD ──────────────────────────────────────────────────────
 
-/** Fetch all profiles from Supabase (AM sees all; SP sees own — RLS enforced) */
+/** Fetch all profiles from Supabase (AM sees all; others see own — RLS enforced) */
 export async function fetchProfilesFromSupabase() {
   if (!supabase) return getProfiles();
   const { data, error } = await supabase.from('profiles').select('*').order('created_at');
   if (error || !data) return getProfiles();
   const profiles = data.map(fromSupabaseRow);
-  // Update localStorage cache
   set(profiles);
   return profiles;
 }
 
-/** Create a new salesperson profile in Supabase + localStorage cache */
-export async function createProfileInSupabase({ email, displayName, role = 'salesperson' }) {
-  // Supabase auth user must exist first (they sign up themselves via the login page)
-  // We only create the profile row here — auth row created by Supabase trigger on signup
+/** Create a profile record in Supabase (AM operation) */
+export async function createProfileInSupabase({ email, displayName, accountType = 'pending_user' }) {
   if (!supabase) {
-    // Offline fallback — localStorage only
-    const p = { id: uuidv4(), email, displayName, role, active: true, createdAt: new Date().toISOString() };
+    const p = { id: uuidv4(), email, displayName, accountType, status: 'pending', isEmployee: false, createdAt: new Date().toISOString() };
     saveProfile(p);
     return { profile: p, error: null };
   }
 
-  // First check if they already have an auth user (must sign up first)
-  // We upsert into profiles — if their auth user doesn't exist yet the FK will fail
-  // The correct flow: user signs up → trigger creates profiles row → AM edits role
-  // This function is used when AM wants to pre-create/update a profile
-  const row = toSupabaseRow({
-    id: uuidv4(), // placeholder — will be overwritten if auth user exists
-    email, displayName, role, active: true
-  });
-
-  // Try to find existing auth user by email via profiles table
   const { data: existing } = await supabase
     .from('profiles')
     .select('id')
@@ -105,10 +137,9 @@ export async function createProfileInSupabase({ email, displayName, role = 'sale
     .single();
 
   if (existing) {
-    // User already exists — update their role/display_name
     const { data, error } = await supabase
       .from('profiles')
-      .update({ display_name: displayName, role, active: true })
+      .update({ display_name: displayName, account_type: accountType, updated_at: new Date().toISOString() })
       .eq('id', existing.id)
       .select()
       .single();
@@ -117,20 +148,22 @@ export async function createProfileInSupabase({ email, displayName, role = 'sale
     return { profile, error };
   }
 
-  // User doesn't exist yet — save to localStorage as pending
-  // They'll appear after they sign up and the trigger creates their profile row
-  const pending = { id: email, email, displayName, role, active: true, createdAt: new Date().toISOString(), pending: true };
+  const pending = {
+    id: email, email, displayName, accountType,
+    status: 'pending', isEmployee: false,
+    createdAt: new Date().toISOString(), pending: true,
+  };
   saveProfile(pending);
   return { profile: pending, error: null };
 }
 
-/** Update a profile's role and/or active status in Supabase */
+/** Update a profile's accountType and/or other fields in Supabase */
 export async function updateProfileInSupabase(id, updates) {
   const dbUpdates = {};
-  if (updates.role         !== undefined) dbUpdates.role          = updates.role;
+  if (updates.accountType  !== undefined) dbUpdates.account_type  = updates.accountType;
   if (updates.employeeRole !== undefined) dbUpdates.employee_role = updates.employeeRole;
   if (updates.displayName  !== undefined) dbUpdates.display_name  = updates.displayName;
-  if (updates.active       !== undefined) dbUpdates.active        = updates.active;
+  if (updates.status       !== undefined) dbUpdates.status        = updates.status;
 
   if (supabase) {
     const { data, error } = await supabase
@@ -146,15 +179,14 @@ export async function updateProfileInSupabase(id, updates) {
     }
   }
 
-  // Fallback: localStorage only
   const list = get().map(p => p.id === id ? { ...p, ...updates } : p);
   set(list);
   return list.find(p => p.id === id);
 }
 
 /**
- * Returns active salespeople only — use this for quote/measure sheet dropdowns.
- * Pending and suspended users are never included.
+ * Active salespeople — for quote/measure sheet dropdowns.
+ * employee_role = 'salesperson', status = active, is_employee = true.
  */
 export async function getActiveSalespeople() {
   if (supabase) {
@@ -163,20 +195,41 @@ export async function getActiveSalespeople() {
       return data.map(r => ({
         id:            r.id,
         displayName:   r.display_name || '',
+        fullName:      r.display_name || '',
         email:         r.email || '',
         positionTitle: r.position_title || '',
         phone:         r.phone || '',
-        fullName:      r.display_name || '', // compat alias
-        role:          'salesperson',
+        employeeRole:  'salesperson',
       }));
     }
   }
-  // Fallback: localStorage cache filtered to active salespeople by employee_role
   return get().filter(p => p.isEmployee && p.status === 'active' && p.employeeRole === 'salesperson');
 }
 
 /**
- * Returns all active employees — use for AM-level assignment dropdowns.
+ * Active installers — for installer assignment dropdowns.
+ * employee_role = 'installer', status = active, is_employee = true.
+ */
+export async function getActiveInstallers() {
+  if (supabase) {
+    const { data, error } = await supabase.rpc('get_active_installers');
+    if (!error && data) {
+      return data.map(r => ({
+        id:            r.id,
+        displayName:   r.display_name || '',
+        fullName:      r.display_name || '',
+        email:         r.email || '',
+        positionTitle: r.position_title || '',
+        phone:         r.phone || '',
+        employeeRole:  'installer',
+      }));
+    }
+  }
+  return get().filter(p => p.isEmployee && p.status === 'active' && p.employeeRole === 'installer');
+}
+
+/**
+ * All active employees — for AM-level assignment dropdowns.
  */
 export async function getActiveEmployeesFromSupabase() {
   if (supabase) {
@@ -187,7 +240,8 @@ export async function getActiveEmployeesFromSupabase() {
         displayName:   r.display_name || '',
         fullName:      r.display_name || '',
         email:         r.email || '',
-        role:          r.role,
+        accountType:   r.account_type || r.role || 'standard_user',
+        employeeRole:  r.employee_role || null,
         positionTitle: r.position_title || '',
       }));
     }
@@ -195,7 +249,7 @@ export async function getActiveEmployeesFromSupabase() {
   return get().filter(p => p.isEmployee && p.status === 'active');
 }
 
-/** Fetch only active employees (is_employee=true) */
+/** Fetch all employees (is_employee = true, any status except pending) */
 export async function fetchEmployeesFromSupabase() {
   if (!supabase) return getProfiles().filter(p => p.isEmployee);
   const { data, error } = await supabase
@@ -213,30 +267,30 @@ export async function updateEmployeeProfile(targetUserId, updates) {
   const { data, error } = await supabase.rpc('update_employee_profile', {
     target_user_id:  targetUserId,
     p_display_name:  updates.displayName   || null,
-    p_role:          updates.role          || null,
+    p_role:          updates.accountType   || updates.role || null, // p_role maps to account_type in DB
     p_phone:         updates.phone         || null,
     p_position:      updates.positionTitle || null,
     p_status:        updates.status        || null,
-    p_employee_role: updates.employeeRole  || null,
+    p_employee_role: updates.employeeRole !== undefined ? (updates.employeeRole || '') : null,
   });
   if (error) throw error;
-  // Update local cache
   const list = get().map(p => p.id === targetUserId ? { ...p, ...updates } : p);
   set(list);
   return data;
 }
 
 /** Approve a pending user — calls the secure DB function (AM only) */
-export async function approveUser(targetUserId, newRole) {
+export async function approveUser(targetUserId, newAccountType) {
   if (!supabase) throw new Error('No Supabase connection');
   const { data, error } = await supabase.rpc('approve_user', {
     target_user_id: targetUserId,
-    new_role: newRole,
+    new_role:       newAccountType, // parameter name unchanged; DB function sets account_type
   });
   if (error) throw error;
-  // Update local cache
   const list = get().map(p =>
-    p.id === targetUserId ? { ...p, role: newRole, status: 'active' } : p
+    p.id === targetUserId
+      ? { ...p, accountType: newAccountType, status: 'active', isEmployee: true }
+      : p
   );
   set(list);
   return data;
@@ -251,30 +305,6 @@ export async function suspendUser(targetUserId) {
   set(list);
 }
 
-/**
- * Employee completes their own onboarding profile — calls secure DB function.
- * Only updates safe fields; cannot change role/status/is_employee.
- */
-export async function completeEmployeeProfile(updates) {
-  if (!supabase) throw new Error('No Supabase connection');
-  const { data, error } = await supabase.rpc('complete_employee_profile', {
-    p_display_name:          updates.displayName          || null,
-    p_phone:                 updates.phone                || null,
-    p_address:               updates.address              || null,
-    p_emergency_contact_name:  updates.emergencyContactName  || null,
-    p_emergency_contact_phone: updates.emergencyContactPhone || null,
-    p_profile_photo_url:     updates.profilePhotoUrl      || null,
-  });
-  if (error) throw error;
-  // Update local cache
-  const list = get().map(p => p.id === updates.id
-    ? { ...p, ...updates, employeeProfileCompleted: true }
-    : p
-  );
-  set(list);
-  return data;
-}
-
 /** Reactivate a suspended user — calls the secure DB function (AM only) */
 export async function reactivateUser(targetUserId) {
   if (!supabase) throw new Error('No Supabase connection');
@@ -285,9 +315,30 @@ export async function reactivateUser(targetUserId) {
 }
 
 /**
- * Synchronous count of employees from the localStorage profiles cache.
- * Used by the sidebar badge — avoids an async call on every 2 s interval.
- * Only counts is_employee=true AND status in active/suspended (not pending).
+ * Employee completes their own onboarding — calls secure DB function.
+ * Only updates safe fields; cannot change accountType/status/isEmployee.
+ */
+export async function completeEmployeeProfile(updates) {
+  if (!supabase) throw new Error('No Supabase connection');
+  const { data, error } = await supabase.rpc('complete_employee_profile', {
+    p_display_name:            updates.displayName          || null,
+    p_phone:                   updates.phone                || null,
+    p_address:                 updates.address              || null,
+    p_emergency_contact_name:  updates.emergencyContactName  || null,
+    p_emergency_contact_phone: updates.emergencyContactPhone || null,
+    p_profile_photo_url:       updates.profilePhotoUrl      || null,
+  });
+  if (error) throw error;
+  const list = get().map(p =>
+    p.id === updates.id ? { ...p, ...updates, employeeProfileCompleted: true } : p
+  );
+  set(list);
+  return data;
+}
+
+/**
+ * Synchronous employee count for sidebar badge.
+ * Excludes pending users (is_employee = false for them).
  */
 export function getEmployeeCountSync() {
   return get().filter(
@@ -295,7 +346,7 @@ export function getEmployeeCountSync() {
   ).length;
 }
 
-/** Fetch a single employee profile from Supabase by UUID. */
+/** Fetch a single employee by UUID from Supabase. */
 export async function getEmployeeByIdFromSupabase(id) {
   if (supabase) {
     const { data, error } = await supabase
@@ -307,30 +358,30 @@ export async function getEmployeeByIdFromSupabase(id) {
       .single();
     if (!error && data) return fromSupabaseRow(data);
   }
-  // Fallback to localStorage cache
   return get().find(
     p => p.id === id && p.isEmployee && (p.status === 'active' || p.status === 'suspended')
   ) || null;
 }
 
-// ── Legacy sync helpers (kept for backward compat) ─────────────────────────────
-export function createProfile({ email, displayName, role = 'salesperson' }) {
-  const p = { id: uuidv4(), email, displayName, role, active: true, createdAt: new Date().toISOString() };
+// ── Bootstrap / legacy helpers ────────────────────────────────────────────────
+
+export function createProfile({ email, displayName, accountType = 'pending_user' }) {
+  const p = { id: uuidv4(), email, displayName, accountType, status: 'pending', isEmployee: false, createdAt: new Date().toISOString() };
   saveProfile(p);
   return p;
-}
-
-export function deactivateProfile(id) {
-  set(get().map(p => p.id === id ? { ...p, active: false } : p));
-}
-
-export function reactivateProfile(id) {
-  set(get().map(p => p.id === id ? { ...p, active: true } : p));
 }
 
 export function bootstrapProfile(email, displayName) {
   const existing = getProfileByEmail(email);
   if (existing) return existing;
-  const role = get().length === 0 ? 'account_manager' : 'salesperson';
-  return createProfile({ email, displayName, role });
+  const accountType = get().length === 0 ? 'account_manager' : 'pending_user';
+  return createProfile({ email, displayName, accountType });
+}
+
+export function deactivateProfile(id) {
+  set(get().map(p => p.id === id ? { ...p, status: 'suspended' } : p));
+}
+
+export function reactivateProfile(id) {
+  set(get().map(p => p.id === id ? { ...p, status: 'active' } : p));
 }

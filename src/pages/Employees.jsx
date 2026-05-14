@@ -8,18 +8,23 @@ import { fetchEmployeesFromSupabase, suspendUser, reactivateUser } from '../stor
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
 
+// ── Label maps ────────────────────────────────────────────────────────────────
 const ACCOUNT_TYPE_COLORS = {
   account_manager: 'bg-amber-100 text-amber-700',
   standard_user:   'bg-slate-100 text-slate-600',
-  salesperson:     'bg-slate-100 text-slate-600',
 };
 const ACCOUNT_TYPE_LABELS = {
   account_manager: 'Account Manager',
   standard_user:   'Standard User',
-  salesperson:     'Standard User',
+};
+const EMPLOYEE_ROLE_COLORS = {
+  salesperson:     'bg-teal-100 text-teal-700',
+  installer:       'bg-blue-100 text-blue-700',
+  account_manager: 'bg-amber-100 text-amber-700',
 };
 const EMPLOYEE_ROLE_LABELS = {
   salesperson:     'Salesperson',
+  installer:       'Installer',
   account_manager: 'Account Manager',
 };
 
@@ -37,7 +42,7 @@ function Avatar({ name, size = 'md' }) {
 export default function Employees() {
   const navigate = useNavigate();
   const [search,       setSearch]       = useState('');
-  const [roleFilter,   setRoleFilter]   = useState('');
+  const [roleFilter,   setRoleFilter]   = useState('');   // filters by accountType
   const [statusFilter, setStatusFilter] = useState('active');
   const [employees,    setEmployees]    = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -57,10 +62,10 @@ export default function Employees() {
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
     return employees.filter(e => {
-      if (statusFilter === 'active'   && e.status !== 'active')    return false;
-      if (statusFilter === 'inactive' && e.status === 'active')    return false;
-      if (roleFilter && e.role !== roleFilter)                      return false;
-      if (term && !`${e.displayName} ${e.email} ${e.positionTitle} ${e.role}`.toLowerCase().includes(term)) return false;
+      if (statusFilter === 'active'   && e.status !== 'active')   return false;
+      if (statusFilter === 'inactive' && e.status === 'active')   return false;
+      if (roleFilter   && e.accountType !== roleFilter)           return false;
+      if (term && !`${e.displayName} ${e.email} ${e.positionTitle} ${e.accountType} ${e.employeeRole || ''}`.toLowerCase().includes(term)) return false;
       return true;
     }).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
   }, [employees, search, roleFilter, statusFilter]);
@@ -69,7 +74,7 @@ export default function Employees() {
     const isActive = emp.status === 'active';
     if (isActive) await suspendUser(emp.id);
     else           await reactivateUser(emp.id);
-    showToast(`${emp.displayName} marked ${isActive ? 'inactive' : 'active'}.`);
+    showToast(`${emp.displayName} marked ${isActive ? 'suspended' : 'active'}.`);
     await refresh();
   };
 
@@ -102,9 +107,10 @@ export default function Employees() {
           )}
         </div>
 
+        {/* Filter by account type */}
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
           className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-          <option value="">All types</option>
+          <option value="">All account types</option>
           <option value="standard_user">Standard User</option>
           <option value="account_manager">Account Manager</option>
         </select>
@@ -151,12 +157,13 @@ export default function Employees() {
                         <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">Suspended</span>
                       )}
                     </div>
+                    {/* Account type + employee role badges */}
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ACCOUNT_TYPE_COLORS[emp.role] || 'bg-slate-100 text-slate-600'}`}>
-                        {ACCOUNT_TYPE_LABELS[emp.role] || emp.role}
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ACCOUNT_TYPE_COLORS[emp.accountType] || 'bg-slate-100 text-slate-600'}`}>
+                        {ACCOUNT_TYPE_LABELS[emp.accountType] || emp.accountType || '—'}
                       </span>
                       {emp.employeeRole && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${EMPLOYEE_ROLE_COLORS[emp.employeeRole] || 'bg-slate-100 text-slate-600'}`}>
                           {EMPLOYEE_ROLE_LABELS[emp.employeeRole] || emp.employeeRole}
                         </span>
                       )}

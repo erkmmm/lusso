@@ -13,7 +13,20 @@ import {
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
 
-// ─── Avatar ───────────────────────────────────────────────────────────────────
+// ── Label maps ────────────────────────────────────────────────────────────────
+const ACCOUNT_TYPE_LABELS = {
+  account_manager: 'Account Manager',
+  standard_user:   'Standard User',
+  pending_user:    'Pending',
+};
+
+const EMPLOYEE_ROLE_LABELS = {
+  salesperson:     'Salesperson',
+  installer:       'Installer',
+  account_manager: 'Account Manager',
+};
+
+// ── Avatar ────────────────────────────────────────────────────────────────────
 function Avatar({ name, email, size = 'md' }) {
   const letter = (name || email || '?')[0].toUpperCase();
   const sz = size === 'lg' ? 'w-12 h-12 text-lg' : size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
@@ -24,14 +37,14 @@ function Avatar({ name, email, size = 'md' }) {
   );
 }
 
-// ─── Role badge ───────────────────────────────────────────────────────────────
-function RoleBadge({ role }) {
-  if (role === 'account_manager') return (
+// ── Account type badge ────────────────────────────────────────────────────────
+function AccountTypeBadge({ accountType }) {
+  if (accountType === 'account_manager') return (
     <span className="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
       <Shield size={10} /> Account Manager
     </span>
   );
-  if (role === 'standard_user' || role === 'salesperson') return (
+  if (accountType === 'standard_user') return (
     <span className="inline-flex items-center gap-1 text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 rounded-full px-2 py-0.5">
       <UserCheck size={10} /> Standard User
     </span>
@@ -43,17 +56,33 @@ function RoleBadge({ role }) {
   );
 }
 
-// ─── Approve Modal ────────────────────────────────────────────────────────────
+// ── Employee role badge ───────────────────────────────────────────────────────
+function EmployeeRoleBadge({ employeeRole }) {
+  if (!employeeRole) return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200 rounded-full px-2 py-0.5">
+      {EMPLOYEE_ROLE_LABELS[employeeRole] || employeeRole}
+    </span>
+  );
+}
+
+// ── Approve Modal ─────────────────────────────────────────────────────────────
 function ApproveModal({ profile, onSave, onCancel }) {
-  const [role, setRole]     = useState('standard_user');
-  const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState('');
+  const [accountType,  setAccountType]  = useState('standard_user');
+  const [employeeRole, setEmployeeRole] = useState('salesperson');
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      await approveUser(profile.id, role);
+      // approve_user sets account_type, status=active, is_employee=true
+      await approveUser(profile.id, accountType);
+      // Set employee role separately if needed
+      if (employeeRole) {
+        await updateEmployeeProfile(profile.id, { employeeRole });
+      }
       onSave();
     } catch (err) {
       setError(err.message || 'Failed to approve.');
@@ -73,12 +102,24 @@ function ApproveModal({ profile, onSave, onCancel }) {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Account type</label>
-            <select value={role} onChange={e => setRole(e.target.value)}
+            <label className="block text-xs font-medium text-slate-600 mb-1">Account Type</label>
+            <select value={accountType} onChange={e => setAccountType(e.target.value)}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
               <option value="standard_user">Standard User — own records only</option>
               <option value="account_manager">Account Manager — full access</option>
             </select>
+            <p className="text-[11px] text-slate-400 mt-1">Controls login access level.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Employee Role</label>
+            <select value={employeeRole} onChange={e => setEmployeeRole(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <option value="">— Not assigned yet —</option>
+              <option value="salesperson">Salesperson</option>
+              <option value="installer">Installer</option>
+              <option value="account_manager">Account Manager</option>
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1">Controls job function and assignment dropdowns.</p>
           </div>
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex gap-2">
@@ -103,17 +144,18 @@ function ApproveModal({ profile, onSave, onCancel }) {
   );
 }
 
-// ─── Edit Employee Modal ───────────────────────────────────────────────────────
+// ── Edit Employee Modal ────────────────────────────────────────────────────────
 function EditEmployeeModal({ employee, onSave, onCancel }) {
   const [form, setForm] = useState({
     displayName:   employee.displayName   || '',
-    role:          employee.role          || 'standard_user',
+    accountType:   employee.accountType   || 'standard_user',
+    employeeRole:  employee.employeeRole  || '',
     phone:         employee.phone         || '',
     positionTitle: employee.positionTitle || '',
     status:        employee.status        || 'active',
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const [error,   setError]   = useState('');
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -121,7 +163,14 @@ function EditEmployeeModal({ employee, onSave, onCancel }) {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      await updateEmployeeProfile(employee.id, form);
+      await updateEmployeeProfile(employee.id, {
+        displayName:   form.displayName,
+        accountType:   form.accountType,
+        employeeRole:  form.employeeRole || null,
+        phone:         form.phone,
+        positionTitle: form.positionTitle,
+        status:        form.status,
+      });
       saveProfile({ ...employee, ...form });
       onSave();
     } catch (err) {
@@ -146,9 +195,19 @@ function EditEmployeeModal({ employee, onSave, onCancel }) {
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Account Type</label>
-              <select value={form.role} onChange={set('role')}
+              <select value={form.accountType} onChange={set('accountType')}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
                 <option value="standard_user">Standard User</option>
+                <option value="account_manager">Account Manager</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Employee Role</label>
+              <select value={form.employeeRole} onChange={set('employeeRole')}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <option value="">— Not assigned —</option>
+                <option value="salesperson">Salesperson</option>
+                <option value="installer">Installer</option>
                 <option value="account_manager">Account Manager</option>
               </select>
             </div>
@@ -165,8 +224,8 @@ function EditEmployeeModal({ employee, onSave, onCancel }) {
               <input value={form.phone} onChange={set('phone')} placeholder="04xx xxx xxx"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Position</label>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Position Title</label>
               <input value={form.positionTitle} onChange={set('positionTitle')} placeholder="e.g. Senior Salesperson"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
             </div>
@@ -195,9 +254,9 @@ function EditEmployeeModal({ employee, onSave, onCancel }) {
   );
 }
 
-// ─── Employee card ────────────────────────────────────────────────────────────
+// ── Employee card ─────────────────────────────────────────────────────────────
 function EmployeeCard({ emp, onEdit, onSuspend, onReactivate }) {
-  const isSuspended = emp.status === 'suspended';
+  const isSuspended    = emp.status === 'suspended';
   const needsOnboarding = emp.isEmployee && !emp.employeeProfileCompleted;
   return (
     <Card className="p-4">
@@ -215,7 +274,8 @@ function EmployeeCard({ emp, onEdit, onSuspend, onReactivate }) {
           </div>
           <p className="text-xs text-slate-500 truncate">{emp.email}</p>
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-            <RoleBadge role={emp.role} />
+            <AccountTypeBadge accountType={emp.accountType} />
+            <EmployeeRoleBadge employeeRole={emp.employeeRole} />
             {emp.positionTitle && (
               <span className="inline-flex items-center gap-1 text-xs text-slate-500">
                 <Briefcase size={10} /> {emp.positionTitle}
@@ -250,9 +310,9 @@ function EmployeeCard({ emp, onEdit, onSuspend, onReactivate }) {
   );
 }
 
-// ─── Add User Modal ───────────────────────────────────────────────────────────
+// ── Add User Modal ────────────────────────────────────────────────────────────
 function AddUserModal({ onSave, onCancel }) {
-  const [form, setForm]   = useState({ displayName: '', email: '', role: 'salesperson' });
+  const [form,   setForm]   = useState({ displayName: '', email: '' });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
@@ -270,9 +330,9 @@ function AddUserModal({ onSave, onCancel }) {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
     const { profile } = await createProfileInSupabase({
-      email: form.email.trim().toLowerCase(),
+      email:       form.email.trim().toLowerCase(),
       displayName: form.displayName.trim(),
-      role: form.role,
+      accountType: 'pending_user', // all new users start as pending
     });
     setLoading(false);
     onSave(profile);
@@ -307,13 +367,9 @@ function AddUserModal({ onSave, onCancel }) {
               className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${errors.email ? 'border-red-400' : 'border-slate-200'}`} />
             {errors.email && <p className="text-xs text-red-500 mt-0.5">{errors.email}</p>}
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
-            <select {...field('role')} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-              <option value="salesperson">Salesperson</option>
-              <option value="account_manager">Account Manager</option>
-            </select>
-          </div>
+          <p className="text-xs text-slate-400">
+            New users are added as <strong>Pending</strong> and must be approved before they can access the app.
+          </p>
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onCancel}
               className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors">
@@ -330,18 +386,18 @@ function AddUserModal({ onSave, onCancel }) {
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
+// ── Main Page ──────────────────────────────────────────────────────────────────
 export default function Users() {
   const navigate = useNavigate();
   const { profile: currentProfile, isAM } = useProfile() || {};
 
-  const [tab, setTab]                     = useState('team');
-  const [pendingList, setPendingList]     = useState([]);
-  const [teamList, setTeamList]           = useState([]);
-  const [loading, setLoading]             = useState(true);
-  const [showAdd, setShowAdd]             = useState(false);
-  const [approvingProfile, setApprovingProfile] = useState(null);
-  const [editingEmployee, setEditingEmployee]   = useState(null);
+  const [tab,               setTab]               = useState('team');
+  const [pendingList,       setPendingList]       = useState([]);
+  const [teamList,          setTeamList]          = useState([]);
+  const [loading,           setLoading]           = useState(true);
+  const [showAdd,           setShowAdd]           = useState(false);
+  const [approvingProfile,  setApprovingProfile]  = useState(null);
+  const [editingEmployee,   setEditingEmployee]   = useState(null);
 
   useEffect(() => {
     if (currentProfile && !isAM) navigate('/');
@@ -351,29 +407,29 @@ export default function Users() {
     setLoading(true);
     const all  = await fetchProfilesFromSupabase();
     const team = await fetchEmployeesFromSupabase();
-    setPendingList(all.filter(p => p.role === 'pending' || p.status === 'pending'));
+    // Pending = account_type is pending_user OR status is pending (transition-safe)
+    setPendingList(all.filter(p =>
+      p.accountType === 'pending_user' ||
+      p.accountType === 'pending'      || // legacy
+      p.role        === 'pending'      || // legacy
+      p.role        === 'pending_user' || // legacy
+      p.status      === 'pending'
+    ));
     setTeamList(team);
     setLoading(false);
   }, []);
 
   useEffect(() => { if (isAM) refresh(); }, [isAM, refresh]);
 
-  // Auto-switch to Pending tab when there are new signups
   useEffect(() => {
     if (pendingList.length > 0 && tab === 'team') setTab('pending');
   }, [pendingList.length]);
 
-  const handleApproved = async () => { setApprovingProfile(null); await refresh(); };
-  const handleEditSaved = async () => { setEditingEmployee(null); await refresh(); };
+  const handleApproved   = async () => { setApprovingProfile(null); await refresh(); };
+  const handleEditSaved  = async () => { setEditingEmployee(null);  await refresh(); };
 
-  const handleSuspend = async (id) => {
-    await suspendUser(id);
-    await refresh();
-  };
-  const handleReactivate = async (id) => {
-    await reactivateUser(id);
-    await refresh();
-  };
+  const handleSuspend    = async (id) => { await suspendUser(id);    await refresh(); };
+  const handleReactivate = async (id) => { await reactivateUser(id); await refresh(); };
 
   const activeTeam    = teamList.filter(e => e.status === 'active');
   const suspendedTeam = teamList.filter(e => e.status === 'suspended');
@@ -424,9 +480,7 @@ export default function Users() {
         </button>
       </div>
 
-      {loading && (
-        <div className="text-center py-12 text-slate-400 text-sm">Loading…</div>
-      )}
+      {loading && <div className="text-center py-12 text-slate-400 text-sm">Loading…</div>}
 
       {/* ── PENDING TAB ── */}
       {!loading && tab === 'pending' && (
@@ -446,7 +500,7 @@ export default function Users() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{p.displayName || p.email}</p>
                     <p className="text-xs text-slate-500">{p.email}</p>
-                    <p className="text-xs text-amber-600 mt-0.5">Awaiting approval · not yet an employee</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Awaiting approval · no CRM access yet</p>
                   </div>
                   <button onClick={() => setApprovingProfile(p)}
                     className="flex items-center gap-1.5 text-xs bg-green-500 hover:bg-green-400 text-white font-medium rounded-lg px-3 py-1.5 transition-colors flex-shrink-0">
@@ -462,7 +516,6 @@ export default function Users() {
       {/* ── TEAM TAB ── */}
       {!loading && tab === 'team' && (
         <div className="space-y-6">
-          {/* Active employees */}
           <div>
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
               Active ({activeTeam.length})
@@ -484,7 +537,6 @@ export default function Users() {
             )}
           </div>
 
-          {/* Suspended employees */}
           {suspendedTeam.length > 0 && (
             <div>
               <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
@@ -505,9 +557,9 @@ export default function Users() {
       )}
 
       {/* Modals */}
-      {showAdd && <AddUserModal onSave={() => { setShowAdd(false); refresh(); }} onCancel={() => setShowAdd(false)} />}
-      {approvingProfile && <ApproveModal profile={approvingProfile} onSave={handleApproved} onCancel={() => setApprovingProfile(null)} />}
-      {editingEmployee  && <EditEmployeeModal employee={editingEmployee} onSave={handleEditSaved} onCancel={() => setEditingEmployee(null)} />}
+      {showAdd          && <AddUserModal       onSave={() => { setShowAdd(false); refresh(); }} onCancel={() => setShowAdd(false)} />}
+      {approvingProfile && <ApproveModal       profile={approvingProfile} onSave={handleApproved}  onCancel={() => setApprovingProfile(null)} />}
+      {editingEmployee  && <EditEmployeeModal  employee={editingEmployee} onSave={handleEditSaved} onCancel={() => setEditingEmployee(null)} />}
     </div>
   );
 }

@@ -44,10 +44,10 @@ export function ThemeProvider({ children }) {
     applyClass(t);
   }, []);
 
-  // Apply on mount
-  useEffect(() => { applyClass(theme); }, []); // eslint-disable-line
+  // Apply whenever theme changes (covers mount + explicit switches)
+  useEffect(() => { applyClass(theme); }, [theme]);
 
-  // System: react to OS preference changes
+  // System: react to OS preference changes in real time
   useEffect(() => {
     if (theme !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -59,9 +59,16 @@ export function ThemeProvider({ children }) {
   // Schedule: re-check every minute
   useEffect(() => {
     if (theme !== 'schedule') return;
-    applyClass('schedule');
     const id = setInterval(() => applyClass('schedule'), 60_000);
     return () => clearInterval(id);
+  }, [theme]);
+
+  // Re-apply when tab becomes visible again (catches OS changes while backgrounded)
+  useEffect(() => {
+    if (theme !== 'system' && theme !== 'schedule') return;
+    const handler = () => { if (!document.hidden) applyClass(theme); };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
   }, [theme]);
 
   return (

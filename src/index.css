@@ -23,6 +23,12 @@
   --color-sidebar-text:   #9ECECE;
 }
 
+/* ── Global mobile overflow lock ─────────────────────────────────────────── */
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 @layer base {
   :root {
     --lusso-primary:          #174D4D;
@@ -49,17 +55,69 @@
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
     background-color: var(--lusso-background);
     color: var(--lusso-text-primary);
     -webkit-font-smoothing: antialiased;
     cursor: default;
+    overflow-x: hidden;
   }
 
   #root {
     width: 100%;
     min-height: 100vh;
     text-align: left;
+    overflow-x: hidden;
+  }
+}
+
+/* ── Input base style ────────────────────────────────────────────────── */
+.input-base {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: #1e293b;
+  background-color: #fff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-base:focus-visible {
+  border-color: #174D4D;
+  box-shadow: 0 0 0 2px rgb(23 77 77 / 0.2);
+}
+
+/* ── Global focus-visible ring ───────────────────────────────────────── */
+/* Keyboard-only focus rings — invisible on mouse, visible on keyboard nav */
+:focus-visible {
+  outline: 2px solid #174D4D;
+  outline-offset: 2px;
+}
+
+/* Sidebar is always dark — use a lighter ring for contrast */
+aside :focus-visible {
+  outline-color: #3D9090;
+}
+
+/* Suppress browser default outline only where we apply our own */
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -101,6 +159,10 @@
 /* Native dark scrollbars + OS chrome */
 html.dark { color-scheme: dark; }
 
+/* Base text colour — any element without an explicit text-* class inherits this.
+   Without this, body text stays #1F2A2A (near-black) on a dark surface. */
+.dark body { color: #e2e8f0; }
+
 /* ── Surfaces ── */
 .dark .bg-white         { background-color: #1e293b; }   /* cards, modals, inputs */
 .dark .bg-slate-50      { background-color: #0f172a; }   /* page background */
@@ -120,25 +182,149 @@ html.dark { color-scheme: dark; }
 .dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #334155; }
 
 /* ── Text ── */
-.dark .text-slate-900   { color: #f1f5f9; }
-.dark .text-slate-800   { color: #e2e8f0; }
-.dark .text-slate-700   { color: #cbd5e1; }
-.dark .text-slate-600   { color: #94a3b8; }
-.dark .text-slate-500   { color: #64748b; }
-.dark .text-slate-400   { color: #475569; }
-.dark .text-slate-300   { color: #334155; }
+.dark .text-slate-900   { color: #f1f5f9; }   /* near-white — primary text */
+.dark .text-slate-800   { color: #e2e8f0; }   /* very light */
+.dark .text-slate-700   { color: #cbd5e1; }   /* light */
+.dark .text-slate-600   { color: #94a3b8; }   /* medium-light */
+.dark .text-slate-500   { color: #94a3b8; }
+.dark .text-slate-400   { color: #94a3b8; }   /* bumped — #64748b disappeared on active card bg */
+.dark .text-slate-300   { color: #64748b; }
+
+/* ── Full colour-family remaps for dark mode ─────────────────────────────
+   The app remaps Tailwind amber → deep teal. Every amber-N used as text
+   becomes invisible on dark surfaces. Same problem affects the dark variants
+   (600/700) of every Tailwind colour family. Fix all in one place so no
+   component file needs changing.
+
+   Rule of thumb:
+     text-*-700/800 → use the *-300/400 bright equivalent
+     text-*-500/600 → use the *-400 bright equivalent
+     bg-*-50/100   → transparent tint at 10–18 % opacity
+     border-*-200  → transparent tint at 28 % opacity
+─────────────────────────────────────────────────────────────────────── */
+
+/* — Amber / brand teal (remapped from Tailwind amber) — */
+.dark .text-amber-500   { color: #5CC8C8; }   /* was #174D4D — near-black, invisible */
+.dark .text-amber-600   { color: #4DB8B8; }   /* was #0F3B3B — near-black, invisible */
+.dark .text-amber-700   { color: #3DA8A8; }
+.dark .text-amber-800   { color: #3DA8A8; }
+.dark .bg-amber-50      { background-color: rgb(61 144 144 / 0.12); }
+.dark .bg-amber-50\/40  { background-color: rgb(61 144 144 / 0.12); }  /* active theme btn */
+.dark .bg-amber-100     { background-color: rgb(61 144 144 / 0.18); }
+.dark .bg-amber-200     { background-color: rgb(61 144 144 / 0.25); }
+.dark .border-amber-200 { border-color:     rgb(61 144 144 / 0.30); }
+.dark .border-amber-300 { border-color:     rgb(61 144 144 / 0.40); }
+
+/* — Teal (Tailwind real teal scale, not the amber remap) — */
+.dark .text-teal-900    { color: #99F6E4; }
+.dark .text-teal-800    { color: #99F6E4; }
+.dark .text-teal-700    { color: #2DD4BF; }
+.dark .text-teal-600    { color: #2DD4BF; }
+.dark .text-teal-500    { color: #2DD4BF; }
+.dark .bg-teal-50       { background-color: rgb(20 184 166 / 0.12); }
+.dark .bg-teal-100      { background-color: rgb(20 184 166 / 0.18); }
+.dark .border-teal-200  { border-color:     rgb(20 184 166 / 0.30); }
+
+/* — Green — */
+.dark .text-green-900   { color: #86EFAC; }
+.dark .text-green-800   { color: #86EFAC; }
+.dark .text-green-700   { color: #4ADE80; }
+.dark .text-green-600   { color: #4ADE80; }
+.dark .text-green-500   { color: #4ADE80; }
+.dark .bg-green-50      { background-color: rgb(34 197 94 / 0.10); }
+.dark .bg-green-100     { background-color: rgb(34 197 94 / 0.18); }
+.dark .border-green-200 { border-color:     rgb(34 197 94 / 0.30); }
+
+/* — Blue — */
+.dark .text-blue-900    { color: #BFDBFE; }
+.dark .text-blue-800    { color: #93C5FD; }
+.dark .text-blue-700    { color: #60A5FA; }
+.dark .text-blue-600    { color: #60A5FA; }
+.dark .text-blue-500    { color: #60A5FA; }
+.dark .bg-blue-50       { background-color: rgb(59 130 246 / 0.10); }
+.dark .bg-blue-100      { background-color: rgb(59 130 246 / 0.18); }
+.dark .border-blue-200  { border-color:     rgb(59 130 246 / 0.30); }
+
+/* — Red — */
+.dark .text-red-900     { color: #FCA5A5; }
+.dark .text-red-800     { color: #FCA5A5; }
+.dark .text-red-700     { color: #F87171; }
+.dark .text-red-600     { color: #F87171; }
+.dark .text-red-500     { color: #F87171; }
+.dark .bg-red-50        { background-color: rgb(239 68 68 / 0.10); }
+.dark .bg-red-100       { background-color: rgb(239 68 68 / 0.18); }
+.dark .border-red-200   { border-color:     rgb(239 68 68 / 0.30); }
+
+/* — Orange — */
+.dark .text-orange-900  { color: #FED7AA; }
+.dark .text-orange-800  { color: #FDBA74; }
+.dark .text-orange-700  { color: #FB923C; }
+.dark .text-orange-600  { color: #FB923C; }
+.dark .text-orange-500  { color: #FB923C; }
+.dark .bg-orange-50     { background-color: rgb(249 115 22 / 0.10); }
+.dark .bg-orange-100    { background-color: rgb(249 115 22 / 0.18); }
+.dark .border-orange-200 { border-color:    rgb(249 115 22 / 0.30); }
+
+/* — Yellow — */
+.dark .text-yellow-800  { color: #FDE68A; }
+.dark .text-yellow-700  { color: #FDE047; }
+.dark .text-yellow-600  { color: #FDE047; }
+.dark .text-yellow-500  { color: #FDE047; }
+.dark .bg-yellow-50     { background-color: rgb(234 179 8 / 0.10); }
+.dark .bg-yellow-100    { background-color: rgb(234 179 8 / 0.18); }
+
+/* — Lime — */
+.dark .text-lime-800    { color: #BEF264; }
+.dark .text-lime-700    { color: #A3E635; }
+.dark .text-lime-600    { color: #A3E635; }
+.dark .text-lime-500    { color: #A3E635; }
+.dark .bg-lime-50       { background-color: rgb(132 204 22 / 0.10); }
+.dark .bg-lime-100      { background-color: rgb(132 204 22 / 0.18); }
+
+/* — Purple — */
+.dark .text-purple-900  { color: #E9D5FF; }
+.dark .text-purple-800  { color: #D8B4FE; }
+.dark .text-purple-700  { color: #C084FC; }
+.dark .text-purple-600  { color: #C084FC; }
+.dark .text-purple-500  { color: #C084FC; }
+.dark .bg-purple-50     { background-color: rgb(168 85 247 / 0.10); }
+.dark .bg-purple-100    { background-color: rgb(168 85 247 / 0.18); }
+.dark .border-purple-200 { border-color:    rgb(168 85 247 / 0.30); }
+
+/* — Indigo — */
+.dark .text-indigo-800  { color: #C7D2FE; }
+.dark .text-indigo-700  { color: #818CF8; }
+.dark .text-indigo-600  { color: #818CF8; }
+.dark .text-indigo-500  { color: #818CF8; }
+.dark .bg-indigo-50     { background-color: rgb(99 102 241 / 0.10); }
+.dark .bg-indigo-100    { background-color: rgb(99 102 241 / 0.18); }
+
+/* — Cyan — */
+.dark .text-cyan-700    { color: #22D3EE; }
+.dark .text-cyan-600    { color: #22D3EE; }
+.dark .text-cyan-500    { color: #22D3EE; }
+.dark .bg-cyan-50       { background-color: rgb(6 182 212 / 0.10); }
+.dark .bg-cyan-100      { background-color: rgb(6 182 212 / 0.18); }
+
+/* — Sky — */
+.dark .text-sky-800     { color: #BAE6FD; }
+.dark .text-sky-700     { color: #38BDF8; }
+.dark .text-sky-600     { color: #38BDF8; }
+.dark .text-sky-500     { color: #38BDF8; }
+.dark .bg-sky-50        { background-color: rgb(14 165 233 / 0.10); }
+.dark .bg-sky-100       { background-color: rgb(14 165 233 / 0.18); }
 
 /* ── Inputs & form controls ── */
 .dark input:not([type=checkbox]):not([type=radio]),
 .dark select,
 .dark textarea {
-  background-color: #0f172a;
-  border-color: #334155;
+  background-color: #1e293b;
+  border-color: #475569;
   color: #f1f5f9;
 }
 
 .dark input::placeholder,
-.dark textarea::placeholder { color: #475569; }
+.dark textarea::placeholder { color: #64748b; }
 
 /* ── Hover states on list rows ── */
 .dark .hover\:bg-slate-50:hover  { background-color: #1a2744; }
@@ -157,8 +343,23 @@ html.dark { color-scheme: dark; }
 /* ── Top bar (header in Layout) ── */
 .dark header.bg-white { background-color: #1e293b; border-color: #334155; }
 
+/* ── Mobile bottom nav in dark mode ── */
+.dark nav.bg-white { background-color: #1e293b; border-color: #334155; }
+
+/* ── input-base in dark mode ── */
+.dark .input-base {
+  background-color: #1e293b;
+  border-color: #475569;
+  color: #f1f5f9;
+}
+.dark .input-base:focus-visible {
+  border-color: #3D9090;
+  box-shadow: 0 0 0 2px rgb(61 144 144 / 0.3);
+}
+
 /* ── Focus rings stay visible ── */
 .dark .focus\:ring-amber-400:focus { --tw-ring-color: #174D4D; }
+.dark :focus-visible { outline-color: #3D9090; }
 
 /* ── Sticky elements keep dark bg ── */
 .dark .sticky { background-color: inherit; }

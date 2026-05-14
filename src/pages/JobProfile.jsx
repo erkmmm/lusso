@@ -2,19 +2,22 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
-  ArrowLeft, Edit3, Save, X, User, MapPin, Phone, Mail,
+  Edit3, Save, X, User, MapPin, Phone, Mail,
   Calendar, ClipboardList, Package, Wrench, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
-  AlertTriangle, StickyNote, ChevronDown, HardHat, Plus,
+  AlertTriangle, StickyNote, ChevronDown, HardHat, Plus, Upload,
+  CalendarPlus,
 } from 'lucide-react';
+import BackButton from '../components/BackButton';
 import {
-  getJob, getCustomer, getMeasureSheetByJob, getActivityByJob,
+  getJob, getCustomer, getMeasureSheetsByJob, getActivityByJob,
   updateJobStatus, saveJob, JOB_STATUSES, STATUS_COLORS, getQuotesByJob,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
 import Card from '../components/Card';
 import InstallationSection from '../components/InstallationSection';
+import CalendarEventModal from '../components/CalendarEventModal';
 
 const ACTIVITY_ICONS = {
   status_change:        { icon: TrendingUp,    bg: 'bg-blue-100',   color: 'text-blue-600' },
@@ -34,7 +37,7 @@ export default function JobProfile() {
 
   const [job, setJob]               = useState(getJob(id));
   const [customer, setCustomer]     = useState(getCustomer(job?.customerId));
-  const [measureSheet]              = useState(getMeasureSheetByJob(id));
+  const [measureSheets]             = useState(() => getMeasureSheetsByJob(id));
   const [activity, setActivity]     = useState(getActivityByJob(id));
   const [quotes, setQuotes]         = useState(() => getQuotesByJob(id));
   const [editingStatus, setEditingStatus] = useState(false);
@@ -42,12 +45,13 @@ export default function JobProfile() {
   const [notesValue, setNotesValue]       = useState(job?.internalNotes || '');
   const [editingJob, setEditingJob]       = useState(false);
   const [jobEdits, setJobEdits]           = useState({});
+  const [showCalendar, setShowCalendar]   = useState(false);
 
   if (!job) {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Job not found.</p>
-        <button onClick={() => navigate('/jobs')} className="text-amber-600 hover:underline mt-2 text-sm">Back to jobs</button>
+        <BackButton fallback="/jobs" className="mt-2" />
       </div>
     );
   }
@@ -82,14 +86,12 @@ export default function JobProfile() {
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
       {/* Back */}
-      <button onClick={() => navigate('/jobs')} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
-        <ArrowLeft size={15} /> Back to Jobs
-      </button>
+      <BackButton fallback={job?.customerId ? `/customers/${job.customerId}` : '/jobs'} />
 
       {/* Header card */}
       <Card className="p-5">
         <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-300 flex items-center justify-center flex-shrink-0 text-amber-700 font-bold text-xl">
+          <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-700 font-bold text-xl">
             {customer?.name?.charAt(0) || 'J'}
           </div>
           <div className="flex-1 min-w-0">
@@ -115,16 +117,23 @@ export default function JobProfile() {
               <Plus size={14} /> New Quote
             </button>
             <button
+              onClick={() => setShowCalendar(true)}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
+              title="Add Calendar Entry"
+            >
+              <CalendarPlus size={14} /> <span className="hidden sm:inline">Calendar Entry</span>
+            </button>
+            <button
               onClick={() => setEditingStatus(!editingStatus)}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
             >
-              <ChevronDown size={14} /> Change Status
+              <ChevronDown size={14} /> <span className="hidden sm:inline">Change Status</span>
             </button>
             <button
               onClick={() => navigate(`/customers/${customer?.id}`)}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
             >
-              <User size={14} /> Customer
+              <User size={14} /> <span className="hidden sm:inline">Customer</span>
             </button>
           </div>
         </div>
@@ -250,46 +259,114 @@ export default function JobProfile() {
             </div>
           </Card>
 
-          {/* Measure sheet preview */}
-          {measureSheet && (
-            <Card>
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><ClipboardList size={15} /> Measure Sheet</h2>
+          {/* ── Measure Sheets ──────────────────────────────────────────── */}
+          <Card className="overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                <ClipboardList size={15} /> Measure Sheets
+                {measureSheets.length > 0 && (
+                  <span className="text-xs font-normal text-slate-400">({measureSheets.length})</span>
+                )}
+              </h2>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => navigate(`/measure-sheets/${measureSheet.id}`)}
-                  className="text-xs text-amber-600 hover:underline flex items-center gap-1"
+                  onClick={() => navigate(`/measure-sheets/import?customerId=${job.customerId}&jobId=${id}`)}
+                  className="flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors"
                 >
-                  View full sheet <ChevronRight size={12} />
+                  <Upload size={12} /> Import Measure Sheet
+                </button>
+                <button
+                  onClick={() => navigate(`/measure-sheets/new?customerId=${job.customerId}&jobId=${id}`)}
+                  className="flex items-center gap-1.5 text-xs font-medium bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Plus size={12} /> New Measure Sheet
                 </button>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100">
-                      {['#','Location','Product','Width','Drop','Qty','Fabric / Colour','Control','Notes'].map(h => (
-                        <th key={h} className="px-4 py-2.5 text-left font-medium text-slate-500 whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {measureSheet.lineItems.map((item, i) => (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">{item.location || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.productNameSnapshot || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-right font-mono">{item.widthMm ? `${item.widthMm} mm` : '—'}</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-right font-mono">{item.dropMm ? `${item.dropMm} mm` : '—'}</td>
-                        <td className="px-4 py-3 text-slate-600 text-center">{item.quantity || 1}</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.fabricColour || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.control || '—'}</td>
-                        <td className="px-4 py-3 text-slate-500 max-w-[160px] truncate">{item.notes || ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            </div>
+
+            {measureSheets.length === 0 ? (
+              <div className="p-6 text-center">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-3">
+                  <ClipboardList size={18} className="text-slate-400" />
+                </div>
+                <p className="text-sm font-medium text-slate-600">No measure sheets yet</p>
+                <p className="text-xs text-slate-400 mt-1">Use the buttons above to create a new sheet or import from Excel</p>
               </div>
-            </Card>
-          )}
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {measureSheets.map((ms) => (
+                  <div key={ms.id} className="px-5 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${ms.importedFromExcel ? 'bg-blue-50' : 'bg-amber-50'}`}>
+                          {ms.importedFromExcel
+                            ? <Upload size={14} className="text-blue-500" />
+                            : <ClipboardList size={14} className="text-amber-500" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-slate-800">
+                              {ms.importedFromExcel ? 'Imported' : 'Measure Sheet'}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ms.status === 'Submitted' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                              {ms.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {ms.lineItems?.length || 0} item{(ms.lineItems?.length || 0) !== 1 ? 's' : ''}
+                            {ms.measureDate ? ` · ${ms.measureDate}` : ''}
+                            {ms.measurer ? ` · ${ms.measurer}` : ''}
+                            {ms.importedFromExcel && ms.originalFileName ? ` · ${ms.originalFileName}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => navigate(`/measure-sheets/${ms.id}`)}
+                        className="flex items-center gap-1 text-xs text-amber-600 hover:underline flex-shrink-0"
+                      >
+                        View <ChevronRight size={12} />
+                      </button>
+                    </div>
+
+                    {/* Inline preview for first sheet only */}
+                    {ms === measureSheets[0] && ms.lineItems?.length > 0 && (
+                      <div className="mt-3 overflow-x-auto rounded-lg border border-slate-100">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100">
+                              {['#','Location','Product','W (mm)','D (mm)','Qty','Fabric','Control','Notes'].map(h => (
+                                <th key={h} className="px-3 py-2 text-left font-medium text-slate-500 whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {ms.lineItems.slice(0, 5).map((item, i) => (
+                              <tr key={item.id} className="hover:bg-slate-50">
+                                <td className="px-3 py-2.5 text-slate-400">{i + 1}</td>
+                                <td className="px-3 py-2.5 font-medium text-slate-800 whitespace-nowrap">{item.location || '—'}</td>
+                                <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.productNameSnapshot || '—'}</td>
+                                <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap font-mono text-right">{item.widthMm || '—'}</td>
+                                <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap font-mono text-right">{item.dropMm || '—'}</td>
+                                <td className="px-3 py-2.5 text-slate-600 text-center">{item.quantity || 1}</td>
+                                <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.fabricColour || '—'}</td>
+                                <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.control || '—'}</td>
+                                <td className="px-3 py-2.5 text-slate-500 max-w-[120px] truncate">{item.notes || ''}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {ms.lineItems.length > 5 && (
+                          <p className="text-center text-xs text-slate-400 py-2 border-t border-slate-50">
+                            +{ms.lineItems.length - 5} more items — <button onClick={() => navigate(`/measure-sheets/${ms.id}`)} className="text-amber-600 hover:underline">view full sheet</button>
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
 
           {/* Quotes section */}
           <Card>
@@ -374,6 +451,16 @@ export default function JobProfile() {
             </div>
           </Card>
         </div>
+
+        {/* Calendar entry modal — pre-filled with this job */}
+        {showCalendar && (
+          <CalendarEventModal
+            initialCustomerId={job.customerId}
+            initialJobId={id}
+            onSave={() => { setShowCalendar(false); }}
+            onClose={() => setShowCalendar(false)}
+          />
+        )}
 
         {/* Right column */}
         <div className="space-y-5">

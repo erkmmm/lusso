@@ -1,30 +1,37 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Edit3, Save, X, Mail, Phone, Briefcase,
+  Edit3, Save, X, Mail, Phone, Briefcase,
   UserCog, AlertTriangle, CheckCircle2, MapPin,
   ToggleLeft, ToggleRight, User, Shield,
 } from 'lucide-react';
+import BackButton from '../components/BackButton';
 import {
   getEmployeeByIdFromSupabase, updateEmployeeProfile,
   suspendUser, reactivateUser,
 } from '../store/profiles';
 
+// ── Label maps ────────────────────────────────────────────────────────────────
 const ACCOUNT_TYPE_LABELS = {
   account_manager: 'Account Manager',
   standard_user:   'Standard User',
-  salesperson:     'Standard User', // legacy fallback
 };
 const ACCOUNT_TYPE_COLORS = {
   account_manager: 'bg-amber-100 text-amber-700',
   standard_user:   'bg-slate-100 text-slate-600',
-  salesperson:     'bg-slate-100 text-slate-600',
 };
 const EMPLOYEE_ROLE_LABELS = {
   salesperson:     'Salesperson',
+  installer:       'Installer',
   account_manager: 'Account Manager',
 };
+const EMPLOYEE_ROLE_COLORS = {
+  salesperson:     'bg-teal-100 text-teal-700',
+  installer:       'bg-blue-100 text-blue-700',
+  account_manager: 'bg-amber-100 text-amber-700',
+};
 
+// ── Sub-components ────────────────────────────────────────────────────────────
 function Avatar({ name }) {
   const initials = name ? name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?';
   return (
@@ -75,6 +82,7 @@ function EditSelect({ label, value, onChange, options }) {
   );
 }
 
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function EmployeeProfile() {
   const { id }   = useParams();
   const navigate = useNavigate();
@@ -98,19 +106,13 @@ export default function EmployeeProfile() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) {
-    return (
-      <div className="p-6 text-center text-slate-400 text-sm animate-pulse">Loading…</div>
-    );
-  }
+  if (loading) return <div className="p-6 text-center text-slate-400 text-sm animate-pulse">Loading…</div>;
 
   if (!emp) {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Employee not found.</p>
-        <button onClick={() => navigate('/employees')} className="mt-3 text-amber-600 hover:underline text-sm">
-          ← Back to Employees
-        </button>
+        <BackButton fallback="/employees" className="mt-3" />
       </div>
     );
   }
@@ -118,7 +120,7 @@ export default function EmployeeProfile() {
   const isActive = emp.status === 'active';
 
   const startEdit = () => {
-    setForm({ ...emp, employeeRole: emp.employeeRole || '' });
+    setForm({ ...emp, employeeRole: emp.employeeRole || '', accountType: emp.accountType || 'standard_user' });
     setEditing(true);
     setError('');
   };
@@ -134,7 +136,7 @@ export default function EmployeeProfile() {
     try {
       await updateEmployeeProfile(emp.id, {
         displayName:           form.displayName.trim(),
-        role:                  form.role,
+        accountType:           form.accountType,
         employeeRole:          form.employeeRole || null,
         phone:                 form.phone,
         positionTitle:         form.positionTitle,
@@ -160,7 +162,7 @@ export default function EmployeeProfile() {
       else           await reactivateUser(emp.id);
       await load();
       showToast(`${emp.displayName} ${isActive ? 'suspended' : 'reactivated'}.`);
-    } catch (err) {
+    } catch {
       showToast('Failed to update status.');
     }
   };
@@ -169,10 +171,7 @@ export default function EmployeeProfile() {
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-24">
 
       {/* Back */}
-      <button onClick={() => navigate('/employees')}
-        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
-        <ArrowLeft size={15} /> Employees
-      </button>
+      <BackButton fallback="/employees" />
 
       {/* Header card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
@@ -182,14 +181,17 @@ export default function EmployeeProfile() {
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <h1 className="text-xl font-bold text-slate-900">{emp.displayName || emp.email}</h1>
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ACCOUNT_TYPE_COLORS[emp.role] || 'bg-slate-100 text-slate-600'}`}>
-                {ACCOUNT_TYPE_LABELS[emp.role] || emp.role}
+              {/* Account type badge */}
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ACCOUNT_TYPE_COLORS[emp.accountType] || 'bg-slate-100 text-slate-600'}`}>
+                {ACCOUNT_TYPE_LABELS[emp.accountType] || emp.accountType || '—'}
               </span>
+              {/* Employee role badge */}
               {emp.employeeRole && (
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${EMPLOYEE_ROLE_COLORS[emp.employeeRole] || 'bg-slate-100 text-slate-600'}`}>
                   {EMPLOYEE_ROLE_LABELS[emp.employeeRole] || emp.employeeRole}
                 </span>
               )}
+              {/* Status badge */}
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                 {isActive ? 'Active' : 'Suspended'}
               </span>
@@ -230,19 +232,32 @@ export default function EmployeeProfile() {
           </div>
           {editing ? (
             <div className="px-5 py-4 space-y-3">
-              <EditInput  label="Full Name"      value={form.displayName}   onChange={setF('displayName')} />
-              <EditInput  label="Position Title" value={form.positionTitle} onChange={setF('positionTitle')} />
-              <EditSelect label="Account Type"   value={form.role}          onChange={setF('role')}
-                options={[['standard_user','Standard User'],['account_manager','Account Manager']]} />
-              <EditSelect label="Employee Role"  value={form.employeeRole || ''}  onChange={setF('employeeRole')}
-                options={[['','— Not assigned —'],['salesperson','Salesperson'],['account_manager','Account Manager']]} />
+              <EditInput label="Full Name" value={form.displayName} onChange={setF('displayName')} />
+              <EditInput label="Position Title" value={form.positionTitle} onChange={setF('positionTitle')} />
+              <EditSelect label="Account Type" value={form.accountType} onChange={setF('accountType')}
+                options={[
+                  ['standard_user',   'Standard User'],
+                  ['account_manager', 'Account Manager'],
+                ]} />
+              <EditSelect label="Employee Role" value={form.employeeRole || ''} onChange={setF('employeeRole')}
+                options={[
+                  ['',                '— Not assigned —'],
+                  ['salesperson',     'Salesperson'],
+                  ['installer',       'Installer'],
+                  ['account_manager', 'Account Manager'],
+                ]} />
+              <EditSelect label="Status" value={form.status} onChange={setF('status')}
+                options={[
+                  ['active',    'Active'],
+                  ['suspended', 'Suspended'],
+                ]} />
             </div>
           ) : (
             <div className="px-5 py-2">
-              <InfoRow label="Full Name"      value={emp.displayName}   icon={User} />
-              <InfoRow label="Position Title" value={emp.positionTitle} icon={Briefcase} />
-              <InfoRow label="Account Type"   value={ACCOUNT_TYPE_LABELS[emp.role] || emp.role} icon={UserCog} />
-              <InfoRow label="Employee Role"  value={EMPLOYEE_ROLE_LABELS[emp.employeeRole] || '— Not assigned —'} icon={Shield} />
+              <InfoRow label="Full Name"      value={emp.displayName}                                              icon={User} />
+              <InfoRow label="Position Title" value={emp.positionTitle}                                           icon={Briefcase} />
+              <InfoRow label="Account Type"   value={ACCOUNT_TYPE_LABELS[emp.accountType]   || emp.accountType}  icon={UserCog} />
+              <InfoRow label="Employee Role"  value={EMPLOYEE_ROLE_LABELS[emp.employeeRole] || '— Not assigned'} icon={Shield} />
             </div>
           )}
         </div>

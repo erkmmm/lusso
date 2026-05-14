@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search, Users, Phone, Mail, MapPin, X, ChevronRight,
   Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus,
@@ -75,6 +75,7 @@ const EMPTY_CUSTOMER = () => ({
 
 export default function Customers() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch]         = useState('');
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected]     = useState(new Set());
@@ -84,6 +85,16 @@ export default function Customers() {
   const [newCustomer, setNewCustomer] = useState(EMPTY_CUSTOMER());
   const [addErrors, setAddErrors]   = useState({});
   const [, forceUpdate]             = useState(0);
+
+  // Auto-open Add Customer modal when ?new=1 is in the URL (e.g. from mobile + menu)
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowAdd(true);
+      setNewCustomer(EMPTY_CUSTOMER());
+      setAddErrors({});
+      setSearchParams({}, { replace: true }); // clean the URL
+    }
+  }, [searchParams, setSearchParams]);
 
   const { isAM = true, displayName = '' } = useProfile() || {};
   const customers = getCustomersFiltered(isAM, displayName);
@@ -140,12 +151,12 @@ export default function Customers() {
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-5 pb-24">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Customers</h1>
           <p className="text-slate-500 text-sm mt-0.5">{filtered.length} customer{filtered.length !== 1 ? 's' : ''}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap self-start">
           {customers.length > 0 && (
             selectMode ? (
               <>
@@ -261,7 +272,7 @@ export default function Customers() {
                   className={`w-full p-5 text-left ${selectMode ? 'pl-9' : ''}`}
                 >
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0 text-blue-700 font-bold text-base">
+                    <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0 text-blue-700 font-bold text-base">
                       {customer.name.charAt(0)}
                     </div>
                     <div className="min-w-0 flex-1">

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
-  ArrowLeft, Edit3, Save, X, Phone, Mail, MapPin,
+  Edit3, Save, X, Phone, Mail, MapPin,
   CheckCircle2, XCircle, HardHat, Briefcase, Clock,
 } from 'lucide-react';
 import {
@@ -10,6 +10,7 @@ import {
   getJob, getCustomer, INSTALLER_SERVICES, INSTALL_REQUEST_STATUS_COLORS,
 } from '../store/data';
 import Card from '../components/Card';
+import BackButton from '../components/BackButton';
 import StatusBadge from '../components/StatusBadge';
 
 export default function InstallerProfile() {
@@ -54,14 +55,12 @@ export default function InstallerProfile() {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
-      <button onClick={() => navigate('/installers')} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={15} /> Back to Installers
-      </button>
+      <BackButton fallback="/installers" />
 
       {/* Header */}
       <Card className="p-5">
         <div className="flex items-start gap-4">
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 ${installer.isActive ? 'bg-gradient-to-br from-amber-100 to-amber-300' : 'bg-slate-100'}`}>
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 ${installer.isActive ? 'bg-amber-100' : 'bg-slate-100'}`}>
             <HardHat size={28} className={installer.isActive ? 'text-amber-700' : 'text-slate-400'} />
           </div>
           <div className="flex-1 min-w-0">

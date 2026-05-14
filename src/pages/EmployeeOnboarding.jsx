@@ -58,7 +58,7 @@ export default function EmployeeOnboarding() {
     <div className="min-h-screen bg-[#0F3535] flex flex-col items-center justify-center p-4">
       {/* Header */}
       <div className="mb-8 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center mx-auto mb-3 shadow-lg">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center mx-auto mb-3 shadow-lg">
           <span className="text-white font-bold text-2xl">L</span>
         </div>
         <h1 className="text-white text-2xl font-bold">Welcome to Lusso</h1>

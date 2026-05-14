@@ -3,7 +3,7 @@ import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  ArrowLeft, Plus, Trash2, Save, Send, CheckCircle2,
+  Plus, Trash2, Save, Send, CheckCircle2,
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
@@ -18,6 +18,7 @@ import {
 } from '../store/data';
 import { syncNow } from '../store/db';
 import Card from '../components/Card';
+import BackButton from '../components/BackButton';
 
 // ─── Customer search & duplicate helpers ──────────────────────────────────────
 
@@ -128,7 +129,7 @@ function CustomerResultCard({ customer, jobCount, onSelect }) {
       onClick={() => onSelect(customer)}
       className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-amber-50 transition-colors border-b border-slate-50 last:border-0"
     >
-      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-100 to-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
         <span className="text-amber-700 font-bold text-xs">{customer.name?.charAt(0) || '?'}</span>
       </div>
       <div className="flex-1 min-w-0">
@@ -196,7 +197,7 @@ function DuplicateMatchCard({ match, onUse, onViewProfile, navigate }) {
     <div className={`border rounded-xl overflow-hidden ${confidence === 'high' ? 'border-red-200' : confidence === 'medium' ? 'border-amber-200' : 'border-slate-200'}`}>
       <div className={`h-1 ${style.bar}`} />
       <div className="p-3 flex items-start gap-3">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
           <span className="text-slate-600 font-bold text-xs">{customer.name?.charAt(0) || '?'}</span>
         </div>
         <div className="flex-1 min-w-0">
@@ -305,8 +306,9 @@ export default function NewMeasureSheet() {
   const allCustomers     = useMemo(() => getCustomers(), []);
   const allJobs          = useMemo(() => getJobs(), []);
 
-  // Pre-linking from customer profile
+  // Pre-linking from customer or job workspace
   const prelinkedCustomerId = searchParams.get('customerId') || null;
+  const prelinkedJobId      = searchParams.get('jobId')      || null;
   const prelinkedCustomer   = prelinkedCustomerId ? getCustomer(prelinkedCustomerId) : null;
 
   // ── Sheet state ────────────────────────────────────────────────────────────
@@ -315,7 +317,8 @@ export default function NewMeasureSheet() {
     if (prelinkedCustomer) {
       return {
         ...EMPTY_SHEET(),
-        customerId: prelinkedCustomer.id,
+        customerId:  prelinkedCustomer.id,
+        jobId:       prelinkedJobId || null,
         customerName: prelinkedCustomer.name    || '',
         phone:        prelinkedCustomer.phone   || '',
         email:        prelinkedCustomer.email   || '',
@@ -493,20 +496,33 @@ export default function NewMeasureSheet() {
       const finalSheet = { ...sheet, customerId: customer.id, status: 'Submitted' };
       saveMeasureSheet(finalSheet);
 
-      const job = createJobFromMeasureSheet(sheet, customer);
-      const finalSheetWithJob = { ...finalSheet, jobId: job?.id };
-      saveMeasureSheet(finalSheetWithJob);
+      let job = null;
+      let finalSheetWithJob;
 
-      // Wait for Supabase confirmation before showing success.
-      // Sequential order respects FK constraints: customer → job → measure_sheet.
-      await syncNow([
-        { table: 'customers',      record: customer },
-        { table: 'jobs',           record: job },
-        { table: 'measure_sheets', record: finalSheetWithJob },
-      ], { sequential: true });
+      if (prelinkedJobId) {
+        // Coming from an existing Job Workspace — link to that job, don't create a new one
+        finalSheetWithJob = { ...finalSheet, jobId: prelinkedJobId };
+        saveMeasureSheet(finalSheetWithJob);
+
+        await syncNow([
+          { table: 'customers',      record: customer },
+          { table: 'measure_sheets', record: finalSheetWithJob },
+        ], { sequential: true });
+      } else {
+        // Global create — create a new job from this measure sheet
+        job = createJobFromMeasureSheet(sheet, customer);
+        finalSheetWithJob = { ...finalSheet, jobId: job?.id };
+        saveMeasureSheet(finalSheetWithJob);
+
+        await syncNow([
+          { table: 'customers',      record: customer },
+          { table: 'jobs',           record: job },
+          { table: 'measure_sheets', record: finalSheetWithJob },
+        ], { sequential: true });
+      }
 
       setSheet(finalSheet);
-      setSubmittedJobId(job?.id || null);
+      setSubmittedJobId(prelinkedJobId || job?.id || null);
       setSubmitted(true);
     } catch (err) {
       console.error('[handleSubmit]', err);
@@ -526,7 +542,9 @@ export default function NewMeasureSheet() {
         </div>
         <h2 className="text-xl font-bold text-slate-900 mb-2">Measure Sheet Submitted!</h2>
         <p className="text-slate-500 text-sm mb-6 max-w-sm">
-          The measure sheet has been saved and a new job has been created automatically.
+          {prelinkedJobId
+            ? 'The measure sheet has been saved and linked to the job.'
+            : 'The measure sheet has been saved and a new job has been created automatically.'}
         </p>
         <div className="flex flex-wrap gap-3 justify-center">
           {submittedJobId && (
@@ -556,9 +574,7 @@ export default function NewMeasureSheet() {
 
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="text-slate-500 hover:text-slate-800 transition-colors">
-          <ArrowLeft size={18} />
-        </button>
+        <BackButton fallback={prelinkedJobId ? `/jobs/${prelinkedJobId}` : sheet?.jobId ? `/jobs/${sheet.jobId}` : '/measure-sheets'} />
         <div className="flex-1">
           <h1 className="text-xl font-bold text-slate-900">
             {isEdit ? 'Edit Measure Sheet' : prelinkedCustomer ? `New Measure Sheet — ${prelinkedCustomer.name}` : 'New Measure Sheet'}
@@ -619,8 +635,8 @@ export default function NewMeasureSheet() {
         >
           <div className="space-y-4">
 
-            {/* Mode toggle */}
-            <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+            {/* Mode toggle — stacks vertically on mobile, side-by-side on sm+ */}
+            <div className="flex flex-col sm:flex-row rounded-xl border border-slate-200 overflow-hidden">
               <button
                 onClick={() => { setCustomerMode('select'); setDuplicates([]); }}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${customerMode === 'select' ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
@@ -629,7 +645,7 @@ export default function NewMeasureSheet() {
               </button>
               <button
                 onClick={() => { setCustomerMode('new'); setSelectedCustomer(null); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors border-l border-slate-200 ${customerMode === 'new' ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors border-t sm:border-t-0 sm:border-l border-slate-200 ${customerMode === 'new' ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
               >
                 <UserPlus size={15} /> Create New Customer
               </button>
@@ -844,11 +860,11 @@ export default function NewMeasureSheet() {
               return (
                 <div key={item.id} className="border border-slate-200 rounded-xl overflow-hidden">
                   {/* Item header */}
-                  <div className="bg-gradient-to-r from-amber-50 to-white border-b border-slate-100 px-4 py-3 flex items-center gap-3">
-                    <span className="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                  <div className="bg-amber-50 border-b border-slate-100 px-4 py-3 flex items-start gap-2">
+                    <span className="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-1">
                       {idx + 1}
                     </span>
-                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Location *</label>
                         <input value={item.location} onChange={e => setLineItem(idx, 'location', e.target.value)}
@@ -880,7 +896,7 @@ export default function NewMeasureSheet() {
                   </div>
 
                   {/* Core fields */}
-                  <div className="px-4 pt-3 pb-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="px-4 pt-3 pb-2 grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0">
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1">Qty</label>
                       <input type="number" min="1" value={item.quantity}
@@ -976,16 +992,16 @@ export default function NewMeasureSheet() {
             <AlertCircle size={12} /> {errors._submit}
           </p>
         )}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <button onClick={handleSaveDraft} disabled={submitting}
             className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50">
             <Save size={15} /> Save Draft
           </button>
-          <div className="flex items-center gap-2">
-            {savedAt && <span className="text-xs text-slate-400 hidden sm:block">Saved {savedAt.toLocaleTimeString()}</span>}
+          <div className="flex items-center gap-2 min-w-0">
+            {savedAt && <span className="text-xs text-slate-400 hidden sm:block whitespace-nowrap">Saved {savedAt.toLocaleTimeString()}</span>}
             <button onClick={handleSubmit} disabled={submitting}
-              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg px-5 py-2.5 transition-colors">
-              {submitting ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Submitting…</> : <><Send size={15} /> Submit & Create Job</>}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors whitespace-nowrap">
+              {submitting ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Submitting…</> : <><Send size={15} /><span className="hidden sm:inline">Submit &amp; Create Job</span><span className="sm:hidden">Submit</span></>}
             </button>
           </div>
         </div>

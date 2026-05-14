@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { NavLink, Link, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, Users, ClipboardList,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays,
@@ -51,19 +51,20 @@ const NAV_SECTIONS = [
 ];
 
 // ── + New actions ─────────────────────────────────────────────────────────────
+// "New Measure Sheet" is intentionally absent — create/import from inside a Job Workspace.
 const NEW_ACTIONS = [
   {
-    label: 'New Measure',
-    sub:   'Start a site measure',
-    to:    '/measure-sheets/new',
-    icon:  ClipboardList,
-    color: 'text-teal-600',
-    bg:    'bg-teal-50',
+    label: 'New Job',
+    sub:   'Create a job for a customer',
+    to:    '/jobs/new',
+    icon:  Briefcase,
+    color: 'text-amber-600',
+    bg:    'bg-amber-50',
   },
   {
     label: 'New Quote',
     sub:   'Price and quote a job',
-    to:    '/quotes',
+    to:    '/quotes/new',
     icon:  FileText,
     color: 'text-blue-600',
     bg:    'bg-blue-50',
@@ -71,7 +72,7 @@ const NEW_ACTIONS = [
   {
     label: 'New Customer',
     sub:   'Add to your contacts',
-    to:    '/customers',
+    to:    '/customers?new=1',
     icon:  Users,
     color: 'text-purple-600',
     bg:    'bg-purple-50',
@@ -117,28 +118,33 @@ export default function Layout({ children }) {
   const [newOpen, setNewOpen]         = useState(false);
   const [notifications, setNotifs]    = useState(getNotifications);
   const [counts, setCounts]           = useState(computeCounts);
-  const notifRef  = useRef(null);
-  const sideNewRef = useRef(null); // wraps sidebar + New section
-  const navigate  = useNavigate();
+  const notifRef      = useRef(null);
+  const sideNewRef    = useRef(null); // wraps sidebar + New section
+  const mobileSheetRef = useRef(null); // mobile action sheet
+  const navigate      = useNavigate();
   const { user, signOut } = useAuth();
   const { isAM, displayName, profile } = useProfile() || {};
 
   const unread = notifications.filter(n => !n.isRead).length;
 
-  // Refresh notifications + counts every 2 s
+  // Refresh notifications + counts on data changes instead of polling
   useEffect(() => {
-    const id = setInterval(() => {
+    const refresh = () => {
       setNotifs(getNotifications());
       setCounts(computeCounts());
-    }, 2000);
-    return () => clearInterval(id);
+    };
+    window.addEventListener('lusso:data-changed', refresh);
+    return () => window.removeEventListener('lusso:data-changed', refresh);
   }, []);
 
   // Close popups on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (notifRef.current   && !notifRef.current.contains(e.target))   setNotifOpen(false);
-      if (sideNewRef.current && !sideNewRef.current.contains(e.target)) setNewOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
+      if (
+        sideNewRef.current && !sideNewRef.current.contains(e.target) &&
+        (!mobileSheetRef.current || !mobileSheetRef.current.contains(e.target))
+      ) setNewOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -177,14 +183,14 @@ export default function Layout({ children }) {
 
         {/* Logo */}
         <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center flex-shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
             <span className="text-white font-bold text-sm">L</span>
           </div>
           <div>
             <div className="text-white font-semibold text-sm leading-tight">Lusso</div>
             <div className="text-slate-400 text-xs">Job Management</div>
           </div>
-          <button className="ml-auto lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}>
+          <button aria-label="Close sidebar" className="ml-auto lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}>
             <X size={18} />
           </button>
         </div>
@@ -271,17 +277,31 @@ export default function Layout({ children }) {
               <div className="text-white text-sm font-medium leading-tight truncate">
                 {displayName || user?.email || 'User'}
               </div>
-              {isAM ? (
-                <span className="inline-flex items-center text-[10px] font-medium bg-amber-500/20 text-amber-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                  Account Manager
-                </span>
-              ) : (
-                <span className="inline-flex items-center text-[10px] font-medium bg-slate-500/20 text-slate-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                  Salesperson
-                </span>
-              )}
+              {(() => {
+                const role = profile?.employeeRole;
+                if (isAM || role === 'account_manager') return (
+                  <span className="inline-flex items-center text-[10px] font-medium bg-amber-500/20 text-amber-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                    Account Manager
+                  </span>
+                );
+                if (role === 'installer') return (
+                  <span className="inline-flex items-center text-[10px] font-medium bg-blue-500/20 text-blue-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                    Installer
+                  </span>
+                );
+                if (role === 'salesperson') return (
+                  <span className="inline-flex items-center text-[10px] font-medium bg-teal-500/20 text-teal-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                    Salesperson
+                  </span>
+                );
+                return (
+                  <span className="inline-flex items-center text-[10px] font-medium bg-slate-500/20 text-slate-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                    Standard User
+                  </span>
+                );
+              })()}
             </div>
-            <button onClick={signOut} title="Sign out"
+            <button onClick={signOut} aria-label="Sign out"
               className="text-sidebar-text hover:text-white p-1 rounded transition-colors flex-shrink-0">
               <LogOut size={15} />
             </button>
@@ -292,9 +312,9 @@ export default function Layout({ children }) {
       {/* ── Main content ──────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Top bar */}
-        <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 flex-shrink-0">
-          <button className="lg:hidden text-slate-500 hover:text-slate-800" onClick={() => setSidebarOpen(true)}>
+        {/* Top bar — z-10 keeps burger + bell above any in-page backdrop/dropdowns */}
+        <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 flex-shrink-0 relative z-10">
+          <button aria-label="Open navigation" className="lg:hidden text-slate-500 hover:text-slate-800" onClick={() => setSidebarOpen(true)}>
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-1.5 text-sm text-slate-500 min-w-0">
@@ -307,6 +327,7 @@ export default function Layout({ children }) {
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => setNotifOpen(!notifOpen)}
+              aria-label={unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'}
               className="relative text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
             >
               <Bell size={18} />
@@ -318,7 +339,7 @@ export default function Layout({ children }) {
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1rem)] bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                   <span className="font-semibold text-slate-800 text-sm">Notifications</span>
                   {unread > 0 && (
@@ -354,7 +375,7 @@ export default function Layout({ children }) {
         </header>
 
         {/* Page content — extra bottom padding on mobile for bottom nav */}
-        <main className="flex-1 overflow-y-auto pb-16 lg:pb-0">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
           {children}
         </main>
       </div>
@@ -390,6 +411,7 @@ export default function Layout({ children }) {
         <div className="flex-1 flex items-center justify-center">
           <button
             onClick={() => setNewOpen(v => !v)}
+            aria-label="Create new"
             className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 flex items-center justify-center shadow-lg transition-colors -mt-4"
           >
             <Plus size={22} className="text-white" />
@@ -425,23 +447,26 @@ export default function Layout({ children }) {
       {/* ── Mobile + New action sheet ─────────────────────────────────────── */}
       {newOpen && (
         <>
-          {/* Backdrop — dismiss on tap; rendered first so sheet is always on top */}
+          {/* Backdrop — onClick (not onPointerDown) so sheet item clicks fire first */}
           <div
             className="lg:hidden fixed inset-0 z-40"
             aria-hidden="true"
-            onPointerDown={() => setNewOpen(false)}
+            onClick={() => setNewOpen(false)}
           />
-          {/* Sheet — z-50 so it sits above the backdrop */}
-          <div className="lg:hidden fixed bottom-20 left-3 right-3 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden no-print">
+          {/* Sheet — z-50, ref excludes it from mousedown outside-click handler */}
+          <div
+            ref={mobileSheetRef}
+            className="lg:hidden fixed bottom-20 left-3 right-3 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden no-print"
+          >
             <div className="px-4 py-3 border-b border-slate-100">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Create New</p>
             </div>
             {NEW_ACTIONS.map(({ label, sub, to, icon: Icon, color, bg }) => (
-              <Link
+              <button
                 key={to}
-                to={to}
-                onClick={() => setNewOpen(false)}
-                className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition-colors border-b border-slate-50 last:border-0"
+                type="button"
+                onClick={() => { setNewOpen(false); navigate(to); }}
+                className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition-colors border-b border-slate-50 last:border-0 text-left"
               >
                 <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
                   <Icon size={18} className={color} />
@@ -450,7 +475,7 @@ export default function Layout({ children }) {
                   <div className="text-sm font-semibold text-slate-800">{label}</div>
                   <div className="text-xs text-slate-400">{sub}</div>
                 </div>
-              </Link>
+              </button>
             ))}
           </div>
         </>

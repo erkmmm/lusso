@@ -1,11 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { format, parseISO, formatDistanceToNow, isPast } from 'date-fns';
+import { format, parseISO, formatDistanceToNow, isPast, differenceInSeconds } from 'date-fns';
 import {
-  ArrowLeft, Edit3, Copy, Send, Eye, CheckCircle2, XCircle,
+  Edit3, Copy, Send, Eye, CheckCircle2, XCircle,
   User, MapPin, FileText, Clock, MessageSquare, Lock,
   ChevronDown, ChevronUp, Briefcase, Phone, Mail, AlertCircle,
+  Activity, Wifi, X,
 } from 'lucide-react';
+import BackButton from '../components/BackButton';
 import {
   getQuote, getCustomer, getJob,
   QUOTE_STATUS_COLORS, computeQuoteTotals, calcItemPricing,
@@ -14,6 +16,10 @@ import {
 } from '../store/data';
 import Card from '../components/Card';
 import { sendQuoteEmail } from '../lib/email';
+import { supabase } from '../lib/supabase';
+
+// ── Live threshold: consider "viewing now" if heartbeat within 90s ────────────
+const LIVE_THRESHOLD_S = 90;
 
 const fmt = (n) => `$${Number(n).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -42,18 +48,72 @@ export default function QuoteView() {
   const [commentType, setCommentType] = useState('internal');
   const [expandedItems, setExpandedItems] = useState(new Set());
 
+  // ── Live tracking state (from Supabase, fresher than localStorage) ──────────
+  const [liveData, setLiveData]   = useState(null); // { firstOpenedAt, lastViewedAt, viewCount, customerLastSeenAt }
+  const [activities, setActivities] = useState([]);
+  const liveTimerRef              = useRef(null);
+  const [, forceRender]           = useState(0);    // re-render ticker for live badge
+
+  // Fetch fresh tracking data + subscribe to realtime
+  useEffect(() => {
+    if (!supabase || !id) return;
+
+    const fetchTracking = async () => {
+      const [{ data: qData }, { data: evData }] = await Promise.all([
+        supabase.from('quotes').select('first_opened_at,last_viewed_at,view_count,customer_last_seen_at,decline_reason').eq('id', id).single(),
+        supabase.from('quote_activity_events').select('*').eq('quote_id', id).order('created_at', { ascending: false }).limit(50),
+      ]);
+      if (qData) setLiveData(qData);
+      if (evData) setActivities(evData);
+    };
+    fetchTracking();
+
+    // Re-render every 10s so the "X seconds ago" live badge stays accurate
+    liveTimerRef.current = setInterval(() => forceRender(n => n + 1), 10_000);
+
+    // Realtime: watch this specific quote row for tracking updates
+    const channel = supabase
+      .channel(`quote-tracking-${id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'quotes', filter: `id=eq.${id}` },
+        (payload) => {
+          const d = payload.new;
+          setLiveData({
+            first_opened_at:      d.first_opened_at,
+            last_viewed_at:       d.last_viewed_at,
+            view_count:           d.view_count,
+            customer_last_seen_at: d.customer_last_seen_at,
+            decline_reason:       d.decline_reason,
+          });
+          // Refresh the local quote too (status may have changed)
+          setQuote(getQuote(id));
+        })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'quote_activity_events', filter: `quote_id=eq.${id}` },
+        (payload) => {
+          setActivities(prev => [payload.new, ...prev]);
+        })
+      .subscribe();
+
+    return () => {
+      clearInterval(liveTimerRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [id]);
+
   if (!quote) {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Quote not found.</p>
-        <button onClick={() => navigate('/quotes')} className="text-amber-600 hover:underline mt-2 text-sm">
-          Back to Quotes
-        </button>
+        <BackButton fallback="/quotes" className="mt-2" />
       </div>
     );
   }
 
   const refresh = () => setQuote(getQuote(id));
+
+  // ── Derived tracking values ───────────────────────────────────────────────
+  const tracking = liveData || {};
+  const isLiveNow = tracking.customer_last_seen_at &&
+    differenceInSeconds(new Date(), new Date(tracking.customer_last_seen_at)) < LIVE_THRESHOLD_S;
 
   const customer   = getCustomer(quote.customerId);
   const job        = quote.jobId ? getJob(quote.jobId) : null;
@@ -62,20 +122,22 @@ export default function QuoteView() {
   const isOverdue  = quote.expiryDate && isPast(new Date(quote.expiryDate)) && !['Accepted','Declined','Completed','Expired'].includes(quote.status);
 
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState(null);
   const handleSend = useCallback(async () => {
     if (!customer?.email) {
-      alert('This customer has no email address on file.');
+      setSendError('This customer has no email address on file. Please add an email to the customer record first.');
       return;
     }
-    if (!window.confirm(`Send quote to ${customer.email}?`)) return;
+    if (!window.confirm(`Send quote ${quote.quoteNumber || ''} to ${customer.email}?`)) return;
     setSending(true);
+    setSendError(null);
     try {
       await sendQuoteEmail(quote, customer);
       sendQuote(quote.id, 'Admin');
       refresh();
-      alert(`✅ Quote sent to ${customer.email}`);
     } catch (err) {
-      alert(`❌ Failed to send email: ${err.message}`);
+      console.error('[QuoteView] Send quote error:', err);
+      setSendError(err.message || 'Failed to send quote email. Please try again.');
     } finally {
       setSending(false);
     }
@@ -109,11 +171,23 @@ export default function QuoteView() {
   const locations = [...new Set(quote.lineItems.map(li => li.location || 'Unspecified'))];
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5 overflow-x-hidden">
       {/* Back */}
-      <button onClick={() => navigate('/quotes')} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={15} /> Back to Quotes
-      </button>
+      <BackButton fallback="/quotes" />
+
+      {/* Send error / success banner */}
+      {sendError && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-red-700">Failed to send email</p>
+            <p className="text-xs text-red-600 mt-0.5">{sendError}</p>
+          </div>
+          <button onClick={() => setSendError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Header card */}
       <Card className="p-5">
@@ -123,6 +197,12 @@ export default function QuoteView() {
               <h1 className="text-xl font-bold text-slate-900">{customer?.name || 'Unknown Customer'}</h1>
               <span className="text-sm text-slate-400 font-mono">{quote.quoteNumber}</span>
               <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${colorClass}`}>{quote.status}</span>
+              {isLiveNow && (
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-700 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                  Viewing now
+                </span>
+              )}
               {isOverdue && (
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
                   <AlertCircle size={10} /> Overdue
@@ -142,15 +222,15 @@ export default function QuoteView() {
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-3 flex-shrink-0">
-            <div className="text-right">
-              <p className="text-3xl font-bold text-slate-900">{fmt(totals.total)}</p>
+          <div className="flex flex-col items-start sm:items-end gap-3 sm:flex-shrink-0">
+            <div className="sm:text-right">
+              <p className="text-2xl sm:text-3xl font-bold text-slate-900">{fmt(totals.total)}</p>
               <p className="text-xs text-slate-400">Total inc. GST</p>
               {totals.deposit > 0 && (
                 <p className="text-xs text-amber-600 mt-0.5 font-medium">Deposit: {fmt(totals.deposit)}</p>
               )}
             </div>
-            <div className="flex flex-wrap gap-2 justify-end">
+            <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
               {quote.status === 'Draft' && (
                 <button onClick={handleSend} disabled={sending}
                   className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors">
@@ -171,7 +251,7 @@ export default function QuoteView() {
               </button>
             </div>
             {!['Accepted','Declined','Completed'].includes(quote.status) && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button onClick={handleAccept}
                   className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-green-200 text-green-700 hover:bg-green-50">
                   <CheckCircle2 size={12} /> Mark Accepted
@@ -366,6 +446,71 @@ export default function QuoteView() {
 
           {/* Sidebar */}
           <div className="space-y-5">
+
+            {/* ── Customer Activity card ── */}
+            <Card>
+              <div className="px-5 py-4 border-b border-slate-100">
+                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                  <Activity size={15} className="text-amber-500" /> Customer Activity
+                </h2>
+              </div>
+              <div className="p-5 space-y-3">
+                {/* Live now */}
+                {isLiveNow && (
+                  <div className="flex items-center gap-2 p-2.5 bg-green-50 rounded-xl border border-green-100">
+                    <Wifi size={14} className="text-green-600 flex-shrink-0 animate-pulse" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-green-700">Viewing now</p>
+                      <p className="text-xs text-green-500">
+                        Active {formatDistanceToNow(new Date(tracking.customer_last_seen_at), { addSuffix: true })}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stats grid */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-slate-50 rounded-lg p-2.5">
+                    <p className="text-slate-400 mb-0.5">First opened</p>
+                    <p className="font-medium text-slate-700">
+                      {tracking.first_opened_at
+                        ? format(parseISO(tracking.first_opened_at), 'd MMM, h:mm a')
+                        : quote.firstOpenedAt
+                          ? format(parseISO(quote.firstOpenedAt), 'd MMM, h:mm a')
+                          : <span className="text-slate-400 italic">Not yet</span>}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2.5">
+                    <p className="text-slate-400 mb-0.5">Last viewed</p>
+                    <p className="font-medium text-slate-700">
+                      {tracking.last_viewed_at
+                        ? formatDistanceToNow(parseISO(tracking.last_viewed_at), { addSuffix: true })
+                        : <span className="text-slate-400 italic">—</span>}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2.5 col-span-2">
+                    <p className="text-slate-400 mb-0.5">View count</p>
+                    <p className="font-semibold text-slate-800 text-base">
+                      {tracking.view_count ?? quote.viewCount ?? 0}
+                      <span className="text-xs text-slate-400 font-normal ml-1">times</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Decline reason */}
+                {(tracking.decline_reason || quote.declineReason) && (
+                  <div className="p-2.5 bg-red-50 rounded-xl border border-red-100">
+                    <p className="text-xs font-semibold text-red-600 mb-1">Decline reason</p>
+                    <p className="text-xs text-red-700">{tracking.decline_reason || quote.declineReason}</p>
+                  </div>
+                )}
+
+                {!tracking.first_opened_at && !quote.firstOpenedAt && !quote.sentAt && (
+                  <p className="text-xs text-slate-400 italic text-center py-1">Quote not yet sent to customer.</p>
+                )}
+              </div>
+            </Card>
+
             <Card>
               <div className="px-5 py-4 border-b border-slate-100">
                 <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><User size={15} /> Customer</h2>
@@ -434,33 +579,83 @@ export default function QuoteView() {
 
       {/* ── Tab: Activity ─────────────────────────────────────────────── */}
       {tab === 'Activity' && (
-        <Card>
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Clock size={15} /> Activity Timeline</h2>
-          </div>
-          <div className="p-5">
-            {!quote.activity?.length ? (
-              <p className="text-sm text-slate-400 text-center py-4">No activity recorded.</p>
-            ) : (
-              <div className="space-y-4">
-                {quote.activity.map((act, i) => {
-                  const meta = ACTIVITY_META[act.type] || { emoji: '📋' };
-                  return (
-                    <div key={act.id || i} className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 text-sm">{meta.emoji}</div>
-                      <div className="flex-1 pt-0.5">
-                        <p className="text-sm text-slate-700">{act.note}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {act.user} · {formatDistanceToNow(parseISO(act.createdAt), { addSuffix: true })}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
+        <div className="space-y-5">
+          {/* Customer tracking events */}
+          {activities.length > 0 && (
+            <Card>
+              <div className="px-5 py-4 border-b border-slate-100">
+                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                  <Activity size={15} className="text-amber-500" /> Customer Activity
+                </h2>
               </div>
-            )}
-          </div>
-        </Card>
+              <div className="p-5">
+                <div className="space-y-3">
+                  {activities.map((ev) => {
+                    const icons = {
+                      quote_first_opened: '👁️',
+                      quote_viewed:       '🔄',
+                      quote_accepted:     '✅',
+                      quote_declined:     '❌',
+                    };
+                    const labels = {
+                      quote_first_opened: 'Opened for the first time',
+                      quote_viewed:       'Viewed again',
+                      quote_accepted:     `Accepted${ev.metadata?.name ? ` by ${ev.metadata.name}` : ''}`,
+                      quote_declined:     `Declined${ev.metadata?.reason ? `: ${ev.metadata.reason}` : ''}`,
+                    };
+                    return (
+                      <div key={ev.id} className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 text-sm">
+                          {icons[ev.event_type] || '📋'}
+                        </div>
+                        <div className="flex-1 pt-0.5">
+                          <p className="text-sm text-slate-700">{labels[ev.event_type] || ev.event_type}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {formatDistanceToNow(parseISO(ev.created_at), { addSuffix: true })}
+                            {' · '}{format(parseISO(ev.created_at), 'd MMM yyyy, h:mm a')}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Internal activity log */}
+          <Card>
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Clock size={15} /> Internal Log</h2>
+            </div>
+            <div className="p-5">
+              {!quote.activity?.length ? (
+                <p className="text-sm text-slate-400 text-center py-4">No internal activity recorded.</p>
+              ) : (
+                <div className="space-y-4">
+                  {quote.activity.map((act, i) => {
+                    const meta = ACTIVITY_META[act.type] || { emoji: '📋' };
+                    return (
+                      <div key={act.id || i} className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 text-sm">{meta.emoji}</div>
+                        <div className="flex-1 pt-0.5">
+                          <p className="text-sm text-slate-700">{act.note}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {act.user} · {formatDistanceToNow(parseISO(act.createdAt), { addSuffix: true })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {activities.length === 0 && !quote.activity?.length && (
+            <p className="text-sm text-slate-400 text-center py-4">No activity recorded yet.</p>
+          )}
+        </div>
       )}
 
       {/* ── Tab: Comments ─────────────────────────────────────────────── */}
