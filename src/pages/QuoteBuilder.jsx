@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
@@ -10,6 +11,7 @@ import {
   AlertCircle, CheckCircle2, X, Loader2, ExternalLink,
 } from 'lucide-react';
 import BackButton from '../components/BackButton';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
@@ -20,10 +22,42 @@ import {
   getMeasureSheetByJob, addActivity,
 } from '../store/data';
 import Card from '../components/Card';
+import { sendQuoteEmail } from '../lib/email';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
+
+// ─── Parts & Accessories catalogue ───────────────────────────────────────────
+const PRESET_PARTS = [
+  { name: 'Acmeda Automate WiFi Hub',            description: 'Acmeda Automate Pulse WiFi Hub',                                      price: 340 },
+  { name: 'Wall Charger 4m USB to Micro Cable',  description: 'Acmeda Li-ion Charger to charge battery operated roller blinds',      price: 38  },
+  { name: '1 Channel Remote Control – White',    description: '1 Channel Wire Free Remote Control White',                            price: 85  },
+  { name: '5 Channel Remote Control – White',    description: '5 Channel Wire Free Remote Control White',                            price: 95  },
+  { name: '15 Channel Remote Control – White',   description: '15 Channel Wire Free Remote Control White',                           price: 120 },
+];
+
+const EMPTY_PART_ITEM = (preset = {}) => ({
+  id: uuidv4(),
+  type: 'Part',
+  choiceGroupId: null,
+  location: '',
+  productTypeId: '',
+  productNameSnapshot: preset.name || '',
+  description: preset.description || '',
+  quantity: 1,
+  widthMm: '', dropMm: '', fabricColour: '',
+  control: '', returnSide: '', motorSide: '', fixing: '',
+  heading: '', hem: '', trackBaseBarColour: '',
+  baseBarType: '', chainColour: '',
+  unitCostPrice: '', labourCost: '', marginPercent: 40,
+  manualSellPrice: preset.price || '',
+  supplier: 'Acmeda',
+  taxable: true,
+  customerNotes: '', internalNotes: '',
+  sortOrder: 0,
+  measureSheetLineItemId: null,
+});
 
 const EMPTY_LINE_ITEM = () => ({
   id: uuidv4(),
@@ -162,7 +196,7 @@ function Section({ title, icon: Icon, children, defaultOpen = true }) {
 
 // ─── LineItemCard ─────────────────────────────────────────────────────────────
 
-function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove }) {
+function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, isExpanded, onToggle }) {
   const [showSpecs, setShowSpecs] = useState(false);
   const [showPricing, setShowPricing] = useState(true);
 
@@ -174,32 +208,111 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove }
     Required:         'bg-slate-100 text-slate-700 border-slate-200',
     Optional:         'bg-amber-100 text-amber-700 border-amber-200',
     'Multiple Choice':'bg-purple-100 text-purple-700 border-purple-200',
+    Part:             'bg-cyan-100 text-cyan-700 border-cyan-200',
   };
 
+  // Quick summary shown in the collapsed chip row
+  const specs = [
+    item.quantity > 1 ? `×${item.quantity}` : null,
+    item.widthMm ? `${item.widthMm}W` : null,
+    item.dropMm  ? `${item.dropMm}D`  : null,
+    item.fabricColour || null,
+    item.control || null,
+  ].filter(Boolean).join(' · ');
+
   return (
-    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
-      {/* Card header */}
-      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
-        {/* Row 1: badge · title · total · remove */}
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-            {idx + 1}
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="text-sm font-semibold text-slate-700 truncate block">
-              {item.location || 'New Item'}{item.productNameSnapshot ? ` · ${item.productNameSnapshot}` : ''}
-            </span>
-          </div>
-          <span className="text-sm font-bold text-slate-800 flex-shrink-0">{fmt(lineTotal)}</span>
-          {canRemove && (
-            <button type="button" onClick={() => onRemove(idx)}
-              className="text-slate-400 hover:text-red-500 transition-colors flex-shrink-0 p-1">
-              <Trash2 size={14} />
-            </button>
+    <div className={`border rounded-xl overflow-hidden bg-white transition-shadow ${isExpanded ? 'border-amber-300 shadow-sm' : 'border-slate-200'}`}>
+      {/* ── Header — always visible, click to expand/collapse ── */}
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`w-full flex items-center gap-2 px-4 py-3 text-left transition-colors ${isExpanded ? 'bg-amber-50 border-b border-amber-100' : 'bg-slate-50 hover:bg-slate-100'}`}
+      >
+        {/* Number badge */}
+        <div className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 transition-colors ${isExpanded ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
+          {idx + 1}
+        </div>
+        {/* Title + specs summary */}
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-semibold text-slate-800 truncate block">
+            {item.location || <span className="text-slate-400 font-normal">New Item</span>}
+            {item.productNameSnapshot ? <span className="text-slate-500 font-normal"> · {item.productNameSnapshot}</span> : ''}
+          </span>
+          {!isExpanded && specs && (
+            <span className="text-xs text-slate-400 truncate block">{specs}</span>
           )}
         </div>
-        {/* Row 2: item type buttons — wrap on mobile */}
-        <div className="flex flex-wrap gap-1 mt-2">
+        {/* Type badge */}
+        {item.type !== 'Required' && (
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 ${TYPE_COLORS[item.type] || TYPE_COLORS.Required}`}>
+            {item.type}
+          </span>
+        )}
+        {/* Line total */}
+        <span className="text-sm font-bold text-slate-800 flex-shrink-0 ml-1">{fmt(lineTotal)}</span>
+        {/* Chevron */}
+        <span className="text-slate-400 flex-shrink-0 ml-1">
+          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
+        {/* Remove button — stop propagation so it doesn't toggle */}
+        {canRemove && (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onRemove(idx); }}
+            className="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0 p-1 -mr-1"
+          >
+            <Trash2 size={14} />
+          </button>
+          )}
+      </button>
+
+      {/* Body — only shown when expanded */}
+      {isExpanded && item.type === 'Part' && (
+        <div className="p-4 space-y-4">
+          {/* Type toggle strip */}
+          <div className="flex flex-wrap gap-1.5">
+            {QUOTE_ITEM_TYPES.map(t => (
+              <button key={t} type="button" onClick={() => set('type', t)}
+                className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-colors ${item.type === t ? TYPE_COLORS[t] : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+          {/* Part name */}
+          <FieldInput label="Part / Accessory Name" value={item.productNameSnapshot} onChange={v => set('productNameSnapshot', v)} placeholder="e.g. Acmeda Automate WiFi Hub" />
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Description (customer-facing)</label>
+            <input value={item.description} onChange={e => set('description', e.target.value)}
+              placeholder="e.g. Acmeda Automate Pulse WiFi Hub"
+              className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+          </div>
+          {/* Qty + Price */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <FieldInput label="Qty" value={item.quantity} onChange={v => set('quantity', v)} type="number" placeholder="1" />
+            <FieldInput label="Sell Price (each)" value={item.manualSellPrice} onChange={v => set('manualSellPrice', v)} type="number" placeholder="0.00" prefix="$" />
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Line Total</label>
+              <p className="text-sm font-bold text-amber-700 py-1.5">{fmt(Number(item.manualSellPrice || 0) * Number(item.quantity || 1))}</p>
+            </div>
+          </div>
+          {/* Supplier + taxable */}
+          <div className="grid grid-cols-2 gap-3">
+            <FieldInput label="Supplier 🔒" value={item.supplier} onChange={v => set('supplier', v)} placeholder="e.g. Acmeda" />
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Taxable</label>
+              <button type="button" onClick={() => set('taxable', !item.taxable)}
+                className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${item.taxable ? 'bg-green-50 border-green-300 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                {item.taxable ? 'GST Applicable' : 'GST Free'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isExpanded && item.type !== 'Part' && <div className="p-4 space-y-4">
+        {/* Item type toggle */}
+        <div className="flex flex-wrap gap-1.5">
           {QUOTE_ITEM_TYPES.map(t => (
             <button
               key={t}
@@ -213,10 +326,6 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove }
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Body */}
-      <div className="p-4 space-y-4">
         {/* Row 1: Location + Product */}
         <div className="grid grid-cols-2 gap-3">
           <FieldInput label="Location / Room" value={item.location} onChange={v => set('location', v)} placeholder="e.g. Master Bedroom" />
@@ -360,14 +469,15 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove }
             />
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
 
-// ─── Main QuoteBuilder ─────────────────────────────────────────────────────────
+// ─── Main QuoteBuilder ────────────────────────────────────────────────────────
 
 export default function QuoteBuilder() {
+  useDataRefresh();
   const { id }      = useParams();
   const navigate    = useNavigate();
   const [params]    = useSearchParams();
@@ -449,6 +559,25 @@ export default function QuoteBuilder() {
   const [msSelection, setMsSelection] = useState(new Set());
   const [showMsImport, setShowMsImport] = useState(false);
 
+  // Collapsed line items — start all collapsed on edit, start the first item
+  // expanded on a brand-new quote (so the user sees the form immediately).
+  const [expandedItems, setExpandedItems] = useState(() => {
+    const initial = initForm();
+    if (!initial) return new Set();
+    // New quote with 1 empty item → expand it. Edit → all collapsed.
+    if (!isEdit && initial.lineItems.length === 1) {
+      return new Set([initial.lineItems[0].id]);
+    }
+    return new Set();
+  });
+
+  const toggleItem  = (itemId) => setExpandedItems(prev => {
+    const next = new Set(prev);
+    next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+    return next;
+  });
+  const expandItem  = (itemId) => setExpandedItems(prev => new Set([...prev, itemId]));
+
   if (!form) {
     return (
       <div className="p-6 text-center">
@@ -474,10 +603,17 @@ export default function QuoteBuilder() {
     });
   };
 
+  const addPartItem = (preset = {}) => {
+    const newItem = EMPTY_PART_ITEM(preset);
+    newItem.sortOrder = form.lineItems.length;
+    setForm(f => ({ ...f, lineItems: [...f.lineItems, newItem] }));
+  };
+
   const addLineItem = () => {
     const newItem = EMPTY_LINE_ITEM();
     newItem.sortOrder = form.lineItems.length;
     setForm(f => ({ ...f, lineItems: [...f.lineItems, newItem] }));
+    expandItem(newItem.id); // auto-expand the new item so it's ready to fill in
   };
 
   const removeLineItem = (idx) => {
@@ -498,6 +634,7 @@ export default function QuoteBuilder() {
       sortOrder: form.lineItems.length,
     };
     setForm(f => ({ ...f, lineItems: [...f.lineItems, newItem] }));
+    expandItem(newItem.id);
     setShowSavedItems(false);
   };
 
@@ -518,6 +655,7 @@ export default function QuoteBuilder() {
       sortOrder:           form.lineItems.length,
     };
     setForm(f => ({ ...f, lineItems: [...f.lineItems, newItem] }));
+    expandItem(newItem.id);
     setShowSavedItems(false);
     setItemLibSearch('');
   };
@@ -613,6 +751,7 @@ export default function QuoteBuilder() {
         q = createQuote({ ...form, status: 'Draft' });
       }
       if (andSend && q) {
+        // Mark quote as sent in local store
         sendQuote(q.id, form.salesperson || 'Admin');
         if (form.jobId) {
           addActivity({
@@ -623,6 +762,19 @@ export default function QuoteBuilder() {
           });
         }
         q = getQuote(q.id); // refresh after send
+
+        // Actually send the email
+        const customer = getCustomer(q.customerId);
+        if (customer?.email) {
+          try {
+            await sendQuoteEmail(q, customer);
+          } catch (emailErr) {
+            console.error('[QuoteBuilder] Email send failed:', emailErr);
+            // Still return the quote — save succeeded even if email failed
+            setSaving(false);
+            throw emailErr; // bubble up so handleSaveAndSend can show the error
+          }
+        }
       }
       setSaving(false);
       return q;
@@ -644,9 +796,20 @@ export default function QuoteBuilder() {
   };
 
   const handleSaveAndSend = async () => {
-    const q = await doSave(true);
+    let q = null;
+    try {
+      q = await doSave(true);
+    } catch (emailErr) {
+      // doSave throws when email fails but save succeeded — q is in store
+      // Navigate to the quote and show the error there
+      showToast('error', `Quote saved but email failed: ${emailErr.message}`);
+      // Try to get the saved quote to navigate to it
+      const savedId = form.id;
+      if (savedId) setTimeout(() => navigate(`/quotes/${savedId}`), 900);
+      return;
+    }
     if (q) {
-      showToast('success', `Quote ${q.quoteNumber} saved and sent to customer!`);
+      showToast('success', `Quote ${q.quoteNumber} saved and sent to ${getCustomer(q.customerId)?.email || 'customer'}!`);
       setTimeout(() => navigate(`/quotes/${q.id}`), 900);
     } else {
       showToast('error', 'Could not save or send. Please fix errors and try again.');
@@ -659,7 +822,7 @@ export default function QuoteBuilder() {
       try {
         saveQuote({ ...form, updatedAt: new Date().toISOString() });
       } catch (_) {}
-      window.open(`/quotes/${form.id}/preview`, '_blank');
+      window.open(`/quotes/${form.id}/preview?preview=1`, '_blank');
       return;
     }
     // New quote: needs to be saved to get an ID before preview is possible
@@ -671,7 +834,7 @@ export default function QuoteBuilder() {
     try {
       const q = createQuote({ ...form, status: 'Draft' });
       setSaving(false);
-      window.open(`/quotes/${q.id}/preview`, '_blank');
+      window.open(`/quotes/${q.id}/preview?preview=1`, '_blank');
       navigate(`/quotes/${q.id}/edit`);
     } catch (err) {
       setSaving(false);
@@ -851,7 +1014,14 @@ export default function QuoteBuilder() {
               </div>
 
               {/* Site address */}
-              <FieldInput label="Site Address" value={form.siteAddress} onChange={v => set('siteAddress', v)} placeholder="Street address, Suburb STATE Postcode" />
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Site Address</label>
+                <AddressAutocomplete
+                  value={form.siteAddress}
+                  onChange={v => set('siteAddress', v)}
+                  placeholder="Start typing an address…"
+                />
+              </div>
             </div>
           </Section>
 
@@ -1112,6 +1282,13 @@ export default function QuoteBuilder() {
                 >
                   <Plus size={12} /> Add Item
                 </button>
+                <button
+                  type="button"
+                  onClick={() => addPartItem()}
+                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-slate-600 hover:bg-slate-500 text-white transition-colors"
+                >
+                  <Package size={12} /> Add Part
+                </button>
               </div>
             </div>
 
@@ -1131,6 +1308,8 @@ export default function QuoteBuilder() {
                     onChange={setLineItem}
                     onRemove={removeLineItem}
                     canRemove={form.lineItems.length > 0}
+                    isExpanded={expandedItems.has(item.id)}
+                    onToggle={() => toggleItem(item.id)}
                   />
                 ))
               )}
@@ -1144,6 +1323,32 @@ export default function QuoteBuilder() {
                   <Plus size={15} /> Add Another Item
                 </button>
               )}
+
+              {/* Parts & Accessories quick-add */}
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-2">
+                  <Package size={12} /> Parts &amp; Accessories — quick add
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {PRESET_PARTS.map(p => (
+                    <button
+                      key={p.name}
+                      type="button"
+                      onClick={() => addPartItem(p)}
+                      className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 text-slate-600 transition-colors"
+                    >
+                      <Plus size={11} /> {p.name} <span className="text-slate-400">${p.price}</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => addPartItem()}
+                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-slate-500 hover:text-slate-600 transition-colors"
+                  >
+                    <Plus size={11} /> Custom part…
+                  </button>
+                </div>
+              </div>
             </div>
           </Card>
 
