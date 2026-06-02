@@ -25,7 +25,7 @@ export async function onRequestOptions() {
 
 export async function onRequestPost(context) {
   const RESEND_API_KEY = context.env.RESEND_API_KEY;
-  const FROM_ADDRESS   = context.env.EMAIL_FROM || 'Lusso <noreply@resend.dev>';
+  const FROM_ADDRESS   = context.env.EMAIL_FROM || 'Lusso <onboarding@resend.dev>';
 
   // ── Parse request body ────────────────────────────────────────────────────
   let body;
