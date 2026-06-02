@@ -785,13 +785,16 @@ export default function QuoteBuilder() {
     }
   };
 
+  // isDraft: true when creating a new quote or editing a Draft-status quote
+  const isDraft = !isEdit || form.status === 'Draft';
+
   const handleSaveDraft = async () => {
     const q = await doSave(false);
     if (q) {
-      showToast('success', 'Draft saved successfully.');
+      showToast('success', isDraft ? 'Draft saved successfully.' : 'Quote updated successfully.');
       setTimeout(() => navigate(`/quotes/${q.id}`), 800);
     } else {
-      showToast('error', 'Could not save draft. Please fix errors and try again.');
+      showToast('error', 'Could not save. Please fix errors and try again.');
     }
   };
 
@@ -800,16 +803,17 @@ export default function QuoteBuilder() {
     try {
       q = await doSave(true);
     } catch (emailErr) {
-      // doSave throws when email fails but save succeeded — q is in store
-      // Navigate to the quote and show the error there
       showToast('error', `Quote saved but email failed: ${emailErr.message}`);
-      // Try to get the saved quote to navigate to it
       const savedId = form.id;
       if (savedId) setTimeout(() => navigate(`/quotes/${savedId}`), 900);
       return;
     }
     if (q) {
-      showToast('success', `Quote ${q.quoteNumber} saved and sent to ${getCustomer(q.customerId)?.email || 'customer'}!`);
+      const email = getCustomer(q.customerId)?.email || 'customer';
+      const msg = isDraft
+        ? `Quote ${q.quoteNumber} sent to ${email}!`
+        : `Quote ${q.quoteNumber} updated and re-sent to ${email}!`;
+      showToast('success', msg);
       setTimeout(() => navigate(`/quotes/${q.id}`), 900);
     } else {
       showToast('error', 'Could not save or send. Please fix errors and try again.');
@@ -899,20 +903,20 @@ export default function QuoteBuilder() {
             onClick={handleSaveDraft}
             disabled={saving}
             className="flex items-center gap-1.5 text-sm font-medium px-2.5 sm:px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
-            title="Save Draft"
+            title={isDraft ? 'Save Draft' : 'Save Changes'}
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            <span className="hidden sm:inline">Save Draft</span>
+            <span className="hidden sm:inline">{isDraft ? 'Save Draft' : 'Save Changes'}</span>
           </button>
           <button
             type="button"
             onClick={handleSaveAndSend}
             disabled={saving}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold px-3 sm:px-4 py-2 rounded-lg transition-colors"
-            title="Save & Send"
+            title={isDraft ? 'Save & Send' : 'Save & Re-send'}
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            <span className="hidden sm:inline">Save &amp; Send</span>
+            <span className="hidden sm:inline">{isDraft ? 'Save & Send' : 'Save & Re-send'}</span>
           </button>
         </div>
       </div>
@@ -1493,7 +1497,8 @@ export default function QuoteBuilder() {
                 disabled={saving}
                 className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
               >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Save & Send
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                {isDraft ? 'Save & Send' : 'Save & Re-send'}
               </button>
               <button
                 type="button"
@@ -1501,7 +1506,8 @@ export default function QuoteBuilder() {
                 disabled={saving}
                 className="w-full flex items-center justify-center gap-2 border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium py-2.5 rounded-xl transition-colors text-sm"
               >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save Draft
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                {isDraft ? 'Save Draft' : 'Save Changes'}
               </button>
               <button
                 type="button"
