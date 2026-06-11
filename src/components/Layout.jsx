@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Briefcase, Users, ClipboardList,
+  LayoutDashboard, Briefcase, Users,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
-  ChevronDown, Home, UserCog, Users2,
+  ChevronDown, Home, UserCog, Users2, Inbox, Globe,
 } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
-  getCustomers, getJobs, getMeasureSheets, getQuotes, getInstallRequests,
+  getCustomers, getJobs, getQuotes, getInstallRequests,
 } from '../store/data';
 import { getEmployeeCountSync } from '../store/profiles';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,10 +22,11 @@ const NAV_SECTIONS = [
     label: 'WORKFLOW',
     items: [
       { to: '/',               label: 'Dashboard', icon: LayoutDashboard, exact: true },
-      { to: '/customers',      label: 'Customers', icon: Users,           countKey: 'customers' },
-      { to: '/jobs',           label: 'Jobs',      icon: Briefcase,       countKey: 'jobs' },
-      { to: '/measure-sheets', label: 'Measures',  icon: ClipboardList,   countKey: 'measures' },
-      { to: '/quotes',         label: 'Quotes',    icon: FileText,        countKey: 'quotes' },
+      { to: '/customers', label: 'Customers', icon: Users,     countKey: 'customers' },
+      { to: '/jobs',      label: 'Jobs',      icon: Briefcase, countKey: 'jobs' },
+      { to: '/quotes',    label: 'Quotes',    icon: FileText,  countKey: 'quotes' },
+      { to: '/inbox',     label: 'Inbox',     icon: Inbox },
+      { to: '/web-leads', label: 'Web Leads', icon: Globe },
     ],
   },
   {
@@ -38,8 +39,7 @@ const NAV_SECTIONS = [
   {
     label: 'TEAM',
     items: [
-      { to: '/employees', label: 'Employees', icon: UserCog, countKey: 'employees' },
-      { to: '/users',     label: 'Users',     icon: Users2,  amOnly: true },
+      { to: '/employees', label: 'Team', icon: Users2, countKey: 'employees' },
     ],
   },
   {
@@ -89,10 +89,9 @@ const NOTIF_ICONS = {
 function computeCounts() {
   const today = new Date();
   return {
-    customers:    getCustomers().length,
-    jobs:         getJobs().length,
-    measures:     getMeasureSheets().length,
-    quotes:       getQuotes().length,
+    customers: getCustomers().length,
+    jobs:      getJobs().length,
+    quotes:    getQuotes().length,
     employees:    getEmployeeCountSync(),
     todayInstalls: getInstallRequests().filter(
       r => r.proposedDate && isSameDay(parseISO(r.proposedDate), today)
@@ -115,7 +114,8 @@ function CountBadge({ n, active }) {
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen]     = useState(false);
-  const [newOpen, setNewOpen]         = useState(false);
+  const [sideNewOpen, setSideNewOpen]   = useState(false); // sidebar "New" dropdown
+  const [mobileNewOpen, setMobileNewOpen] = useState(false); // mobile bottom sheet
   const [notifications, setNotifs]    = useState(getNotifications);
   const [counts, setCounts]           = useState(computeCounts);
   const notifRef      = useRef(null);
@@ -141,10 +141,8 @@ export default function Layout({ children }) {
   useEffect(() => {
     const handler = (e) => {
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
-      if (
-        sideNewRef.current && !sideNewRef.current.contains(e.target) &&
-        (!mobileSheetRef.current || !mobileSheetRef.current.contains(e.target))
-      ) setNewOpen(false);
+      if (sideNewRef.current && !sideNewRef.current.contains(e.target)) setSideNewOpen(false);
+      if (mobileSheetRef.current && !mobileSheetRef.current.contains(e.target)) setMobileNewOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -162,8 +160,10 @@ export default function Layout({ children }) {
     setNotifs(getNotifications());
   };
 
+  // Close both menus and navigate
   const handleNew = (to) => {
-    setNewOpen(false);
+    setSideNewOpen(false);
+    setMobileNewOpen(false);
     setSidebarOpen(false);
     navigate(to);
   };
@@ -198,15 +198,15 @@ export default function Layout({ children }) {
         {/* + New dropdown */}
         <div className="px-4 py-4" ref={sideNewRef}>
           <button
-            onClick={() => setNewOpen(v => !v)}
+            onClick={() => setSideNewOpen(v => !v)}
             className="w-full flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
           >
             <Plus size={16} />
             <span className="flex-1 text-left">New</span>
-            <ChevronDown size={14} className={`transition-transform duration-200 ${newOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown size={14} className={`transition-transform duration-200 ${sideNewOpen ? 'rotate-180' : ''}`} />
           </button>
 
-          {newOpen && (
+          {sideNewOpen && (
             <div className="mt-1.5 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden z-50 relative">
               {NEW_ACTIONS.map(({ label, sub, to, icon: Icon, color, bg }) => (
                 <button
@@ -410,7 +410,7 @@ export default function Layout({ children }) {
         {/* + New — centre pill */}
         <div className="flex-1 flex items-center justify-center">
           <button
-            onClick={() => setNewOpen(v => !v)}
+            onClick={() => setMobileNewOpen(v => !v)}
             aria-label="Create new"
             className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 flex items-center justify-center shadow-lg transition-colors -mt-4"
           >
@@ -445,13 +445,13 @@ export default function Layout({ children }) {
       </nav>
 
       {/* ── Mobile + New action sheet ─────────────────────────────────────── */}
-      {newOpen && (
+      {mobileNewOpen && (
         <>
           {/* Backdrop — onClick (not onPointerDown) so sheet item clicks fire first */}
           <div
             className="lg:hidden fixed inset-0 z-40"
             aria-hidden="true"
-            onClick={() => setNewOpen(false)}
+            onClick={() => setMobileNewOpen(false)}
           />
           {/* Sheet — z-50, ref excludes it from mousedown outside-click handler */}
           <div
@@ -465,7 +465,7 @@ export default function Layout({ children }) {
               <button
                 key={to}
                 type="button"
-                onClick={() => { setNewOpen(false); navigate(to); }}
+                onClick={() => { setMobileNewOpen(false); navigate(to); }}
                 className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition-colors border-b border-slate-50 last:border-0 text-left"
               >
                 <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>

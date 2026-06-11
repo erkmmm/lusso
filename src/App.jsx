@@ -1,13 +1,15 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { initStore } from './store/data';
 import { hydrateFromSupabase } from './store/db';
+import { supabase } from './lib/supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { UserProfileProvider } from './contexts/UserProfileContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
 import { useVersionCheck } from './hooks/useVersionCheck';
-import Users from './pages/Users';
+import ToastContainer from './components/ToastContainer';
+// Users page merged into Employees (Team) — import kept for redirect only
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -33,13 +35,35 @@ import CustomerQuotePage from './pages/CustomerQuotePage';
 import ImportContacts from './pages/ImportContacts';
 import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
+import ImportSupplierPDF from './pages/ImportSupplierPDF';
 import Employees from './pages/Employees';
 import EmployeeProfile from './pages/EmployeeProfile';
 import QuoteFromJob from './pages/QuoteFromJob';
 import NewJob from './pages/NewJob';
 import PendingApproval from './pages/PendingApproval';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
+import Inbox from './pages/Inbox';
+import WebLeads from './pages/WebLeads';
 import { useProfile } from './contexts/UserProfileContext';
+
+// Data keys cleared on version change — excludes UI prefs like theme/schema
+const DATA_KEYS = [
+  'lusso_customers','lusso_jobs','lusso_measure_sheets','lusso_quotes',
+  'lusso_installers','lusso_install_requests','lusso_staff','lusso_notifications',
+  'lusso_product_types','lusso_priced_items','lusso_priced_item_batches',
+  'lusso_import_batches','lusso_calendar_events','lusso_user_profiles',
+  'lusso_employees','lusso_tasks','lusso_job_counter','lusso_quote_counter',
+];
+
+/** Fetch the stamped build version from /version.json */
+async function fetchBuildVersion() {
+  try {
+    const r = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d?.v ? String(d.v) : null;
+  } catch { return null; }
+}
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -48,11 +72,32 @@ function AppRoutes() {
 
   useEffect(() => {
     initStore();
-    if (user) {
+    if (!user) return;
+
+    const run = async () => {
       setHydrating(true);
-      hydrateFromSupabase().finally(() => setHydrating(false));
-    }
-  }, [user]);
+
+      // Version-based auto-reset: if a new build was deployed since this device
+      // last loaded, wipe stale local data so hydration starts clean.
+      const deployedVersion = await fetchBuildVersion();
+      const storedVersion   = localStorage.getItem('lusso_last_version');
+      if (deployedVersion && deployedVersion !== storedVersion) {
+        console.info(`[app] new build ${deployedVersion} — clearing local data cache`);
+        DATA_KEYS.forEach(k => localStorage.removeItem(k));
+        localStorage.setItem('lusso_last_version', deployedVersion);
+        initStore(); // re-init with clean slate
+      }
+
+      await hydrateFromSupabase();
+      setHydrating(false);
+    };
+
+    run();
+  // Depend on user.id, NOT the user object — Supabase fires onAuthStateChange
+  // with a fresh user object on every token refresh, which would otherwise
+  // re-run this effect, show the loading screen, and unmount in-progress forms.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Re-hydrate when the tab becomes visible again (catches changes made on
   // other devices while this tab was in the background or screen was off).
@@ -60,11 +105,64 @@ function AppRoutes() {
     if (!user) return;
     const handleVisible = () => {
       if (document.visibilityState === 'visible') {
-        hydrateFromSupabase();
+        hydrateFromSupabase().then(() => {
+          window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+        });
       }
     };
     document.addEventListener('visibilitychange', handleVisible);
     return () => document.removeEventListener('visibilitychange', handleVisible);
+  }, [user]);
+
+  // ── Polling fallback ──────────────────────────────────────────────────
+  // Realtime WebSocket events aren't reliably delivered in all environments.
+  // Poll Supabase every 4 seconds while the tab is visible.
+  // Each poll fetches only the max(updated_at) across key tables — tiny query.
+  // If anything changed since last poll, do a full hydration.
+  const lastSeenRef = useRef(null);
+  useEffect(() => {
+    if (!user || !supabase) return;
+
+    let interval = null;
+
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        // Probe the latest updated_at across all key tables in parallel (single-row each)
+        const POLL_TABLES = ['jobs','customers','measure_sheets','quotes','installers','calendar_events','priced_items'];
+        const results = await Promise.all(
+          POLL_TABLES.map(t =>
+            supabase.from(t).select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle()
+          )
+        );
+        // Find the most recent updated_at across all tables
+        const latest = results
+          .map(r => r.data?.updated_at)
+          .filter(Boolean)
+          .sort()
+          .pop() ?? null;
+
+        if (!lastSeenRef.current) {
+          // First poll — record baseline only, no hydrate (mount already did that)
+          lastSeenRef.current = latest;
+        } else if (latest && latest !== lastSeenRef.current) {
+          lastSeenRef.current = latest;
+          await hydrateFromSupabase();
+          window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+        }
+      } catch { /* silently ignore poll errors */ }
+    };
+
+    // Start polling after a short delay so mount hydration completes first
+    const start = setTimeout(() => {
+      poll();
+      interval = setInterval(poll, 4000);
+    }, 3000);
+
+    return () => {
+      clearTimeout(start);
+      if (interval) clearInterval(interval);
+    };
   }, [user]);
 
   // Still loading auth session OR syncing from cloud
@@ -150,6 +248,7 @@ function AppRoutes() {
               <Route path="/import"                     element={<ImportContacts />} />
               <Route path="/import-history"             element={<ImportHistory />} />
               <Route path="/priced-items"               element={<PricedItems />} />
+              <Route path="/priced-items/import-pdf"   element={<ImportSupplierPDF />} />
               <Route path="/quotes"                     element={<Quotes />} />
               <Route path="/quotes/new"                        element={<QuoteBuilder />} />
               <Route path="/quotes/new-from-job/:jobId"        element={<QuoteFromJob />} />
@@ -157,7 +256,9 @@ function AppRoutes() {
               <Route path="/quotes/:id/edit"                   element={<QuoteBuilder />} />
               <Route path="/employees"                  element={<Employees />} />
               <Route path="/employees/:id"              element={<EmployeeProfile />} />
-              <Route path="/users"                      element={<Users />} />
+              <Route path="/users"                      element={<Navigate to="/employees" replace />} />
+              <Route path="/inbox"                      element={<Inbox />} />
+              <Route path="/web-leads"                  element={<WebLeads />} />
               <Route path="*"                           element={<Dashboard />} />
             </Routes>
           </Layout>
@@ -198,6 +299,7 @@ export default function App() {
             <RealtimeProvider>
               <AppRoutes />
               <UpdateBanner />
+              <ToastContainer />
             </RealtimeProvider>
           </UserProfileProvider>
         </AuthProvider>
