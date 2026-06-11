@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Briefcase, Users,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
-  ChevronDown, Home, UserCog, Users2, Inbox, Globe,
+  ChevronDown, Home, UserCog, Users2, Inbox,
 } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
@@ -26,7 +26,6 @@ const NAV_SECTIONS = [
       { to: '/jobs',      label: 'Jobs',      icon: Briefcase, countKey: 'jobs' },
       { to: '/quotes',    label: 'Quotes',    icon: FileText,  countKey: 'quotes' },
       { to: '/inbox',     label: 'Inbox',     icon: Inbox },
-      { to: '/web-leads', label: 'Web Leads', icon: Globe },
     ],
   },
   {

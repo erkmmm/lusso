@@ -43,7 +43,6 @@ import NewJob from './pages/NewJob';
 import PendingApproval from './pages/PendingApproval';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import Inbox from './pages/Inbox';
-import WebLeads from './pages/WebLeads';
 import { useProfile } from './contexts/UserProfileContext';
 
 // Data keys cleared on version change — excludes UI prefs like theme/schema
@@ -258,7 +257,6 @@ function AppRoutes() {
               <Route path="/employees/:id"              element={<EmployeeProfile />} />
               <Route path="/users"                      element={<Navigate to="/employees" replace />} />
               <Route path="/inbox"                      element={<Inbox />} />
-              <Route path="/web-leads"                  element={<WebLeads />} />
               <Route path="*"                           element={<Dashboard />} />
             </Routes>
           </Layout>
