@@ -183,6 +183,8 @@ function ConvRow({ conv, selected, onClick }) {
 }
 
 // ── Web lead detail panel ─────────────────────────────────────────────────────
+const PREF_LABEL = { call: 'Phone call', text: 'Text message', email: 'Email' };
+
 function WebLeadView({ conv, onBack, onStatus, onConvert }) {
   const e = conv.enquiry;
   const status = e.status || 'new';
@@ -190,6 +192,52 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
   const [busy, setBusy] = useState(false);
 
   const act = async (fn) => { setBusy(true); try { await fn(); } finally { setBusy(false); } };
+
+  // Reply composer — Call (tel:), Text (SMS via Twilio) or Email (via Resend),
+  // sent through the existing send-communication edge function. Defaults to the
+  // method the customer picked on the form.
+  const initialChannel = ['call', 'text', 'email'].includes(e.preferred_contact)
+    ? e.preferred_contact
+    : (e.phone ? 'call' : 'email');
+  const [channel, setChannel] = useState(initialChannel);
+  const [body, setBody]       = useState('');
+  const [subject, setSubject] = useState('Your enquiry with Lusso');
+  const [sending, setSending] = useState(false);
+  const [error, setError]     = useState('');
+  const [sent, setSent]       = useState([]);
+
+  const canSend   = channel === 'text' ? !!e.phone : channel === 'email' ? !!e.email : !!e.phone;
+  const firstName = (e.name || '').trim().split(/\s+/)[0] || 'lead';
+
+  const sendReply = async () => {
+    if (!body.trim() || channel === 'call') return;
+    const to = channel === 'text' ? e.phone : e.email;
+    if (!to) { setError(`No ${channel === 'text' ? 'phone number' : 'email'} on file.`); return; }
+    setSending(true); setError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-communication`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          channel: channel === 'text' ? 'sms' : 'email',
+          to,
+          subject: channel === 'email' ? subject : undefined,
+          body: body.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send');
+      setSent(prev => [...prev, { channel, body: body.trim(), at: new Date().toISOString() }]);
+      setBody('');
+      if (status === 'new') onStatus(e, 'contacted');
+      toast(`${channel === 'text' ? 'Text' : 'Email'} sent to ${firstName}.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -224,6 +272,11 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
             <Clock size={12} />
             {e.created_at ? format(parseISO(e.created_at), 'd MMM yyyy, h:mm a') : ''}
           </span>
+          {e.preferred_contact && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs px-3 py-1 font-medium">
+              Prefers {PREF_LABEL[e.preferred_contact] ?? e.preferred_contact}
+            </span>
+          )}
         </div>
 
         {/* Contact */}
@@ -262,48 +315,102 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex-shrink-0 border-t border-slate-200 bg-white p-3 flex flex-wrap items-center gap-2">
-        {status === 'new' && (
-          <button
-            disabled={busy}
-            onClick={() => act(() => onStatus(e, 'contacted'))}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
-          >
-            <Check size={15} /> Mark contacted
-          </button>
+      {/* Reply composer + lifecycle actions */}
+      <div className="flex-shrink-0 border-t border-slate-200 bg-white p-3 space-y-2.5">
+        {/* Replies sent this session */}
+        {sent.length > 0 && (
+          <div className="space-y-1.5 max-h-28 overflow-y-auto">
+            {sent.map((s, i) => (
+              <div key={i} className="flex justify-end">
+                <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-teal-600 text-white px-3.5 py-2">
+                  <p className="text-sm whitespace-pre-wrap break-words">{s.body}</p>
+                  <p className="text-[10px] text-teal-100 text-right mt-0.5">
+                    {s.channel === 'text' ? 'Text' : 'Email'} · {format(parseISO(s.at), 'h:mm a')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
-        {status !== 'converted' && (
-          <button
-            disabled={busy}
-            onClick={() => act(() => onConvert(e))}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 transition-colors disabled:opacity-50"
-          >
-            <UserPlus size={15} /> Convert to customer
-          </button>
-        )}
-        {status === 'converted' && (
-          <span className="flex items-center gap-1.5 px-1 text-sm font-medium text-emerald-600">
-            <Check size={16} /> Added to customers
-          </span>
-        )}
-        {status !== 'archived' ? (
-          <button
-            disabled={busy}
-            onClick={() => act(() => onStatus(e, 'archived'))}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50 ml-auto"
-          >
-            <Archive size={15} /> Archive
-          </button>
+
+        {/* Channel toggle (defaults to the lead's preferred method, marked ★) */}
+        <div className="flex gap-1.5">
+          {[{ k: 'call', l: 'Call' }, { k: 'text', l: 'Text' }, { k: 'email', l: 'Email' }].map(c => (
+            <button key={c.k} onClick={() => { setChannel(c.k); setError(''); }}
+              className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
+                channel === c.k ? 'bg-teal-600 text-white border-teal-600' : 'text-slate-500 border-slate-200 hover:border-slate-300'
+              }`}>
+              {c.l}{e.preferred_contact === c.k ? ' ★' : ''}
+            </button>
+          ))}
+        </div>
+
+        {error && <p className="text-xs text-red-500 px-1">{error}</p>}
+
+        {channel === 'call' ? (
+          e.phone ? (
+            <a href={`tel:${e.phone}`}
+              className="flex items-center justify-center gap-2 w-full bg-teal-600 hover:bg-teal-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
+              <Phone size={15} /> Call {e.phone}
+            </a>
+          ) : (
+            <p className="text-xs text-slate-400 px-1 py-1.5">No phone number provided for this lead.</p>
+          )
         ) : (
-          <button
-            disabled={busy}
-            onClick={() => act(() => onStatus(e, 'new'))}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50 ml-auto"
-          >
-            <ArchiveRestore size={15} /> Restore
-          </button>
+          <>
+            {channel === 'email' && (
+              <input value={subject} onChange={ev => setSubject(ev.target.value)} placeholder="Subject"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+            )}
+            <div className="flex gap-2 items-end">
+              <textarea
+                value={body}
+                onChange={ev => setBody(ev.target.value)}
+                onKeyDown={ev => { if (ev.key === 'Enter' && !ev.shiftKey && channel === 'text') { ev.preventDefault(); sendReply(); } }}
+                placeholder={canSend ? `Write a${channel === 'text' ? ' text' : 'n email'} to ${firstName}…` : `No ${channel === 'text' ? 'phone number' : 'email'} on file`}
+                disabled={!canSend}
+                rows={1}
+                className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none disabled:bg-slate-50 disabled:text-slate-400"
+                style={{ maxHeight: '120px', overflowY: 'auto' }}
+              />
+              <button onClick={sendReply} disabled={!body.trim() || !canSend || sending}
+                className="w-10 h-10 flex items-center justify-center bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-xl transition-colors flex-shrink-0">
+                {sending ? <Loader size={16} className="animate-spin" /> : <Send size={16} />}
+              </button>
+            </div>
+          </>
         )}
+
+        {/* Lifecycle actions */}
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          {status !== 'converted' ? (
+            <button disabled={busy} onClick={() => act(() => onConvert(e))}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50">
+              <UserPlus size={13} /> Convert to customer
+            </button>
+          ) : (
+            <span className="flex items-center gap-1.5 px-1 text-xs font-medium text-emerald-600">
+              <Check size={14} /> Added to customers
+            </span>
+          )}
+          {status === 'new' && (
+            <button disabled={busy} onClick={() => act(() => onStatus(e, 'contacted'))}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
+              <Check size={13} /> Mark contacted
+            </button>
+          )}
+          {status !== 'archived' ? (
+            <button disabled={busy} onClick={() => act(() => onStatus(e, 'archived'))}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50 ml-auto">
+              <Archive size={13} /> Archive
+            </button>
+          ) : (
+            <button disabled={busy} onClick={() => act(() => onStatus(e, 'new'))}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50 ml-auto">
+              <ArchiveRestore size={13} /> Restore
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
