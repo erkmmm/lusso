@@ -282,13 +282,13 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
         {/* Contact */}
         <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
           {e.phone && (
-            <a href={`tel:${e.phone}`} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
+            <a href={`tel:${e.phone}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
               <Phone size={15} className="text-slate-400" />
               <span className="text-sm text-slate-700">{e.phone}</span>
             </a>
           )}
           {e.email && (
-            <a href={`mailto:${e.email}`} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
+            <a href={`mailto:${e.email}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
               <Mail size={15} className="text-slate-400" />
               <span className="text-sm text-slate-700">{e.email}</span>
             </a>
@@ -349,7 +349,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
 
         {channel === 'call' ? (
           e.phone ? (
-            <a href={`tel:${e.phone}`}
+            <a href={`tel:${e.phone}`} target="_blank" rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 w-full bg-teal-600 hover:bg-teal-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
               <Phone size={15} /> Call {e.phone}
             </a>

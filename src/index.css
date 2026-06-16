@@ -167,7 +167,9 @@ html.dark { color-scheme: dark; }
 .dark .bg-white         { background-color: #1e293b; }   /* cards, modals, inputs */
 .dark .bg-slate-50      { background-color: #0f172a; }   /* page background */
 .dark .bg-slate-100     { background-color: #1e293b; }   /* subtle surfaces */
+.dark .bg-slate-50\/80  { background-color: rgb(15 23 42 / 0.8); }
 .dark .bg-slate-50\/60  { background-color: rgb(15 23 42 / 0.6); }
+.dark .bg-slate-50\/50  { background-color: rgb(15 23 42 / 0.5); }
 .dark .bg-slate-50\/40  { background-color: rgb(15 23 42 / 0.4); }
 .dark .bg-slate-50\/30  { background-color: rgb(15 23 42 / 0.3); }
 
@@ -290,6 +292,14 @@ html.dark { color-scheme: dark; }
 .dark .bg-purple-50     { background-color: rgb(168 85 247 / 0.10); }
 .dark .bg-purple-100    { background-color: rgb(168 85 247 / 0.18); }
 .dark .border-purple-200 { border-color:    rgb(168 85 247 / 0.30); }
+
+/* — Violet (Inbox accent: selected rows, highlights) — */
+.dark .text-violet-700  { color: #A78BFA; }
+.dark .text-violet-600  { color: #A78BFA; }
+.dark .text-violet-500  { color: #A78BFA; }
+.dark .bg-violet-50      { background-color: rgb(139 92 246 / 0.20); }  /* selected conversation */
+.dark .bg-violet-50\/30  { background-color: rgb(139 92 246 / 0.10); }  /* unread tint */
+.dark .border-violet-200 { border-color:    rgb(139 92 246 / 0.30); }
 
 /* — Indigo — */
 .dark .text-indigo-800  { color: #C7D2FE; }
