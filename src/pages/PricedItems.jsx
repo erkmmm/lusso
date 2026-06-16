@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
@@ -5,7 +6,8 @@ import {
   Upload, FileText, ChevronRight, AlertTriangle, CheckCircle2,
   XCircle, SkipForward, RefreshCw, Download, History, ArrowRight,
   Info, X, Loader2, Library, Plus, Search, Edit2, Trash2,
-  ToggleLeft, ToggleRight, DollarSign, Tag, ChevronDown, Cloud, CloudOff,
+  ToggleLeft, ToggleRight, DollarSign, Tag, ChevronDown, Cloud, CloudOff, Sparkles,
+  CheckSquare, Square,
 } from 'lucide-react';
 import {
   getPricedItems, savePricedItem, deletePricedItem,
@@ -245,14 +247,32 @@ function RowStatusBadge({ status, action }) {
 const EMPTY_ITEM = () => ({
   id: uuidv4(), itemName: '', itemCode: '', description: '', category: '',
   supplier: '', unitType: '', costPrice: '', labourCost: '', sellPrice: '',
-  marginPercent: '', gstApplicable: true, taxRate: 10,
+  marginPercent: '', pricePerSqm: '', gstApplicable: true, taxRate: 10,
   isActive: true, notes: '', tags: '', source: 'Manual',
 });
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function PricedItems() {
-  const fileRef   = useRef(null);
+  useDataRefresh();
+  const fileRef    = useRef(null);
+  const pdfFileRef = useRef(null);
+  const [pdfDragOver, setPdfDragOver] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
+  // PDF pick — uses History API directly because Vite's minifier treats the local
+  // variable named "navigate" as the browser global window.navigate and doesn't
+  // rename it correctly, causing ReferenceError in production.
+  const pickPdf = (f) => {
+    if (!f) return;
+    const ok = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+    if (!ok) return;
+    window.__lussoPendingPdf = f;
+    // Push the route via History API — React Router listens to popstate
+    window.history.pushState({}, '', '/priced-items/import-pdf');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() => {
     const t = searchParams.get('tab');
@@ -324,6 +344,29 @@ export default function PricedItems() {
     deletePricedItem(id);
     reload();
     setDeleteConfirm(null);
+  };
+
+  const handleBulkDelete = () => {
+    selectedIds.forEach(id => deletePricedItem(id));
+    setSelectedIds(new Set());
+    setConfirmBulkDelete(false);
+    reload();
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredItems.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredItems.map(p => p.id)));
+    }
   };
 
   const [showDeleteAll, setShowDeleteAll] = useState(false);
@@ -530,6 +573,39 @@ export default function PricedItems() {
             </div>
           )}
 
+          {/* Bulk delete action bar — shows when items selected */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <span className="text-sm font-medium text-red-700">
+                {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''} selected
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 bg-white transition-colors"
+                >
+                  Cancel
+                </button>
+                {confirmBulkDelete ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-red-600 font-medium">Delete {selectedIds.size} items permanently?</span>
+                    <button onClick={handleBulkDelete} className="text-xs font-bold text-white bg-red-500 hover:bg-red-400 px-3 py-1.5 rounded-lg transition-colors">
+                      Yes, delete
+                    </button>
+                    <button onClick={() => setConfirmBulkDelete(false)} className="text-xs text-slate-500 px-2 py-1.5">No</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmBulkDelete(true)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-white bg-red-500 hover:bg-red-400 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={12} /> Delete {selectedIds.size} selected
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Items table */}
           <Card>
             {filteredItems.length === 0 ? (
@@ -547,38 +623,59 @@ export default function PricedItems() {
                 <table className="w-full text-sm min-w-[800px]">
                   <thead>
                     <tr className="bg-slate-50 text-xs text-slate-500 font-medium border-b border-slate-100">
-                      <th className="px-5 py-2.5 text-left">Name / Code</th>
-                      <th className="px-5 py-2.5 text-left">Category</th>
-                      <th className="px-5 py-2.5 text-right">Cost</th>
-                      <th className="px-5 py-2.5 text-right">Sell Price</th>
-                      <th className="px-5 py-2.5 text-right">Margin</th>
-                      <th className="px-5 py-2.5 text-left">Source</th>
-                      <th className="px-5 py-2.5 text-center">Status</th>
-                      <th className="px-5 py-2.5 text-right">Actions</th>
+                      <th className="pl-4 pr-2 py-2.5 w-8">
+                        <button onClick={toggleSelectAll} className="flex items-center">
+                          {selectedIds.size === filteredItems.length && filteredItems.length > 0
+                            ? <CheckSquare size={14} className="text-amber-500" />
+                            : <Square size={14} className="text-slate-300 hover:text-slate-400" />
+                          }
+                        </button>
+                      </th>
+                      <th className="px-3 py-2.5 text-left">Name / Code</th>
+                      <th className="px-3 py-2.5 text-left">Category</th>
+                      <th className="px-3 py-2.5 text-right">Cost</th>
+                      <th className="px-3 py-2.5 text-right">Sell / $/m²</th>
+                      <th className="px-3 py-2.5 text-right">Margin</th>
+                      <th className="px-3 py-2.5 text-left">Source</th>
+                      <th className="px-3 py-2.5 text-center">Status</th>
+                      <th className="px-3 py-2.5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {filteredItems.map(p => (
-                      <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${!p.isActive ? 'opacity-50' : ''}`}>
-                        <td className="px-5 py-3">
-                          <div className="font-medium text-slate-800 truncate max-w-[220px]">{p.itemName}</div>
+                      <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${!p.isActive ? 'opacity-50' : ''} ${selectedIds.has(p.id) ? 'bg-amber-50/60' : ''}`}>
+                        <td className="pl-4 pr-2 py-3 w-8">
+                          <button onClick={() => toggleSelect(p.id)} className="flex items-center">
+                            {selectedIds.has(p.id)
+                              ? <CheckSquare size={14} className="text-amber-500" />
+                              : <Square size={14} className="text-slate-300 hover:text-amber-400" />
+                            }
+                          </button>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="font-medium text-slate-800 break-words min-w-[160px]">{p.itemName}</div>
                           {p.itemCode && <div className="text-xs text-slate-400 font-mono">{p.itemCode}</div>}
                         </td>
-                        <td className="px-5 py-3 text-slate-500 text-xs">{p.category || '—'}</td>
-                        <td className="px-5 py-3 text-right text-slate-600 text-xs tabular-nums">{fmtPrice(p.costPrice)}</td>
-                        <td className="px-5 py-3 text-right font-medium text-slate-800 text-xs tabular-nums">{fmtPrice(p.sellPrice)}</td>
-                        <td className="px-5 py-3 text-right text-xs tabular-nums">
+                        <td className="px-3 py-3 text-slate-500 text-xs">{p.category || '—'}</td>
+                        <td className="px-3 py-3 text-right text-slate-600 text-xs tabular-nums">{fmtPrice(p.costPrice)}</td>
+                        <td className="px-3 py-3 text-right font-medium text-slate-800 text-xs tabular-nums">
+                          {p.pricePerSqm
+                            ? <span className="text-violet-600 font-semibold">${p.pricePerSqm}/m²</span>
+                            : fmtPrice(p.sellPrice)
+                          }
+                        </td>
+                        <td className="px-3 py-3 text-right text-xs tabular-nums">
                           {p.marginPercent != null ? <span className="text-green-600 font-medium">{p.marginPercent.toFixed(1)}%</span> : '—'}
                         </td>
-                        <td className="px-5 py-3 text-xs text-slate-400 truncate max-w-[100px]">{p.source || '—'}</td>
-                        <td className="px-5 py-3 text-center">
+                        <td className="px-3 py-3 text-xs text-slate-400 truncate max-w-[100px]">{p.source || '—'}</td>
+                        <td className="px-3 py-3 text-center">
                           <button onClick={() => handleToggleActive(p.id)} title={p.isActive ? 'Disable' : 'Enable'}>
                             {p.isActive
                               ? <ToggleRight size={20} className="text-green-500"/>
                               : <ToggleLeft  size={20} className="text-slate-300"/>}
                           </button>
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="px-3 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button onClick={() => setEditItem({ ...p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"><Edit2 size={13}/></button>
                             {deleteConfirm === p.id
@@ -623,34 +720,66 @@ export default function PricedItems() {
             </div>
           )}
 
-          {/* Step 1: Upload */}
+          {/* Import method chooser — shown before any file is picked */}
           {step === 'upload' && (
-            <Card>
-              <div className="p-8">
+            <div className="grid sm:grid-cols-2 gap-4 mb-2">
+
+              {/* ── PDF import (AI) ── */}
+              <div className="bg-white border-2 border-violet-200 rounded-2xl p-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
+                    <Sparkles size={18} className="text-violet-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800 leading-tight">Import from Supplier PDF</p>
+                    <p className="text-[11px] text-violet-600 font-medium">AI-powered</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed mb-3">
+                  Drop any supplier price list — AI extracts products, normalises categories, no column mapping needed.
+                </p>
+                <input ref={pdfFileRef} type="file" accept=".pdf" className="hidden"
+                  onChange={e => pickPdf(e.target.files?.[0])} />
+                <div
+                  onDragEnter={e => { e.preventDefault(); e.stopPropagation(); setPdfDragOver(true); }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setPdfDragOver(true); }}
+                  onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setPdfDragOver(false); }}
+                  onDrop={e => { e.preventDefault(); e.stopPropagation(); setPdfDragOver(false); pickPdf(e.dataTransfer.files[0]); }}
+                  onClick={() => pdfFileRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl py-4 text-center cursor-pointer transition-colors text-xs select-none ${
+                    pdfDragOver ? 'border-violet-400 bg-violet-50 text-violet-600 font-semibold' : 'border-violet-200 hover:border-violet-400 hover:bg-violet-50 text-slate-500'
+                  }`}
+                >
+                  {pdfDragOver ? 'Drop it!' : 'Click to browse or drag PDF here'}
+                </div>
+              </div>
+
+              {/* ── CSV import ── */}
+              <div className="bg-white border-2 border-slate-200 rounded-2xl p-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+                    <Upload size={18} className="text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800 leading-tight">Import from CSV</p>
+                    <p className="text-[11px] text-slate-400">Quotient or custom format</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed mb-3">
+                  Quotient Saved Price Items export or any structured CSV. Columns auto-detected and mapped.
+                </p>
                 <div
                   onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                   onDragLeave={() => setDragOver(false)}
                   onDrop={onDrop}
                   onClick={() => fileRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${dragOver ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:border-amber-300 hover:bg-slate-50'}`}
+                  className={`border-2 border-dashed rounded-xl py-4 text-center cursor-pointer transition-colors text-xs select-none ${dragOver ? 'border-amber-400 bg-amber-50 text-amber-600 font-semibold' : 'border-slate-200 hover:border-amber-300 hover:bg-slate-50 text-slate-500'}`}
                 >
-                  <div className="w-14 h-14 rounded-xl bg-amber-50 flex items-center justify-center mx-auto mb-4">
-                    <Upload size={24} className="text-amber-500"/>
-                  </div>
-                  <p className="text-slate-700 font-medium">Drag & drop your CSV file here</p>
-                  <p className="text-slate-400 text-sm mt-1">or click to browse — CSV files only</p>
+                  {dragOver ? 'Drop it!' : 'Click to browse or drag CSV here'}
                   <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onFilePick}/>
                 </div>
-                <div className="mt-5 p-4 bg-slate-50 rounded-lg flex items-start gap-3">
-                  <Info size={15} className="text-blue-500 flex-shrink-0 mt-0.5"/>
-                  <div className="text-xs text-slate-500 space-y-1">
-                    <p className="font-medium text-slate-600">Quotient Saved Price Items export</p>
-                    <p>Columns auto-detected: Item code, Item title, Long description, Cost price, Unit price, Sales category, Tax rate.</p>
-                    <p>Required: Item name or description. Prices must be numeric.</p>
-                  </div>
-                </div>
               </div>
-            </Card>
+            </div>
           )}
 
           {/* Step 2: Map Columns */}
@@ -962,6 +1091,33 @@ function ItemForm({ item, onChange, onSave, onCancel }) {
           <input type="number" min="0" step="0.01" value={item.sellPrice} onChange={e => set('sellPrice', e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" placeholder={calcSell != null ? calcSell.toFixed(2) : '0.00'}/>
         </div>
       </div>
+
+      {/* Price per m² — for custom-sized products (blinds, sheers, etc.) */}
+      <div className="bg-violet-50 border border-violet-200 rounded-xl p-3">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-violet-700 mb-1">Price per m² ($) — size-based pricing</label>
+            <input
+              type="number" min="0" step="0.01"
+              value={item.pricePerSqm || ''}
+              onChange={e => set('pricePerSqm', e.target.value)}
+              className="w-full sm:w-48 text-sm border border-violet-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+              placeholder="e.g. 280.00"
+            />
+          </div>
+          <div className="text-xs text-violet-600 max-w-xs leading-relaxed pt-1">
+            For custom-sized products. In quotes, the sell price auto-calculates:<br/>
+            <span className="font-mono text-violet-800">W × D × $/m² = price</span><br/>
+            e.g. 1800mm × 2100mm × $280 = <span className="font-semibold">$1,058</span>
+          </div>
+        </div>
+        {item.pricePerSqm && (
+          <p className="text-[11px] text-violet-500 mt-1.5">
+            Example: 1800 × 2100mm = <strong>${(1.8 * 2.1 * parseFloat(item.pricePerSqm)).toFixed(2)}</strong> · 900 × 1500mm = <strong>${(0.9 * 1.5 * parseFloat(item.pricePerSqm)).toFixed(2)}</strong>
+          </p>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>

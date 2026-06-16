@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -65,6 +66,7 @@ function DeleteModal({ count, onConfirm, onCancel }) {
 }
 
 export default function Jobs() {
+  useDataRefresh();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 

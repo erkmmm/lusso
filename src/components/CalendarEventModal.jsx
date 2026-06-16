@@ -11,7 +11,9 @@
  */
 
 import { useState, useMemo } from 'react';
-import { format, parseISO } from 'date-fns';
+import AddressAutocomplete from './AddressAutocomplete';
+import { toast } from './ToastContainer';
+import { format, parseISO, addWeeks } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import { X } from 'lucide-react';
 import {
@@ -221,6 +223,7 @@ export default function CalendarEventModal({
     saveCalendarEvent(event, displayName);
     onSave?.(event);
     setSaving(false);
+    toast(eventToEdit ? 'Calendar entry updated.' : 'Calendar entry added.');
     onClose();
   };
 
@@ -348,6 +351,30 @@ export default function CalendarEventModal({
               onChange={e => setDate(e.target.value)}
               className={`input-base max-w-full ${errors.date ? 'border-red-400' : ''}`}
             />
+            {/* Quick-select shortcuts */}
+            <div className="flex gap-2 mt-1.5">
+              {[
+                { label: '2 weeks', weeks: 2 },
+                { label: '4 weeks', weeks: 4 },
+              ].map(({ label, weeks }) => {
+                const target = format(addWeeks(new Date(), weeks), 'yyyy-MM-dd');
+                const active  = date === target;
+                return (
+                  <button
+                    key={weeks}
+                    type="button"
+                    onClick={() => setDate(target)}
+                    className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                      active
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'border-slate-200 text-slate-500 hover:border-amber-400 hover:text-amber-600'
+                    }`}
+                  >
+                    {label} · {format(addWeeks(new Date(), weeks), 'd MMM')}
+                  </button>
+                );
+              })}
+            </div>
             {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
           </div>
 
@@ -385,12 +412,11 @@ export default function CalendarEventModal({
           {/* Location */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Location</label>
-            <input
-              type="text"
+            <AddressAutocomplete
               value={location}
-              onChange={e => setLocation(e.target.value)}
-              placeholder="Address or location"
-              className="input-base"
+              onChange={setLocation}
+              placeholder="Start typing an address…"
+              inputClassName="py-2"
             />
             {addressSuggestion && !location && (
               <button

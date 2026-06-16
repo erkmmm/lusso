@@ -1,3 +1,5 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
+import { toast } from '../components/ToastContainer';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO, formatDistanceToNow, isPast, differenceInSeconds } from 'date-fns';
@@ -5,18 +7,19 @@ import {
   Edit3, Copy, Send, Eye, CheckCircle2, XCircle,
   User, MapPin, FileText, Clock, MessageSquare, Lock,
   ChevronDown, ChevronUp, Briefcase, Phone, Mail, AlertCircle,
-  Activity, Wifi, X,
+  Activity, Wifi, X, ExternalLink, RefreshCw, Loader,
 } from 'lucide-react';
 import BackButton from '../components/BackButton';
 import {
   getQuote, getCustomer, getJob,
   QUOTE_STATUS_COLORS, computeQuoteTotals, calcItemPricing,
   sendQuote, duplicateQuote, acceptQuote, declineQuote,
-  addQuoteComment,
+  addQuoteComment, updateQuoteXeroInvoice, getMessagePresets,
 } from '../store/data';
 import Card from '../components/Card';
 import { sendQuoteEmail } from '../lib/email';
 import { supabase } from '../lib/supabase';
+import { xeroCreateInvoice, xeroSyncInvoice, xeroInvoiceStatusBadge } from '../lib/xero';
 
 // ── Live threshold: consider "viewing now" if heartbeat within 90s ────────────
 const LIVE_THRESHOLD_S = 90;
@@ -42,8 +45,12 @@ export default function QuoteView() {
   const { id }   = useParams();
   const navigate = useNavigate();
 
+  // ── MUST be before any conditional return — React hooks must always run ───────
+  useDataRefresh();
+  const refresh = () => window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+
+  const quote = getQuote(id); // read directly so re-renders always get fresh data
   const [tab, setTab]             = useState('Details');
-  const [quote, setQuote]         = useState(() => getQuote(id));
   const [commentText, setComment] = useState('');
   const [commentType, setCommentType] = useState('internal');
   const [expandedItems, setExpandedItems] = useState(new Set());
@@ -84,8 +91,8 @@ export default function QuoteView() {
             customer_last_seen_at: d.customer_last_seen_at,
             decline_reason:       d.decline_reason,
           });
-          // Refresh the local quote too (status may have changed)
-          setQuote(getQuote(id));
+          // Fire data-changed so the quote is re-read on next render
+          window.dispatchEvent(new CustomEvent('lusso:data-changed'));
         })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'quote_activity_events', filter: `quote_id=eq.${id}` },
         (payload) => {
@@ -107,8 +114,6 @@ export default function QuoteView() {
       </div>
     );
   }
-
-  const refresh = () => setQuote(getQuote(id));
 
   // ── Derived tracking values ───────────────────────────────────────────────
   const tracking = liveData || {};
@@ -132,9 +137,10 @@ export default function QuoteView() {
     setSending(true);
     setSendError(null);
     try {
-      await sendQuoteEmail(quote, customer);
+      await sendQuoteEmail(quote, customer, getMessagePresets().quoteEmailIntro);
       sendQuote(quote.id, 'Admin');
       refresh();
+      toast(`Quote ${quote.quoteNumber || ''} sent to ${customer.email}.`);
     } catch (err) {
       console.error('[QuoteView] Send quote error:', err);
       setSendError(err.message || 'Failed to send quote email. Please try again.');
@@ -167,6 +173,48 @@ export default function QuoteView() {
     if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
     return next;
   });
+
+  // ── Xero invoice ─────────────────────────────────────────────────────────────
+  const [xeroWorking, setXeroWorking] = useState(false);
+  const [xeroError, setXeroError]     = useState(null);
+
+  const handleCreateXeroInvoice = async () => {
+    if (!window.confirm('Create a Xero invoice for this quote?')) return;
+    setXeroWorking(true);
+    setXeroError(null);
+    try {
+      const result = await xeroCreateInvoice(quote.id);
+      updateQuoteXeroInvoice(quote.id, {
+        xeroInvoiceId:        result.xeroInvoiceId,
+        xeroInvoiceNumber:    result.xeroInvoiceNumber,
+        xeroInvoiceStatus:    result.xeroInvoiceStatus,
+        xeroInvoiceUrl:       result.xeroInvoiceUrl,
+        xeroInvoiceCreatedAt: new Date().toISOString(),
+      });
+      refresh();
+      toast(`Xero invoice ${result.xeroInvoiceNumber} created.`);
+    } catch (err) {
+      setXeroError(err.message);
+      toast(err.message, 'error');
+    } finally {
+      setXeroWorking(false);
+    }
+  };
+
+  const handleSyncXeroInvoice = async () => {
+    setXeroWorking(true);
+    setXeroError(null);
+    try {
+      const result = await xeroSyncInvoice(quote.id);
+      updateQuoteXeroInvoice(quote.id, { xeroInvoiceStatus: result.xeroInvoiceStatus });
+      refresh();
+      toast('Invoice status synced from Xero.');
+    } catch (err) {
+      setXeroError(err.message);
+    } finally {
+      setXeroWorking(false);
+    }
+  };
 
   const locations = [...new Set(quote.lineItems.map(li => li.location || 'Unspecified'))];
 
@@ -241,7 +289,7 @@ export default function QuoteView() {
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                 <Edit3 size={13} /> Edit
               </button>
-              <button onClick={() => navigate(`/quotes/${quote.id}/preview`)}
+              <button onClick={() => window.open(`/quotes/${quote.id}/preview?preview=1`, '_blank')}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                 <Eye size={13} /> Preview
               </button>
@@ -279,6 +327,80 @@ export default function QuoteView() {
               )}
             </div>
             <Lock size={14} className="text-green-500 flex-shrink-0" />
+          </div>
+        )}
+
+        {/* ── Xero invoice panel (shown for Accepted quotes) ─────────────── */}
+        {quote.status === 'Accepted' && (
+          <div className={`mt-4 rounded-xl border px-4 py-3 ${quote.xeroInvoiceId ? 'bg-[#13B5EA]/5 border-[#13B5EA]/20' : 'bg-slate-50 border-slate-200'}`}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-md bg-[#13B5EA]/15 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[#13B5EA] font-black text-xs">X</span>
+                </span>
+                {quote.xeroInvoiceId ? (
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-slate-800">
+                        Xero Invoice {quote.xeroInvoiceNumber}
+                      </span>
+                      {quote.xeroInvoiceStatus && (() => {
+                        const badge = xeroInvoiceStatusBadge(quote.xeroInvoiceStatus);
+                        return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge.color}`}>{badge.label}</span>;
+                      })()}
+                    </div>
+                    {quote.xeroInvoiceCreatedAt && (
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Created {format(parseISO(quote.xeroInvoiceCreatedAt), 'd MMM yyyy')}
+                        {quote.xeroInvoiceCreatedBy && ` by ${quote.xeroInvoiceCreatedBy}`}
+                        {quote.xeroLastSyncedAt && ` · Synced ${format(parseISO(quote.xeroLastSyncedAt), 'd MMM h:mm a')}`}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">No Xero invoice yet</p>
+                    <p className="text-xs text-slate-400">Create an invoice in Xero from this accepted quote.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {xeroError && (
+                  <p className="text-xs text-red-500 max-w-[200px] truncate" title={xeroError}>{xeroError}</p>
+                )}
+                {quote.xeroInvoiceId ? (
+                  <>
+                    {quote.xeroInvoiceUrl && (
+                      <a
+                        href={quote.xeroInvoiceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 text-xs font-medium text-[#13B5EA] hover:underline"
+                      >
+                        Open in Xero <ExternalLink size={11} />
+                      </a>
+                    )}
+                    <button
+                      onClick={handleSyncXeroInvoice}
+                      disabled={xeroWorking}
+                      className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 hover:bg-slate-100 px-2.5 py-1.5 rounded-lg transition-colors"
+                    >
+                      {xeroWorking ? <Loader size={11} className="animate-spin" /> : <RefreshCw size={11} />} Sync
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleCreateXeroInvoice}
+                    disabled={xeroWorking}
+                    className="flex items-center gap-1.5 text-xs font-semibold bg-[#13B5EA] hover:bg-[#0ea5d9] disabled:opacity-60 text-white px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    {xeroWorking ? <Loader size={11} className="animate-spin" /> : <span className="font-black">X</span>}
+                    {xeroWorking ? 'Creating…' : 'Create Invoice'}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </Card>
@@ -362,7 +484,7 @@ export default function QuoteView() {
                                     ['Control', item.control], ['Return', item.returnSide],
                                     ['Motor Side', item.motorSide], ['Fixing', item.fixing],
                                     ['Heading', item.heading], ['Hem', item.hem],
-                                    ['Track/Base Bar', item.trackBaseBarColour], ['Base Bar Type', item.baseBarType],
+                                    ['Track Colour', item.trackColour || item.trackBaseBarColour], ['Bottom Rail Colour', item.baseBarColour], ['Bottom Rail Type', item.baseBarType],
                                     ['Chain Colour', item.chainColour], ['Supplier', item.supplier],
                                   ].filter(([,v]) => v).map(([lbl, val]) => (
                                     <div key={lbl}><dt className="text-slate-400">{lbl}</dt><dd className="font-medium text-slate-700">{val}</dd></div>

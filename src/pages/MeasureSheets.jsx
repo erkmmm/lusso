@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle, Upload } from 'lucide-react';
@@ -73,6 +74,7 @@ function DeleteModal({ count, hasLinks, onConfirm, onCancel }) {
 }
 
 export default function MeasureSheets() {
+  useDataRefresh();
   const navigate  = useNavigate();
   const [search, setSearch]         = useState('');
   const [selectMode, setSelectMode] = useState(false);

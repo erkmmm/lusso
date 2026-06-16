@@ -1,28 +1,19 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search, Users, Phone, Mail, MapPin, X, ChevronRight,
-  Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus,
+  Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus, Edit3,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { getCustomers, getCustomersFiltered, getJobsByCustomer, saveCustomer, deleteCustomer, bulkDeleteCustomers } from '../store/data';
+import { getCustomers, getCustomersFiltered, getJobsByCustomer, saveCustomer, deleteCustomer, restoreCustomer, bulkDeleteCustomers } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 import StatusBadge from '../components/StatusBadge';
+import OptionsMenu from '../components/OptionsMenu';
 
-// ── Toast ────────────────────────────────────────────────────────────────────
-function Toast({ message, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 3000);
-    return () => clearTimeout(t);
-  }, [onDone]);
-  return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-xl flex items-center gap-2">
-      <CheckSquare size={15} className="text-green-400" /> {message}
-    </div>
-  );
-}
 
 // ── Confirmation modal ───────────────────────────────────────────────────────
 function DeleteModal({ count, hasJobs, onConfirm, onCancel }) {
@@ -74,13 +65,13 @@ const EMPTY_CUSTOMER = () => ({
 });
 
 export default function Customers() {
+  useDataRefresh();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch]         = useState('');
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected]     = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [toast, setToast]           = useState(null);
   const [showAdd, setShowAdd]       = useState(false);
   const [newCustomer, setNewCustomer] = useState(EMPTY_CUSTOMER());
   const [addErrors, setAddErrors]   = useState({});
@@ -140,12 +131,26 @@ export default function Customers() {
   const hasJobs = targetIds.some(id => getJobsByCustomer(id).length > 0);
 
   const handleConfirmDelete = () => {
-    const count = targetIds.length;
-    bulkDeleteCustomers(targetIds);
+    const ids   = [...targetIds];
+    const count = ids.length;
+    const label = count === 1 ? 'Customer deleted.' : `${count} customers deleted.`;
+    bulkDeleteCustomers(ids);
     setSelected(new Set());
     setDeleteTarget(null);
     setSelectMode(false);
-    setToast(count === 1 ? 'Customer deleted.' : `${count} customers deleted.`);
+    forceUpdate(n => n + 1);
+    // Show undo toast — restores all deleted customers if clicked within 8s
+    window.dispatchEvent(new CustomEvent('lusso:toast', {
+      detail: {
+        message: label,
+        type: 'info',
+        duration: 8000,
+        onUndo: () => {
+          ids.forEach(id => restoreCustomer(id));
+          forceUpdate(n => n + 1);
+        },
+      }
+    }));
   };
 
   return (
@@ -255,15 +260,19 @@ export default function Customers() {
                   </button>
                 )}
 
-                {/* Delete button — top-right in select mode */}
-                {selectMode && (
-                  <button
-                    onClick={e => { e.stopPropagation(); setDeleteTarget(customer.id); }}
-                    className="absolute top-3 right-3 z-10 p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                    title="Delete customer"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                {/* Options ⋯ — always visible top-right */}
+                {!selectMode && (
+                  <div className="absolute top-3 right-3 z-10" onClick={e => e.stopPropagation()}>
+                    <OptionsMenu
+                      align="right"
+                      items={[
+                        { label: 'View Profile', icon: ChevronRight, onClick: () => navigate(`/customers/${customer.id}`) },
+                        { label: 'Edit', icon: Edit3, onClick: () => navigate(`/customers/${customer.id}?edit=1`) },
+                        { divider: true },
+                        { label: 'Delete', icon: Trash2, danger: true, onClick: () => setDeleteTarget(customer.id) },
+                      ]}
+                    />
+                  </div>
                 )}
 
                 {/* Card content */}
@@ -369,11 +378,10 @@ export default function Customers() {
                 {/* Address */}
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">Site Address</label>
-                  <input
+                  <AddressAutocomplete
                     value={newCustomer.address}
-                    onChange={e => setNewCustomer(p => ({ ...p, address: e.target.value }))}
-                    placeholder="Street address, Suburb STATE Postcode"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    onChange={v => setNewCustomer(p => ({ ...p, address: v }))}
+                    placeholder="Start typing an address…"
                   />
                 </div>
                 {/* Notes */}
@@ -403,8 +411,6 @@ export default function Customers() {
         </div>
       )}
 
-      {/* Toast */}
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
   );
 }

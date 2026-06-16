@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -55,6 +56,7 @@ function DeleteModal({ count, onConfirm, onCancel }) {
 }
 
 export default function Installers() {
+  useDataRefresh();
   const navigate  = useNavigate();
   const [search, setSearch]         = useState('');
   const [filter, setFilter]         = useState('active');

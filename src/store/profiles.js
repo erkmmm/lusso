@@ -5,12 +5,13 @@
  * App profile objects use camelCase.
  *
  * Field naming:
- *   DB: account_type  →  App: accountType   (was: role)
+ *   DB: role          →  App: accountType   (DB column is named 'role', app uses 'accountType')
  *   DB: employee_role →  App: employeeRole
  *   DB: status        →  App: status         (pending | active | suspended)
  *
- * Transition safety: fromSupabaseRow reads account_type OR the legacy role
- * column so that profiles written before the DB migration still work.
+ * The DB column is called 'role' (not 'account_type').
+ * fromSupabaseRow reads row.role and maps it to accountType.
+ * toSupabaseRow writes accountType back as the 'role' DB column.
  */
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../lib/supabase';
@@ -41,7 +42,7 @@ function toSupabaseRow(profile) {
     id:             profile.id,
     email:          profile.email,
     display_name:   profile.displayName  || '',
-    account_type:   profile.accountType  || 'pending_user',
+    role:           profile.accountType  || 'pending',   // DB column is 'role', not 'account_type'
     employee_role:  profile.employeeRole || null,
     status:         profile.status       || 'active',
     is_employee:    profile.isEmployee   ?? false,
@@ -139,7 +140,7 @@ export async function createProfileInSupabase({ email, displayName, accountType 
   if (existing) {
     const { data, error } = await supabase
       .from('profiles')
-      .update({ display_name: displayName, account_type: accountType, updated_at: new Date().toISOString() })
+      .update({ display_name: displayName, role: accountType, updated_at: new Date().toISOString() })
       .eq('id', existing.id)
       .select()
       .single();
@@ -160,8 +161,8 @@ export async function createProfileInSupabase({ email, displayName, accountType 
 /** Update a profile's accountType and/or other fields in Supabase */
 export async function updateProfileInSupabase(id, updates) {
   const dbUpdates = {};
-  if (updates.accountType  !== undefined) dbUpdates.account_type  = updates.accountType;
-  if (updates.employeeRole !== undefined) dbUpdates.employee_role = updates.employeeRole;
+  if (updates.accountType  !== undefined) dbUpdates.role          = updates.accountType; // DB column is 'role'
+  if (updates.employeeRole !== undefined) dbUpdates.employee_role = updates.employeeRole || null;
   if (updates.displayName  !== undefined) dbUpdates.display_name  = updates.displayName;
   if (updates.status       !== undefined) dbUpdates.status        = updates.status;
 
@@ -271,7 +272,7 @@ export async function updateEmployeeProfile(targetUserId, updates) {
     p_phone:         updates.phone         || null,
     p_position:      updates.positionTitle || null,
     p_status:        updates.status        || null,
-    p_employee_role: updates.employeeRole !== undefined ? (updates.employeeRole || '') : null,
+    p_employee_role: updates.employeeRole !== undefined ? (updates.employeeRole || null) : null,
   });
   if (error) throw error;
   const list = get().map(p => p.id === targetUserId ? { ...p, ...updates } : p);

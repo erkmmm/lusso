@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -72,6 +73,7 @@ function DeleteModal({ count, onConfirm, onCancel }) {
 }
 
 export default function Quotes() {
+  useDataRefresh();
   const navigate = useNavigate();
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -412,7 +414,7 @@ export default function Quotes() {
                               <Send size={13} /> Send Quote
                             </button>
                           )}
-                          <button onClick={() => navigate(`/quotes/${quote.id}/preview`)}
+                          <button onClick={() => window.open(`/quotes/${quote.id}/preview?preview=1`, '_blank')}
                             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">
                             <Eye size={13} /> Customer Preview
                           </button>

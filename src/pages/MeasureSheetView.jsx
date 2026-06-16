@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
@@ -20,9 +21,10 @@ function PrintView({ sheet, customer, job }) {
     ['Fixing',         v => v.fixing],
     ['Heading',        v => v.heading],
     ['Hem',            v => v.hem],
-    ['Track Colour',   v => v.trackBaseBarColour],
-    ['Operation Type', v => v.trackType],
-    ['Base Bar',       v => v.baseBarType],
+    ['Track Colour',        v => v.trackColour || v.trackBaseBarColour],
+    ['Bottom Rail Colour',  v => v.baseBarColour],
+    ['Operation Type',      v => v.trackType],
+    ['Bottom Rail Type',    v => v.baseBarType],
     ['Chain',          v => v.chainColour],
     ['Lining',         v => v.attachedLining ? (v.liningFabricColour ? `Yes — ${v.liningFabricColour}` : 'Yes') : null],
   ];
@@ -227,6 +229,7 @@ function PrintView({ sheet, customer, job }) {
 }
 
 export default function MeasureSheetView() {
+  useDataRefresh();
   const { id } = useParams();
   const navigate = useNavigate();
   const [showDelete,   setShowDelete]   = useState(false);
@@ -234,7 +237,7 @@ export default function MeasureSheetView() {
   const [showJobPanel, setShowJobPanel] = useState(false);
   const sheet    = getMeasureSheet(id);
   const customer = sheet ? getCustomer(sheet.customerId) : null;
-  const [job, setJob] = useState(() => sheet ? getJob(sheet.jobId) : null);
+  const job      = sheet?.jobId ? getJob(sheet.jobId) : null; // read directly
   const quotes   = getQuotes();
   const isLinked = quotes.some(q => q.measureSheetId === id) || Boolean(sheet?.jobId);
 
@@ -246,16 +249,16 @@ export default function MeasureSheetView() {
     if (!sheet || !customer) return;
     const newJob = createJobFromMeasureSheet(sheet, customer);
     saveMeasureSheet({ ...sheet, jobId: newJob.id, status: 'Submitted' });
-    setJob(newJob);
     setShowJobPanel(false);
+    window.dispatchEvent(new CustomEvent('lusso:data-changed'));
   };
 
   const handleLinkJob = () => {
     if (!linkJobId || !sheet) return;
     saveMeasureSheet({ ...sheet, jobId: linkJobId, status: 'Submitted' });
-    setJob(getJob(linkJobId));
     setLinkJobId('');
     setShowJobPanel(false);
+    window.dispatchEvent(new CustomEvent('lusso:data-changed'));
   };
 
   const handleDelete = () => {
@@ -442,9 +445,10 @@ export default function MeasureSheetView() {
                         ['Fixing', item.fixing || item.mountType],
                         ['Heading', item.heading],
                         ['Hem', item.hem],
-                        ['Track / Base Bar', item.trackBaseBarColour || item.trackColour],
+                        ['Track Colour', item.trackColour || item.trackBaseBarColour],
+                        ['Bottom Rail Colour', item.baseBarColour],
                         ['Operation Type', item.trackType],
-                        ['Base Bar Type', item.baseBarType],
+                        ['Bottom Rail Type', item.baseBarType],
                         ['Chain Colour', item.chainColour],
                         ['Attached Lining', item.attachedLining ? 'Yes' : null],
                         ['Lining Fabric', item.attachedLining && item.liningFabricColour ? item.liningFabricColour : null],

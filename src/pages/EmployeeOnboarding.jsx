@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { User, Phone, MapPin, AlertCircle, CheckCircle, LogOut } from 'lucide-react';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 import { useProfile } from '../contexts/UserProfileContext';
 import { completeEmployeeProfile } from '../store/profiles';
 import { supabase } from '../lib/supabase';
@@ -103,16 +104,11 @@ export default function EmployeeOnboarding() {
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Home Address</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                <textarea
-                  value={form.address}
-                  onChange={e => set('address', e.target.value)}
-                  placeholder="Street, Suburb, State, Postcode"
-                  rows={2}
-                  className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
-                />
-              </div>
+              <AddressAutocomplete
+                value={form.address}
+                onChange={v => set('address', v)}
+                placeholder="Start typing your home address…"
+              />
             </div>
           </div>
         </div>

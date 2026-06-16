@@ -68,30 +68,43 @@ const KEYS = {
 // ── Per-table column exclusions ──────────────────────────────────────
 // Fields that exist in app data but not yet in the DB schema.
 // Listed as snake_case so they can be stripped after toDb() conversion.
+// ── EXCLUDE_COLUMNS is the authoritative list of app-only fields ─────────────
+// Only list fields that do NOT exist as columns in the DB.
+// Fields that exist in DB should NOT be here — they'll be written on every save.
+// Verified against live DB schema 2026-05-14.
 const EXCLUDE_COLUMNS = {
   customers: [
+    // App-only fields (no DB column):
     'first_name', 'last_name', 'deleted_by',
     'suburb', 'state', 'postcode', 'country',
-    'company', 'mobile', 'billing_address', 'business_name',
-    'preferred_contact', 'xero_contact_id', 'assigned_to',
-    'import_batch_id', 'source', 'tags',
+    'company', 'import_batch_id', 'source', 'tags',
+    // assigned_to is UUID in DB but app stores display name string — exclude to avoid type error
+    'assigned_to',
+    // DB has: mobile, billing_address, business_name, preferred_contact,
+    //         xero_contact_id — all written normally now
   ],
   jobs: [
+    // App-only fields (no DB column):
     'deleted_by', 'activity', 'address', 'notes',
-    'assigned_to_profile', 'title', 'xero_invoice_id',
+    // DB has: title, xero_invoice_id, assigned_to_profile — written normally now
   ],
   measure_sheets: [
-    'deleted_by', 'notes', 'assigned_to_profile',
-    'billing_address', 'customer_name', 'customer_notes',
-    'email', 'phone', 'preferred_contact', 'internal_notes',
+    // App-only fields (no DB column):
+    'deleted_by', 'notes',
     'imported_from_excel', 'original_file_name', 'imported_at', 'import_notes', 'import_status',
+    // DB has: customer_name, customer_notes, email, phone, preferred_contact,
+    //         internal_notes, billing_address, assigned_to_profile — written normally now
   ],
   installers: [
-    // is_active IS a real DB column — do NOT exclude it
-    'availability_notes', 'business_name', 'deleted_by',
-    'internal_notes', 'service_areas', 'services_offered',
+    // App-only fields (no DB column):
+    'deleted_by',
+    // DB now has: business_name, availability_notes, internal_notes,
+    //             service_areas, services_offered — all written normally now
   ],
   installations: [
+    // DB only has: id, job_id, installer_id, scheduled_date, scheduled_time,
+    //              duration_hours, status, accept_token, responded_at, notes,
+    //              created_at, updated_at, deleted_at
     'access_notes', 'arrival_time', 'deleted_by', 'assigned_salesperson',
     'created_by', 'expected_duration', 'installation_notes',
     'parking_notes', 'pickup_locations', 'pickup_type', 'product_summary',
@@ -113,24 +126,38 @@ const EXCLUDE_COLUMNS = {
     'import_batch_id',// DB uses 'batch_id' — handled by toPricedItemDbRow rename
   ],
   priced_item_batches: [
-    'error_count', 'skipped_count',
+    // DB has error_count and skipped_count — written normally now
   ],
   calendar_events: [
-    // assignees is a JS array — PostgreSQL text[] handles it natively via Supabase
     // No exclusions needed: DB schema designed to match app fields exactly
   ],
+  tasks: [
+    // App uses 'assignedEmployeeId' but DB column is 'assigned_to' (UUID FK)
+    // Exclude to avoid column-not-found error; assignment syncs via assigned_to when set
+    'assigned_employee_id',
+    // created_by in app may be a display name string, but DB column expects UUID
+    'created_by',
+    // Any other app-only task fields
+    'assigned_employee',
+  ],
   quotes: [
+    // App-only fields that do NOT exist as DB columns:
     'version', 'measure_sheet_id', 'site_address', 'terms_and_conditions',
     'internal_notes', 'follow_up_date', 'show_sizes_to_client',
     'viewed_at', 'declined_at', 'accepted_by', 'activity', 'deleted_by',
-    'assigned_to_profile', 'comments', 'grand_total', 'gst_amount',
-    'public_token', 'selected_line_item_ids', 'total_cost', 'total_sell',
-    'xero_invoice_id', 'salesperson_id',
+    // DB has: grand_total, gst_amount, public_token, comments, selected_line_item_ids,
+    //         total_cost, total_sell, xero_invoice_id, xero_invoice_number,
+    //         xero_invoice_status, xero_invoice_url, xero_invoice_created_at,
+    //         xero_invoice_created_by, xero_last_synced_at,
+    //         salesperson_id, assigned_to_profile — all written normally now
   ],
+  // customers: xero_contact_id, xero_contact_name, xero_last_synced_at — written normally
+  // priced_items: xero_item_id, xero_item_code, xero_account_code, xero_tax_type,
+  //               xero_last_synced_at — written normally via pushAllToSupabase
 };
 
 // ── Tables skipped during push (DB table doesn't exist yet) ──────────
-const SKIP_PUSH_TABLES = new Set(['employees', 'tasks', 'notifications']);
+const SKIP_PUSH_TABLES = new Set(['employees', 'notifications']);
 
 // ── Per-table upsert conflict column override ─────────────────────────
 // quotes has a unique constraint on quote_number, so upsert on that
@@ -154,9 +181,9 @@ const TABLES = [
   { table: 'contact_import_batches', key: KEYS.importBatches },
   { table: 'notifications',          key: KEYS.notifications },
   { table: 'calendar_events',        key: 'lusso_calendar_events' },
-  // employees & tasks tables not yet created in Supabase — skip both hydration and push
+  { table: 'tasks',                  key: KEYS.tasks },
+  // employees table doesn't exist in Supabase — uses profiles table instead
   // { table: 'employees',           key: KEYS.employees },
-  // { table: 'tasks',               key: KEYS.tasks },
 ];
 
 // ── Pagination helper ─────────────────────────────────────────────────────────
@@ -214,30 +241,27 @@ export async function hydrateFromSupabase() {
         fetchedData = d1;
       }
       const rows = fromDbAll(fetchedData || []);
-      if (rows.length > 0) {
-        const local = LS.get(key) || [];
-        const localById = new Map(local.map(r => [r.id, r]));
-        const supabaseIds = new Set(rows.map(r => r.id));
+      // Supabase is the source of truth.
+      // Always write the Supabase result to localStorage, even if empty —
+      // an empty response means everything was deleted and should stay gone.
+      const local = LS.get(key) || [];
+      const localById = new Map(local.map(r => [r.id, r]));
 
-        // For records in both: keep whichever has the newer updatedAt.
-        // This protects local edits that failed to sync (single-device use).
-        const merged = rows.map(sbRow => {
-          const localRow = localById.get(sbRow.id);
-          if (!localRow) return sbRow;
-          const sbMs = new Date(sbRow.updatedAt || 0).getTime();
-          const locMs = new Date(localRow.updatedAt || 0).getTime();
-          return locMs > sbMs ? localRow : sbRow;
-        });
+      // For records in both: keep whichever has the newer updatedAt.
+      // This protects unsaved local edits made moments before hydration.
+      const merged = rows.map(sbRow => {
+        const localRow = localById.get(sbRow.id);
+        if (!localRow) return sbRow;
+        const sbMs = new Date(sbRow.updatedAt || 0).getTime();
+        const locMs = new Date(localRow.updatedAt || 0).getTime();
+        return locMs > sbMs ? localRow : sbRow;
+      });
 
-        // Preserve local-only records (created on this device, not yet synced).
-        // Exclude soft-deleted records — if they're not in Supabase they were
-        // hard-deleted by another device, so we don't want them back.
-        const localOnly = local.filter(r =>
-          r.id && !supabaseIds.has(r.id) && !r.deletedAt && !r.isDeleted
-        );
-        LS.set(key, [...merged, ...localOnly]);
-        hadCloudData = true;
-      }
+      // NO localOnly — Supabase is authoritative. Any local record not in
+      // Supabase was either deleted by another device or never successfully
+      // synced. In both cases it must not survive a refresh.
+      LS.set(key, merged);
+      if (rows.length > 0) hadCloudData = true;
     })
   );
 
@@ -424,16 +448,40 @@ async function upsert(table, record) {
 async function remove(table, id) {
   if (!supabase || !id) return;
   const { error } = await supabase.from(table).delete().eq('id', id);
-  if (error) console.warn(`[db] delete ${table}:`, error.message);
+  if (error) {
+    // Use console.error so it's visible in prod DevTools, not just a warning
+    console.error(`[db] DELETE ${table} id=${id} FAILED:`, error.message, error);
+  }
 }
 
 // ── Per-entity write helpers ─────────────────────────────────────────
 // Call these alongside the existing localStorage writes so Supabase stays in sync.
 
+// Soft-delete: sets deleted_at instead of hard-removing the row.
+// This lets us restore accidentally deleted records.
+async function softDelete(table, id) {
+  if (!supabase || !id) return;
+  const { error } = await supabase
+    .from(table)
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) console.error(`[db] softDelete ${table} id=${id} FAILED:`, error.message);
+}
+
+async function restore(table, id) {
+  if (!supabase || !id) return;
+  const { error } = await supabase
+    .from(table)
+    .update({ deleted_at: null })
+    .eq('id', id);
+  if (error) console.error(`[db] restore ${table} id=${id} FAILED:`, error.message);
+}
+
 export const db = {
-  // Customers
-  saveCustomer:       (r) => upsert('customers', r),
-  deleteCustomer:     (id) => remove('customers', id),
+  // Customers — soft delete so records can be restored if deleted by accident
+  saveCustomer:       (r)  => upsert('customers', r),
+  deleteCustomer:     (id) => softDelete('customers', id),
+  restoreCustomer:    (id) => restore('customers', id),
 
   // Jobs
   saveJob:            (r) => upsert('jobs', r),
@@ -481,9 +529,6 @@ export const db = {
   // Tasks
   saveTask:             (r) => upsert('tasks', r),
   deleteTask:           (id) => remove('tasks', id),
-
-  // Install requests
-  saveInstallRequest:   (r) => upsert('installations', r),
 
   // Calendar events
   saveCalendarEvent:    (r) => upsert('calendar_events', r),
@@ -594,6 +639,7 @@ function toPricedItemDbRow(item) {
     gst_applicable: item.gstApplicable !== false,
     unit:           item.unitType      || item.unit || '',
     is_active:      item.isActive      !== false,
+    price_per_sqm:  item.pricePerSqm   ?? null,
     source:         item.source        || '',
     batch_id:       item.importBatchId || item.batchId || null,
     created_at:     item.createdAt     || new Date().toISOString(),

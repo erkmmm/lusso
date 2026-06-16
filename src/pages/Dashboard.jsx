@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -515,6 +516,7 @@ function StalledJobs({ jobs, customers, navigate }) {
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
+  useDataRefresh();
   const navigate  = useNavigate();
   const { isAM = true, displayName = '', isSP } = useProfile() || {};
   const jobs      = getJobsFiltered(isAM, displayName);

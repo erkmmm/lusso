@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { db, batchUpsertCustomers, batchUpsertPricedItems } from './db';
+import { db, batchUpsertCustomers, batchUpsertPricedItems, hydrateFromSupabase } from './db';
 import { supabase } from '../lib/supabase';
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
@@ -478,6 +478,25 @@ export const initStore = () => {
 
 export const getCustomers = () => (get('lusso_customers') || []).filter(c => !c.deletedAt);
 
+export const restoreCustomer = async (id) => {
+  // First restore locally if the record is still in localStorage
+  const all = get('lusso_customers') || [];
+  const idx = all.findIndex(c => c.id === id);
+  if (idx >= 0) {
+    all[idx] = { ...all[idx], deletedAt: null };
+    set('lusso_customers', all);
+  }
+
+  // Clear deleted_at in Supabase (await so hydration gets the clean record)
+  await db.restoreCustomer(id);
+
+  // Re-hydrate customers from Supabase — this brings the record back even if
+  // it was removed from localStorage by a previous hydration cycle
+  await hydrateFromSupabase();
+
+  window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+};
+
 export const deleteCustomer = (id, deletedBy = 'Admin') => {
   const all = get('lusso_customers') || [];
   const idx = all.findIndex(c => c.id === id);
@@ -541,22 +560,38 @@ export const deleteJob = (id, deletedBy = 'Admin') => {
   const idx = all.findIndex(j => j.id === id);
   if (idx < 0) return;
   const now = new Date().toISOString();
+
+  // ── Delete children from Supabase BEFORE the job ─────────────────────
+  // FK constraints would block the job DELETE if children still exist.
+  // Deleting children first also fires Realtime DELETE events on other devices.
+
+  // Measure sheets → cascade delete from Supabase, remove from local
+  const allSheets = get('lusso_measure_sheets') || [];
+  const linkedSheets = allSheets.filter(s => s.jobId === id);
+  linkedSheets.forEach(s => db.deleteMeasureSheet(s.id));
+  set('lusso_measure_sheets', allSheets.filter(s => s.jobId !== id));
+
+  // Quotes → unlink locally (DB FK ON DELETE SET NULL handles the DB side automatically)
+  // Quotes are financial records — never delete them when a job is deleted.
+  const allQuotes = get('lusso_quotes') || [];
+  const updatedQuotes = allQuotes.map(q =>
+    q.jobId === id && !q.deletedAt ? { ...q, jobId: null, updatedAt: now } : q
+  );
+  set('lusso_quotes', updatedQuotes);
+
+  // Install requests → delete from Supabase and local
+  const reqs = get('lusso_install_requests') || [];
+  const linkedReqs = reqs.filter(r => r.jobId === id);
+  linkedReqs.forEach(r => db.deleteInstallRequest(r.id));
+  set('lusso_install_requests', reqs.filter(r => r.jobId !== id));
+
+  // ── Soft-delete the job locally ───────────────────────────────────────
   all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_jobs', all);
-  // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
+
+  // ── Hard-delete the job from Supabase ─────────────────────────────────
+  // Children are already gone so FK constraints won't block this.
   db.deleteJob(id);
-  // Also delete all linked install requests from Supabase and mark deleted locally
-  const reqs = get('lusso_install_requests') || [];
-  let changed = false;
-  const updatedReqs = reqs.map(r => {
-    if (r.jobId === id && !r.deletedAt) {
-      changed = true;
-      db.deleteInstallRequest(r.id);
-      return { ...r, deletedAt: now, deletedBy };
-    }
-    return r;
-  });
-  if (changed) set('lusso_install_requests', updatedReqs);
 };
 
 export const bulkDeleteJobs = (ids, deletedBy = 'Admin') => {
@@ -819,7 +854,11 @@ export const MOTOR_SIDE_OPTIONS    = ['Left', 'Right', 'N/A'];
 export const FIXING_OPTIONS        = ['Ceiling', 'Face', 'Reveal'];
 export const HEADING_OPTIONS       = ['Reverse Roll', 'Standard Roll', 'Wave Fold', 'Reverse Pleat', 'Gathered', 'Knife Pleat', 'Double Pinch Pleat', 'Triple Pinch Pleat'];
 export const HEM_OPTIONS           = ['Chain Weight', 'Standard', 'Double 7', 'N/A'];
-export const TRACK_COLOUR_OPTIONS  = ['Black', 'Off White', 'White', 'Anodised', 'Fabric Wrapped'];
+export const TRACK_COLOUR_OPTIONS  = ['White', 'Black', 'Birch White', 'Other'];
+export const BASE_BAR_COLOUR_OPTIONS = [
+  'NEW Textured White', 'NEW Textured Black', 'Anodised Clear',
+  'White', 'Black', 'SandStone', 'Barley', 'Bone', 'Dune', 'Bronze Pearl', 'Other',
+];
 export const OPERATION_TYPE_OPTIONS = [
   'Li-ion Motor 1.1',
   'Li-ion Motor 2.0',
@@ -842,7 +881,7 @@ export const OPERATION_TYPE_OPTIONS = [
   'No tracks',
   'RB09',
 ];
-export const BASE_BAR_TYPE_OPTIONS = ['D30 Bump', 'Oval', 'Round'];
+export const BASE_BAR_TYPE_OPTIONS = ['Oval', 'D30 Bump', 'Smart Rail Fabric Wrap – FULL', 'Smart Rail Fabric Wrap – HALF', 'Smart Rail', 'Other'];
 export const CHAIN_COLOUR_OPTIONS  = ['Black', 'White', 'Grey', 'Stainless'];
 
 export const MOUNT_TYPES = ['Ceiling Fix', 'Face Fix', 'Recess Fit', 'Outside Mount', 'Inside Mount'];
@@ -999,6 +1038,8 @@ export const respondToInstallRequest = (token, action, comment = '') => {
 
   list[idx] = { ...req, status: newStatus, respondedAt: now, responseComment: comment, updatedAt: now };
   set('lusso_install_requests', list);
+  // Sync response to Supabase so all devices see the updated status immediately.
+  db.saveInstallRequest(list[idx]);
 
   // Update job status if accepted
   if (isAccept) {
@@ -1093,6 +1134,7 @@ export const addProductType = (name) => {
     updatedAt: new Date().toISOString(),
   };
   set('lusso_product_types', [...list, pt]);
+  db.saveProductType(pt);
   return pt;
 };
 
@@ -1108,6 +1150,8 @@ export const reorderProductType = (id, direction) => {
   list[idx] = { ...list[idx], sortOrder: list[swapIdx].sortOrder, updatedAt: now };
   list[swapIdx] = { ...list[swapIdx], sortOrder: tempOrder, updatedAt: now };
   set('lusso_product_types', list);
+  db.saveProductType(list[idx]);
+  db.saveProductType(list[swapIdx]);
 };
 
 // ─── Quotes ───────────────────────────────────────────────────────────────────
@@ -1125,7 +1169,7 @@ export const QUOTE_STATUS_COLORS = {
   Completed: 'bg-teal-100 text-teal-700',
 };
 
-export const QUOTE_ITEM_TYPES = ['Required', 'Optional', 'Multiple Choice'];
+export const QUOTE_ITEM_TYPES = ['Required', 'Optional', 'Multiple Choice', 'Part'];
 export const DEPOSIT_TYPES    = ['None', 'Fixed Amount', 'Percentage'];
 
 /**
@@ -1151,6 +1195,7 @@ export const calcItemPricing = (unitCostPrice, labourCost, marginPercent, manual
 export const computeQuoteTotals = (lineItems = [], depositType = 'None', depositValue = 0, gstRate = 10, includesGST = true, selectedIds = []) => {
   const active = lineItems.filter(li =>
     li.type === 'Required' ||
+    li.type === 'Part' ||
     (li.type === 'Optional' && selectedIds.includes(li.id)) ||
     (li.type === 'Multiple Choice' && selectedIds.includes(li.id))
   );
@@ -1445,13 +1490,36 @@ export const getNextQuoteNumber = () => {
 };
 
 export const saveQuote = (quote) => {
+  // Compute and persist totals so DB columns (grand_total, gst_amount, etc.) are always populated.
+  const { subtotal, gst, total } = computeQuoteTotals(
+    quote.lineItems || [], quote.depositType, quote.depositValue,
+    quote.gstRate, quote.includesGST, quote.selectedLineItemIds || []
+  );
+  const costTotal = (quote.lineItems || []).reduce((s, li) => {
+    if (li.unitCostPrice !== undefined) {
+      const { totalCost } = calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity);
+      return s + totalCost * (Number(li.quantity) || 1);
+    }
+    // Legacy fallback
+    return s + (Number(li.unitPrice) || 0) * (Number(li.quantity) || 1);
+  }, 0);
+
   const list = getQuotes();
   const idx  = list.findIndex(q => q.id === quote.id);
   const now  = new Date().toISOString();
+  const enriched = {
+    ...quote,
+    totalCost:  Math.round(costTotal * 100) / 100,
+    totalSell:  Math.round(subtotal  * 100) / 100,
+    gstAmount:  Math.round(gst       * 100) / 100,
+    grandTotal: Math.round(total     * 100) / 100,
+    createdAt:  quote.createdAt || now,
+    updatedAt:  now,
+  };
   if (idx >= 0) {
-    list[idx] = { ...quote, createdAt: quote.createdAt || now, updatedAt: now };
+    list[idx] = enriched;
   } else {
-    list.push({ ...quote, createdAt: quote.createdAt || now, updatedAt: now });
+    list.push(enriched);
   }
   set('lusso_quotes', list);
   db.saveQuote(list[list.findIndex(q => q.id === quote.id)]);
@@ -1508,6 +1576,7 @@ export const addQuoteActivity = (quoteId, type, note, user = 'System') => {
   list[idx].activity = [entry, ...(list[idx].activity || [])];
   list[idx].updatedAt = entry.createdAt;
   set('lusso_quotes', list);
+  db.saveQuote(list[idx]); // activity is app-only but updatedAt changes — needed to bump updated_at in DB
 };
 
 export const sendQuote = (quoteId, user = 'System') => {
@@ -1519,6 +1588,7 @@ export const sendQuote = (quoteId, user = 'System') => {
   const entry = { id: uuidv4(), type: 'sent', note: 'Quote sent to customer', user, createdAt: now };
   list[idx].activity = [entry, ...(list[idx].activity || [])];
   set('lusso_quotes', list);
+  db.saveQuote(list[idx]);
   return list[idx];
 };
 
@@ -1531,6 +1601,7 @@ export const markQuoteViewed = (quoteId) => {
   const entry = { id: uuidv4(), type: 'viewed', note: 'Customer opened the quote', user: 'Customer', createdAt: now };
   list[idx].activity = [entry, ...(list[idx].activity || [])];
   set('lusso_quotes', list);
+  db.saveQuote(list[idx]);
   return list[idx];
 };
 
@@ -1544,6 +1615,7 @@ export const acceptQuote = (quoteId, acceptanceInfo = {}) => {
   const entry = { id: uuidv4(), type: 'accepted', note: `Quote accepted by ${info.name || 'customer'}`, user: info.name || 'Customer', createdAt: now };
   list[idx].activity = [entry, ...(list[idx].activity || [])];
   set('lusso_quotes', list);
+  db.saveQuote(list[idx]);
   if (list[idx].jobId) updateJobStatus(list[idx].jobId, 'Awaiting Approval', info.name || 'Customer');
   return list[idx];
 };
@@ -1557,6 +1629,7 @@ export const declineQuote = (quoteId, reason = '') => {
   const entry = { id: uuidv4(), type: 'declined', note: reason ? `Quote declined: ${reason}` : 'Quote declined by customer', user: 'Customer', createdAt: now };
   list[idx].activity = [entry, ...(list[idx].activity || [])];
   set('lusso_quotes', list);
+  db.saveQuote(list[idx]);
   return list[idx];
 };
 
@@ -1582,6 +1655,14 @@ export const duplicateQuote = (quoteId, overrides = {}) => {
     comments: [],
     createdAt: now,
     updatedAt: now,
+    // Clear all Xero fields — the duplicate is a fresh quote, not linked to any invoice
+    xeroInvoiceId: null,
+    xeroInvoiceNumber: null,
+    xeroInvoiceStatus: null,
+    xeroInvoiceUrl: null,
+    xeroInvoiceCreatedAt: null,
+    xeroInvoiceCreatedBy: null,
+    xeroLastSyncedAt: null,
     ...overrides,
   };
   saveQuote(dupe);
@@ -1596,6 +1677,7 @@ export const addQuoteComment = (quoteId, type, author, message) => {
   list[idx].comments = [...(list[idx].comments || []), comment];
   list[idx].updatedAt = comment.createdAt;
   set('lusso_quotes', list);
+  db.saveQuote(list[idx]); // comments is now a real DB column — must sync
   return comment;
 };
 
@@ -1612,6 +1694,54 @@ export const deleteQuote = (quoteId, deletedBy = 'System') => {
 
 export const bulkDeleteQuotes = (ids, deletedBy = 'Admin') => {
   ids.forEach(id => deleteQuote(id, deletedBy));
+};
+
+// ─── Xero helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Update a quote in localStorage after a Xero invoice is created or synced.
+ * Called from the UI after the Edge Function returns successfully.
+ */
+export const updateQuoteXeroInvoice = (quoteId, {
+  xeroInvoiceId,
+  xeroInvoiceNumber,
+  xeroInvoiceStatus,
+  xeroInvoiceUrl,
+  xeroInvoiceCreatedAt,
+  xeroInvoiceCreatedBy,
+  xeroLastSyncedAt,
+} = {}) => {
+  const all = get('lusso_quotes') || [];
+  const idx = all.findIndex(q => q.id === quoteId);
+  if (idx < 0) return;
+  const now = new Date().toISOString();
+  all[idx] = {
+    ...all[idx],
+    ...(xeroInvoiceId        != null && { xeroInvoiceId }),
+    ...(xeroInvoiceNumber    != null && { xeroInvoiceNumber }),
+    ...(xeroInvoiceStatus    != null && { xeroInvoiceStatus }),
+    ...(xeroInvoiceUrl       != null && { xeroInvoiceUrl }),
+    ...(xeroInvoiceCreatedAt != null && { xeroInvoiceCreatedAt }),
+    ...(xeroInvoiceCreatedBy != null && { xeroInvoiceCreatedBy }),
+    xeroLastSyncedAt: xeroLastSyncedAt ?? now,
+    updatedAt: now,
+  };
+  set('lusso_quotes', all);
+  window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+};
+
+/**
+ * Update a customer record in localStorage after linking a Xero contact.
+ */
+export const updateCustomerXeroContact = (customerId, { xeroContactId, xeroContactName }) => {
+  const all = get('lusso_customers') || [];
+  const idx = all.findIndex(c => c.id === customerId);
+  if (idx < 0) return;
+  const now = new Date().toISOString();
+  all[idx] = { ...all[idx], xeroContactId, xeroContactName, xeroLastSyncedAt: now, updatedAt: now };
+  set('lusso_customers', all);
+  db.saveCustomer(all[idx]);
+  window.dispatchEvent(new CustomEvent('lusso:data-changed'));
 };
 
 // ─── Saved Items ──────────────────────────────────────────────────────────────
@@ -1643,6 +1773,22 @@ export const deleteQuoteTemplate = (id) => set('lusso_quote_templates', getQuote
 
 export const getQuoteSettings = () => get('lusso_quote_settings') || DEFAULT_QUOTE_SETTINGS;
 export const saveQuoteSettings = (s) => set('lusso_quote_settings', { ...getQuoteSettings(), ...s });
+
+// ─── Message Presets ──────────────────────────────────────────────────────────
+
+export const DEFAULT_MESSAGE_PRESETS = {
+  quoteEmailIntro: `Thank you for your enquiry. Please find your personalised quote from Lusso attached below.\n\nClick the button to view the full quote online, including pricing, product details and payment options. If you have any questions or would like to make any changes, please don't hesitate to get in touch — we're happy to help.\n\nWe look forward to working with you.`,
+  quoteIntroMessage: `Thank you for choosing Lusso. Please find your quote below. All prices include GST. This quote is valid for 30 days from the date of issue.\n\nIf you have any questions, please contact us and we'll be happy to assist.`,
+  quoteTerms: `• A 50% deposit is required to confirm your order.\n• Balance is due upon completion of installation.\n• Lead times are estimates only and subject to supplier availability.\n• All products remain the property of Lusso until paid in full.\n• Cancellations after order placement may incur a restocking fee.\n• Lusso is not liable for delays caused by third parties or circumstances beyond our control.`,
+  smsFollowUp: `Hi {name}, just following up on the quote we sent you for your window treatments. Happy to answer any questions or make any changes. Give us a call or reply here 😊`,
+  smsAppointmentReminder: `Hi {name}, this is a reminder of your appointment with Lusso tomorrow. Please let us know if you need to reschedule. See you then!`,
+  smsQuoteReady: `Hi {name}, your quote from Lusso is ready to view. Click here to see the details: {link}`,
+  smsOrderConfirmed: `Hi {name}, great news — your order has been confirmed! We'll be in touch soon with your installation date. Thanks for choosing Lusso 🎉`,
+  smsInstallationBooked: `Hi {name}, your installation has been booked for {date}. Our team will arrive between {time}. Please ensure access to the property. See you then!`,
+};
+
+export const getMessagePresets = () => ({ ...DEFAULT_MESSAGE_PRESETS, ...(get('lusso_message_presets') || {}) });
+export const saveMessagePresets = (s) => set('lusso_message_presets', { ...getMessagePresets(), ...s });
 
 // ─── Priced Items Library ─────────────────────────────────────────────────────
 

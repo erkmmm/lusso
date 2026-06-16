@@ -35,7 +35,7 @@ export async function onRequestPost(context) {
     return json(400, { error: 'Invalid JSON in request body' });
   }
 
-  const { quote, customer, appUrl } = body || {};
+  const { quote, customer, appUrl, emailIntro } = body || {};
 
   // ── Validate inputs ───────────────────────────────────────────────────────
   if (!quote)           return json(400, { error: 'Missing quote data' });
@@ -81,9 +81,8 @@ export async function onRequestPost(context) {
         <tr>
           <td style="padding:36px 32px;">
             <p style="margin:0 0 8px;font-size:15px;color:#5E6B6B;">Hi ${firstName},</p>
-            <p style="margin:0 0 24px;font-size:15px;color:#1F2A2A;line-height:1.6;">
-              Thank you for your interest. Please find your quote from Lusso below.
-              Click the button to view the full details online.
+            <p style="margin:0 0 24px;font-size:15px;color:#1F2A2A;line-height:1.6;white-space:pre-line;">
+              ${emailIntro || 'Thank you for your interest. Please find your quote from Lusso below. Click the button to view the full details online.'}
             </p>
 
             <!-- Quote card -->

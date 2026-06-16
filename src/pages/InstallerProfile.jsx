@@ -1,3 +1,5 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
+import { toast } from '../components/ToastContainer';
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
@@ -16,9 +18,10 @@ import StatusBadge from '../components/StatusBadge';
 export default function InstallerProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [installer, setInstaller] = useState(getInstaller(id));
+  const installer = getInstaller(id); // read directly — re-renders pick up fresh data
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState({});
+  useDataRefresh();
 
   if (!installer) return (
     <div className="p-6 text-center">
@@ -35,9 +38,9 @@ export default function InstallerProfile() {
   const handleSave = () => {
     const updated = { ...installer, ...edits };
     saveInstaller(updated);
-    setInstaller(updated);
     setEditing(false);
     setEdits({});
+    toast('Installer saved.');
   };
 
   const toggleService = (svc) => {

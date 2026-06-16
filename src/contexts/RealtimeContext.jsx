@@ -44,6 +44,7 @@ const TABLE_KEY = {
   notifications:          'lusso_notifications',
   calendar_events:        'lusso_calendar_events',
   quote_activity_events:  'lusso_quote_activity_events',
+  tasks:                  'lusso_tasks',
 };
 
 const TABLES = Object.keys(TABLE_KEY);
@@ -66,20 +67,26 @@ function applyChange(table, payload) {
   } else if (payload.eventType === 'UPDATE') {
     const incoming = fromDb(payload.new);
     if (!incoming?.id) return;
+
+    // Soft-delete: treat as removal so the record disappears on every device
+    // without needing a hard DELETE (handles legacy soft-deletes and edge cases).
+    if (incoming.deletedAt || incoming.isDeleted) {
+      LS.set(key, records.filter(r => r.id !== incoming.id));
+      return;
+    }
+
     const idx = records.findIndex(r => r.id === incoming.id);
     if (idx >= 0) {
       // Merge: DB fields from incoming, app-only fields preserved from existing.
-      // App-only fields are camelCase but NOT present in payload.new (not in DB),
-      // so spreading existing first, then incoming keeps them intact.
       const merged = [...records];
       merged[idx] = { ...records[idx], ...incoming };
       LS.set(key, merged);
     } else {
-      // Record not local yet — add it
       LS.set(key, [...records, incoming]);
     }
 
   } else if (payload.eventType === 'DELETE') {
+    // With REPLICA IDENTITY FULL, payload.old has the full row so we can use id.
     const deletedId = payload.old?.id;
     if (!deletedId) return;
     LS.set(key, records.filter(r => r.id !== deletedId));
@@ -131,7 +138,7 @@ export function RealtimeProvider({ children }) {
         channelRef.current = null;
       }
     };
-  }, [user?.id]); // re-subscribe if user changes
+  }, [user?.id]);
 
   return (
     <RealtimeContext.Provider value={{}}>

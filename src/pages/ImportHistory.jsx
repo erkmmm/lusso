@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO, subDays, subMonths, startOfYear } from 'date-fns';
@@ -50,6 +51,7 @@ function getDateRangeStart(value) {
 }
 
 export default function ImportHistory() {
+  useDataRefresh();
   const navigate = useNavigate();
 
   const [filterType,   setFilterType]   = useState('all');

@@ -35,7 +35,7 @@ function toSupabase(profile) {
     id:             profile.id,
     email:          profile.email,
     display_name:   profile.displayName  || '',
-    account_type:   profile.accountType  || 'pending_user',
+    role:           profile.accountType  || 'pending',   // DB column is 'role', not 'account_type'
     status:         profile.status,
     is_employee:    profile.isEmployee   ?? false,
     phone:          profile.phone        || null,

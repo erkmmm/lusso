@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { format, parseISO, isPast } from 'date-fns';
 import { CheckCircle2, XCircle, MapPin, Phone, Mail, AlertCircle, ShieldCheck, Printer } from 'lucide-react';
 import {
@@ -113,14 +113,23 @@ function PrintDocument({ quote, customer, settings, totals }) {
                       <div style={{ fontWeight: '600', fontSize: '10pt', color: '#1a2332', marginBottom: '2px' }}>
                         {item.productNameSnapshot || 'Window Treatment'}
                       </div>
-                      {item.description && (
+                      {item.type === 'Part' && item.description && (
                         <div style={{ fontSize: '9pt', color: '#5a6a7a', lineHeight: '1.4', marginBottom: '2px' }}>{item.description}</div>
                       )}
                       <div style={{ fontSize: '8.5pt', color: '#8a9aaa', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                         {quote.showSizesToClient && item.widthMm && <span>{item.widthMm} × {item.dropMm}mm</span>}
-                        {item.fabricColour && <span>{item.fabricColour}</span>}
-                        {item.control && <span>{item.control}</span>}
-                        {item.customerNotes && <span style={{ fontStyle: 'italic' }}>{item.customerNotes}</span>}
+                        {item.fabricColour      && <span><strong style={{color:'#6b7280'}}>Fabric:</strong> {item.fabricColour}</span>}
+                        {item.control          && <span><strong style={{color:'#6b7280'}}>Control:</strong> {item.control}</span>}
+                        {item.returnSide       && <span><strong style={{color:'#6b7280'}}>Operation side:</strong> {item.returnSide}</span>}
+                        {item.fixing           && <span><strong style={{color:'#6b7280'}}>Fixing:</strong> {item.fixing}</span>}
+                        {item.heading          && <span><strong style={{color:'#6b7280'}}>Heading:</strong> {item.heading}</span>}
+                        {item.hem              && <span><strong style={{color:'#6b7280'}}>Hem:</strong> {item.hem}</span>}
+                        {item.chainColour      && <span><strong style={{color:'#6b7280'}}>Chain:</strong> {item.chainColour}</span>}
+                        {item.trackColour        && <span><strong style={{color:'#6b7280'}}>Track colour:</strong> {item.trackColour}</span>}
+                        {item.baseBarColour      && <span><strong style={{color:'#6b7280'}}>Bottom rail colour:</strong> {item.baseBarColour}</span>}
+                        {item.baseBarType        && <span><strong style={{color:'#6b7280'}}>Bottom rail type:</strong> {item.baseBarType}</span>}
+                        {item.motorSide        && <span><strong style={{color:'#6b7280'}}>Motor side:</strong> {item.motorSide}</span>}
+                        {item.customerNotes    && <span style={{ fontStyle: 'italic' }}>{item.customerNotes}</span>}
                       </div>
                     </div>
                     <div style={{ textAlign: 'center', fontSize: '10pt', color: '#4a5568', paddingTop: '1px' }}>{item.quantity}</div>
@@ -195,12 +204,16 @@ function PrintDocument({ quote, customer, settings, totals }) {
 
 // ─── Main customer-facing page ────────────────────────────────────────────────
 export default function CustomerQuotePage() {
-  const { id }  = useParams();
+  const { id }          = useParams();
+  const [searchParams]  = useSearchParams();
+  // ?preview=1 is appended by all internal staff links — skip tracking & status changes
+  const isStaffPreview  = searchParams.get('preview') === '1';
   const settings = getQuoteSettings();
 
   const [quote, setQuote] = useState(() => {
     const q = getQuote(id);
-    if (q && ['Sent', 'Viewed'].includes(q.status)) markQuoteViewed(id);
+    // Only mark as viewed if a real customer is opening it, not a staff preview
+    if (!isStaffPreview && q && ['Sent', 'Viewed'].includes(q.status)) markQuoteViewed(id);
     return getQuote(id);
   });
   const [selectedOptionals, setSelectedOptionals] = useState([]);
@@ -228,9 +241,10 @@ export default function CustomerQuotePage() {
   }, [id, quote]);
 
   // ── Quote tracking (open, heartbeat) ───────────────────────────────────────
+  // Completely disabled for staff preview — pass null so no RPC is called
   const isFirstOpen = !quote?.firstOpenedAt;
   const { trackAccept, trackDecline } = useQuoteTracking(
-    quote ? id : null,   // don't start tracking until quote is loaded
+    (!isStaffPreview && quote) ? id : null,
     isFirstOpen
   );
 
@@ -252,16 +266,16 @@ export default function CustomerQuotePage() {
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 size={32} className="text-green-500" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Quote Accepted!</h1>
-          <p className="text-slate-600 mb-1">Thank you, {acceptForm.name || 'valued customer'}.</p>
-          <p className="text-slate-500 text-sm">We'll be in touch shortly to arrange next steps.</p>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">You're all confirmed!</h1>
+          <p className="text-slate-700 font-medium mb-1">Thanks, {acceptForm.name || 'valued customer'} — we're thrilled you chose us.</p>
+          <p className="text-slate-500 text-sm">Our team will be in touch within one business day to arrange your deposit and confirm your order.</p>
           <div className="mt-5 p-4 bg-slate-50 rounded-xl text-left text-sm text-slate-600 space-y-1">
             <p><span className="font-medium">Quote:</span> {quote.quoteNumber}</p>
-            <p><span className="font-medium">Accepted by:</span> {acceptForm.name}</p>
+            <p><span className="font-medium">Confirmed by:</span> {acceptForm.name}</p>
             <p><span className="font-medium">Date:</span> {format(new Date(), "d MMM yyyy 'at' h:mm a")}</p>
           </div>
-          <p className="text-xs text-slate-400 mt-4">You can close this page. Our team will contact you soon.</p>
-          <div className="mt-4 text-sm text-slate-500">
+          <p className="text-xs text-slate-400 mt-4">Keep this page as a reference until you hear from us.</p>
+          <div className="mt-4 text-sm text-slate-500 space-y-0.5">
             <p>{settings.businessPhone}</p>
             <p>{settings.businessEmail}</p>
           </div>
@@ -277,8 +291,8 @@ export default function CustomerQuotePage() {
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <XCircle size={32} className="text-slate-400" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Quote Declined</h1>
-          <p className="text-slate-500 text-sm">We're sorry this quote wasn't the right fit. Please reach out if you'd like to discuss further.</p>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Thanks for letting us know.</h1>
+          <p className="text-slate-500 text-sm">We appreciate you taking the time to consider us. If you'd like to revisit the quote or discuss any changes, we're always happy to chat.</p>
           <div className="mt-4 text-sm text-slate-500 space-y-0.5">
             <p>{settings.businessPhone}</p>
             <p>{settings.businessEmail}</p>
@@ -328,6 +342,14 @@ export default function CustomerQuotePage() {
   return (
     <div className="min-h-screen bg-slate-100">
 
+      {/* ── Staff preview banner ─────────────────────────────────────────── */}
+      {isStaffPreview && (
+        <div className="sticky top-0 z-50 w-full bg-amber-500 text-white text-xs font-semibold text-center py-2 px-4 flex items-center justify-center gap-2 no-print">
+          <ShieldCheck size={13} />
+          Staff preview — this is how the customer will see this quote. No tracking or status changes are recorded.
+        </div>
+      )}
+
       {/* ── Print document (hidden on screen) ───────────────────────────── */}
       <PrintDocument quote={quote} customer={customer} settings={settings} totals={totals} />
 
@@ -365,21 +387,30 @@ export default function CustomerQuotePage() {
 
         {/* Status banners */}
         {isExpired && !['Accepted','Declined'].includes(quote.status) && (
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
-            <AlertCircle size={16} className="text-orange-500 flex-shrink-0" />
-            <p className="text-sm text-orange-800">This quote has expired. Please contact us to discuss updated pricing.</p>
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
+            <AlertCircle size={16} className="text-orange-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-orange-800">This quote has expired</p>
+              <p className="text-xs text-orange-700 mt-0.5">Prices may have changed — get in touch and we'll put together an updated quote for you.</p>
+            </div>
           </div>
         )}
         {quote.status === 'Accepted' && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
-            <CheckCircle2 size={16} className="text-green-600 flex-shrink-0" />
-            <p className="text-sm text-green-800 font-medium">This quote has been accepted. Thank you!</p>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+            <CheckCircle2 size={16} className="text-green-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-green-800">Order confirmed — you're all set!</p>
+              <p className="text-xs text-green-700 mt-0.5">We've received your acceptance and our team will be in touch shortly.</p>
+            </div>
           </div>
         )}
         {quote.status === 'Declined' && (
-          <div className="bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-3">
-            <XCircle size={16} className="text-slate-400 flex-shrink-0" />
-            <p className="text-sm text-slate-600">This quote has been declined.</p>
+          <div className="bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-start gap-3">
+            <XCircle size={16} className="text-slate-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-slate-600">You've passed on this one — no worries at all.</p>
+              <p className="text-xs text-slate-500 mt-0.5">If anything changes or you'd like to revisit, we're always happy to chat.</p>
+            </div>
           </div>
         )}
 
@@ -448,7 +479,7 @@ export default function CustomerQuotePage() {
         {/* ── Required line items ──────────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-bold text-slate-800">Your Quote Items</h2>
+            <h2 className="font-bold text-slate-800">What's Included</h2>
             <p className="text-xs text-slate-400">{quote.lineItems.filter(li => li.type === 'Required').length} item{quote.lineItems.filter(li => li.type === 'Required').length !== 1 ? 's' : ''}</p>
           </div>
 
@@ -477,12 +508,21 @@ export default function CustomerQuotePage() {
                       <div className="hidden sm:grid grid-cols-[1fr_52px_80px_80px] gap-3 px-6 py-4 items-start hover:bg-slate-50 transition-colors">
                         <div>
                           <p className="font-semibold text-slate-800 text-sm mb-0.5">{item.productNameSnapshot || 'Window Treatment'}</p>
-                          {item.description && <p className="text-xs text-slate-500 leading-relaxed mb-1">{item.description}</p>}
-                          <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-400">
+                          {item.type === 'Part' && item.description && <p className="text-xs text-slate-500 leading-relaxed mb-1">{item.description}</p>}
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
                             {quote.showSizesToClient && item.widthMm && <span>{item.widthMm} × {item.dropMm}mm</span>}
-                            {item.fabricColour && <span>{item.fabricColour}</span>}
-                            {item.control && <span>{item.control}</span>}
-                            {item.customerNotes && <span className="italic">{item.customerNotes}</span>}
+                            {item.fabricColour       && <span><span className="font-medium text-slate-500">Fabric:</span> {item.fabricColour}</span>}
+                            {item.control            && <span><span className="font-medium text-slate-500">Control:</span> {item.control}</span>}
+                            {item.returnSide         && <span><span className="font-medium text-slate-500">Operation side:</span> {item.returnSide}</span>}
+                            {item.fixing             && <span><span className="font-medium text-slate-500">Fixing:</span> {item.fixing}</span>}
+                            {item.heading            && <span><span className="font-medium text-slate-500">Heading:</span> {item.heading}</span>}
+                            {item.hem                && <span><span className="font-medium text-slate-500">Hem:</span> {item.hem}</span>}
+                            {item.chainColour        && <span><span className="font-medium text-slate-500">Chain:</span> {item.chainColour}</span>}
+                            {item.trackColour        && <span><span className="font-medium text-slate-500">Track colour:</span> {item.trackColour}</span>}
+                            {item.baseBarColour      && <span><span className="font-medium text-slate-500">Bottom rail colour:</span> {item.baseBarColour}</span>}
+                            {item.baseBarType        && <span><span className="font-medium text-slate-500">Bottom rail type:</span> {item.baseBarType}</span>}
+                            {item.motorSide          && <span><span className="font-medium text-slate-500">Motor side:</span> {item.motorSide}</span>}
+                            {item.customerNotes      && <span className="italic">{item.customerNotes}</span>}
                           </div>
                         </div>
                         <div className="text-center text-sm text-slate-600 pt-0.5">{item.quantity}</div>
@@ -493,11 +533,16 @@ export default function CustomerQuotePage() {
                       <div className="sm:hidden px-4 py-4 flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-slate-800 text-sm mb-0.5">{item.productNameSnapshot || 'Window Treatment'}</p>
-                          {item.description && <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>}
-                          <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-400 mt-1">
+                          {item.type === 'Part' && item.description && <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>}
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400 mt-1">
                             {quote.showSizesToClient && item.widthMm && <span>{item.widthMm} × {item.dropMm}mm</span>}
-                            {item.fabricColour && <span>{item.fabricColour}</span>}
-                            {item.quantity > 1 && <span>Qty: {item.quantity}</span>}
+                            {item.fabricColour       && <span><span className="font-medium text-slate-500">Fabric:</span> {item.fabricColour}</span>}
+                            {item.control            && <span><span className="font-medium text-slate-500">Control:</span> {item.control}</span>}
+                            {item.returnSide         && <span><span className="font-medium text-slate-500">Operation side:</span> {item.returnSide}</span>}
+                            {item.fixing             && <span><span className="font-medium text-slate-500">Fixing:</span> {item.fixing}</span>}
+                            {item.heading            && <span><span className="font-medium text-slate-500">Heading:</span> {item.heading}</span>}
+                            {item.hem                && <span><span className="font-medium text-slate-500">Hem:</span> {item.hem}</span>}
+                            {item.quantity > 1       && <span>Qty: {item.quantity}</span>}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
@@ -517,8 +562,8 @@ export default function CustomerQuotePage() {
         {optionalItems.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-amber-100 bg-amber-50">
-              <h2 className="font-bold text-amber-800 text-sm">Optional Add-Ons</h2>
-              <p className="text-xs text-amber-600 mt-0.5">Select any extras you'd like to include</p>
+              <h2 className="font-bold text-amber-800 text-sm">Optional Extras</h2>
+              <p className="text-xs text-amber-600 mt-0.5">A few finishing touches worth considering — tick anything you'd like added to your order</p>
             </div>
             <div className="divide-y divide-slate-100">
               {optionalItems.map(item => {
@@ -530,8 +575,8 @@ export default function CustomerQuotePage() {
                     <input type="checkbox" checked={selected} onChange={() => toggleOptional(item.id)} disabled={isLocked}
                       className="mt-0.5 w-4 h-4 accent-amber-500 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-800 text-sm">{item.productNameSnapshot || item.description}</p>
-                      {item.description && item.productNameSnapshot && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
+                      <p className="font-semibold text-slate-800 text-sm">{item.productNameSnapshot}</p>
+                      {item.type === 'Part' && item.description && item.productNameSnapshot && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
                       {item.location && <p className="text-xs text-slate-400 mt-0.5">{item.location}</p>}
                       {item.customerNotes && <p className="text-xs text-slate-500 italic mt-1">{item.customerNotes}</p>}
                     </div>
@@ -549,8 +594,8 @@ export default function CustomerQuotePage() {
         {Object.entries(choiceGroups).map(([groupId, items]) => (
           <div key={groupId} className="bg-white rounded-2xl shadow-sm border border-purple-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-purple-100 bg-purple-50">
-              <h2 className="font-bold text-purple-800 text-sm">Choose One Option</h2>
-              <p className="text-xs text-purple-600 mt-0.5">Select the option that suits you best</p>
+              <h2 className="font-bold text-purple-800 text-sm">Pick Your Preference</h2>
+              <p className="text-xs text-purple-600 mt-0.5">Choose the option that works best for your space — only one applies to your total</p>
             </div>
             <div className="divide-y divide-slate-100">
               {items.map(item => {
@@ -569,8 +614,8 @@ export default function CustomerQuotePage() {
                     <input type="radio" name={`choice-${groupId}`} checked={isSelected} onChange={handleChoice}
                       className="mt-0.5 w-4 h-4 accent-purple-500 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-800 text-sm">{item.productNameSnapshot || item.description}</p>
-                      {item.description && item.productNameSnapshot && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
+                      <p className="font-semibold text-slate-800 text-sm">{item.productNameSnapshot}</p>
+                      {item.type === 'Part' && item.description && item.productNameSnapshot && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
                       {item.customerNotes && <p className="text-xs text-slate-500 italic mt-1">{item.customerNotes}</p>}
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -587,7 +632,7 @@ export default function CustomerQuotePage() {
         <div className="flex justify-end">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden w-full sm:w-80">
             <div className="bg-sky-50 border-b border-sky-100 px-5 py-3">
-              <h2 className="font-bold text-slate-700 text-sm">Quote Summary</h2>
+              <h2 className="font-bold text-slate-700 text-sm">Your Investment</h2>
             </div>
             <div className="px-5 py-4 space-y-2.5">
               <div className="flex justify-between text-sm text-slate-600">
@@ -601,12 +646,12 @@ export default function CustomerQuotePage() {
                 </div>
               )}
               <div className="flex justify-between text-lg font-bold text-slate-900 pt-2.5 border-t border-slate-200">
-                <span>Total AUD</span>
+                <span>Total inc. GST</span>
                 <span>{fmt(totals.total)}</span>
               </div>
               {totals.deposit > 0 && (
                 <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex justify-between text-sm font-semibold text-amber-700">
-                  <span>Deposit Required</span>
+                  <span>Deposit to Confirm</span>
                   <span>{fmt(totals.deposit)}</span>
                 </div>
               )}
@@ -627,15 +672,16 @@ export default function CustomerQuotePage() {
         {/* ── Accept / Decline ─────────────────────────────────────────── */}
         {!isLocked && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-            <p className="text-sm text-slate-500 text-center mb-4">Ready to proceed? Accept or decline this quote below.</p>
+            <p className="text-sm text-slate-600 font-medium text-center mb-1">Happy with what you see?</p>
+            <p className="text-xs text-slate-400 text-center mb-4">Let us know below and we'll take it from here.</p>
             <div className="flex flex-col sm:flex-row gap-3">
               <button onClick={() => setShowAcceptModal(true)}
                 className="flex-1 flex items-center justify-center gap-2 bg-green-500 hover:bg-green-400 text-white font-bold py-3.5 px-6 rounded-xl transition-colors text-sm">
-                <CheckCircle2 size={17} /> Accept This Quote
+                <CheckCircle2 size={17} /> Yes, Let's Go Ahead
               </button>
               <button onClick={() => setShowDeclineModal(true)}
                 className="flex items-center justify-center gap-2 border border-slate-200 text-slate-500 hover:bg-slate-50 font-medium py-3.5 px-6 rounded-xl transition-colors text-sm">
-                <XCircle size={16} /> Decline
+                <XCircle size={16} /> Not This Time
               </button>
             </div>
           </div>
@@ -648,7 +694,7 @@ export default function CustomerQuotePage() {
             {settings.businessPhone && <span className="flex items-center gap-1.5"><Phone size={11} />{settings.businessPhone}</span>}
             {settings.businessEmail && <span className="flex items-center gap-1.5"><Mail size={11} />{settings.businessEmail}</span>}
           </div>
-          <p className="text-[11px] mt-2 text-slate-300">Quote {quote.quoteNumber} · Generated by Lusso</p>
+          <p className="text-[11px] mt-2 text-slate-300">Quote {quote.quoteNumber}</p>
         </div>
       </main>
 
@@ -661,7 +707,7 @@ export default function CustomerQuotePage() {
                 <CheckCircle2 size={20} className="text-green-600" />
               </div>
               <div>
-                <h2 className="font-bold text-slate-900">Accept Quote</h2>
+                <h2 className="font-bold text-slate-900">Confirm Your Order</h2>
                 <p className="text-xs text-slate-500">{quote.quoteNumber} · {fmt(totals.total)}</p>
               </div>
             </div>
@@ -676,7 +722,7 @@ export default function CustomerQuotePage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email Address</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email Address <span className="font-normal text-slate-400">(optional — for your confirmation copy)</span></label>
                 <input
                   value={acceptForm.email}
                   onChange={e => setAcceptForm(f => ({ ...f, email: e.target.value }))}
@@ -690,23 +736,23 @@ export default function CustomerQuotePage() {
                   onChange={e => setAcceptForm(f => ({ ...f, agreed: e.target.checked }))}
                   className="mt-0.5 w-4 h-4 accent-green-500 flex-shrink-0" />
                 <span className="text-xs text-slate-600 leading-relaxed">
-                  I have read and agree to the terms and conditions. I understand a deposit of{' '}
-                  {quote.depositType === 'Percentage' ? `${quote.depositValue}%` : fmt(quote.depositValue)} is required to proceed.
+                  I've reviewed this quote and agree to proceed on these terms.{totals.deposit > 0 && <> I understand a deposit of{' '}
+                  {quote.depositType === 'Percentage' ? `${quote.depositValue}%` : fmt(quote.depositValue)} ({fmt(totals.deposit)}) will be required to get things moving.</>}
                 </span>
               </label>
               <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2">
                 <ShieldCheck size={13} className="text-green-500 flex-shrink-0" />
-                <span>Your acceptance is recorded with date, time, and name.</span>
+                <span>Your confirmation is securely recorded with your name, date, and time.</span>
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowAcceptModal(false)}
                 className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 py-2.5 rounded-xl text-sm font-medium transition-colors">
-                Cancel
+                Go Back
               </button>
               <button onClick={handleAccept} disabled={!acceptForm.agreed || !acceptForm.name.trim()}
                 className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-white py-2.5 rounded-xl text-sm font-bold transition-colors">
-                Confirm Acceptance
+                Confirm Order
               </button>
             </div>
           </div>
@@ -717,23 +763,23 @@ export default function CustomerQuotePage() {
       {showDeclineModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h2 className="font-bold text-slate-900 mb-1">Decline Quote</h2>
-            <p className="text-sm text-slate-500 mb-4">We're sorry this quote wasn't right. Please let us know if you'd like to share a reason.</p>
+            <h2 className="font-bold text-slate-900 mb-1">No worries — thanks for letting us know</h2>
+            <p className="text-sm text-slate-500 mb-4">If anything wasn't quite right, we'd love to hear it. Your feedback helps us put together better quotes in future.</p>
             <textarea
               value={declineReason}
               onChange={e => setDeclineReason(e.target.value)}
-              placeholder="Optional: reason for declining…"
+              placeholder="Optional: anything you'd like to share? (pricing, timing, product, other)"
               rows={3}
               className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 resize-none mb-4"
             />
             <div className="flex gap-3">
               <button onClick={() => setShowDeclineModal(false)}
                 className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 py-2.5 rounded-xl text-sm font-medium transition-colors">
-                Cancel
+                Go Back
               </button>
               <button onClick={handleDecline}
                 className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-xl text-sm font-bold transition-colors">
-                Decline Quote
+                Submit
               </button>
             </div>
           </div>

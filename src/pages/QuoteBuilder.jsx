@@ -1,5 +1,5 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -16,13 +16,14 @@ import {
   getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
-  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
+  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
   computeQuoteTotals, calcItemPricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
   createQuote, saveQuote, sendQuote, addQuoteActivity,
-  getMeasureSheetByJob, addActivity,
+  getMeasureSheetByJob, addActivity, getMessagePresets,
 } from '../store/data';
 import Card from '../components/Card';
 import { sendQuoteEmail } from '../lib/email';
+import PricedItemPicker from '../components/PricedItemPicker';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ const EMPTY_PART_ITEM = (preset = {}) => ({
   quantity: 1,
   widthMm: '', dropMm: '', fabricColour: '',
   control: '', returnSide: '', motorSide: '', fixing: '',
-  heading: '', hem: '', trackBaseBarColour: '',
+  heading: '', hem: '', trackColour: '', baseBarColour: '', trackBaseBarColour: '',
   baseBarType: '', chainColour: '',
   unitCostPrice: '', labourCost: '', marginPercent: 40,
   manualSellPrice: preset.price || '',
@@ -66,6 +67,7 @@ const EMPTY_LINE_ITEM = () => ({
   location: '',
   productTypeId: '',
   productNameSnapshot: '',
+  pricedItemId: null,
   description: '',
   quantity: 1,
   widthMm: '',
@@ -77,6 +79,8 @@ const EMPTY_LINE_ITEM = () => ({
   fixing: '',
   heading: '',
   hem: '',
+  trackColour: '',
+  baseBarColour: '',
   trackBaseBarColour: '',
   baseBarType: '',
   chainColour: '',
@@ -84,6 +88,7 @@ const EMPTY_LINE_ITEM = () => ({
   labourCost: '',
   marginPercent: 40,
   manualSellPrice: '',
+  pricePerSqm: null,
   supplier: '',
   taxable: true,
   customerNotes: '',
@@ -92,24 +97,32 @@ const EMPTY_LINE_ITEM = () => ({
   measureSheetLineItemId: null,
 });
 
-// genClientDesc: generates a client-safe description from a measure sheet line item
-function genClientDesc(msLi) {
-  const parts = [];
-  if (msLi.fabricColour && msLi.fabricColour !== 'N/A') parts.push(msLi.fabricColour);
-  const productName = msLi.productNameSnapshot || msLi.productType || '';
-  if (productName && productName !== 'N/A') parts.push(productName.toLowerCase());
+/**
+ * buildSalesDescription — generates a concise, client-facing product description.
+ * Shows fabric + product name only. All other specs (fixing, control, heading etc.)
+ * are displayed separately in the specs section — no duplication.
+ */
+function buildSalesDescription(item) {
+  const product = (item.productNameSnapshot || item.productType || '').trim();
+  const fabric  = (item.fabricColour || '').trim();
 
-  const suffixParts = [];
-  if (msLi.heading && msLi.heading !== 'N/A') suffixParts.push(`${msLi.heading} heading`);
-  if (msLi.fixing && msLi.fixing !== 'N/A') suffixParts.push(`${msLi.fixing} fix`);
+  if (!product && !fabric) return '';
 
-  let desc = parts.join(' ');
-  if (suffixParts.length > 0) {
-    desc = desc ? `${desc} with ${suffixParts.join(', ')}` : suffixParts.join(', ');
+  // Combine fabric colour + product name naturally
+  let desc = '';
+  if (fabric && product) {
+    desc = `${fabric} ${product}`;
+  } else {
+    desc = product || fabric;
   }
 
-  if (!desc) return '';
-  return desc.charAt(0).toUpperCase() + desc.slice(1);
+  // Capitalise first letter
+  return desc.charAt(0).toUpperCase() + desc.slice(1) + '.';
+}
+
+// Backwards-compat wrapper used when importing from measure sheets
+function genClientDesc(msLi) {
+  return buildSalesDescription(msLi);
 }
 
 // msItemToQuoteLine: converts a measure sheet line item to a quote line item
@@ -117,6 +130,7 @@ function msItemToQuoteLine(msLi, sortOrder) {
   return {
     ...EMPTY_LINE_ITEM(),
     measureSheetLineItemId: msLi.id,
+    pricedItemId: msLi.pricedItemId || null,
     location: msLi.location || '',
     productTypeId: msLi.productTypeId || '',
     productNameSnapshot: msLi.productNameSnapshot || msLi.productType || '',
@@ -131,8 +145,10 @@ function msItemToQuoteLine(msLi, sortOrder) {
     fixing: msLi.fixing || msLi.mountType || '',
     heading: msLi.heading || '',
     hem: msLi.hem || '',
-    trackBaseBarColour: msLi.trackBaseBarColour || msLi.trackColour || '',
-    baseBarType: msLi.baseBarType || '',
+    trackColour:       msLi.trackColour || '',
+    baseBarColour:     msLi.baseBarColour || '',
+    trackBaseBarColour: msLi.trackBaseBarColour || '',
+    baseBarType:       msLi.baseBarType || '',
     chainColour: msLi.chainColour || '',
     internalNotes: msLi.notes || '',
     sortOrder,
@@ -140,17 +156,34 @@ function msItemToQuoteLine(msLi, sortOrder) {
 }
 
 function SpecSelect({ label, value, onChange, options }) {
+  const hasOther = options.includes('Other');
+  const nonOther = options.filter(o => o !== 'Other');
+  // Show the text input when "Other" is the sentinel OR when the value isn't in the preset list
+  const showInput = hasOther && (value === 'Other' || (value !== '' && !nonOther.includes(value)));
+  const selectVal  = showInput ? 'Other' : (value || '');
+  // The text box shows empty when sentinel is set, otherwise shows the typed value
+  const inputVal   = value === 'Other' ? '' : (showInput ? value : '');
+
   return (
     <div>
       <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
       <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
+        value={selectVal}
+        onChange={e => onChange(e.target.value === 'Other' ? 'Other' : e.target.value)}
         className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
       >
         <option value="">—</option>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
+      {showInput && (
+        <input
+          autoFocus
+          value={inputVal}
+          onChange={e => onChange(e.target.value)}
+          placeholder="Type custom value…"
+          className="mt-1.5 w-full px-2.5 py-1.5 rounded-lg border border-amber-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+        />
+      )}
     </div>
   );
 }
@@ -201,6 +234,7 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
   const [showPricing, setShowPricing] = useState(true);
 
   const set = (field, value) => onChange(idx, field, value);
+
   const pricing = calcItemPricing(item.unitCostPrice, item.labourCost, item.marginPercent, item.manualSellPrice, item.quantity);
   const { finalSell, lineTotal, grossProfit, gpPercent, totalCost, calcSell } = pricing;
 
@@ -330,31 +364,52 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
         <div className="grid grid-cols-2 gap-3">
           <FieldInput label="Location / Room" value={item.location} onChange={v => set('location', v)} placeholder="e.g. Master Bedroom" />
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Product Type</label>
-            <select
-              value={item.productTypeId}
-              onChange={e => {
-                const pt = productTypes.find(p => p.id === e.target.value);
-                set('productTypeId', e.target.value);
-                set('productNameSnapshot', pt?.name || '');
+            <label className="block text-xs font-medium text-slate-500 mb-1">Product</label>
+            <PricedItemPicker
+              value={item.productNameSnapshot}
+              productTypes={productTypes}
+              onSelect={pricedItem => {
+                if (!pricedItem) {
+                  set('pricedItemId', null);
+                  set('productNameSnapshot', '');
+                  set('productTypeId', '');
+                  return;
+                }
+                // Match product type by category
+                const pt = productTypes.find(p =>
+                  p.name.toLowerCase() === (pricedItem.category || '').toLowerCase()
+                );
+                set('pricedItemId',         pricedItem.id);
+                set('productNameSnapshot',  pricedItem.itemName);
+                set('productTypeId',        pt?.id || '');
+                // Pre-fill pricing from library item
+                if (pricedItem.costPrice)     set('unitCostPrice',  pricedItem.costPrice);
+                if (pricedItem.labourCost)    set('labourCost',     pricedItem.labourCost);
+                if (pricedItem.marginPercent) set('marginPercent',  pricedItem.marginPercent);
+                if (pricedItem.supplier)      set('supplier',       pricedItem.supplier);
+                // For size-based pricing: store $/m² rate and clear fixed sell price
+                // so the quote builder can auto-calculate from width × drop
+                if (pricedItem.pricePerSqm) {
+                  set('pricePerSqm',    pricedItem.pricePerSqm);
+                  set('manualSellPrice', ''); // will be calculated from $/m² × area
+                } else if (pricedItem.sellPrice) {
+                  set('pricePerSqm',    null);
+                  set('manualSellPrice', pricedItem.sellPrice);
+                }
               }}
-              className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-            >
-              <option value="">Select product…</option>
-              {productTypes.map(pt => <option key={pt.id} value={pt.id}>{pt.name}</option>)}
-            </select>
+              onSelectType={pt => {
+                if (!pt) {
+                  set('productTypeId', '');
+                  set('productNameSnapshot', '');
+                  set('pricedItemId', null);
+                  return;
+                }
+                set('productTypeId',       pt.id);
+                set('productNameSnapshot', pt.name);
+                set('pricedItemId',        null);
+              }}
+            />
           </div>
-        </div>
-
-        {/* Description */}
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Description (customer-facing)</label>
-          <input
-            value={item.description}
-            onChange={e => set('description', e.target.value)}
-            placeholder="e.g. White linen sheer curtain with wave fold heading, ceiling fix"
-            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-          />
         </div>
 
         {/* Row 2: Qty + Width + Drop + Fabric */}
@@ -383,8 +438,9 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
             <SpecSelect label="Fixing" value={item.fixing} onChange={v => set('fixing', v)} options={FIXING_OPTIONS} />
             <SpecSelect label="Heading" value={item.heading} onChange={v => set('heading', v)} options={HEADING_OPTIONS} />
             <SpecSelect label="Hem" value={item.hem} onChange={v => set('hem', v)} options={HEM_OPTIONS} />
-            <SpecSelect label="Track / Base Bar Colour" value={item.trackBaseBarColour} onChange={v => set('trackBaseBarColour', v)} options={TRACK_COLOUR_OPTIONS} />
-            <SpecSelect label="Base Bar Type" value={item.baseBarType} onChange={v => set('baseBarType', v)} options={BASE_BAR_TYPE_OPTIONS} />
+            <SpecSelect label="Track Colour" value={item.trackColour} onChange={v => set('trackColour', v)} options={TRACK_COLOUR_OPTIONS} />
+            <SpecSelect label="Bottom Rail Colour" value={item.baseBarColour} onChange={v => set('baseBarColour', v)} options={BASE_BAR_COLOUR_OPTIONS} />
+            <SpecSelect label="Bottom Rail Type" value={item.baseBarType} onChange={v => set('baseBarType', v)} options={BASE_BAR_TYPE_OPTIONS} />
             <SpecSelect label="Chain Colour" value={item.chainColour} onChange={v => set('chainColour', v)} options={CHAIN_COLOUR_OPTIONS} />
           </div>
         )}
@@ -424,6 +480,30 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
                 <p className="text-sm font-bold text-amber-700 py-1.5">{fmt(lineTotal)}</p>
               </div>
             </div>
+            {/* $/m² calculator — shown when item has a per-sqm rate and dimensions are set */}
+            {item.pricePerSqm && item.widthMm && item.dropMm && (() => {
+              const w = Number(item.widthMm);
+              const d = Number(item.dropMm);
+              const sqm = w * d / 1_000_000;
+              const calc = Math.round(sqm * Number(item.pricePerSqm) * 100) / 100;
+              return (
+                <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs">
+                  <span className="text-violet-500">$/m² price:</span>
+                  <span className="font-bold text-violet-800">{fmt(calc)}</span>
+                  <span className="text-violet-400 hidden sm:inline">
+                    ({w}mm × {d}mm = {sqm.toFixed(3)}m² × ${item.pricePerSqm}/m²)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => set('manualSellPrice', String(calc))}
+                    className="ml-auto flex-shrink-0 bg-violet-500 hover:bg-violet-400 text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    Use this price
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* GP row */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pt-1.5 border-t border-slate-200">
               <span className="text-xs text-slate-400">Cost: <span className="font-medium text-slate-600">{fmt(totalCost * (Number(item.quantity)||1))}</span></span>
@@ -525,8 +605,8 @@ export default function QuoteBuilder() {
       jobId: job?.id || jobId || '',
       measureSheetId: ms?.id || measureSheetId || '',
       siteAddress: job?.siteAddress || cust?.address || '',
-      introMessage: settings.defaultIntro,
-      termsAndConditions: settings.defaultTerms,
+      introMessage: settings.defaultIntro || getMessagePresets().quoteIntroMessage,
+      termsAndConditions: settings.defaultTerms || getMessagePresets().quoteTerms,
       internalNotes: job?.internalNotes || '',
       salesperson: job?.assignedStaff || '',
       expiryDate: expiry.toISOString().split('T')[0],
@@ -767,7 +847,7 @@ export default function QuoteBuilder() {
         const customer = getCustomer(q.customerId);
         if (customer?.email) {
           try {
-            await sendQuoteEmail(q, customer);
+            await sendQuoteEmail(q, customer, getMessagePresets().quoteEmailIntro);
           } catch (emailErr) {
             console.error('[QuoteBuilder] Email send failed:', emailErr);
             // Still return the quote — save succeeded even if email failed

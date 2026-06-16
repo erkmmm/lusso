@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -49,6 +50,7 @@ const VIEW_MODES = ['Month', 'Week', 'List'];
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function InstallationCalendar() {
+  useDataRefresh();
   const navigate = useNavigate();
   const { displayName } = useProfile() || {};
 

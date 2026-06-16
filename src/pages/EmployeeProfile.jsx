@@ -1,3 +1,4 @@
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -6,6 +7,7 @@ import {
   ToggleLeft, ToggleRight, User, Shield,
 } from 'lucide-react';
 import BackButton from '../components/BackButton';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getEmployeeByIdFromSupabase, updateEmployeeProfile,
   suspendUser, reactivateUser,
@@ -84,6 +86,7 @@ function EditSelect({ label, value, onChange, options }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function EmployeeProfile() {
+  useDataRefresh();
   const { id }   = useParams();
   const navigate = useNavigate();
 
@@ -271,8 +274,15 @@ export default function EmployeeProfile() {
           </div>
           {editing ? (
             <div className="px-5 py-4 space-y-3">
-              <EditInput label="Phone"   value={form.phone}   onChange={setF('phone')}   type="tel" />
-              <EditInput label="Address" value={form.address} onChange={setF('address')} />
+              <EditInput label="Phone" value={form.phone} onChange={setF('phone')} type="tel" />
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Address</label>
+                <AddressAutocomplete
+                  value={form.address || ''}
+                  onChange={v => setF('address')({ target: { value: v } })}
+                  placeholder="Start typing a home address…"
+                />
+              </div>
             </div>
           ) : (
             <div className="px-5 py-2">

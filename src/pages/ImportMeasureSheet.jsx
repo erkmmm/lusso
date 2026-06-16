@@ -9,6 +9,7 @@ import {
   UserCheck, UserPlus,
 } from 'lucide-react';
 import BackButton from '../components/BackButton';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getCustomers, getJobs, saveMeasureSheet, getMeasureSheetsByJob,
   getActiveProductTypes, getCustomer, createJobFromMeasureSheet, JOB_TYPES,
@@ -16,6 +17,51 @@ import {
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
+
+// ─── Product name aliases ─────────────────────────────────────────────────────
+// Maps common abbreviations/shorthands to the canonical product type name.
+// Case-insensitive, matched against the trimmed cell value.
+const PRODUCT_ALIASES = [
+  // Curtain
+  { patterns: ['curt', 'curtain', 'curtains', 'cur', 'ct'],          name: 'Curtain' },
+  // Roller Blind
+  { patterns: ['rb', 'roller blind', 'roller blinds', 'roller', 'rol blind', 'r blind'], name: 'Roller Blind' },
+  // Dual Roller Blind
+  { patterns: ['drb', 'dual roller', 'dual roller blind', 'dual', 'd roller'], name: 'Dual Roller Blind' },
+  // Roman Blind
+  { patterns: ['roman', 'rom', 'roman blind', 'roman blinds'],        name: 'Roman Blind' },
+  // Venetian Blind
+  { patterns: ['ven', 'venetian', 'venetian blind', 'venetians'],     name: 'Venetian Blind' },
+  // Shutter
+  { patterns: ['shut', 'shutter', 'shutters', 'plantation'],         name: 'Shutter' },
+  // Pleated Blind
+  { patterns: ['pleat', 'pleated', 'pleated blind', 'honeycomb'],    name: 'Pleated Blind' },
+  // External Blind
+  { patterns: ['ext', 'external', 'external blind', 'ext blind'],    name: 'External Blind' },
+  // Internal Glidescreen
+  { patterns: ['glide', 'gls', 'glidescreen', 'internal glide'],    name: 'Internal Glidescreen' },
+  // Pelmet
+  { patterns: ['pel', 'pelmet', 'pelmets'],                          name: 'Pelmet' },
+  // Cellular Blind
+  { patterns: ['cell', 'cellular', 'cellular blind', 'cel'],         name: 'Cellular Blind' },
+  // Awning
+  { patterns: ['awn', 'awning', 'awnings'],                          name: 'Awning' },
+];
+
+/**
+ * Normalise a raw product name from the CSV to the canonical product type name.
+ * Returns the matched canonical name, or the original string if no alias matches.
+ */
+function normaliseProductName(raw) {
+  if (!raw) return raw;
+  const lower = raw.trim().toLowerCase();
+  for (const alias of PRODUCT_ALIASES) {
+    if (alias.patterns.some(p => lower === p || lower.startsWith(p + ' ') || lower.endsWith(' ' + p))) {
+      return alias.name;
+    }
+  }
+  return raw; // no alias — return as-is
+}
 
 // ─── Lusso field definitions ──────────────────────────────────────────────────
 const LUSSO_FIELDS = [
@@ -30,7 +76,7 @@ const LUSSO_FIELDS = [
   { key: 'fixing',              label: 'Fixing' },
   { key: 'heading',             label: 'Heading / Roll' },
   { key: 'hem',                 label: 'Hem' },
-  { key: 'trackBaseBarColour',  label: 'Track / Base Bar Colour' },
+  { key: 'trackBaseBarColour',  label: 'Track / Bottom Rail Colour' },
   { key: 'chainColour',         label: 'Chain Colour' },
   { key: 'notes',               label: 'Notes' },
   { key: '__skip',              label: '— Skip this column —' },
@@ -118,7 +164,7 @@ function isSkipRow(row, headerIdx, rowIdx) {
   return false;
 }
 
-function parseRows(rawRows, headerRowIdx, mapping) {
+function parseRows(rawRows, headerRowIdx, mapping, productTypes = []) {
   const items = [];
   for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
     const row = rawRows[i] || [];
@@ -156,6 +202,24 @@ function parseRows(rawRows, headerRowIdx, mapping) {
     });
 
     if (!hasAnyData) continue;
+
+    // Normalise product name abbreviations → canonical names
+    if (item.productNameSnapshot) {
+      item.productNameSnapshot = normaliseProductName(item.productNameSnapshot);
+      // Try to match to an active product type and set productTypeId
+      if (productTypes.length) {
+        const lower = item.productNameSnapshot.toLowerCase();
+        const match = productTypes.find(pt =>
+          pt.name.toLowerCase() === lower ||
+          pt.name.toLowerCase().includes(lower) ||
+          lower.includes(pt.name.toLowerCase())
+        );
+        if (match) {
+          item.productTypeId        = match.id;
+          item.productNameSnapshot  = match.name; // use exact casing from app
+        }
+      }
+    }
 
     // Warnings
     if (!item.location) item._warnings.push('Missing location/room');
@@ -272,6 +336,7 @@ export default function ImportMeasureSheet() {
   // Save
   const [saving,       setSaving]       = useState(false);
   const [savedSheetId, setSavedSheetId] = useState(null);
+  const [savedJobId,   setSavedJobId]   = useState(null);
 
   // ── Customer / Job selection ─────────────────────────────────────────────
   const customerResults = useMemo(() => {
@@ -344,7 +409,8 @@ export default function ImportMeasureSheet() {
 
   // ── Proceed to preview ───────────────────────────────────────────────────
   const handleGoPreview = () => {
-    const rows = parseRows(rawRows, headerRowIdx, mapping);
+    const productTypes = getActiveProductTypes();
+    const rows = parseRows(rawRows, headerRowIdx, mapping, productTypes);
     setPreviewRows(rows);
     const auto = new Set(rows.filter(r => r._warnings.length === 0).map(r => r.id));
     setSelectedRows(auto);
@@ -473,13 +539,16 @@ export default function ImportMeasureSheet() {
       saveMeasureSheet(sheet);
 
       // Create and link a new job if requested
+      let finalJobId = resolvedJobId;
       if (jobMode === 'create' && !resolvedJobId) {
         const sheetForJob = { ...sheet, jobType: newJobType || '' };
         const newJob = createJobFromMeasureSheet(sheetForJob, cust);
         saveMeasureSheet({ ...sheet, jobId: newJob.id, status: 'Submitted' });
+        finalJobId = newJob.id;
       }
 
       setSavedSheetId(sheetId);
+      setSavedJobId(finalJobId);
       setStage('done');
     } catch (err) {
       alert(`Save failed: ${err.message}`);
@@ -682,11 +751,10 @@ export default function ImportMeasureSheet() {
                     </div>
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-medium text-slate-600 mb-1">Address</label>
-                      <input
+                      <AddressAutocomplete
                         value={newCustomerForm.address}
-                        onChange={e => ncf('address', e.target.value)}
-                        placeholder="Street address"
-                        className="w-full border border-slate-200 rounded-xl text-sm px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        onChange={v => ncf('address', v)}
+                        placeholder="Start typing an address…"
                       />
                     </div>
                     <div className="sm:col-span-2">
@@ -1120,9 +1188,17 @@ export default function ImportMeasureSheet() {
             )}
           </div>
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            {savedJobId && (
+              <button
+                onClick={() => navigate(`/jobs/${savedJobId}`)}
+                className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold py-2.5 px-6 rounded-xl transition-colors"
+              >
+                View Job
+              </button>
+            )}
             <button
               onClick={() => navigate(`/measure-sheets/${savedSheetId}`)}
-              className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold py-2.5 px-6 rounded-xl transition-colors"
+              className={`text-sm font-semibold py-2.5 px-6 rounded-xl transition-colors ${savedJobId ? 'border border-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-amber-500 hover:bg-amber-400 text-white'}`}
             >
               View Measure Sheet
             </button>

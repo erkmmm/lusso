@@ -10,15 +10,17 @@ import {
   Copy, Printer,
 } from 'lucide-react';
 import {
-  saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer,
+  saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
   getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
-  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, OPERATION_TYPE_OPTIONS,
+  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, OPERATION_TYPE_OPTIONS,
   BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS, URGENCY_LEVELS, JOB_TYPES,
 } from '../store/data';
 import { syncNow } from '../store/db';
 import Card from '../components/Card';
 import BackButton from '../components/BackButton';
+import PricedItemPicker from '../components/PricedItemPicker';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 // ─── Customer search & duplicate helpers ──────────────────────────────────────
 
@@ -241,14 +243,24 @@ function FormField({ label, error, className = '', children }) {
 }
 
 function SpecSelect({ label, value, onChange, options }) {
+  const hasOther  = options.includes('Other');
+  const nonOther  = options.filter(o => o !== 'Other');
+  const showInput = hasOther && (value === 'Other' || (value !== '' && !nonOther.includes(value)));
+  const selectVal = showInput ? 'Other' : (value || '');
+  const inputVal  = value === 'Other' ? '' : (showInput ? value : '');
   return (
     <div>
       <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)}
+      <select value={selectVal} onChange={e => onChange(e.target.value === 'Other' ? 'Other' : e.target.value)}
         className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
         <option value="">—</option>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
+      {showInput && (
+        <input autoFocus value={inputVal} onChange={e => onChange(e.target.value)}
+          placeholder="Type custom value…"
+          className="mt-1.5 w-full border border-amber-300 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" />
+      )}
     </div>
   );
 }
@@ -277,9 +289,11 @@ const inp = () => 'w-full border border-slate-200 rounded-lg text-sm px-3 py-2 b
 
 const EMPTY_LINE_ITEM = () => ({
   id: uuidv4(), location: '', productTypeId: '', productNameSnapshot: '',
+  pricedItemId: null, // links to price library item
   quantity: 1, widthMm: '', dropMm: '', fabricColour: '', control: '',
   returnSide: '', motorSide: '', fixing: '', heading: '', attachedLining: false,
-  liningFabricColour: '', hem: '', trackBaseBarColour: '', trackType: '',
+  liningFabricColour: '', hem: '', trackColour: '', baseBarColour: '',
+  trackBaseBarColour: '', trackType: '',
   baseBarType: '', chainColour: '', notes: '', sortOrder: 0,
 });
 
@@ -310,6 +324,8 @@ export default function NewMeasureSheet() {
   const prelinkedCustomerId = searchParams.get('customerId') || null;
   const prelinkedJobId      = searchParams.get('jobId')      || null;
   const prelinkedCustomer   = prelinkedCustomerId ? getCustomer(prelinkedCustomerId) : null;
+  // When coming from a job page, read the job so we can pre-fill its details
+  const prelinkedJob        = prelinkedJobId ? getJob(prelinkedJobId) : null;
 
   // ── Sheet state ────────────────────────────────────────────────────────────
   const [sheet, setSheet] = useState(() => {
@@ -326,16 +342,30 @@ export default function NewMeasureSheet() {
         billingAddress: prelinkedCustomer.billingAddress || '',
         preferredContact: prelinkedCustomer.preferredContact || 'Any',
         customerNotes: prelinkedCustomer.notes  || '',
+        // Pre-fill from the linked job so the user doesn't re-enter what's already there
+        ...(prelinkedJob ? {
+          jobType:             prelinkedJob.jobType            || '',
+          urgency:             prelinkedJob.urgency            || 'Normal',
+          accessInstructions:  prelinkedJob.accessInstructions || '',
+          parkingNotes:        prelinkedJob.parkingNotes       || '',
+          siteConditionNotes:  prelinkedJob.siteConditionNotes || '',
+        } : {}),
       };
     }
     return EMPTY_SHEET();
   });
 
+  // In edit mode, lock the customer from the existing sheet record so it
+  // can't be accidentally lost. This takes precedence over prelinkedCustomer.
+  const editCustomer  = isEdit ? getCustomer(sheet.customerId) : null;
+  // Single source of truth: the customer that is "locked in" for this sheet
+  const lockedCustomer = editCustomer || prelinkedCustomer || null;
+
   // ── Customer selection state ───────────────────────────────────────────────
   // customerMode: 'select' | 'new'
   const [customerMode,    setCustomerMode]    = useState('select');
   const [customerSearch,  setCustomerSearch]  = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState(prelinkedCustomer || null);
+  const [selectedCustomer, setSelectedCustomer] = useState(lockedCustomer || null);
   const [duplicates,      setDuplicates]      = useState([]);
   const [duplicateDismissed, setDuplicateDismissed] = useState(false);
 
@@ -437,7 +467,7 @@ export default function NewMeasureSheet() {
   // ── Validation ─────────────────────────────────────────────────────────────
   const validate = () => {
     const e = {};
-    const hasCustomer = prelinkedCustomer || selectedCustomer || (customerMode === 'new');
+    const hasCustomer = lockedCustomer || selectedCustomer || (customerMode === 'new');
 
     if (!hasCustomer) {
       e.customer = 'Please select or create a customer.';
@@ -475,10 +505,10 @@ export default function NewMeasureSheet() {
 
     setSubmitting(true);
     try {
-      // Resolve / create customer
+      // Resolve customer — locked customer takes priority (edit mode or pre-linked)
       let customer;
-      if (prelinkedCustomer) {
-        customer = prelinkedCustomer;
+      if (lockedCustomer) {
+        customer = lockedCustomer;
       } else if (selectedCustomer) {
         customer = selectedCustomer;
       } else {
@@ -493,6 +523,22 @@ export default function NewMeasureSheet() {
         });
       }
 
+      // ── Edit mode: just save the updated sheet, preserve all existing links ──
+      if (isEdit) {
+        const updatedSheet = {
+          ...sheet,
+          customerId: customer.id,
+          // preserve the existing status (don't force back to Draft)
+          status: sheet.status === 'Draft' ? 'Submitted' : sheet.status,
+        };
+        saveMeasureSheet(updatedSheet);
+        await syncNow([{ table: 'measure_sheets', record: updatedSheet }]);
+        // Navigate back to wherever this sheet lives
+        navigate(updatedSheet.jobId ? `/jobs/${updatedSheet.jobId}` : `/measure-sheets/${updatedSheet.id}`);
+        return;
+      }
+
+      // ── New sheet ──────────────────────────────────────────────────────────
       const finalSheet = { ...sheet, customerId: customer.id, status: 'Submitted' };
       saveMeasureSheet(finalSheet);
 
@@ -602,8 +648,8 @@ export default function NewMeasureSheet() {
       )}
 
       {/* ── SECTION 1: Customer ─────────────────────────────────────────────── */}
-      {prelinkedCustomer ? (
-        /* Locked banner — launched from a customer profile */
+      {lockedCustomer ? (
+        /* Locked banner — edit mode OR launched from a customer/job page */
         <Card className="px-5 py-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3">
@@ -612,17 +658,17 @@ export default function NewMeasureSheet() {
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Customer</p>
-                <p className="font-semibold text-slate-900">{prelinkedCustomer.name}</p>
+                <p className="font-semibold text-slate-900">{lockedCustomer.name}</p>
                 <div className="mt-1 space-y-0.5 text-sm text-slate-500">
-                  {prelinkedCustomer.phone && <p>{prelinkedCustomer.phone}</p>}
-                  {prelinkedCustomer.email && <p>{prelinkedCustomer.email}</p>}
-                  {prelinkedCustomer.address && <p>{prelinkedCustomer.address}</p>}
+                  {lockedCustomer.phone && <p>{lockedCustomer.phone}</p>}
+                  {lockedCustomer.email && <p>{lockedCustomer.email}</p>}
+                  {lockedCustomer.address && <p>{lockedCustomer.address}</p>}
                 </div>
               </div>
             </div>
-            <button onClick={() => navigate(`/customers/${prelinkedCustomer.id}`)}
+            <button onClick={() => navigate(`/customers/${lockedCustomer.id}`)}
               className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors flex-shrink-0">
-              <Edit3 size={12} /> Edit Customer
+              <Edit3 size={12} /> View Customer
             </button>
           </div>
         </Card>
@@ -782,12 +828,19 @@ export default function NewMeasureSheet() {
                     </select>
                   </FormField>
                   <FormField label="Site Address *" error={errors.siteAddress} className="sm:col-span-2">
-                    <input value={sheet.siteAddress} onChange={e => setField('siteAddress', e.target.value)}
-                      placeholder="Street address, Suburb STATE Postcode" className={inputCls(errors.siteAddress)} />
+                    <AddressAutocomplete
+                      value={sheet.siteAddress}
+                      onChange={v => setField('siteAddress', v)}
+                      placeholder="Start typing an address…"
+                      inputClassName={errors.siteAddress ? 'border-red-400 bg-red-50' : ''}
+                    />
                   </FormField>
                   <FormField label="Billing Address (if different)" className="sm:col-span-2">
-                    <input value={sheet.billingAddress} onChange={e => setField('billingAddress', e.target.value)}
-                      placeholder="Leave blank if same as site" className={inputCls()} />
+                    <AddressAutocomplete
+                      value={sheet.billingAddress}
+                      onChange={v => setField('billingAddress', v)}
+                      placeholder="Leave blank if same as site address"
+                    />
                   </FormField>
                   <FormField label="Customer Notes" className="sm:col-span-2">
                     <textarea value={sheet.customerNotes} onChange={e => setField('customerNotes', e.target.value)}
@@ -801,50 +854,87 @@ export default function NewMeasureSheet() {
       )}
 
       {/* ── SECTION 2: Job Details ──────────────────────────────────────────── */}
-      <Section title="Job Details" icon={<Briefcase size={15} />} open={openSections.job} onToggle={() => toggleSection('job')}>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <FormField label="Job Type">
-            <select value={sheet.jobType} onChange={e => setField('jobType', e.target.value)} className={inputCls()}>
-              <option value="">Select job type…</option>
-              {JOB_TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Urgency">
-            <select value={sheet.urgency} onChange={e => setField('urgency', e.target.value)} className={inputCls()}>
-              {URGENCY_LEVELS.map(u => <option key={u}>{u}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Measure Date">
-            <input type="date" value={sheet.measureDate} onChange={e => setField('measureDate', e.target.value)} className={inputCls()} />
-          </FormField>
-          <FormField label="Salesperson / Measurer *" error={errors.measurer}>
-            <select value={sheet.measurer} onChange={e => setField('measurer', e.target.value)} className={inputCls(errors.measurer)}>
-              <option value="">Select staff member…</option>
-              {staff.map(s => (
-                <option key={s.id} value={s.fullName || s.displayName}>
-                  {s.fullName || s.displayName}{s.positionTitle ? ` — ${s.positionTitle}` : ''}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Access Instructions" className="sm:col-span-2">
-            <input value={sheet.accessInstructions} onChange={e => setField('accessInstructions', e.target.value)}
-              placeholder="Key location, gate codes, contact on arrival…" className={inputCls()} />
-          </FormField>
-          <FormField label="Parking Notes">
-            <input value={sheet.parkingNotes} onChange={e => setField('parkingNotes', e.target.value)}
-              placeholder="Street parking, driveway available…" className={inputCls()} />
-          </FormField>
-          <FormField label="Site Condition Notes">
-            <input value={sheet.siteConditionNotes} onChange={e => setField('siteConditionNotes', e.target.value)}
-              placeholder="Renovating, new build, pets…" className={inputCls()} />
-          </FormField>
-          <FormField label="Internal Notes" className="sm:col-span-2">
-            <textarea value={sheet.internalNotes} onChange={e => setField('internalNotes', e.target.value)}
-              rows={2} placeholder="Notes for office use only…" className={inputCls() + ' resize-none'} />
-          </FormField>
-        </div>
-      </Section>
+      {prelinkedJob ? (
+        /* Coming from a Job Workspace — show locked job summary + only measure-specific fields */
+        <Card className="overflow-hidden">
+          {/* Locked job info banner */}
+          <div className="px-5 py-3 bg-teal-900/30 border-b border-teal-700/30 flex items-center gap-2">
+            <Briefcase size={14} className="text-teal-400 flex-shrink-0" />
+            <span className="text-xs font-medium text-teal-300">
+              Linked to job&nbsp;
+              <span className="font-bold text-white">{prelinkedJob.jobNumber}</span>
+              {prelinkedJob.jobType ? ` · ${prelinkedJob.jobType}` : ''}
+              {prelinkedJob.urgency && prelinkedJob.urgency !== 'Normal' ? ` · ${prelinkedJob.urgency}` : ''}
+            </span>
+          </div>
+          {/* Measure-specific fields only */}
+          <div className="p-5 grid sm:grid-cols-2 gap-4">
+            <FormField label="Measure Date">
+              <input type="date" value={sheet.measureDate} onChange={e => setField('measureDate', e.target.value)} className={inputCls()} />
+            </FormField>
+            <FormField label="Measurer *" error={errors.measurer}>
+              <select value={sheet.measurer} onChange={e => setField('measurer', e.target.value)} className={inputCls(errors.measurer)}>
+                <option value="">Select staff member…</option>
+                {staff.map(s => (
+                  <option key={s.id} value={s.fullName || s.displayName}>
+                    {s.fullName || s.displayName}{s.positionTitle ? ` — ${s.positionTitle}` : ''}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Internal Notes" className="sm:col-span-2">
+              <textarea value={sheet.internalNotes} onChange={e => setField('internalNotes', e.target.value)}
+                rows={2} placeholder="Notes for this measure visit…" className={inputCls() + ' resize-none'} />
+            </FormField>
+          </div>
+        </Card>
+      ) : (
+        /* Standalone / global create — show full job details form */
+        <Section title="Job Details" icon={<Briefcase size={15} />} open={openSections.job} onToggle={() => toggleSection('job')}>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <FormField label="Job Type">
+              <select value={sheet.jobType} onChange={e => setField('jobType', e.target.value)} className={inputCls()}>
+                <option value="">Select job type…</option>
+                {JOB_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Urgency">
+              <select value={sheet.urgency} onChange={e => setField('urgency', e.target.value)} className={inputCls()}>
+                {URGENCY_LEVELS.map(u => <option key={u}>{u}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Measure Date">
+              <input type="date" value={sheet.measureDate} onChange={e => setField('measureDate', e.target.value)} className={inputCls()} />
+            </FormField>
+            <FormField label="Salesperson / Measurer *" error={errors.measurer}>
+              <select value={sheet.measurer} onChange={e => setField('measurer', e.target.value)} className={inputCls(errors.measurer)}>
+                <option value="">Select staff member…</option>
+                {staff.map(s => (
+                  <option key={s.id} value={s.fullName || s.displayName}>
+                    {s.fullName || s.displayName}{s.positionTitle ? ` — ${s.positionTitle}` : ''}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Access Instructions" className="sm:col-span-2">
+              <input value={sheet.accessInstructions} onChange={e => setField('accessInstructions', e.target.value)}
+                placeholder="Key location, gate codes, contact on arrival…" className={inputCls()} />
+            </FormField>
+            <FormField label="Parking Notes">
+              <input value={sheet.parkingNotes} onChange={e => setField('parkingNotes', e.target.value)}
+                placeholder="Street parking, driveway available…" className={inputCls()} />
+            </FormField>
+            <FormField label="Site Condition Notes">
+              <input value={sheet.siteConditionNotes} onChange={e => setField('siteConditionNotes', e.target.value)}
+                placeholder="Renovating, new build, pets…" className={inputCls()} />
+            </FormField>
+            <FormField label="Internal Notes" className="sm:col-span-2">
+              <textarea value={sheet.internalNotes} onChange={e => setField('internalNotes', e.target.value)}
+                rows={2} placeholder="Notes for office use only…" className={inputCls() + ' resize-none'} />
+            </FormField>
+          </div>
+        </Section>
+      )}
 
       {/* ── SECTION 3: Line Items ───────────────────────────────────────────── */}
       <Section
@@ -873,16 +963,37 @@ export default function NewMeasureSheet() {
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Product *</label>
-                        <select value={item.productTypeId}
-                          onChange={e => {
-                            const pt = productTypes.find(p => p.id === e.target.value);
-                            setLineItem(idx, 'productTypeId', e.target.value);
-                            setLineItem(idx, 'productNameSnapshot', pt?.name || '');
+                        <PricedItemPicker
+                          value={item.productNameSnapshot}
+                          productTypes={productTypes}
+                          error={!!errors[`item_${idx}_productType`]}
+                          onSelect={pricedItem => {
+                            if (!pricedItem) {
+                              setLineItem(idx, 'pricedItemId', null);
+                              setLineItem(idx, 'productNameSnapshot', '');
+                              setLineItem(idx, 'productTypeId', '');
+                              return;
+                            }
+                            // Match to a product type by category name
+                            const pt = productTypes.find(p =>
+                              p.name.toLowerCase() === (pricedItem.category || '').toLowerCase()
+                            );
+                            setLineItem(idx, 'pricedItemId', pricedItem.id);
+                            setLineItem(idx, 'productNameSnapshot', pricedItem.itemName);
+                            setLineItem(idx, 'productTypeId', pt?.id || '');
                           }}
-                          className={inp() + (errors[`item_${idx}_productType`] ? ' border-red-300 ring-1 ring-red-300' : '')}>
-                          <option value="">Select product…</option>
-                          {productTypes.map(pt => <option key={pt.id} value={pt.id}>{pt.name}</option>)}
-                        </select>
+                          onSelectType={pt => {
+                            if (!pt) {
+                              setLineItem(idx, 'productTypeId', '');
+                              setLineItem(idx, 'productNameSnapshot', '');
+                              setLineItem(idx, 'pricedItemId', null);
+                              return;
+                            }
+                            setLineItem(idx, 'productTypeId', pt.id);
+                            setLineItem(idx, 'productNameSnapshot', pt.name);
+                            setLineItem(idx, 'pricedItemId', null);
+                          }}
+                        />
                       </div>
                     </div>
                     <button onClick={() => copyLineItem(idx)}
@@ -937,10 +1048,11 @@ export default function NewMeasureSheet() {
                       <SpecSelect label="Fixing"               value={item.fixing}            onChange={v => setLineItem(idx,'fixing',v)}            options={FIXING_OPTIONS} />
                       <SpecSelect label="Heading"              value={item.heading}           onChange={v => setLineItem(idx,'heading',v)}           options={HEADING_OPTIONS} />
                       <SpecSelect label="Hem"                  value={item.hem}               onChange={v => setLineItem(idx,'hem',v)}               options={HEM_OPTIONS} />
-                      <SpecSelect label="Track / Base Bar Colour" value={item.trackBaseBarColour} onChange={v => setLineItem(idx,'trackBaseBarColour',v)} options={TRACK_COLOUR_OPTIONS} />
-                      <SpecSelect label="Operation Type"       value={item.trackType}         onChange={v => setLineItem(idx,'trackType',v)}         options={OPERATION_TYPE_OPTIONS} />
-                      <SpecSelect label="Base Bar Type"        value={item.baseBarType}       onChange={v => setLineItem(idx,'baseBarType',v)}       options={BASE_BAR_TYPE_OPTIONS} />
-                      <SpecSelect label="Chain Colour"         value={item.chainColour}       onChange={v => setLineItem(idx,'chainColour',v)}       options={CHAIN_COLOUR_OPTIONS} />
+                      <SpecSelect label="Track Colour"     value={item.trackColour}   onChange={v => setLineItem(idx,'trackColour',v)}   options={TRACK_COLOUR_OPTIONS} />
+                      <SpecSelect label="Bottom Rail Colour"  value={item.baseBarColour} onChange={v => setLineItem(idx,'baseBarColour',v)} options={BASE_BAR_COLOUR_OPTIONS} />
+                      <SpecSelect label="Operation Type"   value={item.trackType}     onChange={v => setLineItem(idx,'trackType',v)}     options={OPERATION_TYPE_OPTIONS} />
+                      <SpecSelect label="Bottom Rail Type"    value={item.baseBarType}   onChange={v => setLineItem(idx,'baseBarType',v)}   options={BASE_BAR_TYPE_OPTIONS} />
+                      <SpecSelect label="Chain Colour"     value={item.chainColour}   onChange={v => setLineItem(idx,'chainColour',v)}   options={CHAIN_COLOUR_OPTIONS} />
 
                       <div className="sm:col-span-3">
                         <label className="block text-xs font-medium text-slate-500 mb-1.5">Attached Lining</label>
@@ -993,15 +1105,25 @@ export default function NewMeasureSheet() {
           </p>
         )}
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <button onClick={handleSaveDraft} disabled={submitting}
-            className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50">
-            <Save size={15} /> Save Draft
-          </button>
-          <div className="flex items-center gap-2 min-w-0">
+          {/* In edit mode there's no "draft" concept — sheet is already saved */}
+          {!isEdit && (
+            <button onClick={handleSaveDraft} disabled={submitting}
+              className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50">
+              <Save size={15} /> Save Draft
+            </button>
+          )}
+          <div className="flex items-center gap-2 min-w-0 ml-auto">
             {savedAt && <span className="text-xs text-slate-400 hidden sm:block whitespace-nowrap">Saved {savedAt.toLocaleTimeString()}</span>}
             <button onClick={handleSubmit} disabled={submitting}
               className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors whitespace-nowrap">
-              {submitting ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Submitting…</> : <><Send size={15} /><span className="hidden sm:inline">Submit &amp; Create Job</span><span className="sm:hidden">Submit</span></>}
+              {submitting
+                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Saving…</>
+                : isEdit
+                  ? <><Save size={15} /> Save Changes</>
+                  : prelinkedJobId
+                    ? <><Send size={15} /> Submit</>
+                    : <><Send size={15} /><span className="hidden sm:inline">Submit &amp; Create Job</span><span className="sm:hidden">Submit</span></>
+              }
             </button>
           </div>
         </div>

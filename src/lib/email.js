@@ -61,11 +61,12 @@ async function post(path, body) {
  * @param {object} quote    - full quote object
  * @param {object} customer - customer object (must have .email)
  */
-export async function sendQuoteEmail(quote, customer) {
+export async function sendQuoteEmail(quote, customer, emailIntro) {
   return post('send-quote', {
     quote,
     customer,
     appUrl: window.location.origin,
+    emailIntro,
   });
 }
 
