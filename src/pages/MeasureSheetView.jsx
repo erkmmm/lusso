@@ -1,8 +1,8 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState, Fragment } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, ChevronDown, ChevronRight } from 'lucide-react';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link } from 'lucide-react';
 import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, createJobFromMeasureSheet } from '../store/data';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -524,102 +524,72 @@ export default function MeasureSheetView() {
   );
 }
 
-// Full measure-sheet table (matches the Job-profile preview look). Rows with
-// extra specs / notes expand to reveal them so no detail is lost.
+// Full measure-sheet schedule. Every field is its own column (spec columns
+// only appear when at least one item has a value), so all data is visible
+// without expanding rows. Wide sheets scroll horizontally.
 function MeasureItemsTable({ items = [] }) {
-  const [open, setOpen] = useState({});
-  const toggle = (i) => setOpen(o => ({ ...o, [i]: !o[i] }));
-
   if (!items.length) {
     return <p className="px-5 py-8 text-center text-sm text-slate-400">No items on this sheet.</p>;
   }
 
-  const HEADERS = [
-    { label: '#',        align: 'text-left',   w: 'w-10' },
-    { label: 'Location', align: 'text-left' },
-    { label: 'Product',  align: 'text-left' },
-    { label: 'W',        align: 'text-right' },
-    { label: 'D',        align: 'text-right' },
-    { label: 'Qty',      align: 'text-center' },
-    { label: 'Fabric',   align: 'text-left' },
-    { label: 'Control',  align: 'text-left' },
-    { label: '',         align: 'text-right',  w: 'w-9' },
+  // Always-present base columns.
+  const baseCols = [
+    { header: '#',        align: 'text-left',   tone: 'text-slate-400',            cell: (it, i) => i + 1 },
+    { header: 'Location', align: 'text-left',   tone: 'font-medium text-slate-800', cell: it => it.location },
+    { header: 'Product',  align: 'text-left',   tone: 'text-slate-600',            cell: it => it.productNameSnapshot || it.productType },
+    { header: 'W',        align: 'text-right',  tone: 'text-slate-600', mono: true, cell: it => it.widthMm || it.width },
+    { header: 'D',        align: 'text-right',  tone: 'text-slate-600', mono: true, cell: it => it.dropMm || it.drop },
+    { header: 'Qty',      align: 'text-center', tone: 'text-slate-600',            cell: it => it.quantity || 1 },
   ];
+
+  // Spec columns — included only when some item populates them.
+  const specCols = [
+    { header: 'Fabric',             cell: it => it.fabricColour },
+    { header: 'Control',            cell: it => it.control },
+    { header: 'Return',             cell: it => it.returnSide || it.controlSide },
+    { header: 'Motor Side',         cell: it => it.motorSide },
+    { header: 'Fixing',             cell: it => it.fixing || it.mountType },
+    { header: 'Heading',            cell: it => it.heading },
+    { header: 'Hem',                cell: it => it.hem },
+    { header: 'Track Colour',       cell: it => it.trackColour || it.trackBaseBarColour },
+    { header: 'Bottom Rail Colour', cell: it => it.baseBarColour },
+    { header: 'Operation Type',     cell: it => it.trackType },
+    { header: 'Bottom Rail Type',   cell: it => it.baseBarType },
+    { header: 'Chain Colour',       cell: it => it.chainColour },
+    { header: 'Lining',             cell: it => it.attachedLining ? (it.liningFabricColour ? `Yes — ${it.liningFabricColour}` : 'Yes') : null },
+    { header: 'Notes', wrap: true,  cell: it => [it.notes || it.installationNotes, it.additionalNotes].filter(Boolean).join(' · ') },
+  ].map(c => ({ align: 'text-left', tone: 'text-slate-600', ...c }))
+   .filter(c => items.some(it => { const v = c.cell(it); return v != null && v !== ''; }));
+
+  const cols = [...baseCols, ...specCols];
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-xs">
+      <table className="min-w-full text-xs">
         <thead>
           <tr className="bg-slate-50 border-b border-slate-100">
-            {HEADERS.map((h, idx) => (
-              <th key={idx} className={`px-3 py-2.5 font-medium text-slate-500 whitespace-nowrap ${h.align} ${h.w || ''}`}>{h.label}</th>
+            {cols.map((c, ci) => (
+              <th key={ci} className={`px-3 py-2.5 font-medium text-slate-500 whitespace-nowrap ${c.align}`}>{c.header}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50">
-          {items.map((item, i) => {
-            const productName = item.productNameSnapshot || item.productType || '—';
-            const width = item.widthMm || item.width;
-            const drop  = item.dropMm  || item.drop;
-            const specs = [
-              ['Return', item.returnSide || item.controlSide],
-              ['Motor Side', item.motorSide],
-              ['Fixing', item.fixing || item.mountType],
-              ['Heading', item.heading],
-              ['Hem', item.hem],
-              ['Track Colour', item.trackColour || item.trackBaseBarColour],
-              ['Bottom Rail Colour', item.baseBarColour],
-              ['Operation Type', item.trackType],
-              ['Bottom Rail Type', item.baseBarType],
-              ['Chain Colour', item.chainColour],
-              ['Attached Lining', item.attachedLining ? 'Yes' : null],
-              ['Lining Fabric', item.attachedLining && item.liningFabricColour ? item.liningFabricColour : null],
-            ].filter(([, v]) => v);
-            const notes = item.notes || item.installationNotes || item.additionalNotes;
-            const hasDetail = specs.length > 0 || !!notes;
-            const isOpen = !!open[i];
-            return (
-              <Fragment key={item.id || i}>
-                <tr
-                  className={`hover:bg-slate-50 transition-colors ${hasDetail ? 'cursor-pointer' : ''} ${isOpen ? 'bg-slate-50' : ''}`}
-                  onClick={hasDetail ? () => toggle(i) : undefined}
-                >
-                  <td className="px-3 py-2.5 text-slate-400">{i + 1}</td>
-                  <td className="px-3 py-2.5 font-medium text-slate-800 whitespace-nowrap">{item.location || '—'}</td>
-                  <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{productName}</td>
-                  <td className="px-3 py-2.5 text-slate-600 font-mono text-right">{width || '—'}</td>
-                  <td className="px-3 py-2.5 text-slate-600 font-mono text-right">{drop || '—'}</td>
-                  <td className="px-3 py-2.5 text-slate-600 text-center">{item.quantity || 1}</td>
-                  <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.fabricColour || '—'}</td>
-                  <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.control || '—'}</td>
-                  <td className="px-3 py-2.5 text-right text-slate-400">
-                    {hasDetail && (isOpen ? <ChevronDown size={14} className="inline" /> : <ChevronRight size={14} className="inline" />)}
+          {items.map((item, i) => (
+            <tr key={item.id || i} className="hover:bg-slate-50 transition-colors">
+              {cols.map((c, ci) => {
+                const v = c.cell(item, i);
+                const display = (v === null || v === undefined || v === '') ? '—' : v;
+                return (
+                  <td
+                    key={ci}
+                    className={`px-3 py-2.5 align-top ${c.align} ${c.tone} ${c.mono ? 'font-mono' : ''} ${c.wrap ? 'whitespace-pre-wrap min-w-[180px] max-w-[280px]' : 'whitespace-nowrap'}`}
+                  >
+                    {display}
                   </td>
-                </tr>
-                {hasDetail && isOpen && (
-                  <tr className="bg-slate-50/60">
-                    <td colSpan={HEADERS.length} className="px-4 pb-3.5 pt-1">
-                      {specs.length > 0 && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
-                          {specs.map(([label, val]) => (
-                            <div key={label}>
-                              <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
-                              <dd className="text-xs text-slate-700">{val}</dd>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {notes && (
-                        <p className="text-xs text-slate-500 mt-2.5">
-                          <span className="font-medium">Notes:</span> {item.notes || item.installationNotes}{item.additionalNotes ? ` · ${item.additionalNotes}` : ''}
-                        </p>
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            );
-          })}
+                );
+              })}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
