@@ -1,31 +1,34 @@
 @import "tailwindcss";
 
-/* ── Lusso Brand Theme — warm taupe & cream ───────────────────────────
-   Primary: #644A40 (taupe-brown). Secondary: #FFDFB5 (cream).
-   Dark-mode brand accent: #FFE0C2 (light cream). Neutrals are warm.
+/* ── Lusso Brand Theme ────────────────────────────────────────────────
+   Two switchable colour themes, each with light + dark:
+     • Taupe (default)  — warm taupe-brown + cream
+     • Green (.theme-green) — forest green + cream
+   The brand ramp, sidebar, neutrals and dark-mode accents all flow through
+   CSS variables defined per theme below, so a single class on <html>
+   (theme-green) reskins the whole app at runtime.
 ────────────────────────────────────────────────────────────────────── */
 @theme {
-  /* Brand ramp: Tailwind `amber` is overridden to a warm taupe-brown so the
-     ~800 amber-* utilities across the app render on-brand (500 = primary). */
-  --color-amber-50:  #F4EEE9;
-  --color-amber-100: #E8DACE;
-  --color-amber-200: #D5BCA8;
-  --color-amber-300: #BD9C83;
-  --color-amber-400: #94715C;
-  --color-amber-500: #644A40;
-  --color-amber-600: #543D34;
-  --color-amber-700: #443128;
-  --color-amber-800: #342620;
-  --color-amber-900: #281C17;
-  --color-amber-950: #17100C;
+  /* Brand ramp: Tailwind `amber` → the active theme's brand ramp (var-driven,
+     so the ~800 amber-* utilities reskin when the theme class changes). */
+  --color-amber-50:  var(--brand-50);
+  --color-amber-100: var(--brand-100);
+  --color-amber-200: var(--brand-200);
+  --color-amber-300: var(--brand-300);
+  --color-amber-400: var(--brand-400);
+  --color-amber-500: var(--brand-500);
+  --color-amber-600: var(--brand-600);
+  --color-amber-700: var(--brand-700);
+  --color-amber-800: var(--brand-800);
+  --color-amber-900: var(--brand-900);
+  --color-amber-950: var(--brand-950);
 
-  /* Sidebar — kept dark for contrast & brand identity, recolored from teal
-     to a warm espresso charcoal that complements the taupe/cream palette. */
-  --color-sidebar:        #1C1A17;
-  --color-sidebar-hover:  #2A2521;
-  --color-sidebar-active: #3B322B;
-  --color-sidebar-border: #2C2620;
-  --color-sidebar-text:   #CBBFB3;
+  /* Sidebar — always dark, recolored per theme. */
+  --color-sidebar:        var(--sb-bg);
+  --color-sidebar-hover:  var(--sb-hover);
+  --color-sidebar-active: var(--sb-active);
+  --color-sidebar-border: var(--sb-border);
+  --color-sidebar-text:   var(--sb-text);
 }
 
 /* ── Global mobile overflow lock ─────────────────────────────────────────── */
@@ -35,10 +38,32 @@ html, body {
 }
 
 @layer base {
-  /* Semantic palette tokens (light). Dark variants flip under `.dark` below;
-     `@theme inline` maps Tailwind utilities (bg-primary, text-foreground, …)
-     onto these so they respond to the theme automatically. */
+  /* ════ TAUPE — light (default) ════ */
   :root {
+    --brand-50:  #F4EEE9;
+    --brand-100: #E8DACE;
+    --brand-200: #D5BCA8;
+    --brand-300: #BD9C83;
+    --brand-400: #94715C;
+    --brand-500: #644A40;
+    --brand-600: #543D34;
+    --brand-700: #443128;
+    --brand-800: #342620;
+    --brand-900: #281C17;
+    --brand-950: #17100C;
+    --brand-bright:     #644A40;          /* dark-mode text accent (set in .dark) */
+    --brand-bright-rgb: 100 74 64;
+
+    --sb-bg:     #1C1A17;
+    --sb-hover:  #2A2521;
+    --sb-active: #3B322B;
+    --sb-border: #2C2620;
+    --sb-text:   #CBBFB3;
+    --sb-ring:   #C8A96A;
+
+    --ring-color: #644A40;
+
+    /* semantic tokens (light) */
     --card:                  #fcfcfc;
     --card-foreground:       #202020;
     --popover:               #fcfcfc;
@@ -60,27 +85,32 @@ html, body {
     --foreground:            #202020;
     --radius:                0.5rem;
 
-    /* Legacy --lusso-* vars, recolored onto the new palette */
-    --lusso-primary:          #644A40;
-    --lusso-primary-dark:     #543D34;
-    --lusso-primary-light:    #94715C;
-    --lusso-primary-soft:     #F4EEE9;
-    --lusso-accent:           #FFDFB5;
-    --lusso-background:       #F9F9F9;
-    --lusso-surface:          #FCFCFC;
-    --lusso-border:           #D8D8D8;
-    --lusso-text-primary:     #202020;
-    --lusso-text-secondary:   #646464;
-    --lusso-text-muted:       #8A8A8A;
-    --lusso-success:          #2F7D5B;
-    --lusso-warning:          #C9832B;
-    --lusso-danger:           #E54D2E;
-    --lusso-info:             #2A6B8F;
+    --lusso-background:   #F9F9F9;
+    --lusso-surface:      #FCFCFC;
+    --lusso-text-primary: #202020;
   }
 
-  /* Dark theme: warm near-blacks, cream brand accent. Sidebar tokens are
-     pinned dark (see @theme) so the sidebar stays dark in both modes. */
+  /* ════ TAUPE — dark ════ */
   .dark {
+    --brand-bright:     #FFE0C2;
+    --brand-bright-rgb: 255 224 194;
+
+    --surf-page:     #111111;
+    --surf-page-rgb: 17 17 17;
+    --surf-card:     #191919;
+    --surf-muted:    #222222;
+    --surf-hover:    #201d19;
+    --bord-strong:   #38332d;
+    --bord-default:  #2c2823;
+    --bord-subtle:   #2a2520;
+    --bord-faint:    #201d19;
+    --txt-primary:   #f4f4f4;
+    --txt-secondary: #d4d4d4;
+    --txt-muted:     #b4b4b4;
+    --txt-faint:     #9a9a9a;
+    --txt-faintest:  #6f6f6f;
+    --input-dark:    #484848;
+
     --card:                  #191919;
     --card-foreground:       #eeeeee;
     --popover:               #191919;
@@ -93,25 +123,109 @@ html, body {
     --muted-foreground:      #b4b4b4;
     --accent:                #2a2a2a;
     --accent-foreground:     #eeeeee;
-    --destructive:           #e54d2e;
-    --destructive-foreground:#ffffff;
     --border:                #2c2823;
     --input:                 #484848;
     --ring:                  #ffe0c2;
     --background:            #111111;
     --foreground:            #eeeeee;
 
-    --lusso-primary:          #FFE0C2;
-    --lusso-primary-dark:     #FFDFB5;
-    --lusso-primary-light:    #FFE0C2;
-    --lusso-primary-soft:     #393028;
-    --lusso-accent:           #FFE0C2;
-    --lusso-background:       #111111;
-    --lusso-surface:          #191919;
-    --lusso-border:           #2C2823;
-    --lusso-text-primary:     #EEEEEE;
-    --lusso-text-secondary:   #B4B4B4;
-    --lusso-text-muted:       #8A8A8A;
+    --lusso-background:   #111111;
+    --lusso-surface:      #191919;
+    --lusso-text-primary: #EEEEEE;
+  }
+
+  /* ════ GREEN — light ════ */
+  .theme-green {
+    --brand-50:  #E8F5E9;
+    --brand-100: #C8E6C9;
+    --brand-200: #A5D6A7;
+    --brand-300: #81C784;
+    --brand-400: #4CAF50;
+    --brand-500: #2E7D32;
+    --brand-600: #276A2A;
+    --brand-700: #1B5E20;
+    --brand-800: #154A19;
+    --brand-900: #0E3411;
+    --brand-950: #0A1F0C;
+    --brand-bright:     #2E7D32;
+    --brand-bright-rgb: 46 125 50;
+
+    --sb-bg:     #15251A;
+    --sb-hover:  #1F3325;
+    --sb-active: #2A4530;
+    --sb-border: #25382A;
+    --sb-text:   #C5D6C7;
+    --sb-ring:   #81C784;
+
+    --ring-color: #2E7D32;
+
+    --card:                  #f8f5f0;
+    --card-foreground:       #3e2723;
+    --popover:               #f8f5f0;
+    --popover-foreground:    #3e2723;
+    --primary:               #2e7d32;
+    --primary-foreground:    #ffffff;
+    --secondary:             #e8f5e9;
+    --secondary-foreground:  #1b5e20;
+    --muted:                 #f0e9e0;
+    --muted-foreground:      #6d4c41;
+    --accent:                #c8e6c9;
+    --accent-foreground:     #1b5e20;
+    --destructive:           #c62828;
+    --destructive-foreground:#ffffff;
+    --border:                #e0d6c9;
+    --input:                 #e0d6c9;
+    --ring:                  #2e7d32;
+    --background:            #f8f5f0;
+    --foreground:            #3e2723;
+
+    --lusso-background:   #F8F5F0;
+    --lusso-surface:      #F8F5F0;
+    --lusso-text-primary: #3E2723;
+  }
+
+  /* ════ GREEN — dark ════ (higher specificity wins over .dark) */
+  .theme-green.dark {
+    --brand-bright:     #81C784;
+    --brand-bright-rgb: 129 199 132;
+
+    --surf-page:     #1c2a1f;
+    --surf-page-rgb: 28 42 31;
+    --surf-card:     #2d3a2e;
+    --surf-muted:    #2d3a2e;
+    --surf-hover:    #233528;
+    --bord-strong:   #46553f;
+    --bord-default:  #3e4a3d;
+    --bord-subtle:   #34402f;
+    --bord-faint:    #28321f;
+    --txt-primary:   #f0ebe5;
+    --txt-secondary: #d7cfc4;
+    --txt-muted:     #d7cfc4;
+    --txt-faint:     #b0a89c;
+    --txt-faintest:  #7d8a76;
+    --input-dark:    #3e4a3d;
+
+    --card:                  #2d3a2e;
+    --card-foreground:       #f0ebe5;
+    --popover:               #2d3a2e;
+    --popover-foreground:    #f0ebe5;
+    --primary:               #4caf50;
+    --primary-foreground:    #0a1f0c;
+    --secondary:             #3e4a3d;
+    --secondary-foreground:  #d7e0d6;
+    --muted:                 #2d3a2e;
+    --muted-foreground:      #d7cfc4;
+    --accent:                #388e3c;
+    --accent-foreground:     #f0ebe5;
+    --border:                #3e4a3d;
+    --input:                 #3e4a3d;
+    --ring:                  #4caf50;
+    --background:            #1c2a1f;
+    --foreground:            #f0ebe5;
+
+    --lusso-background:   #1c2a1f;
+    --lusso-surface:      #2d3a2e;
+    --lusso-text-primary: #f0ebe5;
   }
 
   * {
@@ -137,7 +251,7 @@ html, body {
   }
 }
 
-/* Map semantic tokens onto Tailwind utilities (inline = responds to .dark). */
+/* Map semantic tokens onto Tailwind utilities (inline = responds to theme). */
 @theme inline {
   --color-card:                  var(--card);
   --color-card-foreground:       var(--card-foreground);
@@ -166,33 +280,31 @@ html, body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border: 1px solid #d8d8d8;
+  border: 1px solid var(--input);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
-  color: #202020;
-  background-color: #fcfcfc;
+  color: var(--foreground);
+  background-color: var(--card);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-base:focus-visible {
-  border-color: #644A40;
-  box-shadow: 0 0 0 2px rgb(100 74 64 / 0.25);
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 2px rgb(var(--brand-bright-rgb) / 0.25);
 }
 
 /* ── Global focus-visible ring ───────────────────────────────────────── */
-/* Keyboard-only focus rings — invisible on mouse, visible on keyboard nav */
 :focus-visible {
-  outline: 2px solid #644A40;
+  outline: 2px solid var(--ring-color);
   outline-offset: 2px;
 }
 
-/* Sidebar is always dark — use a warm cream ring for contrast */
+/* Sidebar is always dark — use the theme's light ring for contrast */
 aside :focus-visible {
-  outline-color: #C8A96A;
+  outline-color: var(--sb-ring);
 }
 
-/* Suppress browser default outline only where we apply our own */
 button:focus:not(:focus-visible),
 a:focus:not(:focus-visible),
 input:focus:not(:focus-visible),
@@ -202,29 +314,27 @@ textarea:focus:not(:focus-visible) {
 }
 
 /* ── Brand-literal remap (light mode) ─────────────────────────────────────
-   Some components use hardcoded Tailwind `teal` (primary action buttons) and
-   `violet` (Inbox accent) classes that aren't covered by the amber ramp.
-   Remap them onto the taupe-brown brand so the whole app is one palette. */
-.bg-teal-600   { background-color: #644A40; }
-.bg-teal-700   { background-color: #543D34; }
-.hover\:bg-teal-600:hover { background-color: #543D34; }
-.hover\:bg-teal-700:hover { background-color: #443128; }
-.text-teal-600 { color: #644A40; }
-.text-teal-700 { color: #543D34; }
-.border-teal-600 { border-color: #644A40; }
-.bg-teal-50    { background-color: #F4EEE9; }
-.text-teal-700.bg-teal-50 { color: #543D34; }
-.border-teal-200 { border-color: #D5BCA8; }
+   Components using hardcoded Tailwind `teal` (primary buttons) and `violet`
+   (Inbox accent) are remapped onto the active brand so the app is one palette. */
+.bg-teal-600   { background-color: var(--brand-500); }
+.bg-teal-700   { background-color: var(--brand-600); }
+.hover\:bg-teal-600:hover { background-color: var(--brand-600); }
+.hover\:bg-teal-700:hover { background-color: var(--brand-700); }
+.text-teal-600 { color: var(--brand-500); }
+.text-teal-700 { color: var(--brand-600); }
+.border-teal-600 { border-color: var(--brand-500); }
+.bg-teal-50    { background-color: var(--brand-50); }
+.border-teal-200 { border-color: var(--brand-200); }
 
-.bg-violet-500 { background-color: #644A40; }
-.bg-violet-600 { background-color: #543D34; }
-.hover\:bg-violet-600:hover { background-color: #543D34; }
-.text-violet-500 { color: #644A40; }
-.text-violet-600 { color: #543D34; }
-.bg-violet-50  { background-color: #F4EEE9; }
-.bg-violet-50\/30 { background-color: rgb(244 238 233 / 0.5); }
-.border-violet-500 { border-color: #644A40; }
-.border-l-violet-500 { border-left-color: #644A40; }
+.bg-violet-500 { background-color: var(--brand-500); }
+.bg-violet-600 { background-color: var(--brand-600); }
+.hover\:bg-violet-600:hover { background-color: var(--brand-600); }
+.text-violet-500 { color: var(--brand-500); }
+.text-violet-600 { color: var(--brand-600); }
+.bg-violet-50  { background-color: var(--brand-50); }
+.bg-violet-50\/30 { background-color: rgb(var(--brand-bright-rgb) / 0.10); }
+.border-violet-500 { border-color: var(--brand-500); }
+.border-l-violet-500 { border-left-color: var(--brand-500); }
 
 /* ── Reduced motion ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -236,123 +346,94 @@ textarea:focus:not(:focus-visible) {
   }
 }
 
-/* ── Print styles ─────────────────────────────────────────────────────
-   Triggered by window.print() on the Measure Sheet view page.
-   Hides UI chrome and renders clean black-on-white output.
-────────────────────────────────────────────────────────────────────── */
-/* print-only elements hidden on screen */
+/* ── Print styles ───────────────────────────────────────────────────── */
 .print-only { display: none; }
 
 @media print {
-  /* Show print template, hide everything else */
   .print-only  { display: block !important; }
   .screen-only { display: none !important; }
-
-  /* Hide all UI chrome */
   aside, header, .no-print { display: none !important; }
-
-  /* Full-width, no clipping */
   body, html { background: #ffffff !important; color: #000 !important; margin: 0; padding: 0; }
   main        { overflow: visible !important; padding: 0 !important; }
   #root       { overflow: visible !important; }
-
-  /* Page setup — A4, no extra margins */
   @page { margin: 10mm; size: A4; }
-
-  /* Preserve colours in print */
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-
-  /* Keep items together — prevent line items splitting across pages */
   .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
 }
 
 /* ── Dark Mode ────────────────────────────────────────────────────────
-   Applied via .dark on <html>. Uses higher specificity (.dark .class)
-   so no component files need changing.
+   Applied via .dark on <html>. Surfaces, borders, text and brand accents
+   all read from the per-theme variables above, so dark mode reskins too.
 ────────────────────────────────────────────────────────────────────── */
-
-/* Native dark scrollbars + OS chrome */
 html.dark { color-scheme: dark; }
 
-/* Base surface + text — body without an explicit class inherits these. */
-.dark body { background-color: #111111; color: #eeeeee; }
+.dark body { background-color: var(--surf-page); color: var(--txt-primary); }
 
 /* ── Surfaces ── */
-.dark .bg-white         { background-color: #191919; }   /* cards, modals, inputs */
-.dark .bg-slate-50      { background-color: #111111; }   /* page background */
-.dark .bg-slate-100     { background-color: #222222; }   /* subtle surfaces */
-.dark .bg-slate-50\/80  { background-color: rgb(17 17 17 / 0.8); }
-.dark .bg-slate-50\/60  { background-color: rgb(17 17 17 / 0.6); }
-.dark .bg-slate-50\/50  { background-color: rgb(17 17 17 / 0.5); }
-.dark .bg-slate-50\/40  { background-color: rgb(17 17 17 / 0.4); }
-.dark .bg-slate-50\/30  { background-color: rgb(17 17 17 / 0.3); }
+.dark .bg-white         { background-color: var(--surf-card); }
+.dark .bg-slate-50      { background-color: var(--surf-page); }
+.dark .bg-slate-100     { background-color: var(--surf-muted); }
+.dark .bg-slate-50\/80  { background-color: rgb(var(--surf-page-rgb) / 0.8); }
+.dark .bg-slate-50\/60  { background-color: rgb(var(--surf-page-rgb) / 0.6); }
+.dark .bg-slate-50\/50  { background-color: rgb(var(--surf-page-rgb) / 0.5); }
+.dark .bg-slate-50\/40  { background-color: rgb(var(--surf-page-rgb) / 0.4); }
+.dark .bg-slate-50\/30  { background-color: rgb(var(--surf-page-rgb) / 0.3); }
 
 /* ── Borders ── */
-.dark .border-slate-200 { border-color: #38332d; }
-.dark .border-slate-100 { border-color: #2a2520; }
-.dark .border-slate-50  { border-color: #201d19; }
+.dark .border-slate-200 { border-color: var(--bord-strong); }
+.dark .border-slate-100 { border-color: var(--bord-subtle); }
+.dark .border-slate-50  { border-color: var(--bord-faint); }
 
-/* ── Dividers (card list separators) ── */
-.dark .divide-slate-50  > :not([hidden]) ~ :not([hidden]) { border-color: #201d19; }
-.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #2a2520; }
-.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #38332d; }
+/* ── Dividers ── */
+.dark .divide-slate-50  > :not([hidden]) ~ :not([hidden]) { border-color: var(--bord-faint); }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--bord-subtle); }
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--bord-strong); }
 
 /* ── Text ── */
-.dark .text-slate-900   { color: #f4f4f4; }   /* near-white — primary text */
-.dark .text-slate-800   { color: #eeeeee; }
-.dark .text-slate-700   { color: #d4d4d4; }
-.dark .text-slate-600   { color: #b4b4b4; }   /* muted-foreground */
-.dark .text-slate-500   { color: #b4b4b4; }
-.dark .text-slate-400   { color: #9a9a9a; }
-.dark .text-slate-300   { color: #6f6f6f; }
+.dark .text-slate-900   { color: var(--txt-primary); }
+.dark .text-slate-800   { color: var(--txt-primary); }
+.dark .text-slate-700   { color: var(--txt-secondary); }
+.dark .text-slate-600   { color: var(--txt-muted); }
+.dark .text-slate-500   { color: var(--txt-muted); }
+.dark .text-slate-400   { color: var(--txt-faint); }
+.dark .text-slate-300   { color: var(--txt-faintest); }
 
-/* ── Full colour-family remaps for dark mode ─────────────────────────────
-   amber/teal/violet are the BRAND (taupe-brown in light) → become the light
-   cream accent (#FFE0C2) on dark surfaces. Other families stay semantic.
+/* — Amber / brand → bright accent on dark — */
+.dark .text-amber-500   { color: var(--brand-bright); }
+.dark .text-amber-600   { color: var(--brand-bright); }
+.dark .text-amber-700   { color: var(--brand-bright); }
+.dark .text-amber-800   { color: var(--brand-bright); }
+.dark .text-amber-300   { color: var(--brand-bright); }
+.dark .bg-amber-50      { background-color: rgb(var(--brand-bright-rgb) / 0.12); }
+.dark .bg-amber-50\/40  { background-color: rgb(var(--brand-bright-rgb) / 0.12); }
+.dark .bg-amber-100     { background-color: rgb(var(--brand-bright-rgb) / 0.18); }
+.dark .bg-amber-200     { background-color: rgb(var(--brand-bright-rgb) / 0.25); }
+.dark .bg-amber-500\/20 { background-color: rgb(var(--brand-bright-rgb) / 0.18); }
+.dark .border-amber-200 { border-color:     rgb(var(--brand-bright-rgb) / 0.30); }
+.dark .border-amber-300 { border-color:     rgb(var(--brand-bright-rgb) / 0.40); }
 
-   Rule of thumb:
-     text-*-700/800 → use the *-300/400 bright equivalent
-     text-*-500/600 → use the *-400 bright equivalent
-     bg-*-50/100   → transparent tint at 10–18 % opacity
-     border-*-200  → transparent tint at 28 % opacity
-─────────────────────────────────────────────────────────────────────── */
+/* — Teal (remapped to brand) — */
+.dark .text-teal-900    { color: var(--brand-bright); }
+.dark .text-teal-800    { color: var(--brand-bright); }
+.dark .text-teal-700    { color: var(--brand-bright); }
+.dark .text-teal-600    { color: var(--brand-bright); }
+.dark .text-teal-500    { color: var(--brand-bright); }
+.dark .text-teal-300    { color: var(--brand-bright); }
+.dark .bg-teal-50       { background-color: rgb(var(--brand-bright-rgb) / 0.12); }
+.dark .bg-teal-100      { background-color: rgb(var(--brand-bright-rgb) / 0.18); }
+.dark .bg-teal-500\/20  { background-color: rgb(var(--brand-bright-rgb) / 0.18); }
+.dark .border-teal-200  { border-color:     rgb(var(--brand-bright-rgb) / 0.30); }
 
-/* — Amber / brand (taupe-brown → cream accent on dark) — */
-.dark .text-amber-500   { color: #FFE0C2; }
-.dark .text-amber-600   { color: #FFE0C2; }
-.dark .text-amber-700   { color: #FFDFB5; }
-.dark .text-amber-800   { color: #FFDFB5; }
-.dark .text-amber-300   { color: #FFE0C2; }
-.dark .bg-amber-50      { background-color: rgb(255 224 194 / 0.12); }
-.dark .bg-amber-50\/40  { background-color: rgb(255 224 194 / 0.12); }  /* active theme btn */
-.dark .bg-amber-100     { background-color: rgb(255 224 194 / 0.18); }
-.dark .bg-amber-200     { background-color: rgb(255 224 194 / 0.25); }
-.dark .bg-amber-500\/20 { background-color: rgb(255 224 194 / 0.18); }  /* sidebar badge */
-.dark .border-amber-200 { border-color:     rgb(255 224 194 / 0.30); }
-.dark .border-amber-300 { border-color:     rgb(255 224 194 / 0.40); }
-
-/* — Teal (remapped to brand) — cream accent on dark — */
-.dark .text-teal-900    { color: #FFE0C2; }
-.dark .text-teal-800    { color: #FFE0C2; }
-.dark .text-teal-700    { color: #FFE0C2; }
-.dark .text-teal-600    { color: #FFE0C2; }
-.dark .text-teal-500    { color: #FFE0C2; }
-.dark .text-teal-300    { color: #FFE0C2; }
-.dark .bg-teal-50       { background-color: rgb(255 224 194 / 0.12); }
-.dark .bg-teal-100      { background-color: rgb(255 224 194 / 0.18); }
-.dark .bg-teal-500\/20  { background-color: rgb(255 224 194 / 0.18); }
-.dark .border-teal-200  { border-color:     rgb(255 224 194 / 0.30); }
-
-/* — Violet (Inbox accent, remapped to brand) — cream on dark — */
-.dark .text-violet-700  { color: #FFE0C2; }
-.dark .text-violet-600  { color: #FFE0C2; }
-.dark .text-violet-500  { color: #FFE0C2; }
-.dark .bg-violet-500    { background-color: #644A40; }   /* solid badge keeps body */
-.dark .bg-violet-600    { background-color: #543D34; }
-.dark .bg-violet-50      { background-color: rgb(255 224 194 / 0.16); }  /* selected conversation */
-.dark .bg-violet-50\/30  { background-color: rgb(255 224 194 / 0.08); }  /* unread tint */
-.dark .border-violet-200 { border-color:    rgb(255 224 194 / 0.30); }
-.dark .border-l-violet-500 { border-left-color: #FFE0C2; }
+/* — Violet (Inbox accent → brand) — */
+.dark .text-violet-700  { color: var(--brand-bright); }
+.dark .text-violet-600  { color: var(--brand-bright); }
+.dark .text-violet-500  { color: var(--brand-bright); }
+.dark .bg-violet-500    { background-color: var(--brand-500); }
+.dark .bg-violet-600    { background-color: var(--brand-600); }
+.dark .bg-violet-50      { background-color: rgb(var(--brand-bright-rgb) / 0.16); }
+.dark .bg-violet-50\/30  { background-color: rgb(var(--brand-bright-rgb) / 0.08); }
+.dark .border-violet-200 { border-color:    rgb(var(--brand-bright-rgb) / 0.30); }
+.dark .border-l-violet-500 { border-left-color: var(--brand-bright); }
 
 /* — Green — */
 .dark .text-green-900   { color: #86EFAC; }
@@ -447,19 +528,19 @@ html.dark { color-scheme: dark; }
 .dark input:not([type=checkbox]):not([type=radio]),
 .dark select,
 .dark textarea {
-  background-color: #191919;
-  border-color: #484848;
-  color: #eeeeee;
+  background-color: var(--surf-card);
+  border-color: var(--input-dark);
+  color: var(--txt-primary);
 }
 
 .dark input::placeholder,
-.dark textarea::placeholder { color: #7a7a7a; }
+.dark textarea::placeholder { color: var(--txt-faint); }
 
 /* ── Hover states on list rows ── */
-.dark .hover\:bg-slate-50:hover  { background-color: #201d19; }
-.dark .hover\:bg-slate-100:hover { background-color: #2a2520; }
+.dark .hover\:bg-slate-50:hover  { background-color: var(--surf-hover); }
+.dark .hover\:bg-slate-100:hover { background-color: var(--surf-muted); }
 
-/* ── Shadows (more visible on dark) ── */
+/* ── Shadows ── */
 .dark .shadow-sm  { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.4); }
 .dark .shadow     { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.5); }
 .dark .shadow-lg  { box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.5); }
@@ -469,26 +550,24 @@ html.dark { color-scheme: dark; }
 /* ── Modal backdrop ── */
 .dark .bg-black\/40 { background-color: rgb(0 0 0 / 0.65); }
 
-/* ── Top bar (header in Layout) ── */
-.dark header.bg-white { background-color: #191919; border-color: #2c2823; }
-
-/* ── Mobile bottom nav in dark mode ── */
-.dark nav.bg-white { background-color: #191919; border-color: #2c2823; }
+/* ── Top bar & mobile nav ── */
+.dark header.bg-white { background-color: var(--surf-card); border-color: var(--bord-default); }
+.dark nav.bg-white    { background-color: var(--surf-card); border-color: var(--bord-default); }
 
 /* ── input-base in dark mode ── */
 .dark .input-base {
-  background-color: #191919;
-  border-color: #484848;
-  color: #eeeeee;
+  background-color: var(--surf-card);
+  border-color: var(--input-dark);
+  color: var(--txt-primary);
 }
 .dark .input-base:focus-visible {
-  border-color: #FFE0C2;
-  box-shadow: 0 0 0 2px rgb(255 224 194 / 0.3);
+  border-color: var(--brand-bright);
+  box-shadow: 0 0 0 2px rgb(var(--brand-bright-rgb) / 0.3);
 }
 
-/* ── Focus rings stay visible ── */
-.dark .focus\:ring-amber-400:focus { --tw-ring-color: #FFE0C2; }
-.dark :focus-visible { outline-color: #FFE0C2; }
+/* ── Focus rings ── */
+.dark .focus\:ring-amber-400:focus { --tw-ring-color: var(--brand-bright); }
+.dark :focus-visible { outline-color: var(--brand-bright); }
 
-/* ── Sticky elements keep dark bg ── */
+/* ── Sticky elements keep surface bg ── */
 .dark .sticky { background-color: inherit; }

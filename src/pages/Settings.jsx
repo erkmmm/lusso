@@ -92,7 +92,12 @@ export default function Settings() {
   // sorted is maintained by getProductTypes (sorts by sortOrder)
   const sorted = productTypes; // already sorted
 
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, colorTheme, setColorTheme } = useTheme();
+
+  const COLOR_OPTIONS = [
+    { value: 'taupe', label: 'Taupe',  desc: 'Warm taupe & cream.',   swatch: '#644a40' },
+    { value: 'green', label: 'Green',  desc: 'Forest green & cream.',  swatch: '#2e7d32' },
+  ];
 
   const THEME_OPTIONS = [
     {
@@ -252,6 +257,35 @@ export default function Settings() {
                         <p className="text-xs text-slate-400 mt-0.5 leading-tight">{desc}</p>
                       </div>
                       {active && <span className="text-[10px] font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">Active</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
+
+            {/* Colour theme */}
+            <Card>
+              <div className="px-5 py-4 border-b border-slate-100">
+                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                  <Sun size={14} className="text-amber-500" /> Colour theme
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">Pick the accent palette. Works in light and dark mode.</p>
+              </div>
+              <div className="p-4 grid grid-cols-2 gap-3">
+                {COLOR_OPTIONS.map(({ value, label, desc, swatch }) => {
+                  const active = colorTheme === value;
+                  return (
+                    <button key={value} onClick={() => setColorTheme(value)}
+                      className={`flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all ${
+                        active ? 'border-amber-500 bg-amber-50/40' : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="w-9 h-9 rounded-lg flex-shrink-0 border border-black/10" style={{ backgroundColor: swatch }} />
+                      <div className="min-w-0">
+                        <p className={`text-sm font-semibold ${active ? 'text-amber-700' : 'text-slate-700'}`}>{label}</p>
+                        <p className="text-xs text-slate-400 mt-0.5 leading-tight">{desc}</p>
+                      </div>
+                      {active && <span className="ml-auto text-[10px] font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">Active</span>}
                     </button>
                   );
                 })}

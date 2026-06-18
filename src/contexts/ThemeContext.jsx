@@ -3,6 +3,18 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 const ThemeContext = createContext({});
 
 const STORAGE_KEY = 'lusso_theme';
+const COLOR_KEY = 'lusso_color_theme';
+
+// Colour themes — class applied to <html> (taupe is the default, no class).
+const COLOR_THEMES = ['taupe', 'green'];
+
+function applyColorClass(colorTheme) {
+  const root = document.documentElement;
+  COLOR_THEMES.forEach(c => root.classList.remove(`theme-${c}`));
+  if (colorTheme && colorTheme !== 'taupe') {
+    root.classList.add(`theme-${colorTheme}`);
+  }
+}
 
 // Schedule: dark 7 pm → 7 am
 const DARK_FROM = 19;
@@ -38,14 +50,27 @@ export function ThemeProvider({ children }) {
     () => localStorage.getItem(STORAGE_KEY) || 'light'
   );
 
+  const [colorTheme, setColorThemeState] = useState(
+    () => localStorage.getItem(COLOR_KEY) || 'taupe'
+  );
+
   const setTheme = useCallback((t) => {
     setThemeState(t);
     localStorage.setItem(STORAGE_KEY, t);
     applyClass(t);
   }, []);
 
+  const setColorTheme = useCallback((c) => {
+    setColorThemeState(c);
+    localStorage.setItem(COLOR_KEY, c);
+    applyColorClass(c);
+  }, []);
+
   // Apply whenever theme changes (covers mount + explicit switches)
   useEffect(() => { applyClass(theme); }, [theme]);
+
+  // Apply colour theme on mount + change
+  useEffect(() => { applyColorClass(colorTheme); }, [colorTheme]);
 
   // System: react to OS preference changes in real time
   useEffect(() => {
@@ -72,7 +97,7 @@ export function ThemeProvider({ children }) {
   }, [theme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolved: resolve(theme) }}>
+    <ThemeContext.Provider value={{ theme, setTheme, resolved: resolve(theme), colorTheme, setColorTheme }}>
       {children}
     </ThemeContext.Provider>
   );
