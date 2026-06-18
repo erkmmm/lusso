@@ -1,8 +1,8 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link } from 'lucide-react';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, ChevronDown, ChevronRight } from 'lucide-react';
 import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, createJobFromMeasureSheet } from '../store/data';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -410,68 +410,7 @@ export default function MeasureSheetView() {
                 <ClipboardList size={15} /> Product / Opening Details ({sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''})
               </h2>
             </div>
-            <div className="divide-y divide-slate-100">
-              {sheet.lineItems.map((item, i) => {
-                const productName = item.productNameSnapshot || item.productType || '—';
-                const width = item.widthMm || item.width;
-                const drop = item.dropMm || item.drop;
-                return (
-                  <div key={item.id || i} className="p-5">
-                    {/* Item header */}
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
-                        {i + 1}
-                      </span>
-                      <div>
-                        <span className="font-semibold text-slate-800 text-sm">{item.location || '—'}</span>
-                        <span className="mx-2 text-slate-300">·</span>
-                        <span className="text-slate-600 text-sm">{productName}</span>
-                        {item.quantity > 1 && <span className="ml-2 text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">×{item.quantity}</span>}
-                      </div>
-                    </div>
-                    {/* Core specs */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-3">
-                      <ViewField label="Width" value={width ? `${width} mm` : '—'} />
-                      <ViewField label="Drop" value={drop ? `${drop} mm` : '—'} />
-                      <ViewField label="Qty" value={item.quantity} />
-                      {item.fabricColour && <ViewField label="Fabric / Colour" value={item.fabricColour} className="sm:col-span-1" />}
-                    </div>
-                    {/* Spec fields — only show non-empty ones */}
-                    {(() => {
-                      const specs = [
-                        ['Control', item.control],
-                        ['Return', item.returnSide || item.controlSide],
-                        ['Motor Side', item.motorSide],
-                        ['Fixing', item.fixing || item.mountType],
-                        ['Heading', item.heading],
-                        ['Hem', item.hem],
-                        ['Track Colour', item.trackColour || item.trackBaseBarColour],
-                        ['Bottom Rail Colour', item.baseBarColour],
-                        ['Operation Type', item.trackType],
-                        ['Bottom Rail Type', item.baseBarType],
-                        ['Chain Colour', item.chainColour],
-                        ['Attached Lining', item.attachedLining ? 'Yes' : null],
-                        ['Lining Fabric', item.attachedLining && item.liningFabricColour ? item.liningFabricColour : null],
-                      ].filter(([, v]) => v);
-                      if (specs.length === 0) return null;
-                      return (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 rounded-xl px-3 py-2.5 mb-2">
-                          {specs.map(([label, val]) => (
-                            <ViewField key={label} label={label} value={val} />
-                          ))}
-                        </div>
-                      );
-                    })()}
-                    {/* Notes */}
-                    {(item.notes || item.installationNotes || item.additionalNotes) && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        <span className="font-medium">Notes:</span> {item.notes || item.installationNotes}{item.additionalNotes ? ` · ${item.additionalNotes}` : ''}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <MeasureItemsTable items={sheet.lineItems} />
           </Card>
 
           {/* Site notes */}
@@ -592,6 +531,108 @@ function ViewField({ label, value, className = '' }) {
     <div className={className}>
       <dt className="text-xs text-slate-400">{label}</dt>
       <dd className="text-sm text-slate-700 font-medium">{value || '—'}</dd>
+    </div>
+  );
+}
+
+// Full measure-sheet table (matches the Job-profile preview look). Rows with
+// extra specs / notes expand to reveal them so no detail is lost.
+function MeasureItemsTable({ items = [] }) {
+  const [open, setOpen] = useState({});
+  const toggle = (i) => setOpen(o => ({ ...o, [i]: !o[i] }));
+
+  if (!items.length) {
+    return <p className="px-5 py-8 text-center text-sm text-slate-400">No items on this sheet.</p>;
+  }
+
+  const HEADERS = [
+    { label: '#',        align: 'text-left',   w: 'w-10' },
+    { label: 'Location', align: 'text-left' },
+    { label: 'Product',  align: 'text-left' },
+    { label: 'W',        align: 'text-right' },
+    { label: 'D',        align: 'text-right' },
+    { label: 'Qty',      align: 'text-center' },
+    { label: 'Fabric',   align: 'text-left' },
+    { label: 'Control',  align: 'text-left' },
+    { label: '',         align: 'text-right',  w: 'w-9' },
+  ];
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-slate-50 border-b border-slate-100">
+            {HEADERS.map((h, idx) => (
+              <th key={idx} className={`px-3 py-2.5 font-medium text-slate-500 whitespace-nowrap ${h.align} ${h.w || ''}`}>{h.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-50">
+          {items.map((item, i) => {
+            const productName = item.productNameSnapshot || item.productType || '—';
+            const width = item.widthMm || item.width;
+            const drop  = item.dropMm  || item.drop;
+            const specs = [
+              ['Return', item.returnSide || item.controlSide],
+              ['Motor Side', item.motorSide],
+              ['Fixing', item.fixing || item.mountType],
+              ['Heading', item.heading],
+              ['Hem', item.hem],
+              ['Track Colour', item.trackColour || item.trackBaseBarColour],
+              ['Bottom Rail Colour', item.baseBarColour],
+              ['Operation Type', item.trackType],
+              ['Bottom Rail Type', item.baseBarType],
+              ['Chain Colour', item.chainColour],
+              ['Attached Lining', item.attachedLining ? 'Yes' : null],
+              ['Lining Fabric', item.attachedLining && item.liningFabricColour ? item.liningFabricColour : null],
+            ].filter(([, v]) => v);
+            const notes = item.notes || item.installationNotes || item.additionalNotes;
+            const hasDetail = specs.length > 0 || !!notes;
+            const isOpen = !!open[i];
+            return (
+              <Fragment key={item.id || i}>
+                <tr
+                  className={`hover:bg-slate-50 transition-colors ${hasDetail ? 'cursor-pointer' : ''} ${isOpen ? 'bg-slate-50' : ''}`}
+                  onClick={hasDetail ? () => toggle(i) : undefined}
+                >
+                  <td className="px-3 py-2.5 text-slate-400">{i + 1}</td>
+                  <td className="px-3 py-2.5 font-medium text-slate-800 whitespace-nowrap">{item.location || '—'}</td>
+                  <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{productName}</td>
+                  <td className="px-3 py-2.5 text-slate-600 font-mono text-right">{width || '—'}</td>
+                  <td className="px-3 py-2.5 text-slate-600 font-mono text-right">{drop || '—'}</td>
+                  <td className="px-3 py-2.5 text-slate-600 text-center">{item.quantity || 1}</td>
+                  <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.fabricColour || '—'}</td>
+                  <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.control || '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-slate-400">
+                    {hasDetail && (isOpen ? <ChevronDown size={14} className="inline" /> : <ChevronRight size={14} className="inline" />)}
+                  </td>
+                </tr>
+                {hasDetail && isOpen && (
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={HEADERS.length} className="px-4 pb-3.5 pt-1">
+                      {specs.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
+                          {specs.map(([label, val]) => (
+                            <div key={label}>
+                              <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+                              <dd className="text-xs text-slate-700">{val}</dd>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {notes && (
+                        <p className="text-xs text-slate-500 mt-2.5">
+                          <span className="font-medium">Notes:</span> {item.notes || item.installationNotes}{item.additionalNotes ? ` · ${item.additionalNotes}` : ''}
+                        </p>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
