@@ -261,6 +261,28 @@ export default function MeasureSheetView() {
     window.dispatchEvent(new CustomEvent('lusso:data-changed'));
   };
 
+  // Print via a normal browser window. In the installed (standalone) PWA,
+  // window.print() can fail to open the OS dialog and just dims the screen,
+  // so we render the print document into a plain popup and print from there.
+  const handlePrint = () => {
+    const node = document.querySelector('.print-only');
+    const win = node && window.open('', '_blank', 'width=900,height=1200');
+    if (!win) { window.print(); return; } // no node or popup blocked → fallback
+    win.document.write(
+      '<!doctype html><html><head><meta charset="utf-8"><title>Measure Sheet</title>' +
+      '<style>@page{margin:10mm} body{margin:0} .print-only{display:block!important}</style>' +
+      '</head><body>' + node.outerHTML + '</body></html>'
+    );
+    win.document.close();
+    let done = false;
+    const run = () => {
+      if (done) return; done = true;
+      try { win.focus(); win.print(); win.close(); } catch { /* window already closed */ }
+    };
+    win.onload = run;
+    setTimeout(run, 400); // fallback if onload doesn't fire after document.write
+  };
+
   const handleDelete = () => {
     deleteMeasureSheet(id);
     navigate('/measure-sheets');
@@ -319,7 +341,7 @@ export default function MeasureSheetView() {
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
               <Edit3 size={13} /> Edit
             </button>
-            <button onClick={() => window.print()}
+            <button onClick={handlePrint}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors no-print">
               <Printer size={13} /> Print
             </button>
