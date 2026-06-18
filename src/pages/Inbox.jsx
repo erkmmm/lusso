@@ -3,12 +3,12 @@ import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageSquare, Mail, Inbox as InboxIcon, Loader, Search, X,
-  Send, ArrowLeft, ChevronRight, ExternalLink, User, Trash2, Briefcase,
+  Send, ArrowLeft, User, Trash2, Briefcase,
   Globe, Phone, MapPin, Clock, UserPlus, Archive, ArchiveRestore, Check,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import OptionsMenu from '../components/OptionsMenu';
-import { deleteCustomer, restoreCustomer, saveCustomer } from '../store/data';
+import { deleteCustomer, restoreCustomer, saveCustomer, getCustomers } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import { toast } from '../components/ToastContainer';
 import { format, parseISO, isToday, isYesterday, isThisWeek } from 'date-fns';
@@ -588,6 +588,58 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer }) {
 }
 
 // ── Main Inbox Page ───────────────────────────────────────────────────────────
+// New Message → searchable picker of existing customers.
+function CustomerPickerModal({ onClose, onPick }) {
+  const [q, setQ] = useState('');
+  const customers = getCustomers();
+  const term = q.trim().toLowerCase();
+  const filtered = term
+    ? customers.filter(c =>
+        c.name?.toLowerCase().includes(term) ||
+        c.phone?.toLowerCase().includes(term) ||
+        c.email?.toLowerCase().includes(term))
+    : customers;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-900 text-sm">New message</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+        </div>
+        <div className="p-3 border-b border-slate-100">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              autoFocus
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Search customers…"
+              className="w-full pl-8 pr-3 py-2 text-sm bg-slate-100 rounded-xl border-none focus:outline-none focus:ring-2 focus:ring-violet-400"
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="text-center text-sm text-slate-400 py-10">
+              {customers.length === 0 ? 'No customers yet.' : 'No customers found.'}
+            </p>
+          ) : filtered.map(c => (
+            <button key={c.id} onClick={() => onPick(c)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left border-b border-slate-50 last:border-0">
+              <Avatar name={c.name} />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-800 truncate">{c.name || 'Unnamed'}</p>
+                <p className="text-xs text-slate-400 truncate">{c.phone || c.email || 'No contact info'}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Inbox() {
   const navigate = useNavigate();
   const { displayName = '' } = useProfile() || {};
@@ -597,6 +649,8 @@ export default function Inbox() {
   const [search,   setSearch]   = useState('');
   const [selectedKey, setSelected] = useState(null);
   const [mobileView, setMobile]   = useState('list'); // 'list' | 'thread'
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [draftConv,  setDraftConv]  = useState(null); // un-persisted "new message" thread
 
   // Load all comms
   useEffect(() => {
@@ -749,10 +803,44 @@ export default function Inbox() {
     );
   });
 
-  const selectedConv = selectedKey ? conversations.find(c => c.key === selectedKey) ?? allConvs.find(c => c.key === selectedKey) : null;
+  const selectedConv = selectedKey
+    ? conversations.find(c => c.key === selectedKey)
+      ?? allConvs.find(c => c.key === selectedKey)
+      ?? (draftConv && draftConv.key === selectedKey ? draftConv : null)
+    : null;
 
   const handleSelect = (conv) => {
     setSelected(conv.key);
+    setMobile('thread');
+  };
+
+  // New Message → open an existing thread for the customer, or a fresh draft.
+  const handleNewMessage = (customer) => {
+    setPickerOpen(false);
+    const existing = allConvs.find(c => c.customerId && String(c.customerId) === String(customer.id));
+    if (existing) {
+      setDraftConv(null);
+      setSelected(existing.key);
+      setMobile('thread');
+      return;
+    }
+    // No history yet — open an empty thread (not persisted until a message is sent).
+    // Key matches the future customer_id-keyed conversation, so the first sent
+    // message transitions seamlessly into the real thread with no duplicate.
+    setDraftConv({
+      key: customer.id,
+      customerId: customer.id,
+      customerName: customer.name || 'Customer',
+      customerPhone: customer.phone || null,
+      customerEmail: customer.email || null,
+      jobId: null,
+      messages: [],
+      channels: [],
+      last: { channel: customer.phone ? 'sms' : 'email' },
+      lastAt: '',
+      unread: 0,
+    });
+    setSelected(customer.id);
     setMobile('thread');
   };
 
@@ -794,6 +882,12 @@ export default function Inbox() {
                   </span>
                 )}
               </h1>
+              <button
+                onClick={() => setPickerOpen(true)}
+                title="New message"
+                className="flex items-center gap-1.5 text-xs font-semibold bg-violet-500 hover:bg-violet-400 text-white px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+                <MessageSquare size={14} /> New
+              </button>
             </div>
 
             {/* Search */}
@@ -893,6 +987,10 @@ export default function Inbox() {
         </div>
 
       </div>
+
+      {pickerOpen && (
+        <CustomerPickerModal onClose={() => setPickerOpen(false)} onPick={handleNewMessage} />
+      )}
     </div>
   );
 }
