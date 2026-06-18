@@ -24,7 +24,7 @@ async function post(path, body) {
       body: JSON.stringify(body),
     });
   } catch (networkErr) {
-    throw new Error('Network error — could not reach the email service. Please check your connection and try again.');
+    throw new Error('Network error — could not reach the email service. Please check your connection and try again.', { cause: networkErr });
   }
 
   // Read raw text first so we never crash on an empty body
@@ -83,4 +83,19 @@ export async function sendInstallerEmail(request, installer, job) {
     job,
     appUrl: window.location.origin,
   });
+}
+
+/**
+ * Email a generated Purchase Order (PDF) to a recipient as an attachment.
+ * The PDF is built client-side and passed as base64 — the Resend key stays
+ * server-side in the Cloudflare Pages Function.
+ * @param {object} args
+ * @param {string} args.to            - recipient email
+ * @param {string} args.subject       - email subject
+ * @param {string} args.message       - email body text
+ * @param {string} args.filename      - attachment filename (e.g. "Curtain PO.pdf")
+ * @param {string} args.contentBase64 - base64-encoded PDF bytes
+ */
+export async function sendPurchaseOrder({ to, subject, message, filename, contentBase64 }) {
+  return post('send-purchase-order', { to, subject, message, filename, contentBase64 });
 }

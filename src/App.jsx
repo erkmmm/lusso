@@ -22,6 +22,7 @@ import CustomerProfile from './pages/CustomerProfile';
 import MeasureSheets from './pages/MeasureSheets';
 import NewMeasureSheet from './pages/NewMeasureSheet';
 import MeasureSheetView from './pages/MeasureSheetView';
+import PurchaseOrder from './pages/PurchaseOrder';
 import ImportMeasureSheet from './pages/ImportMeasureSheet';
 import Installers from './pages/Installers';
 import InstallerProfile from './pages/InstallerProfile';
@@ -239,6 +240,7 @@ function AppRoutes() {
               <Route path="/measure-sheets/new"         element={<NewMeasureSheet />} />
               <Route path="/measure-sheets/import"      element={<ImportMeasureSheet />} />
               <Route path="/measure-sheets/:id"         element={<MeasureSheetView />} />
+              <Route path="/measure-sheets/:id/purchase-order" element={<PurchaseOrder />} />
               <Route path="/measure-sheets/:id/edit"    element={<NewMeasureSheet />} />
               <Route path="/installers"                 element={<Installers />} />
               <Route path="/installers/:id"             element={<InstallerProfile />} />

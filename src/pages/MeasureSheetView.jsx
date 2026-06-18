@@ -357,6 +357,12 @@ export default function MeasureSheetView() {
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
               <Edit3 size={13} /> Edit
             </button>
+            {sheet.lineItems?.some(it => (it.productNameSnapshot || it.productType || '').toLowerCase().includes('curt')) && (
+              <button onClick={() => navigate(`/measure-sheets/${id}/purchase-order`)}
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 no-print">
+                <ClipboardList size={13} /> Generate Purchase Order
+              </button>
+            )}
             <button onClick={handlePrint}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors no-print">
               <Printer size={13} /> Print
