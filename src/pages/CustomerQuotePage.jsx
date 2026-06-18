@@ -226,7 +226,9 @@ export default function CustomerQuotePage() {
   // ── Fetch from Supabase if not in localStorage (customer on a different device) ──
   useEffect(() => {
     if (quote || !supabase || !id) return;
-    supabase.from('quotes').select('*').eq('id', id).single()
+    // Read via SECURITY DEFINER RPC (anon has no direct table access — this
+    // returns only the single quote for this id, so quotes can't be enumerated).
+    supabase.rpc('get_public_quote', { p_id: id }).maybeSingle()
       .then(({ data, error }) => {
         if (!error && data) {
           // Convert snake_case keys to camelCase for local use
