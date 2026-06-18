@@ -276,7 +276,7 @@ export default function MeasureSheetView() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
 
       {/* Print-only installer document — hidden on screen, shown on print */}
       <PrintView sheet={sheet} customer={customer} job={job} />
@@ -402,86 +402,84 @@ export default function MeasureSheetView() {
       )}
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-5">
-          {/* Line items */}
+        {/* Line items — full width so every column is visible */}
+        <Card className="lg:col-span-3">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+              <ClipboardList size={15} /> Product / Opening Details ({sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''})
+            </h2>
+          </div>
+          <MeasureItemsTable items={sheet.lineItems} />
+        </Card>
+
+        {/* Customer */}
+        <Card>
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><User size={15} /> Customer</h2>
+          </div>
+          <div className="p-5 space-y-2 text-sm">
+            <p className="font-semibold text-slate-800">{customer?.name}</p>
+            {customer?.phone && <p className="text-slate-500 flex items-center gap-1.5"><Phone size={12} />{customer.phone}</p>}
+            {customer?.email && <p className="text-slate-500 flex items-center gap-1.5"><Mail size={12} />{customer.email}</p>}
+            {(sheet.siteAddress || customer?.address) && (
+              <p className="text-slate-500 flex items-center gap-1.5"><MapPin size={12} />{sheet.siteAddress || customer.address}</p>
+            )}
+            {customer?.preferredContact && (
+              <p className="text-xs text-slate-400 mt-1">Preferred: {customer.preferredContact}</p>
+            )}
+          </div>
+        </Card>
+
+        {/* Job */}
+        <Card>
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Briefcase size={15} /> Job</h2>
+          </div>
+          <div className="p-5 space-y-2 text-sm">
+            {job ? (
+              <>
+                <p className="text-slate-500 text-xs">{job.jobNumber}</p>
+                <StatusBadge status={job.status} />
+                <p className="text-slate-600">{job.jobType}</p>
+                <button onClick={() => navigate(`/jobs/${job.id}`)} className="text-xs text-amber-600 hover:underline">View job →</button>
+              </>
+            ) : (
+              <p className="text-slate-400 text-xs">Not linked to a job yet.</p>
+            )}
+          </div>
+        </Card>
+
+        {/* Site notes */}
+        {(sheet.accessInstructions || sheet.parkingNotes || sheet.siteConditionNotes) && (
           <Card>
             <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                <ClipboardList size={15} /> Product / Opening Details ({sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''})
-              </h2>
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><MapPin size={15} /> Site Notes</h2>
             </div>
-            <MeasureItemsTable items={sheet.lineItems} />
-          </Card>
-
-          {/* Site notes */}
-          {(sheet.accessInstructions || sheet.parkingNotes || sheet.siteConditionNotes) && (
-            <Card>
-              <div className="px-5 py-4 border-b border-slate-100">
-                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><MapPin size={15} /> Site Notes</h2>
-              </div>
-              <div className="p-5 grid sm:grid-cols-3 gap-4 text-sm">
-                {sheet.accessInstructions && (
-                  <div><dt className="text-xs text-slate-400 mb-1">Access</dt><dd className="text-slate-700">{sheet.accessInstructions}</dd></div>
-                )}
-                {sheet.parkingNotes && (
-                  <div><dt className="text-xs text-slate-400 mb-1">Parking</dt><dd className="text-slate-700">{sheet.parkingNotes}</dd></div>
-                )}
-                {sheet.siteConditionNotes && (
-                  <div><dt className="text-xs text-slate-400 mb-1">Site Condition</dt><dd className="text-slate-700">{sheet.siteConditionNotes}</dd></div>
-                )}
-              </div>
-            </Card>
-          )}
-        </div>
-
-        {/* Right sidebar */}
-        <div className="space-y-5">
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><User size={15} /> Customer</h2>
-            </div>
-            <div className="p-5 space-y-2 text-sm">
-              <p className="font-semibold text-slate-800">{customer?.name}</p>
-              {customer?.phone && <p className="text-slate-500 flex items-center gap-1.5"><Phone size={12} />{customer.phone}</p>}
-              {customer?.email && <p className="text-slate-500 flex items-center gap-1.5"><Mail size={12} />{customer.email}</p>}
-              {(sheet.siteAddress || customer?.address) && (
-                <p className="text-slate-500 flex items-center gap-1.5"><MapPin size={12} />{sheet.siteAddress || customer.address}</p>
+            <div className="p-5 space-y-3 text-sm">
+              {sheet.accessInstructions && (
+                <div><dt className="text-xs text-slate-400 mb-1">Access</dt><dd className="text-slate-700">{sheet.accessInstructions}</dd></div>
               )}
-              {customer?.preferredContact && (
-                <p className="text-xs text-slate-400 mt-1">Preferred: {customer.preferredContact}</p>
+              {sheet.parkingNotes && (
+                <div><dt className="text-xs text-slate-400 mb-1">Parking</dt><dd className="text-slate-700">{sheet.parkingNotes}</dd></div>
               )}
-            </div>
-          </Card>
-
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Briefcase size={15} /> Job</h2>
-            </div>
-            <div className="p-5 space-y-2 text-sm">
-              {job ? (
-                <>
-                  <p className="text-slate-500 text-xs">{job.jobNumber}</p>
-                  <StatusBadge status={job.status} />
-                  <p className="text-slate-600">{job.jobType}</p>
-                  <button onClick={() => navigate(`/jobs/${job.id}`)} className="text-xs text-amber-600 hover:underline">View job →</button>
-                </>
-              ) : (
-                <p className="text-slate-400 text-xs">Not linked to a job yet.</p>
+              {sheet.siteConditionNotes && (
+                <div><dt className="text-xs text-slate-400 mb-1">Site Condition</dt><dd className="text-slate-700">{sheet.siteConditionNotes}</dd></div>
               )}
             </div>
           </Card>
+        )}
 
-          {sheet.internalNotes && (
-            <Card>
-              <div className="px-5 py-4 border-b border-slate-100">
-                <h2 className="font-semibold text-slate-800 text-sm">Internal Notes</h2>
-              </div>
-              <div className="p-5">
-                <p className="text-sm text-slate-600 whitespace-pre-wrap">{sheet.internalNotes}</p>
-              </div>
-            </Card>
-          )}
-        </div>
+        {/* Internal notes */}
+        {sheet.internalNotes && (
+          <Card>
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800 text-sm">Internal Notes</h2>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-slate-600 whitespace-pre-wrap">{sheet.internalNotes}</p>
+            </div>
+          </Card>
+        )}
       </div>
 
       </div>{/* end screen-only */}
@@ -522,15 +520,6 @@ export default function MeasureSheetView() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ViewField({ label, value, className = '' }) {
-  return (
-    <div className={className}>
-      <dt className="text-xs text-slate-400">{label}</dt>
-      <dd className="text-sm text-slate-700 font-medium">{value || '—'}</dd>
     </div>
   );
 }
