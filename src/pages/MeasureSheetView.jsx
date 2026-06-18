@@ -261,26 +261,42 @@ export default function MeasureSheetView() {
     window.dispatchEvent(new CustomEvent('lusso:data-changed'));
   };
 
-  // Print via a normal browser window. In the installed (standalone) PWA,
-  // window.print() can fail to open the OS dialog and just dims the screen,
-  // so we render the print document into a plain popup and print from there.
+  // Print via a hidden iframe. This is reliable across a normal browser tab
+  // and the installed PWA: it shows the print dialog for the iframe's own
+  // document, with no popup window (so no popup-blocker / focus / premature
+  // close issues that broke the earlier approaches). Falls back to
+  // window.print() if the print document isn't available.
   const handlePrint = () => {
     const node = document.querySelector('.print-only');
-    const win = node && window.open('', '_blank', 'width=900,height=1200');
-    if (!win) { window.print(); return; } // no node or popup blocked → fallback
-    win.document.write(
+    if (!node) { window.print(); return; }
+
+    const prev = document.getElementById('__print_frame');
+    if (prev) prev.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.id = '__print_frame';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(iframe);
+
+    const cw = iframe.contentWindow;
+    cw.document.open();
+    cw.document.write(
       '<!doctype html><html><head><meta charset="utf-8"><title>Measure Sheet</title>' +
-      '<style>@page{margin:10mm} body{margin:0} .print-only{display:block!important}</style>' +
+      '<style>@page{margin:10mm} html,body{margin:0;padding:0} .print-only{display:block!important}</style>' +
       '</head><body>' + node.outerHTML + '</body></html>'
     );
-    win.document.close();
-    let done = false;
+    cw.document.close();
+
+    const cleanup = () => { const f = document.getElementById('__print_frame'); if (f) f.remove(); };
     const run = () => {
-      if (done) return; done = true;
-      try { win.focus(); win.print(); win.close(); } catch { /* window already closed */ }
+      try { cw.focus(); cw.onafterprint = cleanup; cw.print(); }
+      catch { window.print(); cleanup(); }
+      setTimeout(cleanup, 60000); // safety net if onafterprint never fires
     };
-    win.onload = run;
-    setTimeout(run, 400); // fallback if onload doesn't fire after document.write
+    // Give the iframe document a tick to lay out before printing.
+    if (cw.document.readyState === 'complete') setTimeout(run, 50);
+    else iframe.onload = () => setTimeout(run, 50);
   };
 
   const handleDelete = () => {
