@@ -1,26 +1,31 @@
 @import "tailwindcss";
 
-/* ── Lusso Brand Theme ────────────────────────────────────────────── */
+/* ── Lusso Brand Theme — warm taupe & cream ───────────────────────────
+   Primary: #644A40 (taupe-brown). Secondary: #FFDFB5 (cream).
+   Dark-mode brand accent: #FFE0C2 (light cream). Neutrals are warm.
+────────────────────────────────────────────────────────────────────── */
 @theme {
-  /* Override Tailwind's amber scale → deep teal */
-  --color-amber-50:  #E6F0F0;
-  --color-amber-100: #C5DCDC;
-  --color-amber-200: #9EC8C8;
-  --color-amber-300: #72B0B0;
-  --color-amber-400: #3D9090;
-  --color-amber-500: #174D4D;
-  --color-amber-600: #0F3B3B;
-  --color-amber-700: #0A2A2A;
-  --color-amber-800: #071E1E;
-  --color-amber-900: #041515;
-  --color-amber-950: #020B0B;
+  /* Brand ramp: Tailwind `amber` is overridden to a warm taupe-brown so the
+     ~800 amber-* utilities across the app render on-brand (500 = primary). */
+  --color-amber-50:  #F4EEE9;
+  --color-amber-100: #E8DACE;
+  --color-amber-200: #D5BCA8;
+  --color-amber-300: #BD9C83;
+  --color-amber-400: #94715C;
+  --color-amber-500: #644A40;
+  --color-amber-600: #543D34;
+  --color-amber-700: #443128;
+  --color-amber-800: #342620;
+  --color-amber-900: #281C17;
+  --color-amber-950: #17100C;
 
-  /* Sidebar palette */
-  --color-sidebar:        #0F3535;
-  --color-sidebar-hover:  #174D4D;
-  --color-sidebar-active: #1E6060;
-  --color-sidebar-border: #1A5050;
-  --color-sidebar-text:   #9ECECE;
+  /* Sidebar — kept dark for contrast & brand identity, recolored from teal
+     to a warm espresso charcoal that complements the taupe/cream palette. */
+  --color-sidebar:        #1C1A17;
+  --color-sidebar-hover:  #2A2521;
+  --color-sidebar-active: #3B322B;
+  --color-sidebar-border: #2C2620;
+  --color-sidebar-text:   #CBBFB3;
 }
 
 /* ── Global mobile overflow lock ─────────────────────────────────────────── */
@@ -30,22 +35,83 @@ html, body {
 }
 
 @layer base {
+  /* Semantic palette tokens (light). Dark variants flip under `.dark` below;
+     `@theme inline` maps Tailwind utilities (bg-primary, text-foreground, …)
+     onto these so they respond to the theme automatically. */
   :root {
-    --lusso-primary:          #174D4D;
-    --lusso-primary-dark:     #0F3535;
-    --lusso-primary-light:    #2A6B6B;
-    --lusso-primary-soft:     #E6F0F0;
-    --lusso-accent:           #C8A96A;
-    --lusso-background:       #F7F8F6;
-    --lusso-surface:          #FFFFFF;
-    --lusso-border:           #DDE5E2;
-    --lusso-text-primary:     #1F2A2A;
-    --lusso-text-secondary:   #5E6B6B;
-    --lusso-text-muted:       #8A9696;
+    --card:                  #fcfcfc;
+    --card-foreground:       #202020;
+    --popover:               #fcfcfc;
+    --popover-foreground:    #202020;
+    --primary:               #644a40;
+    --primary-foreground:    #ffffff;
+    --secondary:             #ffdfb5;
+    --secondary-foreground:  #582d1d;
+    --muted:                 #efefef;
+    --muted-foreground:      #646464;
+    --accent:                #e8e8e8;
+    --accent-foreground:     #202020;
+    --destructive:           #e54d2e;
+    --destructive-foreground:#ffffff;
+    --border:                #d8d8d8;
+    --input:                 #d8d8d8;
+    --ring:                  #644a40;
+    --background:            #f9f9f9;
+    --foreground:            #202020;
+    --radius:                0.5rem;
+
+    /* Legacy --lusso-* vars, recolored onto the new palette */
+    --lusso-primary:          #644A40;
+    --lusso-primary-dark:     #543D34;
+    --lusso-primary-light:    #94715C;
+    --lusso-primary-soft:     #F4EEE9;
+    --lusso-accent:           #FFDFB5;
+    --lusso-background:       #F9F9F9;
+    --lusso-surface:          #FCFCFC;
+    --lusso-border:           #D8D8D8;
+    --lusso-text-primary:     #202020;
+    --lusso-text-secondary:   #646464;
+    --lusso-text-muted:       #8A8A8A;
     --lusso-success:          #2F7D5B;
     --lusso-warning:          #C9832B;
-    --lusso-danger:           #B94A48;
+    --lusso-danger:           #E54D2E;
     --lusso-info:             #2A6B8F;
+  }
+
+  /* Dark theme: warm near-blacks, cream brand accent. Sidebar tokens are
+     pinned dark (see @theme) so the sidebar stays dark in both modes. */
+  .dark {
+    --card:                  #191919;
+    --card-foreground:       #eeeeee;
+    --popover:               #191919;
+    --popover-foreground:    #eeeeee;
+    --primary:               #ffe0c2;
+    --primary-foreground:    #081a1b;
+    --secondary:             #393028;
+    --secondary-foreground:  #ffe0c2;
+    --muted:                 #222222;
+    --muted-foreground:      #b4b4b4;
+    --accent:                #2a2a2a;
+    --accent-foreground:     #eeeeee;
+    --destructive:           #e54d2e;
+    --destructive-foreground:#ffffff;
+    --border:                #2c2823;
+    --input:                 #484848;
+    --ring:                  #ffe0c2;
+    --background:            #111111;
+    --foreground:            #eeeeee;
+
+    --lusso-primary:          #FFE0C2;
+    --lusso-primary-dark:     #FFDFB5;
+    --lusso-primary-light:    #FFE0C2;
+    --lusso-primary-soft:     #393028;
+    --lusso-accent:           #FFE0C2;
+    --lusso-background:       #111111;
+    --lusso-surface:          #191919;
+    --lusso-border:           #2C2823;
+    --lusso-text-primary:     #EEEEEE;
+    --lusso-text-secondary:   #B4B4B4;
+    --lusso-text-muted:       #8A8A8A;
   }
 
   * {
@@ -71,35 +137,59 @@ html, body {
   }
 }
 
+/* Map semantic tokens onto Tailwind utilities (inline = responds to .dark). */
+@theme inline {
+  --color-card:                  var(--card);
+  --color-card-foreground:       var(--card-foreground);
+  --color-popover:               var(--popover);
+  --color-popover-foreground:    var(--popover-foreground);
+  --color-primary:               var(--primary);
+  --color-primary-foreground:    var(--primary-foreground);
+  --color-secondary:             var(--secondary);
+  --color-secondary-foreground:  var(--secondary-foreground);
+  --color-muted:                 var(--muted);
+  --color-muted-foreground:      var(--muted-foreground);
+  --color-accent:                var(--accent);
+  --color-accent-foreground:     var(--accent-foreground);
+  --color-destructive:           var(--destructive);
+  --color-destructive-foreground:var(--destructive-foreground);
+  --color-border:                var(--border);
+  --color-input:                 var(--input);
+  --color-ring:                  var(--ring);
+  --color-background:            var(--background);
+  --color-foreground:            var(--foreground);
+  --radius:                      var(--radius);
+}
+
 /* ── Input base style ────────────────────────────────────────────────── */
 .input-base {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #d8d8d8;
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
-  color: #1e293b;
-  background-color: #fff;
+  color: #202020;
+  background-color: #fcfcfc;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-base:focus-visible {
-  border-color: #174D4D;
-  box-shadow: 0 0 0 2px rgb(23 77 77 / 0.2);
+  border-color: #644A40;
+  box-shadow: 0 0 0 2px rgb(100 74 64 / 0.25);
 }
 
 /* ── Global focus-visible ring ───────────────────────────────────────── */
 /* Keyboard-only focus rings — invisible on mouse, visible on keyboard nav */
 :focus-visible {
-  outline: 2px solid #174D4D;
+  outline: 2px solid #644A40;
   outline-offset: 2px;
 }
 
-/* Sidebar is always dark — use a lighter ring for contrast */
+/* Sidebar is always dark — use a warm cream ring for contrast */
 aside :focus-visible {
-  outline-color: #3D9090;
+  outline-color: #C8A96A;
 }
 
 /* Suppress browser default outline only where we apply our own */
@@ -110,6 +200,31 @@ select:focus:not(:focus-visible),
 textarea:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* ── Brand-literal remap (light mode) ─────────────────────────────────────
+   Some components use hardcoded Tailwind `teal` (primary action buttons) and
+   `violet` (Inbox accent) classes that aren't covered by the amber ramp.
+   Remap them onto the taupe-brown brand so the whole app is one palette. */
+.bg-teal-600   { background-color: #644A40; }
+.bg-teal-700   { background-color: #543D34; }
+.hover\:bg-teal-600:hover { background-color: #543D34; }
+.hover\:bg-teal-700:hover { background-color: #443128; }
+.text-teal-600 { color: #644A40; }
+.text-teal-700 { color: #543D34; }
+.border-teal-600 { border-color: #644A40; }
+.bg-teal-50    { background-color: #F4EEE9; }
+.text-teal-700.bg-teal-50 { color: #543D34; }
+.border-teal-200 { border-color: #D5BCA8; }
+
+.bg-violet-500 { background-color: #644A40; }
+.bg-violet-600 { background-color: #543D34; }
+.hover\:bg-violet-600:hover { background-color: #543D34; }
+.text-violet-500 { color: #644A40; }
+.text-violet-600 { color: #543D34; }
+.bg-violet-50  { background-color: #F4EEE9; }
+.bg-violet-50\/30 { background-color: rgb(244 238 233 / 0.5); }
+.border-violet-500 { border-color: #644A40; }
+.border-l-violet-500 { border-left-color: #644A40; }
 
 /* ── Reduced motion ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -159,44 +274,41 @@ textarea:focus:not(:focus-visible) {
 /* Native dark scrollbars + OS chrome */
 html.dark { color-scheme: dark; }
 
-/* Base text colour — any element without an explicit text-* class inherits this.
-   Without this, body text stays #1F2A2A (near-black) on a dark surface. */
-.dark body { color: #e2e8f0; }
+/* Base surface + text — body without an explicit class inherits these. */
+.dark body { background-color: #111111; color: #eeeeee; }
 
 /* ── Surfaces ── */
-.dark .bg-white         { background-color: #1e293b; }   /* cards, modals, inputs */
-.dark .bg-slate-50      { background-color: #0f172a; }   /* page background */
-.dark .bg-slate-100     { background-color: #1e293b; }   /* subtle surfaces */
-.dark .bg-slate-50\/80  { background-color: rgb(15 23 42 / 0.8); }
-.dark .bg-slate-50\/60  { background-color: rgb(15 23 42 / 0.6); }
-.dark .bg-slate-50\/50  { background-color: rgb(15 23 42 / 0.5); }
-.dark .bg-slate-50\/40  { background-color: rgb(15 23 42 / 0.4); }
-.dark .bg-slate-50\/30  { background-color: rgb(15 23 42 / 0.3); }
+.dark .bg-white         { background-color: #191919; }   /* cards, modals, inputs */
+.dark .bg-slate-50      { background-color: #111111; }   /* page background */
+.dark .bg-slate-100     { background-color: #222222; }   /* subtle surfaces */
+.dark .bg-slate-50\/80  { background-color: rgb(17 17 17 / 0.8); }
+.dark .bg-slate-50\/60  { background-color: rgb(17 17 17 / 0.6); }
+.dark .bg-slate-50\/50  { background-color: rgb(17 17 17 / 0.5); }
+.dark .bg-slate-50\/40  { background-color: rgb(17 17 17 / 0.4); }
+.dark .bg-slate-50\/30  { background-color: rgb(17 17 17 / 0.3); }
 
 /* ── Borders ── */
-.dark .border-slate-200 { border-color: #334155; }
-.dark .border-slate-100 { border-color: #253347; }
-.dark .border-slate-50  { border-color: #1e293b; }
+.dark .border-slate-200 { border-color: #38332d; }
+.dark .border-slate-100 { border-color: #2a2520; }
+.dark .border-slate-50  { border-color: #201d19; }
 
 /* ── Dividers (card list separators) ── */
-.dark .divide-slate-50  > :not([hidden]) ~ :not([hidden]) { border-color: #1e293b; }
-.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #253347; }
-.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #334155; }
+.dark .divide-slate-50  > :not([hidden]) ~ :not([hidden]) { border-color: #201d19; }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #2a2520; }
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #38332d; }
 
 /* ── Text ── */
-.dark .text-slate-900   { color: #f1f5f9; }   /* near-white — primary text */
-.dark .text-slate-800   { color: #e2e8f0; }   /* very light */
-.dark .text-slate-700   { color: #cbd5e1; }   /* light */
-.dark .text-slate-600   { color: #94a3b8; }   /* medium-light */
-.dark .text-slate-500   { color: #94a3b8; }
-.dark .text-slate-400   { color: #94a3b8; }   /* bumped — #64748b disappeared on active card bg */
-.dark .text-slate-300   { color: #64748b; }
+.dark .text-slate-900   { color: #f4f4f4; }   /* near-white — primary text */
+.dark .text-slate-800   { color: #eeeeee; }
+.dark .text-slate-700   { color: #d4d4d4; }
+.dark .text-slate-600   { color: #b4b4b4; }   /* muted-foreground */
+.dark .text-slate-500   { color: #b4b4b4; }
+.dark .text-slate-400   { color: #9a9a9a; }
+.dark .text-slate-300   { color: #6f6f6f; }
 
 /* ── Full colour-family remaps for dark mode ─────────────────────────────
-   The app remaps Tailwind amber → deep teal. Every amber-N used as text
-   becomes invisible on dark surfaces. Same problem affects the dark variants
-   (600/700) of every Tailwind colour family. Fix all in one place so no
-   component file needs changing.
+   amber/teal/violet are the BRAND (taupe-brown in light) → become the light
+   cream accent (#FFE0C2) on dark surfaces. Other families stay semantic.
 
    Rule of thumb:
      text-*-700/800 → use the *-300/400 bright equivalent
@@ -205,27 +317,42 @@ html.dark { color-scheme: dark; }
      border-*-200  → transparent tint at 28 % opacity
 ─────────────────────────────────────────────────────────────────────── */
 
-/* — Amber / brand teal (remapped from Tailwind amber) — */
-.dark .text-amber-500   { color: #5CC8C8; }   /* was #174D4D — near-black, invisible */
-.dark .text-amber-600   { color: #4DB8B8; }   /* was #0F3B3B — near-black, invisible */
-.dark .text-amber-700   { color: #3DA8A8; }
-.dark .text-amber-800   { color: #3DA8A8; }
-.dark .bg-amber-50      { background-color: rgb(61 144 144 / 0.12); }
-.dark .bg-amber-50\/40  { background-color: rgb(61 144 144 / 0.12); }  /* active theme btn */
-.dark .bg-amber-100     { background-color: rgb(61 144 144 / 0.18); }
-.dark .bg-amber-200     { background-color: rgb(61 144 144 / 0.25); }
-.dark .border-amber-200 { border-color:     rgb(61 144 144 / 0.30); }
-.dark .border-amber-300 { border-color:     rgb(61 144 144 / 0.40); }
+/* — Amber / brand (taupe-brown → cream accent on dark) — */
+.dark .text-amber-500   { color: #FFE0C2; }
+.dark .text-amber-600   { color: #FFE0C2; }
+.dark .text-amber-700   { color: #FFDFB5; }
+.dark .text-amber-800   { color: #FFDFB5; }
+.dark .text-amber-300   { color: #FFE0C2; }
+.dark .bg-amber-50      { background-color: rgb(255 224 194 / 0.12); }
+.dark .bg-amber-50\/40  { background-color: rgb(255 224 194 / 0.12); }  /* active theme btn */
+.dark .bg-amber-100     { background-color: rgb(255 224 194 / 0.18); }
+.dark .bg-amber-200     { background-color: rgb(255 224 194 / 0.25); }
+.dark .bg-amber-500\/20 { background-color: rgb(255 224 194 / 0.18); }  /* sidebar badge */
+.dark .border-amber-200 { border-color:     rgb(255 224 194 / 0.30); }
+.dark .border-amber-300 { border-color:     rgb(255 224 194 / 0.40); }
 
-/* — Teal (Tailwind real teal scale, not the amber remap) — */
-.dark .text-teal-900    { color: #99F6E4; }
-.dark .text-teal-800    { color: #99F6E4; }
-.dark .text-teal-700    { color: #2DD4BF; }
-.dark .text-teal-600    { color: #2DD4BF; }
-.dark .text-teal-500    { color: #2DD4BF; }
-.dark .bg-teal-50       { background-color: rgb(20 184 166 / 0.12); }
-.dark .bg-teal-100      { background-color: rgb(20 184 166 / 0.18); }
-.dark .border-teal-200  { border-color:     rgb(20 184 166 / 0.30); }
+/* — Teal (remapped to brand) — cream accent on dark — */
+.dark .text-teal-900    { color: #FFE0C2; }
+.dark .text-teal-800    { color: #FFE0C2; }
+.dark .text-teal-700    { color: #FFE0C2; }
+.dark .text-teal-600    { color: #FFE0C2; }
+.dark .text-teal-500    { color: #FFE0C2; }
+.dark .text-teal-300    { color: #FFE0C2; }
+.dark .bg-teal-50       { background-color: rgb(255 224 194 / 0.12); }
+.dark .bg-teal-100      { background-color: rgb(255 224 194 / 0.18); }
+.dark .bg-teal-500\/20  { background-color: rgb(255 224 194 / 0.18); }
+.dark .border-teal-200  { border-color:     rgb(255 224 194 / 0.30); }
+
+/* — Violet (Inbox accent, remapped to brand) — cream on dark — */
+.dark .text-violet-700  { color: #FFE0C2; }
+.dark .text-violet-600  { color: #FFE0C2; }
+.dark .text-violet-500  { color: #FFE0C2; }
+.dark .bg-violet-500    { background-color: #644A40; }   /* solid badge keeps body */
+.dark .bg-violet-600    { background-color: #543D34; }
+.dark .bg-violet-50      { background-color: rgb(255 224 194 / 0.16); }  /* selected conversation */
+.dark .bg-violet-50\/30  { background-color: rgb(255 224 194 / 0.08); }  /* unread tint */
+.dark .border-violet-200 { border-color:    rgb(255 224 194 / 0.30); }
+.dark .border-l-violet-500 { border-left-color: #FFE0C2; }
 
 /* — Green — */
 .dark .text-green-900   { color: #86EFAC; }
@@ -293,14 +420,6 @@ html.dark { color-scheme: dark; }
 .dark .bg-purple-100    { background-color: rgb(168 85 247 / 0.18); }
 .dark .border-purple-200 { border-color:    rgb(168 85 247 / 0.30); }
 
-/* — Violet (Inbox accent: selected rows, highlights) — */
-.dark .text-violet-700  { color: #A78BFA; }
-.dark .text-violet-600  { color: #A78BFA; }
-.dark .text-violet-500  { color: #A78BFA; }
-.dark .bg-violet-50      { background-color: rgb(139 92 246 / 0.20); }  /* selected conversation */
-.dark .bg-violet-50\/30  { background-color: rgb(139 92 246 / 0.10); }  /* unread tint */
-.dark .border-violet-200 { border-color:    rgb(139 92 246 / 0.30); }
-
 /* — Indigo — */
 .dark .text-indigo-800  { color: #C7D2FE; }
 .dark .text-indigo-700  { color: #818CF8; }
@@ -328,17 +447,17 @@ html.dark { color-scheme: dark; }
 .dark input:not([type=checkbox]):not([type=radio]),
 .dark select,
 .dark textarea {
-  background-color: #1e293b;
-  border-color: #475569;
-  color: #f1f5f9;
+  background-color: #191919;
+  border-color: #484848;
+  color: #eeeeee;
 }
 
 .dark input::placeholder,
-.dark textarea::placeholder { color: #64748b; }
+.dark textarea::placeholder { color: #7a7a7a; }
 
 /* ── Hover states on list rows ── */
-.dark .hover\:bg-slate-50:hover  { background-color: #1a2744; }
-.dark .hover\:bg-slate-100:hover { background-color: #253347; }
+.dark .hover\:bg-slate-50:hover  { background-color: #201d19; }
+.dark .hover\:bg-slate-100:hover { background-color: #2a2520; }
 
 /* ── Shadows (more visible on dark) ── */
 .dark .shadow-sm  { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.4); }
@@ -351,25 +470,25 @@ html.dark { color-scheme: dark; }
 .dark .bg-black\/40 { background-color: rgb(0 0 0 / 0.65); }
 
 /* ── Top bar (header in Layout) ── */
-.dark header.bg-white { background-color: #1e293b; border-color: #334155; }
+.dark header.bg-white { background-color: #191919; border-color: #2c2823; }
 
 /* ── Mobile bottom nav in dark mode ── */
-.dark nav.bg-white { background-color: #1e293b; border-color: #334155; }
+.dark nav.bg-white { background-color: #191919; border-color: #2c2823; }
 
 /* ── input-base in dark mode ── */
 .dark .input-base {
-  background-color: #1e293b;
-  border-color: #475569;
-  color: #f1f5f9;
+  background-color: #191919;
+  border-color: #484848;
+  color: #eeeeee;
 }
 .dark .input-base:focus-visible {
-  border-color: #3D9090;
-  box-shadow: 0 0 0 2px rgb(61 144 144 / 0.3);
+  border-color: #FFE0C2;
+  box-shadow: 0 0 0 2px rgb(255 224 194 / 0.3);
 }
 
 /* ── Focus rings stay visible ── */
-.dark .focus\:ring-amber-400:focus { --tw-ring-color: #174D4D; }
-.dark :focus-visible { outline-color: #3D9090; }
+.dark .focus\:ring-amber-400:focus { --tw-ring-color: #FFE0C2; }
+.dark :focus-visible { outline-color: #FFE0C2; }
 
 /* ── Sticky elements keep dark bg ── */
 .dark .sticky { background-color: inherit; }
