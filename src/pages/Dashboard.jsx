@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   formatDistanceToNow, parseISO, isWithinInterval, isSameDay,
   subDays, subMonths, startOfYear, endOfYear, startOfMonth,
-  addDays, format, differenceInDays,
+  addDays, format, differenceInDays, startOfDay,
 } from 'date-fns';
 import {
   Briefcase, ClipboardList, CheckCircle2, Clock,
@@ -12,11 +12,12 @@ import {
   CalendarDays, Package, Wrench, Star, DollarSign,
   ChevronDown, BarChart2, TrendingDown, HardHat, Percent,
   SlidersHorizontal, Eye, EyeOff, MapPin, Wand2,
+  FileText, X, Mail,
 } from 'lucide-react';
 import {
   getJobs, getJobsFiltered, getCustomers, getCustomersFiltered,
   getActivity, getQuotes, getQuotesFiltered, computeQuoteTotals,
-  getInstallRequests, getInstaller, getCustomer,
+  getInstallRequests, getInstaller, getCustomer, getJob,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
@@ -65,13 +66,29 @@ const STAT_GROUPS = [
   { label: 'Completed',           key: 'Completed',            icon: CheckCircle2,  color: 'text-green-500',  bg: 'bg-green-50' },
 ];
 
+// Covers every activity type the app emits (see addActivity calls across the
+// codebase). Unmapped types fall back to ACTIVITY_FALLBACK rather than masquerading
+// as a "job created" event.
 const ACTIVITY_ICONS = {
-  status_change:   { icon: TrendingUp,    color: 'text-blue-500',   bg: 'bg-blue-50' },
-  measure_created: { icon: ClipboardList, color: 'text-amber-500',  bg: 'bg-amber-50' },
-  job_created:     { icon: Briefcase,     color: 'text-purple-500', bg: 'bg-purple-50' },
-  quote_sent:      { icon: TrendingUp,    color: 'text-orange-500', bg: 'bg-orange-50' },
-  job_completed:   { icon: CheckCircle2,  color: 'text-green-500',  bg: 'bg-green-50' },
+  status_change:           { icon: TrendingUp,    color: 'text-blue-500',   bg: 'bg-blue-50' },
+  job_created:             { icon: Briefcase,     color: 'text-purple-500', bg: 'bg-purple-50' },
+  created:                 { icon: Plus,          color: 'text-purple-500', bg: 'bg-purple-50' },
+  customer:                { icon: Users,         color: 'text-blue-500',   bg: 'bg-blue-50' },
+  measure_created:         { icon: ClipboardList, color: 'text-amber-500',  bg: 'bg-amber-50' },
+  quote_sent:              { icon: FileText,      color: 'text-orange-500', bg: 'bg-orange-50' },
+  sent:                    { icon: FileText,      color: 'text-orange-500', bg: 'bg-orange-50' },
+  po_sent:                 { icon: FileText,      color: 'text-amber-500',  bg: 'bg-amber-50' },
+  viewed:                  { icon: Eye,           color: 'text-cyan-500',   bg: 'bg-cyan-50' },
+  accepted:                { icon: CheckCircle2,  color: 'text-green-500',  bg: 'bg-green-50' },
+  declined:                { icon: X,             color: 'text-red-500',    bg: 'bg-red-50' },
+  job_completed:           { icon: CheckCircle2,  color: 'text-green-500',  bg: 'bg-green-50' },
+  message:                 { icon: Mail,          color: 'text-slate-500',  bg: 'bg-slate-100' },
+  install_request_created: { icon: HardHat,       color: 'text-slate-500',  bg: 'bg-slate-100' },
+  install_request_sent:    { icon: HardHat,       color: 'text-blue-500',   bg: 'bg-blue-50' },
+  install_accepted:        { icon: CheckCircle2,  color: 'text-green-500',  bg: 'bg-green-50' },
+  install_declined:        { icon: X,             color: 'text-red-500',    bg: 'bg-red-50' },
 };
+const ACTIVITY_FALLBACK = { icon: Clock, color: 'text-slate-400', bg: 'bg-slate-100' };
 
 const PIPELINE_STATUSES = ['Draft', 'Sent', 'Viewed', 'Waiting'];
 
@@ -291,13 +308,8 @@ function TodaySchedule({ navigate }) {
 
   const EventRow = ({ req }) => {
     const inst = getInstaller(req.installerId);
-    const job  = getCustomer(req.customerId) || (() => {
-      const j = (JSON.parse(localStorage.getItem('lusso_jobs') || '[]')).find(j => j.id === req.jobId);
-      return j ? getCustomer(j.customerId) : null;
-    })();
-    // Get customer via job
-    const jobRaw = (JSON.parse(localStorage.getItem('lusso_jobs') || '[]')).find(j => j.id === req.jobId);
-    const cust   = jobRaw ? getCustomer(jobRaw.customerId) : null;
+    const job  = getJob(req.jobId);
+    const cust = job ? getCustomer(job.customerId) : null;
 
     return (
       <button
@@ -555,8 +567,20 @@ export default function Dashboard() {
     jobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
     const active = jobs.filter(j => !['Completed','Cancelled'].includes(j.status)).length;
     const urgent = jobs.filter(j => ['Urgent','High'].includes(j.urgency)).length;
-    return { counts, active, urgent };
+    const awaitingApproval = counts['Awaiting Approval'] || 0;
+    return { counts, active, urgent, awaitingApproval };
   }, [jobs]);
+
+  // Installs booked over the next 7 days (excludes declined/cancelled requests)
+  const installsThisWeek = (() => {
+    const start = startOfDay(new Date());
+    const end   = addDays(start, 7);
+    return getInstallRequests().filter(r =>
+      r.proposedDate &&
+      !['Declined', 'Cancelled'].includes(r.status) &&
+      inRange(r.proposedDate, { start, end })
+    ).length;
+  })();
 
   const recentJobs = useMemo(() =>
     [...jobs].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 5),
@@ -696,10 +720,10 @@ export default function Dashboard() {
 
       {/* ── Hero stats (always visible) ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <HeroStat label="Active Jobs"            value={lI(stats.active)}                   icon={Briefcase}     color="text-amber-600" bg="bg-amber-50"  onClick={() => navigate('/jobs')} />
-        <HeroStat label="Total Customers"       value={lI(customers.length)}               icon={Users}         color="text-blue-600"  bg="bg-blue-50"   onClick={() => navigate('/customers')} />
-        <HeroStat label="Urgent / High Priority" value={lI(stats.urgent)}                  icon={AlertTriangle} color="text-red-500"   bg="bg-red-50"    onClick={() => navigate('/jobs')} />
-        <HeroStat label="Completed Jobs"         value={lI(stats.counts['Completed'] || 0)} icon={CheckCircle2}  color="text-green-600" bg="bg-green-50"  onClick={() => navigate('/jobs')} />
+        <HeroStat label="Active Jobs"            value={lI(stats.active)}            icon={Briefcase}     color="text-amber-600" bg="bg-amber-50"  onClick={() => navigate('/jobs')} />
+        <HeroStat label="Awaiting Approval"      value={lI(stats.awaitingApproval)}  icon={Clock}         color="text-blue-600"  bg="bg-blue-50"   onClick={() => navigate(`/jobs?status=${encodeURIComponent('Awaiting Approval')}`)} />
+        <HeroStat label="Urgent / High Priority" value={lI(stats.urgent)}            icon={AlertTriangle} color="text-red-500"   bg="bg-red-50"    onClick={() => navigate('/jobs')} />
+        <HeroStat label="Installs This Week"     value={lI(installsThisWeek)}        icon={HardHat}       color="text-teal-600"  bg="bg-teal-50"   onClick={() => navigate('/calendar')} />
       </div>
 
       {/* ── Today's Schedule ─────────────────────────────────────────────────── */}
@@ -974,7 +998,7 @@ export default function Dashboard() {
               </div>
               <div className="divide-y divide-slate-50">
                 {recentActivity.map(act => {
-                  const { icon: Icon, color, bg } = ACTIVITY_ICONS[act.type] || ACTIVITY_ICONS.job_created;
+                  const { icon: Icon, color, bg } = ACTIVITY_ICONS[act.type] || ACTIVITY_FALLBACK;
                   const job      = jobs.find(j => j.id === act.jobId);
                   const customer = job ? customers.find(c => c.id === job.customerId) : null;
                   return (
