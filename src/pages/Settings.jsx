@@ -17,6 +17,7 @@ import {
   getProductTypes, saveProductType, addProductType, reorderProductType,
   getImportBatches, getPricedItemBatches,
   getMessagePresets, saveMessagePresets, DEFAULT_MESSAGE_PRESETS,
+  getPoPresets, savePoPreset, deletePoPreset,
 } from '../store/data';
 import { pushAllToSupabase, hydrateFromSupabase } from '../store/db';
 import Card from '../components/Card';
@@ -375,9 +376,10 @@ export default function Settings() {
           </>)}
 
           {/* ── MESSAGES ── */}
-          {section === 'messages' && (
+          {section === 'messages' && (<>
             <MessagePresetsSection />
-          )}
+            <PoMessagePresetsSection />
+          </>)}
 
           {/* ── INTEGRATIONS ── */}
           {section === 'integrations' && (
@@ -1016,6 +1018,75 @@ function MessagePresetsSection() {
             )}
           </div>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Purchase Order email presets (email → pre-written message) ───────────────
+const PO_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function PoMessagePresetsSection() {
+  const [presets, setPresets] = useState(getPoPresets);
+  const [email, setEmail]     = useState('');
+  const [message, setMessage] = useState('');
+  const [editId, setEditId]   = useState(null);
+
+  const refresh = () => setPresets(getPoPresets());
+  const reset   = () => { setEmail(''); setMessage(''); setEditId(null); };
+
+  const save = () => {
+    const e = email.trim();
+    if (!PO_EMAIL_RE.test(e)) { toast('Enter a valid email address.', 'error'); return; }
+    savePoPreset({ id: editId, email: e, message });
+    refresh(); reset();
+    toast('Preset saved.');
+  };
+  const edit = (p) => { setEditId(p.id); setEmail(p.email); setMessage(p.message || ''); };
+  const del  = (p) => { deletePoPreset(p.id); if (editId === p.id) reset(); refresh(); toast('Preset deleted.', 'info'); };
+
+  return (
+    <Card>
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <MessageSquare size={14} className="text-amber-500" /> Purchase Order email presets
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">Save a pre-written message per supplier email. It auto-fills the body when you send a PO to that address.</p>
+      </div>
+      <div className="p-5 space-y-4">
+        {presets.length > 0 && (
+          <div className="space-y-2">
+            {presets.map(p => (
+              <div key={p.id} className={`flex items-start gap-2 border rounded-lg px-3 py-2 ${editId === p.id ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-700 truncate">{p.email}</p>
+                  <p className="text-xs text-slate-400 whitespace-pre-wrap line-clamp-2">{p.message || '—'}</p>
+                </div>
+                <button onClick={() => edit(p)} className="text-xs text-slate-500 hover:text-amber-600 flex-shrink-0">Edit</button>
+                <button onClick={() => del(p)} className="text-slate-400 hover:text-red-500 flex-shrink-0" title="Delete preset"><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="space-y-2 border-t border-slate-100 pt-4">
+          <p className="text-xs font-medium text-slate-500">{editId ? 'Edit preset' : 'Add a preset'}</p>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="supplier@email.com"
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+          <textarea rows={3} value={message} onChange={e => setMessage(e.target.value)} placeholder="Pre-written message for this supplier…"
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y" />
+          <div className="flex gap-2">
+            <button onClick={save}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white">
+              <Save size={13} /> {editId ? 'Save changes' : 'Add preset'}
+            </button>
+            {editId && (
+              <button onClick={reset}
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
+                <X size={13} /> Cancel
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </Card>
   );

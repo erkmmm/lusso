@@ -32,6 +32,7 @@ const ACTIVITY_ICONS = {
   measure_created:         { icon: ClipboardList, bg: 'bg-amber-100',  color: 'text-amber-600' },
   job_created:             { icon: Briefcase,     bg: 'bg-purple-100', color: 'text-purple-600' },
   quote_sent:              { icon: FileText,      bg: 'bg-orange-100', color: 'text-orange-600' },
+  po_sent:                 { icon: FileText,      bg: 'bg-amber-100',  color: 'text-amber-600' },
   job_completed:           { icon: CheckCircle2, bg: 'bg-green-100',   color: 'text-green-600' },
   install_request_created: { icon: HardHat,      bg: 'bg-slate-100',   color: 'text-slate-500' },
   install_request_sent:    { icon: HardHat,      bg: 'bg-blue-100',    color: 'text-blue-600' },

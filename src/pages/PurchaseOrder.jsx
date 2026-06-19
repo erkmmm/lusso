@@ -2,8 +2,13 @@ import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
-import { Download, Printer, FileText, Send, Loader } from 'lucide-react';
-import { getMeasureSheet, getCustomer, getJob } from '../store/data';
+import { Download, Printer, FileText, Send, Loader, Save, Trash2 } from 'lucide-react';
+import {
+  getMeasureSheet, getCustomer, getJob,
+  getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
+  addActivity,
+} from '../store/data';
+import { useProfile } from '../contexts/UserProfileContext';
 import { sendPurchaseOrder } from '../lib/email';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
@@ -61,10 +66,17 @@ function rowCells(item, i, motorSide) {
 
 export default function PurchaseOrder() {
   const { id } = useParams();
+  const { displayName = '' } = useProfile() || {};
 
   const sheet = getMeasureSheet(id);
   const customer = sheet ? getCustomer(sheet.customerId) : null;
   const job = sheet?.jobId ? getJob(sheet.jobId) : null;
+
+  const dateOrdered = format(new Date(), 'dd/MM/yyyy');
+  const jobNumber = job?.jobNumber || '';
+  const customerName = customer?.name || '';
+  const fileBase = `Curtain PO - ${jobNumber || customerName || 'sheet'}`.replace(/[\\/:*?"<>|]/g, '');
+  const defaultMessage = `Hi,\n\nPlease find attached the curtain purchase order${jobNumber ? ` for job ${jobNumber}` : ''}${customerName ? ` (${customerName})` : ''}.\n\nThanks,\nLusso`;
 
   const curtains = useMemo(
     () => (sheet?.lineItems || []).filter(isCurtain),
@@ -80,6 +92,20 @@ export default function PurchaseOrder() {
   const [extraNotes, setExtraNotes] = useState('');
   const [recipient, setRecipient] = useState(() => localStorage.getItem(RECIPIENT_KEY) || '');
   const [sending, setSending] = useState(false);
+  const [presets, setPresets] = useState(() => getPoPresets());
+  // Body initialises from the remembered recipient's preset (or the default),
+  // then auto-fills on recipient change via applyRecipient() — stays editable.
+  const [message, setMessage] = useState(() => {
+    const preset = getPoPresetForEmail(localStorage.getItem(RECIPIENT_KEY) || '');
+    return preset ? preset.message : defaultMessage;
+  });
+
+  // Set the recipient and, if it matches a saved preset, auto-fill the body.
+  const applyRecipient = (value) => {
+    setRecipient(value);
+    const preset = getPoPresetForEmail(value);
+    if (preset) setMessage(preset.message);
+  };
 
   // Per-line motor side, keyed by item id (defaults to the stored motorSide).
   const [motorSides, setMotorSides] = useState(() => {
@@ -98,11 +124,6 @@ export default function PurchaseOrder() {
       </div>
     );
   }
-
-  const dateOrdered = format(new Date(), 'dd/MM/yyyy');
-  const jobNumber = job?.jobNumber || '';
-  const customerName = customer?.name || '';
-  const fileBase = `Curtain PO - ${jobNumber || customerName || 'sheet'}`.replace(/[\\/:*?"<>|]/g, '');
 
   const rows = curtains.map((it, i) => rowCells(it, i, motorFor(it, i)));
 
@@ -224,11 +245,20 @@ export default function PurchaseOrder() {
       await sendPurchaseOrder({
         to,
         subject: `Curtain Purchase Order${jobNumber ? ` – ${jobNumber}` : customerName ? ` – ${customerName}` : ''}`,
-        message: `Hi,\n\nPlease find attached the curtain purchase order${jobNumber ? ` for job ${jobNumber}` : ''}${customerName ? ` (${customerName})` : ''}.\n\nThanks,\nLusso`,
+        message: (message || '').trim() || defaultMessage,
         filename: `${fileBase}.pdf`,
         contentBase64,
       });
       localStorage.setItem(RECIPIENT_KEY, to);
+      // Stage 2: log a note on the linked job recording the send.
+      if (sheet.jobId) {
+        addActivity({
+          jobId: sheet.jobId,
+          type: 'po_sent',
+          message: `Curtain PO sent to ${to}${supplier ? ` (${supplier})` : ''}`,
+          user: displayName || 'System',
+        });
+      }
       toast(`Purchase order sent to ${to}.`);
     } catch (err) {
       toast(err.message || 'Could not send the purchase order.', 'error');
@@ -236,6 +266,22 @@ export default function PurchaseOrder() {
       setSending(false);
     }
   };
+
+  const handleSavePreset = () => {
+    const email = recipient.trim();
+    if (!EMAIL_RE.test(email)) { toast('Enter a valid email before saving a preset.', 'error'); return; }
+    savePoPreset({ email, message });
+    setPresets(getPoPresets());
+    toast(`Saved message preset for ${email}.`);
+  };
+
+  const handleDeletePreset = (preset) => {
+    deletePoPreset(preset.id);
+    setPresets(getPoPresets());
+    toast('Preset deleted.', 'info');
+  };
+
+  const activePreset = getPoPresetForEmail(recipient);
 
   const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400';
 
@@ -258,11 +304,15 @@ export default function PurchaseOrder() {
           <div className="flex gap-2 flex-shrink-0 flex-wrap items-center justify-end">
             <input
               type="email"
+              list="po-preset-emails"
               value={recipient}
-              onChange={e => setRecipient(e.target.value)}
+              onChange={e => applyRecipient(e.target.value)}
               placeholder="supplier@email.com"
               className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-amber-400"
             />
+            <datalist id="po-preset-emails">
+              {presets.map(p => <option key={p.id} value={p.email} />)}
+            </datalist>
             <button onClick={handleSend} disabled={sending || !curtains.length}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white">
               {sending ? <Loader size={13} className="animate-spin" /> : <Send size={13} />} Send PO
@@ -283,6 +333,48 @@ export default function PurchaseOrder() {
         <Card><p className="p-8 text-center text-sm text-slate-400">This measure sheet has no curtain items to order.</p></Card>
       ) : (
         <>
+          {/* Email message + presets */}
+          <Card>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+              <h2 className="font-semibold text-slate-800 text-sm">Email message</h2>
+              <button onClick={handleSavePreset}
+                className="text-xs font-medium text-amber-600 hover:underline flex items-center gap-1 flex-shrink-0">
+                <Save size={12} /> {activePreset ? 'Update preset' : 'Save as preset'}
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-xs text-slate-500 mb-1">
+                  Body sent with the PO{recipient ? ` to ${recipient}` : ''}
+                  {activePreset && <span className="ml-1 text-amber-600">· auto-filled from saved preset</span>}
+                </p>
+                <textarea rows={4} value={message} onChange={e => setMessage(e.target.value)}
+                  className={inputCls} placeholder="Message to the supplier…" />
+              </div>
+              {presets.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-slate-500 mb-1.5">Saved message presets</p>
+                  <div className="space-y-1.5">
+                    {presets.map(p => (
+                      <div key={p.id} className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${activePreset?.id === p.id ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium text-slate-700 truncate block">{p.email}</span>
+                          <span className="text-xs text-slate-400 truncate block">{p.message?.replace(/\n/g, ' ') || '—'}</span>
+                        </div>
+                        <button onClick={() => applyRecipient(p.email)}
+                          className="text-xs font-medium text-amber-600 hover:underline flex-shrink-0">Use</button>
+                        <button onClick={() => handleDeletePreset(p)}
+                          className="text-slate-400 hover:text-red-500 flex-shrink-0" title="Delete preset">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
           {/* Order details + accessories (per-order inputs) */}
           <Card>
             <div className="px-5 py-4 border-b border-slate-100">

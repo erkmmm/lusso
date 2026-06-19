@@ -733,16 +733,51 @@ export const getActivity = () => get('lusso_activity') || [];
 export const getActivityByJob = (jobId) => getActivity().filter(a => a.jobId === jobId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
 export const addActivity = ({ jobId, type, message, user }) => {
+  const now = new Date().toISOString();
+  const entry = { id: uuidv4(), jobId, type, message, user, createdAt: now, updatedAt: now };
   const activity = getActivity();
-  activity.unshift({
-    id: uuidv4(),
-    jobId,
-    type,
-    message,
-    user,
-    createdAt: new Date().toISOString(),
-  });
+  activity.unshift(entry);
   set('lusso_activity', activity);
+  db.saveActivity(entry); // sync to Supabase (append-only)
+};
+
+// ─── PO message presets (email → pre-written message) ─────────────────────────
+export const getPoPresets = () =>
+  (get('lusso_po_message_presets') || []).filter(p => !p.deletedAt);
+
+export const getPoPresetForEmail = (email) => {
+  if (!email) return null;
+  const e = email.trim().toLowerCase();
+  return getPoPresets().find(p => (p.email || '').trim().toLowerCase() === e) || null;
+};
+
+// Upsert a preset (one per email). Returns the saved record.
+export const savePoPreset = ({ id, email, message }) => {
+  const presets = get('lusso_po_message_presets') || [];
+  const now = new Date().toISOString();
+  const trimmedEmail = (email || '').trim();
+  let idx = id ? presets.findIndex(p => p.id === id) : -1;
+  if (idx < 0) idx = presets.findIndex(p => !p.deletedAt && (p.email || '').trim().toLowerCase() === trimmedEmail.toLowerCase());
+  let record;
+  if (idx >= 0) {
+    record = { ...presets[idx], email: trimmedEmail, message, deletedAt: null, updatedAt: now };
+    presets[idx] = record;
+  } else {
+    record = { id: uuidv4(), email: trimmedEmail, message, createdAt: now, updatedAt: now };
+    presets.push(record);
+  }
+  set('lusso_po_message_presets', presets);
+  db.savePoMessagePreset(record);
+  return record;
+};
+
+export const deletePoPreset = (id) => {
+  const presets = get('lusso_po_message_presets') || [];
+  const idx = presets.findIndex(p => p.id === id);
+  if (idx < 0) return;
+  presets[idx] = { ...presets[idx], deletedAt: new Date().toISOString() };
+  set('lusso_po_message_presets', presets);
+  db.deletePoMessagePreset(id);
 };
 
 // ─── Staff ────────────────────────────────────────────────────────────────────

@@ -182,6 +182,10 @@ const TABLES = [
   { table: 'notifications',          key: KEYS.notifications },
   { table: 'calendar_events',        key: 'lusso_calendar_events' },
   { table: 'tasks',                  key: KEYS.tasks },
+  { table: 'po_message_presets',     key: 'lusso_po_message_presets' },
+  // NOTE: 'activity' is intentionally NOT here — it's append-only and synced
+  // via a union (see hydrateFromSupabase) so existing local history is never
+  // dropped by the "Supabase is authoritative" rule.
   // employees table doesn't exist in Supabase — uses profiles table instead
   // { table: 'employees',           key: KEYS.employees },
 ];
@@ -264,6 +268,23 @@ export async function hydrateFromSupabase() {
       if (rows.length > 0) hadCloudData = true;
     })
   );
+
+  // ── Activity (append-only) — union, never drop local-only entries ──────────
+  // Unlike the entity tables above, activity is never deleted, so we merge
+  // Supabase rows into the local log instead of letting Supabase wipe it.
+  // This pulls in activity from other devices while keeping local/seed history.
+  try {
+    const { data, error } = await fetchAllPages('activity', true);
+    if (!error) {
+      const sbRows = fromDbAll(data || []);
+      const byId = new Map((LS.get('lusso_activity') || []).map(r => [r.id, r]));
+      for (const r of sbRows) byId.set(r.id, r); // Supabase wins for shared ids
+      const merged = Array.from(byId.values())
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      LS.set('lusso_activity', merged);
+      if (sbRows.length > 0) hadCloudData = true;
+    }
+  } catch (e) { console.warn('[db] hydrate activity:', e.message); }
 
   // Sync numeric counters so generated numbers never collide with Supabase records.
   try {
@@ -533,6 +554,13 @@ export const db = {
   // Calendar events
   saveCalendarEvent:    (r) => upsert('calendar_events', r),
   deleteCalendarEvent:  (id) => remove('calendar_events', id),
+
+  // Activity log (append-only, synced via union in hydrate)
+  saveActivity:         (r) => upsert('activity', r),
+
+  // PO message presets (email → pre-written message)
+  savePoMessagePreset:   (r)  => upsert('po_message_presets', r),
+  deletePoMessagePreset: (id) => softDelete('po_message_presets', id),
 };
 
 // ── Batch upsert for bulk imports ────────────────────────────────────────────
