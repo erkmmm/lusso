@@ -50,7 +50,7 @@ export default function JobAIChat({ jobId }) {
   const [knowledge, setKnowledge]       = useState([]);
   const [uploading, setUploading]       = useState(false);
   const [uploadError, setUploadError]   = useState(null);
-  const bottomRef = useRef(null);
+  const listRef   = useRef(null);
   const inputRef  = useRef(null);
   const fileRef   = useRef(null);
 
@@ -80,8 +80,11 @@ export default function JobAIChat({ jobId }) {
       .then(({ data }) => setKnowledge(data ?? []));
   }, [jobId]);
 
+  // Keep the conversation scrolled to the latest message — but only the chat
+  // container, not the whole page (scrollIntoView would scroll the page too).
   useEffect(() => {
-    if (messages?.length) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = listRef.current;
+    if (el && messages?.length) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const handleSend = async (text) => {
@@ -209,7 +212,7 @@ export default function JobAIChat({ jobId }) {
       {!collapsed && (
         <>
           {/* Messages area */}
-          <div className="h-80 overflow-y-auto px-5 py-4 space-y-4 bg-slate-50/40">
+          <div ref={listRef} className="h-80 overflow-y-auto px-5 py-4 space-y-4 bg-slate-50/40">
             {messages === null && (
               <div className="flex items-center justify-center h-full">
                 <Loader size={16} className="animate-spin text-slate-400" />
@@ -283,7 +286,6 @@ export default function JobAIChat({ jobId }) {
                     </div>
                   </div>
                 )}
-                <div ref={bottomRef} />
               </>
             )}
           </div>
