@@ -25,6 +25,7 @@ import Card from '../components/Card';
 
 // ─── Widget definitions ────────────────────────────────────────────────────────
 const WIDGET_DEFS = [
+  { key: 'needsAttention',    label: 'Needs Attention',        desc: 'Items waiting on action — stalled, quotes out, pending installs' },
   { key: 'todaySchedule',     label: "Today's Schedule",       desc: 'Installs booked for today & tomorrow' },
   { key: 'salesPerformance',  label: 'Sales Performance',      desc: 'Win rate, pipeline value & quotes accepted' },
   { key: 'monthlyTrend',      label: 'Monthly Revenue Trend',  desc: 'Accepted quote value for each month' },
@@ -526,6 +527,71 @@ function StalledJobs({ jobs, customers, navigate }) {
   );
 }
 
+// ─── Needs Attention ──────────────────────────────────────────────────────────
+// Action-first summary band: rolls up the things waiting on someone. Only shows
+// buckets with a non-zero count; when everything's clear it shows an all-caught-up
+// state. `infl` keeps the figures consistent with LARP mode when it's on.
+function NeedsAttention({ jobs, quotes, navigate, infl }) {
+  const now      = new Date();
+  const TERMINAL = ['Completed', 'Cancelled'];
+
+  const stalled = jobs.filter(j =>
+    !TERMINAL.includes(j.status) && j.updatedAt &&
+    differenceInDays(now, parseISO(j.updatedAt)) >= 14
+  ).length;
+  const quotesOut     = quotes.filter(q => ['Sent', 'Viewed'].includes(q.status)).length;
+  const pendingInstalls = getInstallRequests().filter(r => r.status === 'Sent').length;
+
+  const items = [
+    { key: 'stalled',  count: stalled,         label: 'Stalled jobs',     sub: 'No activity 14+ days', icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',   onClick: () => navigate('/jobs') },
+    { key: 'quotesOut', count: quotesOut,      label: 'Quotes out',       sub: 'Awaiting customer',    icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/quotes') },
+    { key: 'install',  count: pendingInstalls, label: 'Install requests', sub: 'Awaiting installer',   icon: HardHat,       color: 'text-blue-600',  bg: 'bg-blue-50',  onClick: () => navigate('/calendar') },
+  ].filter(i => i.count > 0);
+
+  if (items.length === 0) {
+    return (
+      <Card className="px-5 py-4 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+          <CheckCircle2 size={18} className="text-green-500" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-800">You're all caught up</p>
+          <p className="text-xs text-slate-400">Nothing is waiting on action right now.</p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <h2 className="font-semibold text-slate-800">Needs Attention</h2>
+        <span className="text-xs font-medium bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">
+          {infl(items.reduce((s, i) => s + i.count, 0))}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {items.map(({ icon: Icon, ...i }) => (
+          <button
+            key={i.key}
+            onClick={i.onClick}
+            className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center gap-3 hover:shadow-md transition-shadow text-left"
+          >
+            <div className={`w-10 h-10 rounded-xl ${i.bg} flex items-center justify-center flex-shrink-0`}>
+              <Icon size={20} className={i.color} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-2xl font-bold text-slate-900 leading-none">{infl(i.count)}</div>
+              <div className="text-sm font-medium text-slate-700 mt-1 truncate">{i.label}</div>
+              <div className="text-xs text-slate-400 truncate">{i.sub}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   useDataRefresh();
@@ -726,8 +792,14 @@ export default function Dashboard() {
         <HeroStat label="Installs This Week"     value={lI(installsThisWeek)}        icon={HardHat}       color="text-teal-600"  bg="bg-teal-50"   onClick={() => navigate('/calendar')} />
       </div>
 
+      {/* ── Needs Attention (action-first) ───────────────────────────────────── */}
+      {visible('needsAttention') && <NeedsAttention jobs={jobs} quotes={quotes} navigate={navigate} infl={lI} />}
+
       {/* ── Today's Schedule ─────────────────────────────────────────────────── */}
       {visible('todaySchedule') && <TodaySchedule navigate={navigate} />}
+
+      {/* ── Stalled Jobs ─────────────────────────────────────────────────────── */}
+      {visible('stalledJobs') && <StalledJobs jobs={jobs} customers={customers} navigate={navigate} />}
 
       {/* ── Sales Performance ────────────────────────────────────────────────── */}
       {visible('salesPerformance') && (
@@ -838,9 +910,6 @@ export default function Dashboard() {
 
       {/* ── Monthly Revenue Trend ─────────────────────────────────────────────── */}
       {visible('monthlyTrend') && <MonthlyTrend quotes={quotes} navigate={navigate} larpMul={larpMul} />}
-
-      {/* ── Stalled Jobs ─────────────────────────────────────────────────────── */}
-      {visible('stalledJobs') && <StalledJobs jobs={jobs} customers={customers} navigate={navigate} />}
 
       {/* ── Yearly Performance ───────────────────────────────────────────────── */}
       {visible('yearlyPerformance') && (
