@@ -28,9 +28,8 @@ const WIDGET_DEFS = [
   { key: 'needsAttention',    label: 'Needs Attention',        desc: 'Items waiting on action — stalled, quotes out, pending installs' },
   { key: 'todaySchedule',     label: "Today's Schedule",       desc: 'Installs booked for today & tomorrow' },
   { key: 'salesPerformance',  label: 'Sales Performance',      desc: 'Win rate, pipeline value & quotes accepted' },
-  { key: 'monthlyTrend',      label: 'Monthly Revenue Trend',  desc: 'Accepted quote value for each month' },
+  { key: 'revenue',           label: 'Revenue',                desc: 'Accepted quote value — monthly & yearly views' },
   { key: 'stalledJobs',       label: 'Stalled Jobs',           desc: 'Jobs with no activity for 14+ days' },
-  { key: 'yearlyPerformance', label: 'Yearly Performance',     desc: '5-year accepted quote history' },
   { key: 'jobPipeline',       label: 'Job Pipeline',           desc: 'Job counts by status stage' },
   { key: 'recentJobs',        label: 'Recent Jobs',            desc: 'Last 5 updated jobs' },
   { key: 'recentActivity',    label: 'Recent Activity',        desc: 'Latest changes and events' },
@@ -370,9 +369,14 @@ function TodaySchedule({ navigate }) {
   );
 }
 
-// ─── Monthly Revenue Trend ─────────────────────────────────────────────────────
-function MonthlyTrend({ quotes, navigate, larpMul = 1 }) {
-  const now    = new Date();
+// ─── Revenue (monthly + yearly behind a toggle) ────────────────────────────────
+// Merges the old Monthly Revenue Trend and Yearly Performance widgets — both show
+// accepted quote value over time, so one card with a Monthly/Yearly switch removes
+// the redundancy. `larpMul`/`lM` keep figures consistent with LARP mode.
+function RevenueCard({ quotes, navigate, larpMul = 1, yearlyRows, maxValue, lI, lM }) {
+  const [view, setView] = useState('monthly');
+  const now = new Date();
+
   const months = Array.from({ length: 12 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
     return {
@@ -398,51 +402,115 @@ function MonthlyTrend({ quotes, navigate, larpMul = 1 }) {
 
   return (
     <Card>
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-        <div>
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-            <BarChart2 size={15} className="text-amber-500" /> Monthly Revenue Trend
+            <BarChart2 size={15} className="text-amber-500" /> Revenue
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">Last 12 months · {fmt$(totalVal * larpMul)} total</p>
+          <p className="text-xs text-slate-400 mt-0.5 truncate">
+            {view === 'monthly'
+              ? `Last 12 months · ${fmt$(totalVal * larpMul)} total`
+              : 'Accepted quote value by financial year'}
+          </p>
         </div>
-        {bestMon.value > 0 && (
-          <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded-lg">
-            Best: {bestMon.label} {bestMon.value !== totalVal && fmt$(bestMon.value * larpMul)}
-          </span>
-        )}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+            {['monthly', 'yearly'].map(v => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors ${
+                  view === v ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {v === 'monthly' ? 'Monthly' : 'Yearly'}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => navigate('/quotes')} className="text-xs text-amber-600 hover:underline items-center gap-1 hidden sm:flex">
+            View quotes <ArrowRight size={12} />
+          </button>
+        </div>
       </div>
-      <div className="px-5 pt-6 pb-4">
-        <div className="flex items-end gap-1.5 h-28">
-          {data.map((m, i) => {
-            const barPct = maxVal > 0 ? (m.value / maxVal) * 100 : 0;
-            const isCurrent = m.year === now.getFullYear() && m.month === now.getMonth();
-            const isBest    = m.value === bestMon.value && m.value > 0;
-            return (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1 group min-w-0">
-                <div className="w-full flex items-end justify-center" style={{ height: '90px' }}>
-                  <div
-                    className={`w-full rounded-t-md transition-all duration-500 ${
-                      isBest    ? 'bg-amber-500 hover:bg-amber-400' :
-                      isCurrent ? 'bg-teal-400 hover:bg-teal-300' :
-                                  'bg-slate-200 hover:bg-slate-300'
-                    }`}
-                    style={{ height: `${Math.max(barPct, barPct > 0 ? 5 : 0)}%` }}
-                    title={`${m.label}: ${fmt$(m.value * larpMul)} (${m.count} quotes)`}
-                  />
+
+      {view === 'monthly' ? (
+        <div className="px-5 pt-6 pb-4">
+          <div className="flex items-end gap-1.5 h-28">
+            {data.map((m, i) => {
+              const barPct = maxVal > 0 ? (m.value / maxVal) * 100 : 0;
+              const isCurrent = m.year === now.getFullYear() && m.month === now.getMonth();
+              const isBest    = m.value === bestMon.value && m.value > 0;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1 group min-w-0">
+                  <div className="w-full flex items-end justify-center" style={{ height: '90px' }}>
+                    <div
+                      className={`w-full rounded-t-md transition-all duration-500 ${
+                        isBest    ? 'bg-amber-500 hover:bg-amber-400' :
+                        isCurrent ? 'bg-teal-400 hover:bg-teal-300' :
+                                    'bg-slate-200 hover:bg-slate-300'
+                      }`}
+                      style={{ height: `${Math.max(barPct, barPct > 0 ? 5 : 0)}%` }}
+                      title={`${m.label}: ${fmt$(m.value * larpMul)} (${m.count} quotes)`}
+                    />
+                  </div>
+                  <span className={`text-[10px] truncate w-full text-center ${isCurrent ? 'text-teal-600 font-semibold' : 'text-slate-400'}`}>
+                    {m.label}
+                  </span>
                 </div>
-                <span className={`text-[10px] truncate w-full text-center ${isCurrent ? 'text-teal-600 font-semibold' : 'text-slate-400'}`}>
-                  {m.label}
-                </span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-50">
+            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-amber-500" /><span className="text-xs text-slate-500">Best month</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-teal-400" /><span className="text-xs text-slate-500">Current month</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-200" /><span className="text-xs text-slate-500">Other months</span></div>
+          </div>
         </div>
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-50">
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-amber-500" /><span className="text-xs text-slate-500">Best month</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-teal-400" /><span className="text-xs text-slate-500">Current month</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-200" /><span className="text-xs text-slate-500">Other months</span></div>
-        </div>
-      </div>
+      ) : (
+        <>
+          <div className="px-5 pt-5 pb-2">
+            <div className="flex items-end gap-2 h-24">
+              {yearlyRows.map(row => {
+                const barPct = maxValue > 0 ? (row.value / maxValue) * 100 : 0;
+                return (
+                  <div key={row.year} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                    <div className="w-full flex items-end" style={{ height: '80px' }}>
+                      <div
+                        className="w-full bg-amber-400 rounded-t-md transition-all duration-500 hover:bg-amber-500"
+                        style={{ height: `${Math.max(barPct, barPct > 0 ? 4 : 0)}%` }}
+                        title={`${row.label}: ${fmt$(lM(row.value))}`}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-400 truncate w-full text-center">{row.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-t border-slate-100 bg-slate-50">
+                  <th className="px-5 py-2.5 text-left font-medium text-slate-500 text-xs">Year</th>
+                  <th className="px-5 py-2.5 text-right font-medium text-slate-500 text-xs">Accepted</th>
+                  <th className="px-5 py-2.5 text-right font-medium text-slate-500 text-xs">Total Value</th>
+                  <th className="px-5 py-2.5 text-right font-medium text-slate-500 text-xs">Average</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {yearlyRows.map(row => (
+                  <tr key={row.year} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-slate-700">{row.label}</td>
+                    <td className="px-5 py-3 text-right text-slate-600">{lI(row.count)}</td>
+                    <td className="px-5 py-3 text-right font-medium text-slate-800">{fmt$(lM(row.value))}</td>
+                    <td className="px-5 py-3 text-right text-slate-600">{row.count > 0 ? fmt$(lM(row.avg)) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </Card>
   );
 }
@@ -908,60 +976,17 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Monthly Revenue Trend ─────────────────────────────────────────────── */}
-      {visible('monthlyTrend') && <MonthlyTrend quotes={quotes} navigate={navigate} larpMul={larpMul} />}
-
-      {/* ── Yearly Performance ───────────────────────────────────────────────── */}
-      {visible('yearlyPerformance') && (
-        <Card>
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-800 text-sm">Yearly Performance</h2>
-            <button onClick={() => navigate('/quotes')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
-              View quotes <ArrowRight size={12} />
-            </button>
-          </div>
-          <div className="px-5 pt-5 pb-2">
-            <div className="flex items-end gap-2 h-24">
-              {analytics.yearlyRows.map(row => {
-                const barPct = analytics.maxValue > 0 ? (row.value / analytics.maxValue) * 100 : 0;
-                return (
-                  <div key={row.year} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                    <div className="w-full flex items-end" style={{ height: '80px' }}>
-                      <div
-                        className="w-full bg-amber-400 rounded-t-md transition-all duration-500 hover:bg-amber-500"
-                        style={{ height: `${Math.max(barPct, barPct > 0 ? 4 : 0)}%` }}
-                        title={`${row.label}: ${fmt$(lM(row.value))}`}
-                      />
-                    </div>
-                    <span className="text-xs text-slate-400 truncate w-full text-center">{row.label}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-t border-slate-100 bg-slate-50">
-                  <th className="px-5 py-2.5 text-left font-medium text-slate-500 text-xs">Year</th>
-                  <th className="px-5 py-2.5 text-right font-medium text-slate-500 text-xs">Accepted</th>
-                  <th className="px-5 py-2.5 text-right font-medium text-slate-500 text-xs">Total Value</th>
-                  <th className="px-5 py-2.5 text-right font-medium text-slate-500 text-xs">Average</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {analytics.yearlyRows.map(row => (
-                  <tr key={row.year} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3 font-medium text-slate-700">{row.label}</td>
-                    <td className="px-5 py-3 text-right text-slate-600">{lI(row.count)}</td>
-                    <td className="px-5 py-3 text-right font-medium text-slate-800">{fmt$(lM(row.value))}</td>
-                    <td className="px-5 py-3 text-right text-slate-600">{row.count > 0 ? fmt$(lM(row.avg)) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+      {/* ── Revenue (monthly + yearly) ────────────────────────────────────────── */}
+      {visible('revenue') && (
+        <RevenueCard
+          quotes={quotes}
+          navigate={navigate}
+          larpMul={larpMul}
+          yearlyRows={analytics.yearlyRows}
+          maxValue={analytics.maxValue}
+          lI={lI}
+          lM={lM}
+        />
       )}
 
       {/* ── Job Pipeline ─────────────────────────────────────────────────────── */}
