@@ -1,11 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
+import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
-import { Download, Printer, FileText, Send, Loader, Save, Trash2 } from 'lucide-react';
+import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown } from 'lucide-react';
 import {
   getMeasureSheet, getCustomer, getJob,
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
+  getSuppliers, saveSupplier, deleteSupplier,
   addActivity,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -64,6 +66,12 @@ function rowCells(item, i, motorSide) {
   ];
 }
 
+// ── Accessory helpers (blank entries / fields are omitted from the PO) ─────────
+const wandIsEmpty   = (w) => !w.qty && !w.colour && !w.length;
+const remoteIsEmpty = (r) => !r.qty && !r.type && !r.colour;
+const wandLabel     = (w) => [w.qty ? `${w.qty} ×` : '', w.colour, w.length ? `${w.length}mm` : ''].filter(Boolean).join(' ');
+const remoteLabel   = (r) => [r.qty ? `${r.qty} ×` : '', r.type, r.colour].filter(Boolean).join(' ');
+
 export default function PurchaseOrder() {
   const { id } = useParams();
   const { displayName = '' } = useProfile() || {};
@@ -86,10 +94,24 @@ export default function PurchaseOrder() {
   // Per-order inputs
   const [supplier, setSupplier] = useState('');
   const [dateRequired, setDateRequired] = useState('');
-  const [wandQty, setWandQty] = useState('');
-  const [wandColour, setWandColour] = useState('');
-  const [remotesQty, setRemotesQty] = useState('');
   const [extraNotes, setExtraNotes] = useState('');
+
+  // Repeatable accessory entries (hidden until added; blanks omitted from PO).
+  const [wands, setWands] = useState([]);     // { id, qty, colour, length }
+  const [remotes, setRemotes] = useState([]); // { id, qty, type, colour }
+  const addWand    = () => setWands(w => [...w, { id: uuidv4(), qty: '', colour: '', length: '' }]);
+  const updateWand = (id, f, v) => setWands(w => w.map(x => x.id === id ? { ...x, [f]: v } : x));
+  const removeWand = (id) => setWands(w => w.filter(x => x.id !== id));
+  const addRemote    = () => setRemotes(r => [...r, { id: uuidv4(), qty: '', type: '', colour: '' }]);
+  const updateRemote = (id, f, v) => setRemotes(r => r.map(x => x.id === id ? { ...x, [f]: v } : x));
+  const removeRemote = (id) => setRemotes(r => r.filter(x => x.id !== id));
+
+  // Saved supplier list + dropdown state.
+  const [suppliers, setSuppliers] = useState(() => getSuppliers());
+  const [supplierOpen, setSupplierOpen] = useState(false);
+  const [addingSupplier, setAddingSupplier] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierEmail, setNewSupplierEmail] = useState('');
   const [recipient, setRecipient] = useState(() => localStorage.getItem(RECIPIENT_KEY) || '');
   const [sending, setSending] = useState(false);
   const [presets, setPresets] = useState(() => getPoPresets());
@@ -105,6 +127,29 @@ export default function PurchaseOrder() {
     setRecipient(value);
     const preset = getPoPresetForEmail(value);
     if (preset) setMessage(preset.message);
+  };
+
+  // ── Supplier dropdown ──────────────────────────────────────────────────────
+  const selectSupplier = (s) => {
+    setSupplier(s.name);
+    setSupplierOpen(false);
+    setAddingSupplier(false);
+    if (s.email) applyRecipient(s.email); // pre-fill send-to email (+ preset body)
+  };
+  const handleAddSupplier = () => {
+    const name = newSupplierName.trim();
+    if (!name) { toast('Enter a supplier name.', 'error'); return; }
+    const rec = saveSupplier({ name, email: newSupplierEmail.trim() });
+    setSuppliers(getSuppliers());
+    setNewSupplierName(''); setNewSupplierEmail(''); setAddingSupplier(false);
+    selectSupplier(rec);
+    toast(`Supplier "${rec.name}" saved.`);
+  };
+  const handleDeleteSupplier = (s) => {
+    deleteSupplier(s.id);
+    setSuppliers(getSuppliers());
+    if (supplier === s.name) setSupplier('');
+    toast('Supplier deleted.', 'info');
   };
 
   // Per-line motor side, keyed by item id (defaults to the stored motorSide).
@@ -127,6 +172,11 @@ export default function PurchaseOrder() {
 
   const rows = curtains.map((it, i) => rowCells(it, i, motorFor(it, i)));
 
+  // Only entries with at least one filled field reach the PO.
+  const liveWands = wands.filter(w => !wandIsEmpty(w));
+  const liveRemotes = remotes.filter(r => !remoteIsEmpty(r));
+  const hasAccessories = liveWands.length > 0 || liveRemotes.length > 0;
+
   // ── XLSX export — mirrors the example PO cell positions ────────────────────
   const handleExport = () => {
     const FOOTER = 'Should you have any questions please call 0755284006 or email info@lusso.com.au - Adress 3 Crinum Cres Southport';
@@ -146,15 +196,19 @@ export default function PurchaseOrder() {
     // Data rows
     rows.forEach(r => aoa.push(r));
     aoa.push([]);
-    // Per-order accessories
-    aoa.push(['', 'Order accessories']);
-    aoa.push(['', 'Wands', wandQty, wandColour]);
-    aoa.push(['', 'Remotes', remotesQty]);
-    aoa.push([]);
-    // Extra notes
-    aoa.push(['', 'Extra notes']);
-    aoa.push(['', extraNotes]);
-    aoa.push([]);
+    // Per-order accessories — only populated entries; section omitted if empty.
+    if (hasAccessories) {
+      aoa.push(['', 'Order accessories']);
+      liveWands.forEach(w => aoa.push(['', 'Wand', w.qty, w.colour, w.length ? `${w.length}mm` : '']));
+      liveRemotes.forEach(r => aoa.push(['', 'Remote', r.qty, r.type, r.colour]));
+      aoa.push([]);
+    }
+    // Extra notes — omitted if blank
+    if (extraNotes.trim()) {
+      aoa.push(['', 'Extra notes']);
+      aoa.push(['', extraNotes]);
+      aoa.push([]);
+    }
     aoa.push(['', 'Special instructions']);
     aoa.push(['', FOOTER]);
 
@@ -205,10 +259,10 @@ export default function PurchaseOrder() {
 
     doc.setFontSize(9); doc.setTextColor(60);
     [
-      `To: ${supplier || '—'}`,
-      `Job #: ${jobNumber || '—'}    Customer: ${customerName || '—'}`,
-      `Date ordered: ${dateOrdered}    Required: ${dateRequired || '—'}`,
-    ].forEach((line, i) => doc.text(line, pageW - 40, 40 + i * 13, { align: 'right' }));
+      supplier && `To: ${supplier}`,
+      [jobNumber && `Job #: ${jobNumber}`, customerName && `Customer: ${customerName}`].filter(Boolean).join('    '),
+      [`Date ordered: ${dateOrdered}`, dateRequired && `Required: ${dateRequired}`].filter(Boolean).join('    '),
+    ].filter(Boolean).forEach((line, i) => doc.text(line, pageW - 40, 40 + i * 13, { align: 'right' }));
 
     autoTable(doc, {
       head: [PO_HEADERS],
@@ -221,13 +275,17 @@ export default function PurchaseOrder() {
 
     let y = (doc.lastAutoTable?.finalY || 78) + 22;
     doc.setFontSize(9); doc.setTextColor(40);
-    doc.setFont('helvetica', 'bold'); doc.text('Order accessories', 40, y);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Wands: ${wandQty || '0'}${wandColour ? ` × ${wandColour}` : ''}      Remotes: ${remotesQty || '0'}`, 40, y + 14);
-    if (extraNotes) {
-      doc.setFont('helvetica', 'bold'); doc.text('Extra notes', 40, y + 34);
+    if (hasAccessories) {
+      doc.setFont('helvetica', 'bold'); doc.text('Order accessories', 40, y); y += 14;
       doc.setFont('helvetica', 'normal');
-      doc.text(doc.splitTextToSize(extraNotes, pageW - 80), 40, y + 48);
+      liveWands.forEach(w => { doc.text(`Wand: ${wandLabel(w)}`, 40, y); y += 12; });
+      liveRemotes.forEach(r => { doc.text(`Remote: ${remoteLabel(r)}`, 40, y); y += 12; });
+      y += 8;
+    }
+    if (extraNotes.trim()) {
+      doc.setFont('helvetica', 'bold'); doc.text('Extra notes', 40, y); y += 14;
+      doc.setFont('helvetica', 'normal');
+      doc.text(doc.splitTextToSize(extraNotes, pageW - 80), 40, y);
     }
     doc.setFontSize(8); doc.setTextColor(140);
     doc.text('Should you have any questions please call 0755284006 or email info@lusso.com.au — Address 3 Crinum Cres Southport', 40, pageH - 24);
@@ -301,14 +359,14 @@ export default function PurchaseOrder() {
               {jobNumber ? ` · ${jobNumber}` : ''}
             </p>
           </div>
-          <div className="flex gap-2 flex-shrink-0 flex-wrap items-center justify-end">
+          <div className="flex gap-2 flex-wrap items-center w-full sm:w-auto sm:flex-shrink-0 sm:justify-end">
             <input
               type="email"
               list="po-preset-emails"
               value={recipient}
               onChange={e => applyRecipient(e.target.value)}
               placeholder="supplier@email.com"
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-amber-400"
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-full sm:w-52 focus:outline-none focus:ring-2 focus:ring-amber-400"
             />
             <datalist id="po-preset-emails">
               {presets.map(p => <option key={p.id} value={p.email} />)}
@@ -375,16 +433,61 @@ export default function PurchaseOrder() {
             </div>
           </Card>
 
-          {/* Order details + accessories (per-order inputs) */}
+          {/* Order details */}
           <Card>
             <div className="px-5 py-4 border-b border-slate-100">
               <h2 className="font-semibold text-slate-800 text-sm">Order Details</h2>
             </div>
             <div className="p-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <label className="text-sm">
-                <span className="block text-xs text-slate-500 mb-1">To (supplier)</span>
-                <input className={inputCls} value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="Supplier name" />
-              </label>
+              {/* Supplier dropdown with Add supplier */}
+              <div className="text-sm">
+                <span className="block text-xs text-slate-500 mb-1">Supplier</span>
+                <div className="relative">
+                  <button type="button" onClick={() => setSupplierOpen(o => !o)}
+                    className={`${inputCls} flex items-center justify-between gap-2 text-left`}>
+                    <span className={supplier ? 'text-slate-800 truncate' : 'text-slate-400'}>{supplier || 'Select supplier'}</span>
+                    <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
+                  </button>
+                  {supplierOpen && (
+                    <>
+                      <button type="button" aria-hidden tabIndex={-1} className="fixed inset-0 z-10 cursor-default"
+                        onClick={() => { setSupplierOpen(false); setAddingSupplier(false); }} />
+                      <div className="absolute left-0 right-0 z-20 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+                        {suppliers.length === 0 && !addingSupplier && (
+                          <p className="px-3 py-2.5 text-xs text-slate-400">No suppliers yet.</p>
+                        )}
+                        {suppliers.map(s => (
+                          <div key={s.id} className="flex items-center hover:bg-slate-50">
+                            <button type="button" onClick={() => selectSupplier(s)} className="flex-1 min-w-0 text-left px-3 py-2.5">
+                              <span className="block text-sm text-slate-800 truncate">{s.name}</span>
+                              {s.email && <span className="block text-xs text-slate-400 truncate">{s.email}</span>}
+                            </button>
+                            <button type="button" onClick={() => handleDeleteSupplier(s)} title="Delete supplier"
+                              className="px-3 py-2.5 text-slate-300 hover:text-red-500 flex-shrink-0"><Trash2 size={13} /></button>
+                          </div>
+                        ))}
+                        {addingSupplier ? (
+                          <div className="border-t border-slate-100 p-3 space-y-2">
+                            <input autoFocus className={inputCls} placeholder="Supplier name" value={newSupplierName} onChange={e => setNewSupplierName(e.target.value)} />
+                            <input className={inputCls} placeholder="supplier@email.com (optional)" value={newSupplierEmail} onChange={e => setNewSupplierEmail(e.target.value)} />
+                            <div className="flex gap-2">
+                              <button type="button" onClick={handleAddSupplier}
+                                className="flex-1 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white">Save</button>
+                              <button type="button" onClick={() => setAddingSupplier(false)}
+                                className="text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => setAddingSupplier(true)}
+                            className="w-full text-left px-3 py-3 border-t border-slate-100 text-amber-600 hover:bg-amber-50 flex items-center gap-1.5 text-sm font-medium">
+                            <Plus size={14} /> Add supplier
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
               <label className="text-sm">
                 <span className="block text-xs text-slate-500 mb-1">Date required</span>
                 <input type="date" className={inputCls} value={dateRequired} onChange={e => setDateRequired(e.target.value)} />
@@ -393,22 +496,57 @@ export default function PurchaseOrder() {
                 <span className="block text-xs text-slate-500 mb-1">Date ordered</span>
                 <input className={inputCls} value={dateOrdered} disabled />
               </label>
-              <label className="text-sm">
-                <span className="block text-xs text-slate-500 mb-1">Wand quantity</span>
-                <input type="number" min="0" className={inputCls} value={wandQty} onChange={e => setWandQty(e.target.value)} placeholder="0" />
-              </label>
-              <label className="text-sm">
-                <span className="block text-xs text-slate-500 mb-1">Wand colour</span>
-                <input className={inputCls} value={wandColour} onChange={e => setWandColour(e.target.value)} placeholder="e.g. White" />
-              </label>
-              <label className="text-sm">
-                <span className="block text-xs text-slate-500 mb-1">Remotes (quantity)</span>
-                <input type="number" min="0" className={inputCls} value={remotesQty} onChange={e => setRemotesQty(e.target.value)} placeholder="0" />
-              </label>
               <label className="text-sm sm:col-span-2 lg:col-span-3">
                 <span className="block text-xs text-slate-500 mb-1">Extra notes</span>
                 <textarea rows={2} className={inputCls} value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="Anything the supplier should know…" />
               </label>
+            </div>
+          </Card>
+
+          {/* Accessories — repeatable wand & remote entries (hidden until added) */}
+          <Card>
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800 text-sm">Accessories</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Add wands and remotes as needed — only added items appear on the PO.</p>
+            </div>
+            <div className="p-5 space-y-6">
+              {[
+                { label: 'Wands', addLabel: 'Add wands', items: wands, add: addWand, update: updateWand, remove: removeWand,
+                  fields: [['qty', 'Quantity', 'number', 'e.g. 10'], ['colour', 'Colour', 'text', 'e.g. White'], ['length', 'Length (mm)', 'number', 'e.g. 1200']] },
+                { label: 'Remotes', addLabel: 'Add remote', items: remotes, add: addRemote, update: updateRemote, remove: removeRemote,
+                  fields: [['qty', 'Quantity', 'number', 'e.g. 2'], ['type', 'Type', 'text', 'e.g. 5-channel'], ['colour', 'Colour', 'text', 'e.g. White']] },
+              ].map(group => (
+                <div key={group.label}>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-sm font-medium text-slate-700">{group.label}</p>
+                    <button type="button" onClick={group.add}
+                      className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50">
+                      <Plus size={13} /> {group.addLabel}
+                    </button>
+                  </div>
+                  {group.items.length === 0 ? (
+                    <p className="text-xs text-slate-400">No {group.label.toLowerCase()} added.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {group.items.map(item => (
+                        <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2 sm:items-end border border-slate-200 rounded-lg p-3">
+                          {group.fields.map(([f, fLabel, fType, fPh]) => (
+                            <label key={f} className="text-xs">
+                              <span className="block text-slate-500 mb-1">{fLabel}</span>
+                              <input type={fType} min={fType === 'number' ? '0' : undefined} className={inputCls}
+                                value={item[f]} onChange={e => group.update(item.id, f, e.target.value)} placeholder={fPh} />
+                            </label>
+                          ))}
+                          <button type="button" onClick={() => group.remove(item.id)} title="Remove"
+                            className="h-[38px] flex items-center justify-center gap-1.5 px-3 rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200">
+                            <Trash2 size={14} /><span className="sm:hidden text-xs font-medium">Remove</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </Card>
 
@@ -447,9 +585,18 @@ export default function PurchaseOrder() {
                   <div className="text-xs text-slate-500">Curtain Purchase Order</div>
                 </div>
                 <div className="text-right text-xs text-slate-600 space-y-0.5">
-                  <div><span className="text-slate-400">To:</span> {supplier || '—'}</div>
-                  <div><span className="text-slate-400">Job #:</span> {jobNumber || '—'} · <span className="text-slate-400">Customer:</span> {customerName || '—'}</div>
-                  <div><span className="text-slate-400">Date ordered:</span> {dateOrdered} · <span className="text-slate-400">Required:</span> {dateRequired || '—'}</div>
+                  {supplier && <div><span className="text-slate-400">To:</span> {supplier}</div>}
+                  {(jobNumber || customerName) && (
+                    <div>
+                      {jobNumber && <><span className="text-slate-400">Job #:</span> {jobNumber}</>}
+                      {jobNumber && customerName && ' · '}
+                      {customerName && <><span className="text-slate-400">Customer:</span> {customerName}</>}
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-slate-400">Date ordered:</span> {dateOrdered}
+                    {dateRequired && <> · <span className="text-slate-400">Required:</span> {dateRequired}</>}
+                  </div>
                 </div>
               </div>
 
@@ -475,18 +622,24 @@ export default function PurchaseOrder() {
                 </table>
               </div>
 
-              {/* Per-order accessories + notes */}
-              <div className="grid sm:grid-cols-2 gap-4 mt-4 text-xs">
-                <div>
-                  <div className="font-semibold text-slate-700 mb-1">Order accessories</div>
-                  <div className="text-slate-600">Wands: {wandQty || '0'}{wandColour ? ` × ${wandColour}` : ''}</div>
-                  <div className="text-slate-600">Remotes: {remotesQty || '0'}</div>
+              {/* Per-order accessories + notes — populated entries only */}
+              {(hasAccessories || extraNotes.trim()) && (
+                <div className="grid sm:grid-cols-2 gap-4 mt-4 text-xs">
+                  {hasAccessories && (
+                    <div>
+                      <div className="font-semibold text-slate-700 mb-1">Order accessories</div>
+                      {liveWands.map(w => <div key={w.id} className="text-slate-600">Wand: {wandLabel(w)}</div>)}
+                      {liveRemotes.map(r => <div key={r.id} className="text-slate-600">Remote: {remoteLabel(r)}</div>)}
+                    </div>
+                  )}
+                  {extraNotes.trim() && (
+                    <div>
+                      <div className="font-semibold text-slate-700 mb-1">Extra notes</div>
+                      <div className="text-slate-600 whitespace-pre-wrap">{extraNotes}</div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <div className="font-semibold text-slate-700 mb-1">Extra notes</div>
-                  <div className="text-slate-600 whitespace-pre-wrap">{extraNotes || '—'}</div>
-                </div>
-              </div>
+              )}
 
               <p className="text-[11px] text-slate-400 mt-4 pt-3 border-t border-slate-100">
                 Should you have any questions please call 0755284006 or email info@lusso.com.au — Address 3 Crinum Cres Southport

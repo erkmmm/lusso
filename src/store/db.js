@@ -183,6 +183,7 @@ const TABLES = [
   { table: 'calendar_events',        key: 'lusso_calendar_events' },
   { table: 'tasks',                  key: KEYS.tasks },
   { table: 'po_message_presets',     key: 'lusso_po_message_presets' },
+  { table: 'suppliers',              key: 'lusso_suppliers' },
   // NOTE: 'activity' is intentionally NOT here — it's append-only and synced
   // via a union (see hydrateFromSupabase) so existing local history is never
   // dropped by the "Supabase is authoritative" rule.
@@ -561,6 +562,10 @@ export const db = {
   // PO message presets (email → pre-written message)
   savePoMessagePreset:   (r)  => upsert('po_message_presets', r),
   deletePoMessagePreset: (id) => softDelete('po_message_presets', id),
+
+  // Suppliers (saved supplier list for purchase orders)
+  saveSupplier:          (r)  => upsert('suppliers', r),
+  deleteSupplier:        (id) => softDelete('suppliers', id),
 };
 
 // ── Batch upsert for bulk imports ────────────────────────────────────────────

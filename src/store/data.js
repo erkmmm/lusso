@@ -780,6 +780,41 @@ export const deletePoPreset = (id) => {
   db.deletePoMessagePreset(id);
 };
 
+// ─── Suppliers (saved supplier list for purchase orders) ──────────────────────
+export const getSuppliers = () =>
+  (get('lusso_suppliers') || [])
+    .filter(s => !s.deletedAt)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+// Upsert a supplier (one per name). Returns the saved record.
+export const saveSupplier = ({ id, name, email }) => {
+  const suppliers = get('lusso_suppliers') || [];
+  const now = new Date().toISOString();
+  const trimmedName = (name || '').trim();
+  let idx = id ? suppliers.findIndex(s => s.id === id) : -1;
+  if (idx < 0) idx = suppliers.findIndex(s => !s.deletedAt && (s.name || '').trim().toLowerCase() === trimmedName.toLowerCase());
+  let record;
+  if (idx >= 0) {
+    record = { ...suppliers[idx], name: trimmedName, email: (email || '').trim(), deletedAt: null, updatedAt: now };
+    suppliers[idx] = record;
+  } else {
+    record = { id: uuidv4(), name: trimmedName, email: (email || '').trim(), createdAt: now, updatedAt: now };
+    suppliers.push(record);
+  }
+  set('lusso_suppliers', suppliers);
+  db.saveSupplier(record);
+  return record;
+};
+
+export const deleteSupplier = (id) => {
+  const suppliers = get('lusso_suppliers') || [];
+  const idx = suppliers.findIndex(s => s.id === id);
+  if (idx < 0) return;
+  suppliers[idx] = { ...suppliers[idx], deletedAt: new Date().toISOString() };
+  set('lusso_suppliers', suppliers);
+  db.deleteSupplier(id);
+};
+
 // ─── Staff ────────────────────────────────────────────────────────────────────
 
 export const getStaff = () => get('lusso_staff') || [];
