@@ -478,6 +478,7 @@ export default function JobProfile() {
                           {ms.lineItems?.length || 0} item{(ms.lineItems?.length || 0) !== 1 ? 's' : ''}
                           {ms.measureDate ? ` · ${ms.measureDate}` : ''}
                           {ms.measurer    ? ` · ${ms.measurer}`    : ''}
+                          {(ms.updatedAt || ms.createdAt) ? ` · Last edited ${format(parseISO(ms.updatedAt || ms.createdAt), 'd MMM yyyy, h:mm a')}` : ''}
                         </p>
                       </div>
                     </div>

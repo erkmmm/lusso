@@ -281,6 +281,7 @@ export default function MeasureSheets() {
                       {sheet.measurer && <span>👤 {sheet.measurer}</span>}
                       {sheet.measureDate && <span>📅 {format(parseISO(sheet.measureDate), 'd MMM yyyy')}</span>}
                       {sheet.createdAt && <span>Created {format(parseISO(sheet.createdAt), 'd MMM yyyy')}</span>}
+                      {(sheet.updatedAt || sheet.createdAt) && <span>Last edited {format(parseISO(sheet.updatedAt || sheet.createdAt), 'd MMM yyyy, h:mm a')}</span>}
                     </div>
                   </div>
                   <span className="text-slate-300 group-hover:text-amber-500 transition-colors hidden sm:block">→</span>
