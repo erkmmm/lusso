@@ -7,7 +7,7 @@ import {
   Calendar, ClipboardList, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, ChevronDown, HardHat, Plus, Upload,
-  CalendarPlus, Trash2, Wrench, Bot, MessageSquare,
+  CalendarPlus, Trash2, Wrench, Bot, MessageSquare, Ruler,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import BackButton from '../components/BackButton';
@@ -124,6 +124,10 @@ export default function JobProfile() {
               <button onClick={() => navigate(`/measure-sheets/new?customerId=${job.customerId}&jobId=${id}`)}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white transition-colors">
                 <ClipboardList size={14} /> <span className="hidden sm:inline">New Measure</span>
+              </button>
+              <button onClick={() => navigate(`/jobs/${id}/takeoff`)}
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
+                <Ruler size={14} /> <span className="hidden sm:inline">Plan Takeoff</span>
               </button>
               <button onClick={() => setShowCalendar(true)}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">

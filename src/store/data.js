@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db, batchUpsertCustomers, batchUpsertPricedItems, hydrateFromSupabase } from './db';
 import { supabase } from '../lib/supabase';
+import { removeTakeoffPlan } from '../lib/takeoffStorage';
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -724,6 +725,113 @@ export const saveMeasureSheet = (sheet) => {
   }
   set('lusso_measure_sheets', sheets);
   db.saveMeasureSheet(sheets[sheets.findIndex(s => s.id === sheet.id)]);
+};
+
+// ─── Takeoffs (PDF plan markups) ────────────────────────────────────────────────
+// One active takeoff per job to start. The PDF binary lives in Supabase Storage;
+// the record here holds the file path, per-page scale, and all measurements.
+export const getTakeoffs        = () => (get('lusso_takeoffs') || []).filter(t => !t.deletedAt);
+export const getTakeoff         = (id) => (get('lusso_takeoffs') || []).find(t => t.id === id);
+export const getTakeoffByJob    = (jobId) => getTakeoffs().find(t => t.jobId === jobId);
+
+export const saveTakeoff = (takeoff) => {
+  const all = get('lusso_takeoffs') || [];
+  const idx = all.findIndex(t => t.id === takeoff.id);
+  const now = new Date().toISOString();
+  if (idx >= 0) {
+    all[idx] = { ...takeoff, createdAt: takeoff.createdAt || now, updatedAt: now };
+  } else {
+    all.push({ ...takeoff, createdAt: takeoff.createdAt || now, updatedAt: now });
+  }
+  set('lusso_takeoffs', all);
+  db.saveTakeoff(all[all.findIndex(t => t.id === takeoff.id)]);
+};
+
+export const deleteTakeoff = (id) => {
+  const all = get('lusso_takeoffs') || [];
+  const idx = all.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  const now = new Date().toISOString();
+  const { filePath } = all[idx];
+  all[idx] = { ...all[idx], deletedAt: now, updatedAt: now };
+  set('lusso_takeoffs', all);
+  db.deleteTakeoff(id);
+  // Best-effort removal of the stored PDF — non-fatal if it fails.
+  if (filePath) removeTakeoffPlan(filePath);
+};
+
+// Tags that map onto a measure-sheet dimension column.
+// Drop and Height are the same physical dimension for window furnishings.
+const TAKEOFF_TAG_COLUMN = { Width: 'widthMm', Drop: 'dropMm', Height: 'dropMm' };
+
+/**
+ * Reconcile a takeoff's measurements into its job's measure sheet.
+ * Measurements are grouped by label → one line item each (Width→widthMm,
+ * Drop/Height→dropMm). Only rows flagged source:'takeoff' are ever touched, so
+ * manually-entered rows are never clobbered. Creates the sheet on first need.
+ * Safe to call after every measurement add/edit/delete.
+ */
+export const applyTakeoffToMeasureSheet = (takeoff) => {
+  if (!takeoff?.jobId) return;
+
+  // Build label → { widthMm, dropMm } from mappable measurements.
+  const groups = new Map();
+  for (const m of takeoff.measurements || []) {
+    const col = TAKEOFF_TAG_COLUMN[m.tag];
+    const label = (m.label || '').trim();
+    if (!col || !label || m.lengthMm == null) continue;
+    if (!groups.has(label)) groups.set(label, { widthMm: '', dropMm: '' });
+    groups.get(label)[col] = Math.round(m.lengthMm);
+  }
+
+  let sheet = getMeasureSheetByJob(takeoff.jobId);
+  const hadTakeoffRows = !!sheet?.lineItems?.some(li => li.source === 'takeoff');
+
+  // Nothing to map and no prior takeoff rows to clean up → leave the sheet alone
+  // (don't create an empty sheet just because a takeoff exists).
+  if (groups.size === 0 && !hadTakeoffRows) return;
+
+  if (!sheet) {
+    const job = getJob(takeoff.jobId);
+    sheet = {
+      id: uuidv4(),
+      jobId: takeoff.jobId,
+      customerId: takeoff.customerId || job?.customerId || null,
+      status: 'Draft',
+      measureDate: null,
+      measurer: job?.assignedStaff || '',
+      lineItems: [],
+    };
+  }
+
+  const items = [...(sheet.lineItems || [])];
+  // Drop takeoff rows whose label group no longer exists.
+  const kept = items.filter(li => li.source !== 'takeoff' || groups.has(li.takeoffGroup));
+  let order = kept.reduce((max, li) => Math.max(max, li.sortOrder ?? 0), -1);
+
+  for (const [label, vals] of groups) {
+    const existing = kept.find(li => li.source === 'takeoff' && li.takeoffGroup === label);
+    if (existing) {
+      existing.location = label;
+      existing.widthMm = vals.widthMm;
+      existing.dropMm = vals.dropMm;
+    } else {
+      kept.push({
+        id: uuidv4(),
+        location: label,
+        productTypeId: '', productNameSnapshot: '',
+        quantity: 1, widthMm: vals.widthMm, dropMm: vals.dropMm,
+        fabricColour: '', control: '', returnSide: '', motorSide: '', fixing: '',
+        heading: '', attachedLining: false, liningFabricColour: '', hem: '',
+        trackBaseBarColour: '', baseBarType: '', chainColour: '',
+        notes: 'From plan takeoff',
+        source: 'takeoff', takeoffGroup: label,
+        sortOrder: ++order,
+      });
+    }
+  }
+
+  saveMeasureSheet({ ...sheet, lineItems: kept });
 };
 
 // ─── Activity ─────────────────────────────────────────────────────────────────

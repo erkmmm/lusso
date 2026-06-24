@@ -17,6 +17,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Jobs from './pages/Jobs';
 import JobProfile from './pages/JobProfile';
+import JobTakeoff from './pages/JobTakeoff';
 import Customers from './pages/Customers';
 import CustomerProfile from './pages/CustomerProfile';
 import MeasureSheets from './pages/MeasureSheets';
@@ -234,6 +235,7 @@ function AppRoutes() {
               <Route path="/jobs"                       element={<Jobs />} />
               <Route path="/jobs/new"                   element={<NewJob />} />
               <Route path="/jobs/:id"                   element={<JobProfile />} />
+              <Route path="/jobs/:id/takeoff"           element={<JobTakeoff />} />
               <Route path="/customers"                  element={<Customers />} />
               <Route path="/customers/:id"              element={<CustomerProfile />} />
               <Route path="/measure-sheets"             element={<MeasureSheets />} />

@@ -63,6 +63,7 @@ const KEYS = {
   notifications:        'lusso_notifications',
   employees:            'lusso_employees',
   tasks:                'lusso_tasks',
+  takeoffs:             'lusso_takeoffs',
 };
 
 // ── Per-table column exclusions ──────────────────────────────────────
@@ -184,6 +185,7 @@ const TABLES = [
   { table: 'tasks',                  key: KEYS.tasks },
   { table: 'po_message_presets',     key: 'lusso_po_message_presets' },
   { table: 'suppliers',              key: 'lusso_suppliers' },
+  { table: 'takeoffs',               key: KEYS.takeoffs },
   // NOTE: 'activity' is intentionally NOT here — it's append-only and synced
   // via a union (see hydrateFromSupabase) so existing local history is never
   // dropped by the "Supabase is authoritative" rule.
@@ -512,6 +514,10 @@ export const db = {
   // Measure sheets
   saveMeasureSheet:   (r) => upsert('measure_sheets', r),
   deleteMeasureSheet: (id) => remove('measure_sheets', id),
+
+  // Takeoffs (PDF plan markups — metadata only; the PDF lives in Storage)
+  saveTakeoff:        (r) => upsert('takeoffs', r),
+  deleteTakeoff:      (id) => softDelete('takeoffs', id),
 
   // Quotes
   saveQuote:          (r) => upsert('quotes', r),
