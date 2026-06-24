@@ -315,6 +315,15 @@ export async function reactivateUser(targetUserId) {
   set(list);
 }
 
+/** Decline a pending signup — calls the secure DB function (AM only) */
+export async function declineUser(targetUserId) {
+  if (!supabase) throw new Error('No Supabase connection');
+  const { error } = await supabase.rpc('decline_user', { target_user_id: targetUserId });
+  if (error) throw error;
+  const list = get().map(p => p.id === targetUserId ? { ...p, status: 'declined' } : p);
+  set(list);
+}
+
 /**
  * Employee completes their own onboarding — calls secure DB function.
  * Only updates safe fields; cannot change accountType/status/isEmployee.

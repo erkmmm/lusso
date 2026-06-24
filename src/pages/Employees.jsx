@@ -11,9 +11,10 @@ import {
   getProfiles, saveProfile,
   fetchProfilesFromSupabase, fetchEmployeesFromSupabase,
   createProfileInSupabase, updateEmployeeProfile,
-  approveUser, suspendUser, reactivateUser,
+  approveUser, suspendUser, reactivateUser, declineUser,
 } from '../store/profiles';
 import { useProfile } from '../contexts/UserProfileContext';
+import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -388,6 +389,7 @@ export default function Employees() {
   const [showAdd,          setShowAdd]          = useState(false);
   const [approvingProfile, setApprovingProfile] = useState(null);
   const [editingEmployee,  setEditingEmployee]  = useState(null);
+  const [decliningId,      setDecliningId]      = useState(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -396,11 +398,13 @@ export default function Employees() {
       fetchEmployeesFromSupabase(),
     ]);
     setPendingList(all.filter(p =>
-      p.accountType === 'pending_user' ||
-      p.accountType === 'pending'      ||
-      p.role        === 'pending'      ||
-      p.role        === 'pending_user' ||
-      p.status      === 'pending'
+      p.status !== 'declined' && (
+        p.accountType === 'pending_user' ||
+        p.accountType === 'pending'      ||
+        p.role        === 'pending'      ||
+        p.role        === 'pending_user' ||
+        p.status      === 'pending'
+      )
     ));
     setTeamList(team);
     setLoading(false);
@@ -417,6 +421,11 @@ export default function Employees() {
   const handleEditSaved = async () => { setEditingEmployee(null);  await refresh(); };
   const handleSuspend    = async (id) => { await suspendUser(id);    await refresh(); };
   const handleReactivate = async (id) => { await reactivateUser(id); await refresh(); };
+  const handleDecline    = async (id) => {
+    setDecliningId(null);
+    try { await declineUser(id); } catch (e) { toast(e.message || 'Failed to decline.'); }
+    await refresh();
+  };
 
   const activeTeam    = teamList.filter(e => e.status === 'active');
   const suspendedTeam = teamList.filter(e => e.status === 'suspended');
@@ -491,10 +500,30 @@ export default function Employees() {
                   <p className="text-xs text-amber-600 mt-0.5">Awaiting approval · no CRM access yet</p>
                 </div>
                 {isAM && (
-                  <button onClick={() => setApprovingProfile(p)}
-                    className="flex items-center gap-1.5 text-xs bg-green-500 hover:bg-green-400 text-white font-medium rounded-lg px-3 py-1.5 transition-colors flex-shrink-0">
-                    <CheckCircle2 size={12} /> Approve
-                  </button>
+                  decliningId === p.id ? (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs text-slate-500 hidden sm:inline">Decline this signup?</span>
+                      <button onClick={() => handleDecline(p.id)}
+                        className="text-xs bg-red-500 hover:bg-red-400 text-white font-medium rounded-lg px-3 py-1.5 transition-colors">
+                        Yes, decline
+                      </button>
+                      <button onClick={() => setDecliningId(null)}
+                        className="text-xs text-slate-500 hover:text-slate-700 font-medium rounded-lg px-2 py-1.5 transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => setDecliningId(p.id)}
+                        className="flex items-center gap-1.5 text-xs border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 font-medium rounded-lg px-3 py-1.5 transition-colors">
+                        <UserX size={12} /> Decline
+                      </button>
+                      <button onClick={() => setApprovingProfile(p)}
+                        className="flex items-center gap-1.5 text-xs bg-green-500 hover:bg-green-400 text-white font-medium rounded-lg px-3 py-1.5 transition-colors">
+                        <CheckCircle2 size={12} /> Approve
+                      </button>
+                    </div>
+                  )
                 )}
               </div>
             </Card>
