@@ -8,6 +8,11 @@ import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 import BackButton from '../components/BackButton';
 
+// Date + time, matching the app's 'd MMM yyyy' convention plus a 12h clock.
+const fmtDateTime = (dateStr) => {
+  try { return format(parseISO(dateStr), 'd MMM yyyy, h:mm a'); } catch { return ''; }
+};
+
 // ── Print-only installer document ────────────────────────────────────────────
 function PrintView({ sheet, customer, job }) {
   const fmt = (dateStr) => {
@@ -96,7 +101,8 @@ function PrintView({ sheet, customer, job }) {
               {job?.jobNumber    && <tr><td style={{ color: '#666', paddingBottom: '3px', width: '45%' }}>Job Number</td><td style={{ fontWeight: 'bold', paddingBottom: '3px' }}>{job.jobNumber}</td></tr>}
               {sheet.measurer   && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Measurer</td><td style={{ fontWeight: 'bold', paddingBottom: '3px' }}>{sheet.measurer}</td></tr>}
               {sheet.measureDate && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Measure Date</td><td style={{ fontWeight: 'bold', paddingBottom: '3px' }}>{fmt(sheet.measureDate)}</td></tr>}
-              {sheet.createdAt  && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Sheet Created</td><td style={{ paddingBottom: '3px' }}>{fmt(sheet.createdAt)}</td></tr>}
+              {(sheet.createdAt || sheet.updatedAt) && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Sheet Created</td><td style={{ paddingBottom: '3px' }}>{fmtDateTime(sheet.createdAt || sheet.updatedAt)}</td></tr>}
+              {(sheet.updatedAt || sheet.createdAt) && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Last Edited</td><td style={{ paddingBottom: '3px' }}>{fmtDateTime(sheet.updatedAt || sheet.createdAt)}</td></tr>}
               {job?.jobType     && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Job Type</td><td style={{ paddingBottom: '3px' }}>{job.jobType}</td></tr>}
               {sheet.urgency && sheet.urgency !== 'Normal' && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Urgency</td><td style={{ fontWeight: 'bold', color: '#dc2626', paddingBottom: '3px' }}>{sheet.urgency}</td></tr>}
               <tr><td style={{ color: '#666' }}>Items</td><td style={{ fontWeight: 'bold' }}>{sheet.lineItems?.length || 0}</td></tr>
@@ -343,7 +349,8 @@ export default function MeasureSheetView() {
             <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-400">
               {sheet.measurer && <span>👤 {sheet.measurer}</span>}
               {sheet.measureDate && <span>📅 {format(parseISO(sheet.measureDate), 'd MMM yyyy')}</span>}
-              {sheet.createdAt && <span>Created {format(parseISO(sheet.createdAt), 'd MMM yyyy')}</span>}
+              {(sheet.createdAt || sheet.updatedAt) && <span>Created {fmtDateTime(sheet.createdAt || sheet.updatedAt)}</span>}
+              {(sheet.updatedAt || sheet.createdAt) && <span>· Last edited {fmtDateTime(sheet.updatedAt || sheet.createdAt)}</span>}
             </div>
           </div>
           <div className="flex gap-2 flex-shrink-0 flex-wrap">
