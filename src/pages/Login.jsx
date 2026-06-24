@@ -12,6 +12,9 @@ export default function Login() {
   const [loading, setLoading]   = useState(false);
   const [signupDone, setSignupDone] = useState(false); // email-confirm required
   const [signupMsg, setSignupMsg]   = useState('');
+  const [pwError, setPwError]       = useState('');
+
+  const MIN_PASSWORD = 12;
 
   const handleSignIn = async (e) => {
     e.preventDefault();
@@ -22,6 +25,11 @@ export default function Login() {
 
   const handleSignUp = async (e) => {
     e.preventDefault();
+    setPwError('');
+    if (password.length < MIN_PASSWORD) {
+      setPwError(`Use at least ${MIN_PASSWORD} characters. Avoid common or reused passwords.`);
+      return;
+    }
     setLoading(true);
     const result = await signUp(email, password);
     setLoading(false);
@@ -185,17 +193,20 @@ export default function Login() {
                   <input
                     type="password"
                     value={password}
-                    onChange={e => setPassword(e.target.value)}
+                    onChange={e => { setPassword(e.target.value); if (pwError) setPwError(''); }}
                     required
-                    minLength={8}
-                    placeholder="Minimum 8 characters"
+                    minLength={MIN_PASSWORD}
+                    placeholder={`At least ${MIN_PASSWORD} characters`}
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition"
                   />
+                  <p className="text-[11px] text-slate-400 mt-1.5">
+                    Minimum {MIN_PASSWORD} characters. Leaked or common passwords are rejected.
+                  </p>
                 </div>
 
-                {error && (
+                {(pwError || error) && (
                   <div className="bg-red-50 border border-red-200 text-red-600 text-xs px-4 py-3 rounded-xl">
-                    {error}
+                    {pwError || error}
                   </div>
                 )}
 
