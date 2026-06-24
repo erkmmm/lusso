@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { format, addDays } from 'date-fns';
+import { format, addDays, parseISO } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
 import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus } from 'lucide-react';
@@ -121,6 +121,13 @@ export default function PurchaseOrder() {
     if (preset) setMessage(preset.message);
   };
 
+  // dateRequired is stored as 'YYYY-MM-DD' (from the date picker) or the literal
+  // 'ASAP'. This is what actually prints on the PO — dates shown AU-style.
+  const dateRequiredDisplay =
+    !dateRequired ? '' :
+    dateRequired === 'ASAP' ? 'ASAP' :
+    (() => { try { return format(parseISO(dateRequired), 'dd/MM/yyyy'); } catch { return dateRequired; } })();
+
 
   // Per-line motor side, keyed by item id (defaults to the stored motorSide).
   const [motorSides, setMotorSides] = useState(() => {
@@ -158,7 +165,7 @@ export default function PurchaseOrder() {
     // Header labels + values (cols mirror the example header block)
     const lbl = []; lbl[5] = 'Job #'; lbl[7] = 'Customer'; lbl[9] = 'Date ordered'; lbl[11] = 'Date required'; lbl[14] = 'Page #';
     aoa.push(lbl);
-    const val = []; val[5] = jobNumber; val[7] = customerName; val[9] = dateOrdered; val[11] = dateRequired; val[14] = 1;
+    const val = []; val[5] = jobNumber; val[7] = customerName; val[9] = dateOrdered; val[11] = dateRequiredDisplay; val[14] = 1;
     aoa.push(val);
     aoa.push([]);
     // Column header row — '#' is the blank leading cell, then headers in col 1+
@@ -230,7 +237,7 @@ export default function PurchaseOrder() {
     doc.setFontSize(9); doc.setTextColor(60);
     [
       [jobNumber && `Job #: ${jobNumber}`, customerName && `Customer: ${customerName}`].filter(Boolean).join('    '),
-      [`Date ordered: ${dateOrdered}`, dateRequired && `Required: ${dateRequired}`].filter(Boolean).join('    '),
+      [`Date ordered: ${dateOrdered}`, dateRequiredDisplay && `Required: ${dateRequiredDisplay}`].filter(Boolean).join('    '),
     ].filter(Boolean).forEach((line, i) => doc.text(line, pageW - 40, 40 + i * 13, { align: 'right' }));
 
     autoTable(doc, {
@@ -426,13 +433,20 @@ export default function PurchaseOrder() {
             <div className="p-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="text-sm">
                 <span className="block text-xs text-slate-500 mb-1">Date required</span>
-                <input type="text" className={inputCls} value={dateRequired}
-                  onChange={e => setDateRequired(e.target.value)}
-                  placeholder="e.g. 21/07/2026 or ASAP" />
+                {dateRequired === 'ASAP' ? (
+                  <div className={`${inputCls} flex items-center justify-between`}>
+                    <span className="font-medium text-slate-800">ASAP</span>
+                    <button type="button" onClick={() => setDateRequired('')}
+                      className="text-xs text-amber-600 hover:underline">Pick a date</button>
+                  </div>
+                ) : (
+                  <input type="date" className={inputCls} value={dateRequired}
+                    onChange={e => setDateRequired(e.target.value)} />
+                )}
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 21), 'dd/MM/yyyy'))}
+                  <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 21), 'yyyy-MM-dd'))}
                     className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">3 weeks</button>
-                  <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 28), 'dd/MM/yyyy'))}
+                  <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 28), 'yyyy-MM-dd'))}
                     className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">4 weeks</button>
                   <button type="button" onClick={() => setDateRequired('ASAP')}
                     className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">ASAP</button>
@@ -540,7 +554,7 @@ export default function PurchaseOrder() {
                   )}
                   <div>
                     <span className="text-slate-400">Date ordered:</span> {dateOrdered}
-                    {dateRequired && <> · <span className="text-slate-400">Required:</span> {dateRequired}</>}
+                    {dateRequiredDisplay && <> · <span className="text-slate-400">Required:</span> {dateRequiredDisplay}</>}
                   </div>
                 </div>
               </div>
