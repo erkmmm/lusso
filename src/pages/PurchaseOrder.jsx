@@ -244,8 +244,8 @@ export default function PurchaseOrder() {
     else iframe.onload = () => setTimeout(run, 50);
   };
 
-  // ── PDF (same PO data as the XLSX export) → base64 for the email attachment ─
-  const buildPdfBase64 = async () => {
+  // ── PDF (same PO data as the XLSX export) — used for download + email ──────
+  const buildPdfDoc = async () => {
     const { jsPDF } = await import('jspdf');
     const autoTable = (await import('jspdf-autotable')).default;
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -290,7 +290,19 @@ export default function PurchaseOrder() {
     doc.setFontSize(8); doc.setTextColor(140);
     doc.text('Should you have any questions please call 0755284006 or email info@lusso.com.au — Address 3 Crinum Cres Southport', 40, pageH - 24);
 
-    return bytesToBase64(new Uint8Array(doc.output('arraybuffer')));
+    return doc;
+  };
+
+  // Email needs the PDF as base64; download writes the file to the device.
+  const buildPdfBase64 = async () => bytesToBase64(new Uint8Array((await buildPdfDoc()).output('arraybuffer')));
+
+  const handleDownloadPdf = async () => {
+    try {
+      (await buildPdfDoc()).save(`${fileBase}.pdf`);
+    } catch (e) {
+      console.error('[PO] PDF download failed', e);
+      toast('Could not generate the PDF.', 'error');
+    }
   };
 
   const handleSend = async () => {
@@ -378,6 +390,10 @@ export default function PurchaseOrder() {
             <button onClick={handlePrint}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
               <Printer size={13} /> Print
+            </button>
+            <button onClick={handleDownloadPdf} disabled={!curtains.length}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
+              <FileText size={13} /> Download PDF
             </button>
             <button onClick={handleExport}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
