@@ -1,13 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
-import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown } from 'lucide-react';
+import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus } from 'lucide-react';
 import {
   getMeasureSheet, getCustomer, getJob,
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
-  getSuppliers, saveSupplier, deleteSupplier,
   addActivity,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -92,7 +91,6 @@ export default function PurchaseOrder() {
   );
 
   // Per-order inputs
-  const [supplier, setSupplier] = useState('');
   const [dateRequired, setDateRequired] = useState('');
   const [extraNotes, setExtraNotes] = useState('');
 
@@ -106,12 +104,6 @@ export default function PurchaseOrder() {
   const updateRemote = (id, f, v) => setRemotes(r => r.map(x => x.id === id ? { ...x, [f]: v } : x));
   const removeRemote = (id) => setRemotes(r => r.filter(x => x.id !== id));
 
-  // Saved supplier list + dropdown state.
-  const [suppliers, setSuppliers] = useState(() => getSuppliers());
-  const [supplierOpen, setSupplierOpen] = useState(false);
-  const [addingSupplier, setAddingSupplier] = useState(false);
-  const [newSupplierName, setNewSupplierName] = useState('');
-  const [newSupplierEmail, setNewSupplierEmail] = useState('');
   const [recipient, setRecipient] = useState(() => localStorage.getItem(RECIPIENT_KEY) || '');
   const [sending, setSending] = useState(false);
   const [presets, setPresets] = useState(() => getPoPresets());
@@ -129,28 +121,6 @@ export default function PurchaseOrder() {
     if (preset) setMessage(preset.message);
   };
 
-  // ── Supplier dropdown ──────────────────────────────────────────────────────
-  const selectSupplier = (s) => {
-    setSupplier(s.name);
-    setSupplierOpen(false);
-    setAddingSupplier(false);
-    if (s.email) applyRecipient(s.email); // pre-fill send-to email (+ preset body)
-  };
-  const handleAddSupplier = () => {
-    const name = newSupplierName.trim();
-    if (!name) { toast('Enter a supplier name.', 'error'); return; }
-    const rec = saveSupplier({ name, email: newSupplierEmail.trim() });
-    setSuppliers(getSuppliers());
-    setNewSupplierName(''); setNewSupplierEmail(''); setAddingSupplier(false);
-    selectSupplier(rec);
-    toast(`Supplier "${rec.name}" saved.`);
-  };
-  const handleDeleteSupplier = (s) => {
-    deleteSupplier(s.id);
-    setSuppliers(getSuppliers());
-    if (supplier === s.name) setSupplier('');
-    toast('Supplier deleted.', 'info');
-  };
 
   // Per-line motor side, keyed by item id (defaults to the stored motorSide).
   const [motorSides, setMotorSides] = useState(() => {
@@ -186,9 +156,9 @@ export default function PurchaseOrder() {
     // Title (col 4, matching the example)
     aoa.push(at(4, 'Lusso Curtain PO sheet'));
     // Header labels + values (cols mirror the example header block)
-    const lbl = []; lbl[4] = 'To'; lbl[5] = 'Job #'; lbl[7] = 'Customer'; lbl[9] = 'Date ordered'; lbl[11] = 'Date required'; lbl[14] = 'Page #';
+    const lbl = []; lbl[5] = 'Job #'; lbl[7] = 'Customer'; lbl[9] = 'Date ordered'; lbl[11] = 'Date required'; lbl[14] = 'Page #';
     aoa.push(lbl);
-    const val = []; val[4] = supplier; val[5] = jobNumber; val[7] = customerName; val[9] = dateOrdered; val[11] = dateRequired; val[14] = 1;
+    const val = []; val[5] = jobNumber; val[7] = customerName; val[9] = dateOrdered; val[11] = dateRequired; val[14] = 1;
     aoa.push(val);
     aoa.push([]);
     // Column header row — '#' is the blank leading cell, then headers in col 1+
@@ -259,7 +229,6 @@ export default function PurchaseOrder() {
 
     doc.setFontSize(9); doc.setTextColor(60);
     [
-      supplier && `To: ${supplier}`,
       [jobNumber && `Job #: ${jobNumber}`, customerName && `Customer: ${customerName}`].filter(Boolean).join('    '),
       [`Date ordered: ${dateOrdered}`, dateRequired && `Required: ${dateRequired}`].filter(Boolean).join('    '),
     ].filter(Boolean).forEach((line, i) => doc.text(line, pageW - 40, 40 + i * 13, { align: 'right' }));
@@ -325,7 +294,7 @@ export default function PurchaseOrder() {
         addActivity({
           jobId: sheet.jobId,
           type: 'po_sent',
-          message: `Curtain PO sent to ${to}${supplier ? ` (${supplier})` : ''}`,
+          message: `Curtain PO sent to ${to}`,
           user: displayName || 'System',
         });
       }
@@ -455,59 +424,20 @@ export default function PurchaseOrder() {
               <h2 className="font-semibold text-slate-800 text-sm">Order Details</h2>
             </div>
             <div className="p-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Supplier dropdown with Add supplier */}
               <div className="text-sm">
-                <span className="block text-xs text-slate-500 mb-1">Supplier</span>
-                <div className="relative">
-                  <button type="button" onClick={() => setSupplierOpen(o => !o)}
-                    className={`${inputCls} flex items-center justify-between gap-2 text-left`}>
-                    <span className={supplier ? 'text-slate-800 truncate' : 'text-slate-400'}>{supplier || 'Select supplier'}</span>
-                    <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
-                  </button>
-                  {supplierOpen && (
-                    <>
-                      <button type="button" aria-hidden tabIndex={-1} className="fixed inset-0 z-10 cursor-default"
-                        onClick={() => { setSupplierOpen(false); setAddingSupplier(false); }} />
-                      <div className="absolute left-0 right-0 z-20 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-72 overflow-y-auto">
-                        {suppliers.length === 0 && !addingSupplier && (
-                          <p className="px-3 py-2.5 text-xs text-slate-400">No suppliers yet.</p>
-                        )}
-                        {suppliers.map(s => (
-                          <div key={s.id} className="flex items-center hover:bg-slate-50">
-                            <button type="button" onClick={() => selectSupplier(s)} className="flex-1 min-w-0 text-left px-3 py-2.5">
-                              <span className="block text-sm text-slate-800 truncate">{s.name}</span>
-                              {s.email && <span className="block text-xs text-slate-400 truncate">{s.email}</span>}
-                            </button>
-                            <button type="button" onClick={() => handleDeleteSupplier(s)} title="Delete supplier"
-                              className="px-3 py-2.5 text-slate-300 hover:text-red-500 flex-shrink-0"><Trash2 size={13} /></button>
-                          </div>
-                        ))}
-                        {addingSupplier ? (
-                          <div className="border-t border-slate-100 p-3 space-y-2">
-                            <input autoFocus className={inputCls} placeholder="Supplier name" value={newSupplierName} onChange={e => setNewSupplierName(e.target.value)} />
-                            <input className={inputCls} placeholder="supplier@email.com (optional)" value={newSupplierEmail} onChange={e => setNewSupplierEmail(e.target.value)} />
-                            <div className="flex gap-2">
-                              <button type="button" onClick={handleAddSupplier}
-                                className="flex-1 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white">Save</button>
-                              <button type="button" onClick={() => setAddingSupplier(false)}
-                                className="text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">Cancel</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button type="button" onClick={() => setAddingSupplier(true)}
-                            className="w-full text-left px-3 py-3 border-t border-slate-100 text-amber-600 hover:bg-amber-50 flex items-center gap-1.5 text-sm font-medium">
-                            <Plus size={14} /> Add supplier
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
+                <span className="block text-xs text-slate-500 mb-1">Date required</span>
+                <input type="text" className={inputCls} value={dateRequired}
+                  onChange={e => setDateRequired(e.target.value)}
+                  placeholder="e.g. 21/07/2026 or ASAP" />
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 21), 'dd/MM/yyyy'))}
+                    className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">3 weeks</button>
+                  <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 28), 'dd/MM/yyyy'))}
+                    className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">4 weeks</button>
+                  <button type="button" onClick={() => setDateRequired('ASAP')}
+                    className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">ASAP</button>
                 </div>
               </div>
-              <label className="text-sm">
-                <span className="block text-xs text-slate-500 mb-1">Date required</span>
-                <input type="date" className={inputCls} value={dateRequired} onChange={e => setDateRequired(e.target.value)} />
-              </label>
               <label className="text-sm">
                 <span className="block text-xs text-slate-500 mb-1">Date ordered</span>
                 <input className={inputCls} value={dateOrdered} disabled />
@@ -601,7 +531,6 @@ export default function PurchaseOrder() {
                   <div className="text-xs text-slate-500">Curtain Purchase Order</div>
                 </div>
                 <div className="text-right text-xs text-slate-600 space-y-0.5">
-                  {supplier && <div><span className="text-slate-400">To:</span> {supplier}</div>}
                   {(jobNumber || customerName) && (
                     <div>
                       {jobNumber && <><span className="text-slate-400">Job #:</span> {jobNumber}</>}
