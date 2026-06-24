@@ -7,10 +7,12 @@
  *   EMAIL_FROM      — optional sender, e.g. "Lusso <jobs@yourdomain.com>"
  */
 
+import { requireActiveUser } from './_auth.js';
+
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 const json = (status, body) =>
@@ -24,6 +26,9 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost(context) {
+  const caller = await requireActiveUser(context);
+  if (!caller) return json(401, { error: 'Unauthorized' });
+
   const RESEND_API_KEY = context.env.RESEND_API_KEY;
   const FROM_ADDRESS   = context.env.EMAIL_FROM || 'Lusso <onboarding@resend.dev>';
 

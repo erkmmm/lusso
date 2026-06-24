@@ -10,17 +10,29 @@
  * (Cloudflare Pages), so no cross-origin issues and no BASE URL needed.
  */
 
+import { supabase } from './supabase';
+
 /**
  * Safe HTTP POST to a local API route.
  * Handles empty / non-JSON responses gracefully so a bad body never
  * throws the cryptic "Unexpected end of JSON input" error.
  */
 async function post(path, body) {
+  // Attach the caller's Supabase session so the server can verify them.
+  let token = '';
+  try {
+    const { data } = await supabase.auth.getSession();
+    token = data?.session?.access_token || '';
+  } catch { /* no session — server will reject with 401 */ }
+
   let res;
   try {
     res = await fetch(`/api/${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(body),
     });
   } catch (networkErr) {
