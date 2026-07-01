@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Mic, ChevronDown, ChevronRight, Play, Loader2 } from 'lucide-react';
+import { Mic, ChevronDown, ChevronRight, Play, Loader2, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useProfile } from '../contexts/UserProfileContext';
+import { toast } from './ToastContainer';
 import Card from './Card';
 
 const fmtDur = (s) => {
@@ -17,9 +19,12 @@ const fmtDate = (iso) => {
 };
 
 export default function ConsultRecordings({ jobId }) {
+  const { isAM = false } = useProfile() || {};
   const [rows, setRows]     = useState(null); // null = loading
   const [openId, setOpenId] = useState(null);
   const [urls, setUrls]     = useState({});   // id -> signed audio URL
+  const [confirmId, setConfirmId] = useState(null); // row pending delete-confirm
+  const [busyId, setBusyId]       = useState(null); // row being deleted
 
   useEffect(() => {
     let alive = true;
@@ -36,6 +41,23 @@ export default function ConsultRecordings({ jobId }) {
     if (urls[row.id] || !row.audio_path) return;
     const { data } = await supabase.storage.from('consult-audio').createSignedUrl(row.audio_path, 3600);
     if (data?.signedUrl) setUrls((u) => ({ ...u, [row.id]: data.signedUrl }));
+  }
+
+  async function remove(row) {
+    setBusyId(row.id);
+    try {
+      // Remove the audio first (best-effort), then the row.
+      if (row.audio_path) await supabase.storage.from('consult-audio').remove([row.audio_path]);
+      const { error } = await supabase.from('job_transcripts').delete().eq('id', row.id);
+      if (error) throw error;
+      setRows((rs) => (rs || []).filter((r) => r.id !== row.id));
+      toast('Recording deleted.');
+    } catch {
+      toast('Could not delete the recording.', 'error');
+    } finally {
+      setBusyId(null);
+      setConfirmId(null);
+    }
   }
 
   if (rows === null) {
@@ -77,12 +99,34 @@ export default function ConsultRecordings({ jobId }) {
                   </p>
                 </div>
               </div>
-              {r.audio_path && !urls[r.id] && (
-                <button onClick={() => play(r)}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors flex-shrink-0">
-                  <Play size={13} /> Play
-                </button>
-              )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {confirmId === r.id ? (
+                  <>
+                    <span className="text-xs text-slate-500 hidden sm:inline">Delete recording?</span>
+                    <button onClick={() => remove(r)} disabled={busyId === r.id}
+                      className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-400 text-white transition-colors disabled:opacity-60">
+                      {busyId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Delete
+                    </button>
+                    <button onClick={() => setConfirmId(null)} disabled={busyId === r.id}
+                      className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5">Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    {r.audio_path && !urls[r.id] && (
+                      <button onClick={() => play(r)}
+                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
+                        <Play size={13} /> Play
+                      </button>
+                    )}
+                    {isAM && (
+                      <button onClick={() => setConfirmId(r.id)} title="Delete recording"
+                        className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg transition-colors">
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {urls[r.id] && (
