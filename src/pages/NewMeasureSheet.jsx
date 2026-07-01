@@ -18,6 +18,7 @@ import {
 } from '../store/data';
 import { syncNow } from '../store/db';
 import Card from '../components/Card';
+import ConsultRecorder from '../components/ConsultRecorder';
 import BackButton from '../components/BackButton';
 import PricedItemPicker from '../components/PricedItemPicker';
 import AddressAutocomplete from '../components/AddressAutocomplete';
@@ -633,6 +634,11 @@ export default function NewMeasureSheet() {
           </div>
         </div>
       </div>
+
+      {/* Consult recorder — only when this sheet is linked to a job */}
+      {(prelinkedJobId || sheet?.jobId) && (
+        <ConsultRecorder jobId={prelinkedJobId || sheet.jobId} />
+      )}
 
       {/* Validation banner */}
       {hasErrors && (
