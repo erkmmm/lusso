@@ -7,9 +7,10 @@ import {
   Calendar, ClipboardList, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, ChevronDown, HardHat, Plus, Upload,
-  CalendarPlus, Trash2, Wrench, Bot, MessageSquare, Ruler,
+  CalendarPlus, Trash2, Wrench, Bot, MessageSquare, Ruler, Mic,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
+import ConsultRecordings from '../components/ConsultRecordings';
 import BackButton from '../components/BackButton';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import {
@@ -44,6 +45,7 @@ const TABS = [
   { id: 'overview',  label: 'Overview',        icon: Briefcase },
   { id: 'quotes',    label: 'Quotes',           icon: FileText },
   { id: 'measures',  label: 'Measures',         icon: ClipboardList },
+  { id: 'consults',  label: 'Consults',         icon: Mic },
   { id: 'install',   label: 'Install & Notes',  icon: Wrench },
   { id: 'comms',     label: 'Comms',            icon: MessageSquare },
 ];
@@ -576,6 +578,9 @@ export default function JobProfile() {
           customerEmail={customer?.email}
         />
       )}
+
+      {/* ── Tab: Consults ─────────────────────────────────────────────── */}
+      {activeTab === 'consults' && <ConsultRecordings jobId={id} />}
 
       {/* Calendar modal */}
       {showCalendar && (
