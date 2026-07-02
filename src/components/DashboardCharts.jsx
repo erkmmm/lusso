@@ -4,6 +4,7 @@
  * All charts are responsive (viewBox-scaled) and theme/dark-mode friendly
  * because they read `currentColor` / slate-neutral strokes where possible.
  */
+import { useId } from 'react';
 
 const money = (v) =>
   Math.abs(v) >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
@@ -110,6 +111,80 @@ export function LineChart({ series, xLabels, height = 220 }) {
       )}
       {left?.values.map((v, i) => (
         <circle key={i} cx={x(i)} cy={yFor(v, maxL)} r="2.5" fill="#fff" stroke={left.color} strokeWidth="1.5" />
+      ))}
+      {xLabels.map((lb, i) => (
+        (i % tickEvery === 0 || i === n - 1) && (
+          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="#9AA0A6">{lb}</text>
+        )
+      ))}
+    </svg>
+  );
+}
+
+// ── Sparkline ──────────────────────────────────────────────────────────────────
+// Tiny inline trend for KPI cards. Stretches to fill its container width.
+export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = true }) {
+  const gid = useId();
+  const n = values.length;
+  if (!n) return null;
+  const W = 120, H = height, pad = 2;
+  const max = Math.max(...values), min = Math.min(...values);
+  const range = max - min || 1;
+  const x = (i) => (n <= 1 ? W / 2 : (i / (n - 1)) * W);
+  const y = (v) => H - pad - ((v - min) / range) * (H - pad * 2);
+  const line = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const area = `${line} L ${x(n - 1).toFixed(1)} ${H} L ${x(0).toFixed(1)} ${H} Z`;
+  return (
+    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {fill && <path d={area} fill={`url(#${gid})`} />}
+      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+// ── Area chart ───────────────────────────────────────────────────────────────
+// Single-series gradient area (the Apex-style hero revenue chart). left axis =
+// formatted via `format` (money by default).
+export function AreaChart({ values = [], xLabels = [], color = '#C0873A', height = 240, format = money }) {
+  const gid = useId();
+  const W = 720, H = height;
+  const padL = 48, padR = 16, padT = 16, padB = 28;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const n = values.length;
+  const max = Math.max(1, ...values);
+  const x = (i) => padL + (n <= 1 ? iw / 2 : (i / (n - 1)) * iw);
+  const y = (v) => padT + ih - (v / max) * ih;
+  const line = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const area = `${line} L ${x(n - 1).toFixed(1)} ${padT + ih} L ${x(0).toFixed(1)} ${padT + ih} Z`;
+  const gridY = [0, 0.25, 0.5, 0.75, 1];
+  const tickEvery = Math.max(1, Math.ceil(n / 6));
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="revenue trend">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      {gridY.map((g, i) => {
+        const yy = padT + ih - g * ih;
+        return (
+          <g key={i}>
+            <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#EEEFEA" strokeWidth="1" />
+            <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize="10" fill="#9AA0A6">{format(g * max)}</text>
+          </g>
+        );
+      })}
+      <path d={area} fill={`url(#${gid})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      {values.map((v, i) => (
+        <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="#fff" stroke={color} strokeWidth="1.5" />
       ))}
       {xLabels.map((lb, i) => (
         (i % tickEvery === 0 || i === n - 1) && (
