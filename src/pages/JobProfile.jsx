@@ -96,7 +96,7 @@ export default function JobProfile() {
       {/* ── Compact header ─────────────────────────────────────────────── */}
       <Card className="overflow-hidden">
         <div className="p-5">
-          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-start gap-4">
             {/* Avatar + name */}
             <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-700 font-bold text-lg">
               {customer?.name?.charAt(0) || 'J'}
