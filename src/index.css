@@ -228,6 +228,112 @@ html, body {
     --lusso-text-primary: #f0ebe5;
   }
 
+  /* ════ APEX — light ════
+     Exact tokens lifted from the Apex shadcn demo (dashboardpack.com):
+     emerald primary oklch(55% .175 160), cool near-white surfaces,
+     neutral near-black sidebar. */
+  .theme-apex {
+    --brand-50:  oklch(97.5% 0.02 160);
+    --brand-100: oklch(94.5% 0.045 160);
+    --brand-200: oklch(89% 0.08 160);
+    --brand-300: oklch(81% 0.115 160);
+    --brand-400: oklch(70% 0.15 160);
+    --brand-500: oklch(55% 0.175 160);
+    --brand-600: oklch(49% 0.16 160);
+    --brand-700: oklch(43% 0.14 161);
+    --brand-800: oklch(37% 0.11 162);
+    --brand-900: oklch(31.5% 0.09 163);
+    --brand-950: oklch(24% 0.06 164);
+    --brand-bright:     oklch(55% 0.175 160);
+    --brand-bright-rgb: 0 147 104;
+
+    --sb-bg:     oklch(14% 0 0);
+    --sb-hover:  oklch(20% 0 0);
+    --sb-active: oklch(24% 0 0);
+    --sb-border: oklch(22% 0 0);
+    --sb-text:   oklch(87% 0.005 230);
+    --sb-ring:   oklch(55% 0.175 160);
+
+    --ring-color: oklch(55% 0.175 160);
+
+    --card:                  #ffffff;
+    --card-foreground:       oklch(15.5% 0.015 230);
+    --popover:               #ffffff;
+    --popover-foreground:    oklch(15.5% 0.015 230);
+    --primary:               oklch(55% 0.175 160);
+    --primary-foreground:    oklch(98.5% 0.002 230);
+    --secondary:             oklch(96% 0.005 230);
+    --secondary-foreground:  oklch(20.5% 0.015 230);
+    --muted:                 oklch(96% 0.005 230);
+    --muted-foreground:      oklch(55.6% 0.015 230);
+    --accent:                oklch(96% 0.005 230);
+    --accent-foreground:     oklch(20.5% 0.015 230);
+    --destructive:           oklch(57.7% 0.245 27.325);
+    --destructive-foreground:oklch(98.5% 0.002 230);
+    --border:                oklch(92.2% 0.005 230);
+    --input:                 oklch(92.2% 0.005 230);
+    --ring:                  oklch(55% 0.175 160);
+    --background:            oklch(98.5% 0.002 230);
+    --foreground:            oklch(15.5% 0.015 230);
+    --radius:                0.625rem;
+
+    --lusso-background:   oklch(98.5% 0.002 230);
+    --lusso-surface:      #ffffff;
+    --lusso-text-primary: oklch(15.5% 0.015 230);
+  }
+
+  /* ════ APEX — dark ════ (higher specificity wins over .dark) */
+  .theme-apex.dark {
+    --brand-bright:     oklch(65% 0.19 160);
+    --brand-bright-rgb: 16 183 127;
+
+    --surf-page:     oklch(7.5% 0 0);
+    --surf-page-rgb: 10 10 10;
+    --surf-card:     oklch(19% 0 0);
+    --surf-muted:    oklch(23.5% 0 0);
+    --surf-hover:    oklch(21% 0 0);
+    --bord-strong:   oklch(32% 0 0);
+    --bord-default:  oklch(28% 0 0);
+    --bord-subtle:   oklch(25% 0 0);
+    --bord-faint:    oklch(21% 0 0);
+    --txt-primary:   oklch(92.2% 0.005 230);
+    --txt-secondary: oklch(80% 0.005 230);
+    --txt-muted:     oklch(70% 0.01 230);
+    --txt-faint:     oklch(55.6% 0.015 230);
+    --txt-faintest:  oklch(45% 0.01 230);
+    --input-dark:    oklch(28% 0 0);
+
+    --sb-bg:     oklch(11% 0 0);
+    --sb-hover:  oklch(20% 0 0);
+    --sb-active: oklch(24% 0 0);
+    --sb-border: oklch(26% 0 0);
+    --sb-text:   oklch(90% 0.005 230);
+
+    --card:                  oklch(19% 0 0);
+    --card-foreground:       oklch(92.2% 0.005 230);
+    --popover:               oklch(21% 0 0);
+    --popover-foreground:    oklch(92.2% 0.005 230);
+    --primary:               oklch(65% 0.19 160);
+    --primary-foreground:    oklch(7.5% 0 0);
+    --secondary:             oklch(23.5% 0 0);
+    --secondary-foreground:  oklch(92.2% 0.005 230);
+    --muted:                 oklch(23.5% 0 0);
+    --muted-foreground:      oklch(55.6% 0.015 230);
+    --accent:                oklch(23.5% 0 0);
+    --accent-foreground:     oklch(92.2% 0.005 230);
+    --destructive:           oklch(57.7% 0.245 27.325);
+    --destructive-foreground:oklch(92.2% 0.005 230);
+    --border:                oklch(28% 0 0);
+    --input:                 oklch(28% 0 0);
+    --ring:                  oklch(65% 0.19 160);
+    --background:            oklch(7.5% 0 0);
+    --foreground:            oklch(92.2% 0.005 230);
+
+    --lusso-background:   oklch(7.5% 0 0);
+    --lusso-surface:      oklch(19% 0 0);
+    --lusso-text-primary: oklch(92.2% 0.005 230);
+  }
+
   * {
     box-sizing: border-box;
     margin: 0;
@@ -572,7 +678,7 @@ html.dark { color-scheme: dark; }
 /* ── Sticky elements keep surface bg ── */
 .dark .sticky { background-color: inherit; }
 
-/* ── Dashboard micro-animations (Apex-style) ──────────────────────────────── */
+/* ── Micro-animations (Apex-style) ────────────────────────────────────────── */
 /* Staggered card entrance: fade + rise. Delay set inline per card. */
 @keyframes lusso-fade-up {
   from { opacity: 0; transform: translateY(12px); }
@@ -582,6 +688,47 @@ html.dark { color-scheme: dark; }
   animation: lusso-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Page entrance — every route change remounts the page root under <main>,
+   so this replays on navigation (same feel as the demo's page transitions). */
+@keyframes lusso-page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+main > * {
+  animation: lusso-page-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Overlays & modals — backdrop fades, panel pops in (shadcn dialog feel).
+   Matches the app-wide `fixed inset-0 z-50` overlay pattern. */
+@keyframes lusso-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes lusso-pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.fixed.inset-0.z-50 {
+  animation: lusso-fade-in 0.2s ease-out both;
+}
+.fixed.inset-0.z-50 > * {
+  animation: lusso-pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Button press feedback (shadcn-style active scale). */
+button:not(:disabled) {
+  transition-property: transform, color, background-color, border-color, box-shadow, opacity;
+  transition-duration: 0.15s;
+  transition-timing-function: ease;
+}
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade-up { animation: none; }
+  .animate-fade-up,
+  main > *,
+  .fixed.inset-0.z-50,
+  .fixed.inset-0.z-50 > * { animation: none; }
+  button:not(:disabled):active { transform: none; }
 }

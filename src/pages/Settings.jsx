@@ -97,6 +97,7 @@ export default function Settings() {
   const { theme, setTheme, colorTheme, setColorTheme } = useTheme();
 
   const COLOR_OPTIONS = [
+    { value: 'apex',  label: 'Apex',   desc: 'Emerald & charcoal — demo style.', swatch: '#009368' },
     { value: 'taupe', label: 'Taupe',  desc: 'Warm taupe & cream.',   swatch: '#644a40' },
     { value: 'green', label: 'Green',  desc: 'Forest green & cream.',  swatch: '#2e7d32' },
   ];

@@ -126,7 +126,7 @@ export function LineChart({ series, xLabels, height = 220 }) {
 
 // ── Sparkline ──────────────────────────────────────────────────────────────────
 // Tiny inline trend for KPI cards. Stretches to fill its container width.
-export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = true }) {
+export function Sparkline({ values = [], color = 'var(--brand-500)', height = 34, fill = true }) {
   const gid = useId();
   const mounted = useMountAnimation();
   const n = values.length;
@@ -142,8 +142,9 @@ export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = 
     <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
+          {/* style (not attribute) so CSS var() colors resolve */}
+          <stop offset="0%" style={{ stopColor: color, stopOpacity: 0.28 }} />
+          <stop offset="100%" style={{ stopColor: color, stopOpacity: 0 }} />
         </linearGradient>
       </defs>
       <clipPath id={`${gid}-clip`}>
@@ -154,7 +155,7 @@ export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = 
       </clipPath>
       <g clipPath={`url(#${gid}-clip)`}>
         {fill && <path d={area} fill={`url(#${gid})`} />}
-        <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d={line} fill="none" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" style={{ stroke: color }} />
       </g>
     </svg>
   );
@@ -163,7 +164,7 @@ export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = 
 // ── Area chart ───────────────────────────────────────────────────────────────
 // Single-series gradient area (the Apex-style hero revenue chart). left axis =
 // formatted via `format` (money by default).
-export function AreaChart({ values = [], xLabels = [], color = '#C0873A', height = 240, format = money }) {
+export function AreaChart({ values = [], xLabels = [], color = 'var(--brand-500)', height = 240, format = money }) {
   const gid = useId();
   const mounted = useMountAnimation();
   const W = 720, H = height;
@@ -181,8 +182,9 @@ export function AreaChart({ values = [], xLabels = [], color = '#C0873A', height
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="revenue trend">
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          {/* style (not attribute) so CSS var() colors resolve */}
+          <stop offset="0%" style={{ stopColor: color, stopOpacity: 0.28 }} />
+          <stop offset="100%" style={{ stopColor: color, stopOpacity: 0.02 }} />
         </linearGradient>
       </defs>
       {gridY.map((g, i) => {
@@ -202,9 +204,9 @@ export function AreaChart({ values = [], xLabels = [], color = '#C0873A', height
       </clipPath>
       <g clipPath={`url(#${gid}-clip)`}>
         <path d={area} fill={`url(#${gid})`} />
-        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={line} fill="none" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" style={{ stroke: color }} />
         {values.map((v, i) => (
-          <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="#fff" stroke={color} strokeWidth="1.5" />
+          <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="#fff" strokeWidth="1.5" style={{ stroke: color }} />
         ))}
       </g>
       {xLabels.map((lb, i) => (

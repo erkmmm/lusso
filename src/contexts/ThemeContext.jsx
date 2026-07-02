@@ -5,8 +5,20 @@ const ThemeContext = createContext({});
 const STORAGE_KEY = 'lusso_theme';
 const COLOR_KEY = 'lusso_color_theme';
 
-// Colour themes — class applied to <html> (taupe is the default, no class).
-const COLOR_THEMES = ['taupe', 'green'];
+// Colour themes — class applied to <html> (taupe has no class).
+const COLOR_THEMES = ['taupe', 'green', 'apex'];
+
+// One-time switch to the Apex (demo-matched) theme; after this runs the user
+// can still pick any theme in Settings and it sticks.
+const APEX_MIGRATION_KEY = 'lusso_theme_apex_migrated';
+function initialColorTheme() {
+  if (!localStorage.getItem(APEX_MIGRATION_KEY)) {
+    localStorage.setItem(APEX_MIGRATION_KEY, '1');
+    localStorage.setItem(COLOR_KEY, 'apex');
+    return 'apex';
+  }
+  return localStorage.getItem(COLOR_KEY) || 'apex';
+}
 
 function applyColorClass(colorTheme) {
   const root = document.documentElement;
@@ -50,9 +62,7 @@ export function ThemeProvider({ children }) {
     () => localStorage.getItem(STORAGE_KEY) || 'light'
   );
 
-  const [colorTheme, setColorThemeState] = useState(
-    () => localStorage.getItem(COLOR_KEY) || 'taupe'
-  );
+  const [colorTheme, setColorThemeState] = useState(initialColorTheme);
 
   const setTheme = useCallback((t) => {
     setThemeState(t);

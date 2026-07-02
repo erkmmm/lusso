@@ -25,9 +25,8 @@ import Card from '../components/Card';
 import { DonutChart, AreaChart, Sparkline } from '../components/DashboardCharts';
 import { PIPELINE_RAMP } from '../lib/chartColors';
 
-// Brand accents (kept muted — Lusso amber/teal, never neon). To adopt the Apex
-// template's teal accent instead, swap ACCENT to '#2E6E65'.
-const ACCENT = '#C0873A';
+// Chart accent follows the active colour theme (Apex emerald by default).
+const ACCENT = 'var(--brand-500)';
 const LARP_KEY = 'lusso_larp_mode';
 
 function loadLarp() {
