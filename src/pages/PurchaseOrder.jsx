@@ -69,6 +69,24 @@ function rowCells(item, i, motorSide) {
 const wandIsEmpty   = (w) => !w.qty && !w.colour && !w.length;
 const remoteIsEmpty = (r) => !r.qty && !r.type && !r.colour;
 const wandLabel     = (w) => [w.qty ? `${w.qty} ×` : '', w.colour, w.length ? `${w.length}mm` : ''].filter(Boolean).join(' ');
+
+// Wands required per curtain, keyed by operation type (trackType). Most specific
+// code first so "C/O F/R" isn't caught by "C/O" or "F/R".
+const WAND_RULES = [
+  { code: 'C/O F/R', wands: 4 },
+  { code: 'C/O',     wands: 2 },
+  { code: 'F/R',     wands: 2 },
+  { code: 'LHS',     wands: 1 },
+  { code: 'RHS',     wands: 1 },
+];
+const normOp = (op) => String(op || '').toUpperCase().replace(/\s*\/\s*/g, '/').replace(/\s+/g, ' ').trim();
+function wandsForOp(op) {
+  const s = normOp(op);
+  if (!s) return 0;
+  for (const r of WAND_RULES) if (s === r.code) return r.wands;      // exact
+  for (const r of WAND_RULES) if (s.includes(r.code)) return r.wands; // tolerant of extra text
+  return 0;
+}
 const remoteLabel   = (r) => [r.qty ? `${r.qty} ×` : '', r.type, r.colour].filter(Boolean).join(' ');
 
 export default function PurchaseOrder() {
@@ -100,6 +118,25 @@ export default function PurchaseOrder() {
   const addWand    = () => setWands(w => [...w, { id: uuidv4(), qty: '', colour: '', length: '' }]);
   const updateWand = (id, f, v) => setWands(w => w.map(x => x.id === id ? { ...x, [f]: v } : x));
   const removeWand = (id) => setWands(w => w.filter(x => x.id !== id));
+
+  // Wands required from the curtains' operation types (× line quantity).
+  const wandCalc = useMemo(() => {
+    const byCode = {};
+    let total = 0, unmatched = 0;
+    curtains.forEach(c => {
+      const per = wandsForOp(c.trackType);
+      const qty = Math.max(1, Number(c.quantity) || 1);
+      if (per <= 0) { if (c.trackType) unmatched += 1; return; }
+      const code = normOp(c.trackType);
+      byCode[code] = byCode[code] || { count: 0, wands: 0 };
+      byCode[code].count += qty;
+      byCode[code].wands += per * qty;
+      total += per * qty;
+    });
+    return { total, byCode, unmatched };
+  }, [curtains]);
+
+  const addSuggestedWands = () => setWands(w => [...w, { id: uuidv4(), qty: String(wandCalc.total), colour: '', length: '' }]);
   const addRemote    = () => setRemotes(r => [...r, { id: uuidv4(), qty: '', type: '', colour: '' }]);
   const updateRemote = (id, f, v) => setRemotes(r => r.map(x => x.id === id ? { ...x, [f]: v } : x));
   const removeRemote = (id) => setRemotes(r => r.filter(x => x.id !== id));
@@ -485,6 +522,21 @@ export default function PurchaseOrder() {
               <h2 className="font-semibold text-slate-800 text-sm">Accessories</h2>
               <p className="text-xs text-slate-400 mt-0.5">Add wands and remotes as needed — only added items appear on the PO.</p>
             </div>
+            {wandCalc.total > 0 && (
+              <div className="mx-5 mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-amber-800">Suggested: {wandCalc.total} wand{wandCalc.total !== 1 ? 's' : ''}</p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    {Object.entries(wandCalc.byCode).map(([code, d]) => `${d.count}× ${code} → ${d.wands}`).join('  ·  ')}
+                    {wandCalc.unmatched > 0 && `  ·  ${wandCalc.unmatched} without a recognised operation type`}
+                  </p>
+                </div>
+                <button type="button" onClick={addSuggestedWands}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white flex-shrink-0">
+                  <Plus size={13} /> Add {wandCalc.total} wands
+                </button>
+              </div>
+            )}
             <div className="p-5 space-y-6">
               {[
                 { label: 'Wands', addLabel: 'Add wands', items: wands, add: addWand, update: updateWand, remove: removeWand,
