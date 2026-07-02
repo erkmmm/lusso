@@ -19,6 +19,7 @@ import {
 import { syncNow } from '../store/db';
 import Card from '../components/Card';
 import ConsultRecorder from '../components/ConsultRecorder';
+import MeasureSheetTable from '../components/MeasureSheetTable';
 import BackButton from '../components/BackButton';
 import PricedItemPicker from '../components/PricedItemPicker';
 import AddressAutocomplete from '../components/AddressAutocomplete';
@@ -379,6 +380,8 @@ export default function NewMeasureSheet() {
   const [errors,         setErrors]         = useState({});
   const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true });
   const [expandedItems,  setExpandedItems]  = useState(() => new Set(sheet.lineItems.map(li => li.id)));
+  const [itemLayout,     setItemLayout]     = useState(() => localStorage.getItem('lusso_ms_layout') === 'table' ? 'table' : 'cards');
+  const chooseLayout = (l) => { setItemLayout(l); localStorage.setItem('lusso_ms_layout', l); };
 
   // ── Derived: search results & customer jobs ────────────────────────────────
   const searchResults = useMemo(() =>
@@ -951,7 +954,31 @@ export default function NewMeasureSheet() {
       >
         {openSections.items && (
           <div className="space-y-4">
-            {sheet.lineItems.map((item, idx) => {
+            {/* Layout switch — card view (default) or spreadsheet table */}
+            <div className="flex justify-end">
+              <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+                {[['cards', 'Cards'], ['table', 'Table']].map(([val, label]) => (
+                  <button key={val} type="button" onClick={() => chooseLayout(val)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                      itemLayout === val ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {itemLayout === 'table' && (
+              <MeasureSheetTable
+                lineItems={sheet.lineItems}
+                setLineItem={setLineItem}
+                removeLineItem={removeLineItem}
+                productTypes={productTypes}
+                errors={errors}
+              />
+            )}
+
+            {itemLayout === 'cards' && sheet.lineItems.map((item, idx) => {
               const isExpanded = expandedItems.has(item.id);
               return (
                 <div key={item.id} className="border border-slate-200 rounded-xl overflow-hidden">
