@@ -138,6 +138,11 @@ export default function PurchaseOrder() {
   const motorFor = (it, i) => motorSides[it.id || i] ?? '';
   const setMotor = (it, i, v) => setMotorSides(m => ({ ...m, [it.id || i]: v }));
 
+  // Motorised tracks are the exception, so the Motor side column is off by
+  // default and only added when this order actually has motors. Remembered.
+  const [motorised, setMotorised] = useState(() => localStorage.getItem('lusso_po_motorised') === 'true');
+  const toggleMotorised = () => setMotorised(v => { const n = !v; localStorage.setItem('lusso_po_motorised', String(n)); return n; });
+
   if (!sheet) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
@@ -147,7 +152,12 @@ export default function PurchaseOrder() {
     );
   }
 
-  const rows = curtains.map((it, i) => rowCells(it, i, motorFor(it, i)));
+  // Drop the trailing Motor side column when this order isn't motorised.
+  const headers = motorised ? PO_HEADERS : PO_HEADERS.filter(h => h !== 'Motor side (L/R)');
+  const rows = curtains.map((it, i) => {
+    const cells = rowCells(it, i, motorFor(it, i));
+    return motorised ? cells : cells.slice(0, -1);
+  });
 
   // Only entries with at least one filled field reach the PO.
   const liveWands = wands.filter(w => !wandIsEmpty(w));
@@ -169,7 +179,7 @@ export default function PurchaseOrder() {
     aoa.push(val);
     aoa.push([]);
     // Column header row — '#' is the blank leading cell, then headers in col 1+
-    aoa.push(['', ...PO_HEADERS.slice(1)]);
+    aoa.push(['', ...headers.slice(1)]);
     // Data rows
     rows.forEach(r => aoa.push(r));
     aoa.push([]);
@@ -241,7 +251,7 @@ export default function PurchaseOrder() {
     ].filter(Boolean).forEach((line, i) => doc.text(line, pageW - 40, 40 + i * 13, { align: 'right' }));
 
     autoTable(doc, {
-      head: [PO_HEADERS],
+      head: [headers],
       body: rows.map(r => r.map(c => (c === '' || c == null ? '' : String(c)))),
       startY: 78,
       margin: { left: 40, right: 40 },
@@ -359,6 +369,12 @@ export default function PurchaseOrder() {
             <datalist id="po-preset-emails">
               {presets.map(p => <option key={p.id} value={p.email} />)}
             </datalist>
+            <button onClick={toggleMotorised} title="Add or remove the Motor side column on this PO"
+              className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${
+                motorised ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+              }`}>
+              <span className={`w-2 h-2 rounded-full ${motorised ? 'bg-amber-500' : 'bg-slate-300'}`} /> Motorised
+            </button>
             <button onClick={handleSend} disabled={sending || !curtains.length}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white">
               {sending ? <Loader size={13} className="animate-spin" /> : <Send size={13} />} Send PO
@@ -510,7 +526,8 @@ export default function PurchaseOrder() {
             </div>
           </Card>
 
-          {/* Editable motor side per curtain */}
+          {/* Editable motor side per curtain — only when this order is motorised */}
+          {motorised && (
           <Card>
             <div className="px-5 py-4 border-b border-slate-100">
               <h2 className="font-semibold text-slate-800 text-sm">Motor side (per curtain)</h2>
@@ -534,6 +551,7 @@ export default function PurchaseOrder() {
               ))}
             </div>
           </Card>
+          )}
 
           {/* PO preview (printed/exported layout) */}
           <Card>
@@ -564,7 +582,7 @@ export default function PurchaseOrder() {
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50">
-                      {PO_HEADERS.map(h => (
+                      {headers.map(h => (
                         <th key={h} className="border border-slate-200 px-2 py-1.5 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
