@@ -72,9 +72,11 @@ const LUSSO_FIELDS = [
   { key: 'dropMm',              label: 'Drop / Height (mm)' },
   { key: 'fabricColour',        label: 'Fabric / Colour' },
   { key: 'control',             label: 'Control' },
+  { key: 'trackType',           label: 'Operation Type' },
   { key: 'returnSide',          label: 'Return (L/R)' },
   { key: 'fixing',              label: 'Fixing' },
   { key: 'heading',             label: 'Heading / Roll' },
+  { key: 'liningFabricColour',  label: 'Lining' },
   { key: 'hem',                 label: 'Hem' },
   { key: 'trackBaseBarColour',  label: 'Track / Bottom Rail Colour' },
   { key: 'chainColour',         label: 'Chain Colour' },
@@ -85,12 +87,13 @@ const LUSSO_FIELDS = [
 // ─── Auto-detect column mapping from header labels ────────────────────────────
 const HEADER_RULES = [
   { patterns: ['location', 'room', 'area', 'zone'],                      field: 'location' },
+  { patterns: ['operation type', 'operation', 'op type'],                 field: 'trackType' },
   { patterns: ['product', 'service', 'item', 'blind', 'curtain', 'type'], field: 'productNameSnapshot' },
   { patterns: ['qty', 'quantity', 'count', 'no.', 'num'],                 field: 'quantity' },
   { patterns: ['width', 'w (mm)', 'w(mm)'],                               field: 'widthMm' },
   { patterns: ['drop', 'height', 'length', 'h (mm)', 'd (mm)', 'h(mm)'],  field: 'dropMm' },
   { patterns: ['fabric', 'colour', 'color', 'fabric/color', 'fabric/col'], field: 'fabricColour' },
-  { patterns: ['lining', 'linning', 'linn'],                               field: 'notes' },
+  { patterns: ['lining', 'linning', 'linn'],                               field: 'liningFabricColour' },
   { patterns: ['control'],                                                 field: 'control' },
   { patterns: ['return'],                                                  field: 'returnSide' },
   { patterns: ['fixing', 'fix'],                                           field: 'fixing' },
@@ -202,6 +205,20 @@ function parseRows(rawRows, headerRowIdx, mapping, productTypes = []) {
     });
 
     if (!hasAnyData) continue;
+
+    // A mapped Lining value implies lining is attached — the PO and measure
+    // sheet only show lining when attachedLining is true. Treat clear negatives
+    // as "no lining", store any other value as the lining fabric/colour.
+    if (item.liningFabricColour) {
+      const lv = item.liningFabricColour.toLowerCase();
+      if (['no', 'none', 'n', 'nil', 'na', 'n/a', '-', 'false', 'disabled', 'unlined'].includes(lv)) {
+        item.attachedLining = false;
+        item.liningFabricColour = '';
+      } else {
+        item.attachedLining = true;
+        if (['yes', 'y', 'true', 'lined', '1'].includes(lv)) item.liningFabricColour = '';
+      }
+    }
 
     // Normalise product name abbreviations → canonical names
     if (item.productNameSnapshot) {
