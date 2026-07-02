@@ -146,13 +146,16 @@ export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = 
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      {fill && (
-        <path d={area} fill={`url(#${gid})`}
-          style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.6s ease 0.5s' }} />
-      )}
-      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"
-        pathLength="1" strokeDasharray="1"
-        style={{ strokeDashoffset: mounted ? 0 : 1, transition: 'stroke-dashoffset 0.9s cubic-bezier(0.16, 1, 0.3, 1)' }} />
+      <clipPath id={`${gid}-clip`}>
+        {/* left→right reveal; width transition needs CSS geometry support, and
+            the attribute value is the no-animation fallback */}
+        <rect x="0" y="0" height={H} width={W}
+          style={{ width: mounted ? W : 0, transition: 'width 0.9s cubic-bezier(0.16, 1, 0.3, 1)' }} />
+      </clipPath>
+      <g clipPath={`url(#${gid}-clip)`}>
+        {fill && <path d={area} fill={`url(#${gid})`} />}
+        <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </g>
     </svg>
   );
 }
@@ -191,15 +194,19 @@ export function AreaChart({ values = [], xLabels = [], color = '#C0873A', height
           </g>
         );
       })}
-      <path d={area} fill={`url(#${gid})`}
-        style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.7s ease 0.6s' }} />
-      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"
-        pathLength="1" strokeDasharray="1"
-        style={{ strokeDashoffset: mounted ? 0 : 1, transition: 'stroke-dashoffset 1.1s cubic-bezier(0.16, 1, 0.3, 1)' }} />
-      {values.map((v, i) => (
-        <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="#fff" stroke={color} strokeWidth="1.5"
-          style={{ opacity: mounted ? 1 : 0, transition: `opacity 0.3s ease ${0.15 + (i / Math.max(1, values.length - 1)) * 0.9}s` }} />
-      ))}
+      <clipPath id={`${gid}-clip`}>
+        {/* left→right reveal; width transition needs CSS geometry support, and
+            the attribute value is the no-animation fallback */}
+        <rect x="0" y="0" height={H} width={W}
+          style={{ width: mounted ? W : 0, transition: 'width 1.1s cubic-bezier(0.16, 1, 0.3, 1)' }} />
+      </clipPath>
+      <g clipPath={`url(#${gid}-clip)`}>
+        <path d={area} fill={`url(#${gid})`} />
+        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {values.map((v, i) => (
+          <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="#fff" stroke={color} strokeWidth="1.5" />
+        ))}
+      </g>
       {xLabels.map((lb, i) => (
         (i % tickEvery === 0 || i === n - 1) && (
           <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="#9AA0A6">{lb}</text>
