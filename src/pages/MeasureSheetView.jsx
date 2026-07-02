@@ -334,8 +334,8 @@ export default function MeasureSheetView() {
 
       {/* Header */}
       <Card className="p-5">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div>
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-xl font-bold text-slate-900">{customer?.name || 'Measure Sheet'}</h1>
               <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${sheet.status === 'Submitted' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
