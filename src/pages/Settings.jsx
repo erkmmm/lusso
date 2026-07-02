@@ -7,7 +7,7 @@ import {
   ArrowRight, FileText, Cloud, CloudUpload, RefreshCw, CheckCircle2,
   AlertTriangle, Sun, Moon, Monitor, Clock, Wifi, WifiOff,
   Link2, Link2Off, ExternalLink, Building2, Loader, Bot, Trash2,
-  MessageSquare, Database, Zap,
+  MessageSquare, Database, Zap, ClipboardList,
 } from 'lucide-react';
 import { useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -18,6 +18,7 @@ import {
   getImportBatches, getPricedItemBatches,
   getMessagePresets, saveMessagePresets, DEFAULT_MESSAGE_PRESETS,
   getPoPresets, savePoPreset, deletePoPreset,
+  MS_OPTION_FIELDS, getMsCustomOptions, addMsOption, deleteMsOption,
 } from '../store/data';
 import { pushAllToSupabase, hydrateFromSupabase } from '../store/db';
 import Card from '../components/Card';
@@ -173,6 +174,7 @@ export default function Settings() {
     { id: 'messages',     label: 'Messages',       icon: MessageSquare, desc: 'Presets & templates' },
     { id: 'integrations', label: 'Integrations',   icon: Zap,         desc: 'Xero & more' },
     { id: 'products',     label: 'Products',       icon: Tag,         desc: 'Types & pricing' },
+    { id: 'measure',      label: 'Measure Sheet',  icon: ClipboardList, desc: 'Dropdown options' },
     { id: 'data',         label: 'Data & AI',      icon: Database,    desc: 'Knowledge & imports' },
   ];
 
@@ -481,6 +483,9 @@ export default function Settings() {
             </Card>
           </>)}
 
+          {/* ── MEASURE SHEET ── */}
+          {section === 'measure' && <MeasureSheetOptionsSection />}
+
           {/* ── DATA & AI ── */}
           {section === 'data' && (<>
             <ImportsSection navigate={navigate} />
@@ -782,6 +787,68 @@ function SettingRow({ label, value }) {
       <dt className="text-xs text-slate-400">{label}</dt>
       <dd className="font-medium text-slate-700">{value ?? '—'}</dd>
     </div>
+  );
+}
+
+// ─── Measure Sheet dropdown options ───────────────────────────────────────────
+function MeasureSheetOptionsSection() {
+  useDataRefresh();
+  const [drafts, setDrafts] = useState({});
+  const custom = getMsCustomOptions();
+
+  const add = (fieldKey) => {
+    const v = (drafts[fieldKey] || '').trim();
+    if (!v) return;
+    const row = addMsOption(fieldKey, v);
+    if (!row) { toast('That option already exists.', 'info'); return; }
+    setDrafts(d => ({ ...d, [fieldKey]: '' }));
+    toast('Option added.');
+  };
+
+  return (
+    <Card className="p-5">
+      <div className="mb-4">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <ClipboardList size={15} className="text-amber-500" /> Measure Sheet Options
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Add options to the measure-sheet dropdowns (e.g. new track types). Built-in options stay; your additions apply to every measure sheet and sync to the team.
+        </p>
+      </div>
+      <div className="space-y-4">
+        {MS_OPTION_FIELDS.map(f => {
+          const mine = custom.filter(o => o.field === f.key);
+          return (
+            <div key={f.key} className="border border-slate-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-slate-700 mb-2">{f.label}</p>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {f.defaults.map(v => (
+                  <span key={v} className="text-xs bg-slate-100 text-slate-500 rounded-full px-2.5 py-1">{v}</span>
+                ))}
+                {mine.map(o => (
+                  <span key={o.id} className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-full pl-2.5 pr-1 py-1 flex items-center gap-1">
+                    {o.value}
+                    <button type="button" onClick={() => { deleteMsOption(o.id); toast('Option removed.', 'info'); }}
+                      title="Remove option" className="text-amber-400 hover:text-red-500"><X size={12} /></button>
+                  </span>
+                ))}
+                {f.defaults.length === 0 && mine.length === 0 && <span className="text-xs text-slate-400">No options yet.</span>}
+              </div>
+              <div className="flex gap-2">
+                <input value={drafts[f.key] || ''} onChange={e => setDrafts(d => ({ ...d, [f.key]: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(f.key); } }}
+                  placeholder={`Add a ${f.label.toLowerCase()} option`}
+                  className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                <button type="button" onClick={() => add(f.key)}
+                  className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white flex-shrink-0">
+                  <Plus size={14} /> Add
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

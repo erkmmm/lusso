@@ -1062,6 +1062,59 @@ export const OPERATION_TYPE_OPTIONS = [
 export const BASE_BAR_TYPE_OPTIONS = ['Oval', 'D30 Bump', 'Smart Rail Fabric Wrap – FULL', 'Smart Rail Fabric Wrap – HALF', 'Smart Rail', 'Other'];
 export const CHAIN_COLOUR_OPTIONS  = ['Black', 'White', 'Grey', 'Stainless'];
 
+// ─── Measure-sheet dropdown options (built-in defaults + user additions) ────────
+// The defaults above stay in code. Users can add extra options in Settings; those
+// are stored (and synced) in lusso_measure_sheet_options and merged in at read time.
+export const MS_OPTION_FIELDS = [
+  { key: 'control',       label: 'Control',            defaults: CONTROL_OPTIONS },
+  { key: 'returnSide',    label: 'Return',             defaults: RETURN_OPTIONS },
+  { key: 'motorSide',     label: 'Motor Side',         defaults: MOTOR_SIDE_OPTIONS },
+  { key: 'fixing',        label: 'Fixing',             defaults: FIXING_OPTIONS },
+  { key: 'heading',       label: 'Heading / Roll',     defaults: HEADING_OPTIONS },
+  { key: 'hem',           label: 'Hem',                defaults: HEM_OPTIONS },
+  { key: 'trackColour',   label: 'Track Colour',       defaults: TRACK_COLOUR_OPTIONS },
+  { key: 'baseBarColour', label: 'Bottom Rail Colour', defaults: BASE_BAR_COLOUR_OPTIONS },
+  { key: 'operationType', label: 'Operation Type',     defaults: OPERATION_TYPE_OPTIONS },
+  { key: 'baseBarType',   label: 'Bottom Rail Type',   defaults: BASE_BAR_TYPE_OPTIONS },
+  { key: 'chainColour',   label: 'Chain Colour',       defaults: CHAIN_COLOUR_OPTIONS },
+];
+const MS_DEFAULTS = Object.fromEntries(MS_OPTION_FIELDS.map(f => [f.key, f.defaults]));
+
+export const getMsCustomOptions = () => get('lusso_measure_sheet_options') || [];
+
+// Merged options for a dropdown field: built-in defaults first, then custom
+// additions (case-insensitive de-dupe against defaults + each other).
+export const getMsOptions = (fieldKey) => {
+  const defaults = MS_DEFAULTS[fieldKey] || [];
+  const seen = new Set(defaults.map(v => String(v).toLowerCase()));
+  const custom = [];
+  getMsCustomOptions().filter(o => o.field === fieldKey).forEach(o => {
+    const k = String(o.value).toLowerCase();
+    if (!seen.has(k)) { seen.add(k); custom.push(o.value); }
+  });
+  return [...defaults, ...custom];
+};
+
+export const addMsOption = (fieldKey, value) => {
+  const v = String(value || '').trim();
+  if (!v || !MS_DEFAULTS[fieldKey]) return null;
+  if (getMsOptions(fieldKey).some(o => String(o).toLowerCase() === v.toLowerCase())) return null; // already exists
+  const row = { id: uuidv4(), field: fieldKey, value: v, createdAt: new Date().toISOString() };
+  const all = get('lusso_measure_sheet_options') || [];
+  all.push(row);
+  set('lusso_measure_sheet_options', all);
+  db.saveMeasureSheetOption(row);
+  return row;
+};
+
+export const deleteMsOption = (id) => {
+  const all = get('lusso_measure_sheet_options') || [];
+  const next = all.filter(o => o.id !== id);
+  if (next.length === all.length) return;
+  set('lusso_measure_sheet_options', next);
+  db.deleteMeasureSheetOption(id);
+};
+
 export const MOUNT_TYPES = ['Ceiling Fix', 'Face Fix', 'Recess Fit', 'Outside Mount', 'Inside Mount'];
 export const CONTROL_SIDES = ['Left', 'Right', 'Centre', 'Motorised', 'N/A'];
 export const URGENCY_LEVELS = ['Low', 'Normal', 'High', 'Urgent'];

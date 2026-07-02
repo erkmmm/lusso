@@ -12,9 +12,7 @@ import {
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
   getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
-  CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
-  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, OPERATION_TYPE_OPTIONS,
-  BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS, URGENCY_LEVELS, JOB_TYPES,
+  getMsOptions, URGENCY_LEVELS, JOB_TYPES,
 } from '../store/data';
 import { syncNow } from '../store/db';
 import Card from '../components/Card';
@@ -1075,17 +1073,17 @@ export default function NewMeasureSheet() {
                   {/* Expanded specs */}
                   {isExpanded && (
                     <div className="border-t border-slate-100 px-4 py-3 bg-slate-50/40 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <SpecSelect label="Control"              value={item.control}           onChange={v => setLineItem(idx,'control',v)}           options={CONTROL_OPTIONS} />
-                      <SpecSelect label="Return"               value={item.returnSide}        onChange={v => setLineItem(idx,'returnSide',v)}        options={RETURN_OPTIONS} />
-                      <SpecSelect label="Motor Side"           value={item.motorSide}         onChange={v => setLineItem(idx,'motorSide',v)}         options={MOTOR_SIDE_OPTIONS} />
-                      <SpecSelect label="Fixing"               value={item.fixing}            onChange={v => setLineItem(idx,'fixing',v)}            options={FIXING_OPTIONS} />
-                      <SpecSelect label="Heading"              value={item.heading}           onChange={v => setLineItem(idx,'heading',v)}           options={HEADING_OPTIONS} />
-                      <SpecSelect label="Hem"                  value={item.hem}               onChange={v => setLineItem(idx,'hem',v)}               options={HEM_OPTIONS} />
-                      <SpecSelect label="Track Colour"     value={item.trackColour}   onChange={v => setLineItem(idx,'trackColour',v)}   options={TRACK_COLOUR_OPTIONS} />
-                      <SpecSelect label="Bottom Rail Colour"  value={item.baseBarColour} onChange={v => setLineItem(idx,'baseBarColour',v)} options={BASE_BAR_COLOUR_OPTIONS} />
-                      <SpecSelect label="Operation Type"   value={item.trackType}     onChange={v => setLineItem(idx,'trackType',v)}     options={OPERATION_TYPE_OPTIONS} />
-                      <SpecSelect label="Bottom Rail Type"    value={item.baseBarType}   onChange={v => setLineItem(idx,'baseBarType',v)}   options={BASE_BAR_TYPE_OPTIONS} />
-                      <SpecSelect label="Chain Colour"     value={item.chainColour}   onChange={v => setLineItem(idx,'chainColour',v)}   options={CHAIN_COLOUR_OPTIONS} />
+                      <SpecSelect label="Control"              value={item.control}           onChange={v => setLineItem(idx,'control',v)}           options={getMsOptions('control')} />
+                      <SpecSelect label="Return"               value={item.returnSide}        onChange={v => setLineItem(idx,'returnSide',v)}        options={getMsOptions('returnSide')} />
+                      <SpecSelect label="Motor Side"           value={item.motorSide}         onChange={v => setLineItem(idx,'motorSide',v)}         options={getMsOptions('motorSide')} />
+                      <SpecSelect label="Fixing"               value={item.fixing}            onChange={v => setLineItem(idx,'fixing',v)}            options={getMsOptions('fixing')} />
+                      <SpecSelect label="Heading"              value={item.heading}           onChange={v => setLineItem(idx,'heading',v)}           options={getMsOptions('heading')} />
+                      <SpecSelect label="Hem"                  value={item.hem}               onChange={v => setLineItem(idx,'hem',v)}               options={getMsOptions('hem')} />
+                      <SpecSelect label="Track Colour"     value={item.trackColour}   onChange={v => setLineItem(idx,'trackColour',v)}   options={getMsOptions('trackColour')} />
+                      <SpecSelect label="Bottom Rail Colour"  value={item.baseBarColour} onChange={v => setLineItem(idx,'baseBarColour',v)} options={getMsOptions('baseBarColour')} />
+                      <SpecSelect label="Operation Type"   value={item.trackType}     onChange={v => setLineItem(idx,'trackType',v)}     options={getMsOptions('operationType')} />
+                      <SpecSelect label="Bottom Rail Type"    value={item.baseBarType}   onChange={v => setLineItem(idx,'baseBarType',v)}   options={getMsOptions('baseBarType')} />
+                      <SpecSelect label="Chain Colour"     value={item.chainColour}   onChange={v => setLineItem(idx,'chainColour',v)}   options={getMsOptions('chainColour')} />
 
                       <div className="sm:col-span-3">
                         <label className="block text-xs font-medium text-slate-500 mb-1.5">Attached Lining</label>

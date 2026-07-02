@@ -1,8 +1,5 @@
 import { Trash2 } from 'lucide-react';
-import {
-  CONTROL_OPTIONS, RETURN_OPTIONS, FIXING_OPTIONS, HEADING_OPTIONS,
-  HEM_OPTIONS, TRACK_COLOUR_OPTIONS, OPERATION_TYPE_OPTIONS,
-} from '../store/data';
+import { getMsOptions } from '../store/data';
 
 // Spreadsheet-style editor for measure-sheet line items. Edits the SAME sheet
 // state (via setLineItem/removeLineItem) as the card layout, so the two stay in
@@ -64,13 +61,13 @@ export default function MeasureSheetTable({ lineItems, setLineItem, removeLineIt
                 <Cell w={64}><input type="number" min="0" value={item.dropMm ?? ''} onChange={e => setLineItem(idx, 'dropMm', e.target.value)} className={`${cellInput} text-right`} /></Cell>
                 <Cell w={52}><input type="number" min="0" value={item.quantity ?? ''} onChange={e => setLineItem(idx, 'quantity', e.target.value)} className={`${cellInput} text-right`} /></Cell>
                 <Cell min={140}><input value={item.fabricColour || ''} onChange={e => setLineItem(idx, 'fabricColour', e.target.value)} placeholder="Fabric / colour" className={cellInput} /></Cell>
-                <Cell min={90}><Sel value={item.control} onChange={v => setLineItem(idx, 'control', v)} options={CONTROL_OPTIONS} /></Cell>
-                <Cell min={90}><Sel value={item.returnSide} onChange={v => setLineItem(idx, 'returnSide', v)} options={RETURN_OPTIONS} /></Cell>
-                <Cell min={100}><Sel value={item.fixing} onChange={v => setLineItem(idx, 'fixing', v)} options={FIXING_OPTIONS} /></Cell>
-                <Cell min={130}><Sel value={item.heading} onChange={v => setLineItem(idx, 'heading', v)} options={HEADING_OPTIONS} /></Cell>
-                <Cell min={100}><Sel value={item.hem} onChange={v => setLineItem(idx, 'hem', v)} options={HEM_OPTIONS} /></Cell>
-                <Cell min={110}><Sel value={item.trackColour} onChange={v => setLineItem(idx, 'trackColour', v)} options={TRACK_COLOUR_OPTIONS} /></Cell>
-                <Cell min={150}><Sel value={item.trackType} onChange={v => setLineItem(idx, 'trackType', v)} options={OPERATION_TYPE_OPTIONS} /></Cell>
+                <Cell min={90}><Sel value={item.control} onChange={v => setLineItem(idx, 'control', v)} options={getMsOptions('control')} /></Cell>
+                <Cell min={90}><Sel value={item.returnSide} onChange={v => setLineItem(idx, 'returnSide', v)} options={getMsOptions('returnSide')} /></Cell>
+                <Cell min={100}><Sel value={item.fixing} onChange={v => setLineItem(idx, 'fixing', v)} options={getMsOptions('fixing')} /></Cell>
+                <Cell min={130}><Sel value={item.heading} onChange={v => setLineItem(idx, 'heading', v)} options={getMsOptions('heading')} /></Cell>
+                <Cell min={100}><Sel value={item.hem} onChange={v => setLineItem(idx, 'hem', v)} options={getMsOptions('hem')} /></Cell>
+                <Cell min={110}><Sel value={item.trackColour} onChange={v => setLineItem(idx, 'trackColour', v)} options={getMsOptions('trackColour')} /></Cell>
+                <Cell min={150}><Sel value={item.trackType} onChange={v => setLineItem(idx, 'trackType', v)} options={getMsOptions('operationType')} /></Cell>
                 <Cell min={150}><input value={item.notes || ''} onChange={e => setLineItem(idx, 'notes', e.target.value)} placeholder="Notes" className={cellInput} /></Cell>
                 <td className="w-9 text-center">
                   <button type="button" onClick={() => removeLineItem(idx)} disabled={lineItems.length <= 1}
