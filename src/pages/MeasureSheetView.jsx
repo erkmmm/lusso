@@ -2,7 +2,7 @@ import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link } from 'lucide-react';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X } from 'lucide-react';
 import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, createJobFromMeasureSheet } from '../store/data';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -241,6 +241,7 @@ export default function MeasureSheetView() {
   const [showDelete,   setShowDelete]   = useState(false);
   const [linkJobId,    setLinkJobId]    = useState('');
   const [showJobPanel, setShowJobPanel] = useState(false);
+  const [tableFull,    setTableFull]    = useState(false);
   const sheet    = getMeasureSheet(id);
   const customer = sheet ? getCustomer(sheet.customerId) : null;
   const job      = sheet?.jobId ? getJob(sheet.jobId) : null; // read directly
@@ -454,11 +455,18 @@ export default function MeasureSheetView() {
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Line items — full width so every column is visible */}
-        <Card className="lg:col-span-3">
-          <div className="px-5 py-4 border-b border-slate-100">
+        <Card className="lg:col-span-3 min-w-0 overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
             <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
               <ClipboardList size={15} /> Product / Opening Details ({sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''})
             </h2>
+            <button
+              onClick={() => setTableFull(true)}
+              className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-lg px-2.5 py-1.5 transition-colors"
+              title="Fullscreen — best viewed in landscape"
+            >
+              <Maximize2 size={13} /> Fullscreen
+            </button>
           </div>
           <MeasureItemsTable items={sheet.lineItems} />
         </Card>
@@ -534,6 +542,27 @@ export default function MeasureSheetView() {
       </div>
 
       </div>{/* end screen-only */}
+
+      {/* Fullscreen schedule — best in landscape; fills the viewport for wide sheets */}
+      {tableFull && (
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 flex-shrink-0">
+            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2 min-w-0">
+              <ClipboardList size={15} className="flex-shrink-0" />
+              <span className="truncate">Product / Opening Details ({sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''})</span>
+            </h2>
+            <button
+              onClick={() => setTableFull(false)}
+              className="flex-shrink-0 inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-lg px-3 py-1.5 transition-colors"
+            >
+              <X size={15} /> Done
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto">
+            <MeasureItemsTable items={sheet.lineItems} />
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation modal */}
       {showDelete && (
