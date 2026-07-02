@@ -406,12 +406,6 @@ export default function PurchaseOrder() {
             <datalist id="po-preset-emails">
               {presets.map(p => <option key={p.id} value={p.email} />)}
             </datalist>
-            <button onClick={toggleMotorised} title="Add or remove the Motor side column on this PO"
-              className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${
-                motorised ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-              }`}>
-              <span className={`w-2 h-2 rounded-full ${motorised ? 'bg-amber-500' : 'bg-slate-300'}`} /> Motorised
-            </button>
             <button onClick={handleSend} disabled={sending || !curtains.length}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white">
               {sending ? <Loader size={13} className="animate-spin" /> : <Send size={13} />} Send PO
@@ -513,6 +507,21 @@ export default function PurchaseOrder() {
                 <span className="block text-xs text-slate-500 mb-1">Extra notes</span>
                 <textarea rows={2} className={inputCls} value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="Anything the supplier should know…" />
               </label>
+            </div>
+          </Card>
+
+          {/* Motorised toggle — controls the Motor side column on the PO */}
+          <Card>
+            <div className="px-5 py-4 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="font-semibold text-slate-800 text-sm">Motorised order</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Adds the Motor side (L/R) column and per-curtain motor side inputs. Leave off for non-motorised orders.</p>
+              </div>
+              <button type="button" onClick={toggleMotorised} role="switch" aria-checked={motorised}
+                title="Add or remove the Motor side column on this PO"
+                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${motorised ? 'bg-amber-500' : 'bg-slate-200'}`}>
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${motorised ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
             </div>
           </Card>
 
