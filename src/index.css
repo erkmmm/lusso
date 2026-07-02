@@ -571,3 +571,17 @@ html.dark { color-scheme: dark; }
 
 /* ── Sticky elements keep surface bg ── */
 .dark .sticky { background-color: inherit; }
+
+/* ── Dashboard micro-animations (Apex-style) ──────────────────────────────── */
+/* Staggered card entrance: fade + rise. Delay set inline per card. */
+@keyframes lusso-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: lusso-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up { animation: none; }
+}

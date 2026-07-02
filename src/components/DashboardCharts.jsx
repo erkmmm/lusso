@@ -5,6 +5,7 @@
  * because they read `currentColor` / slate-neutral strokes where possible.
  */
 import { useId } from 'react';
+import { useMountAnimation } from '../hooks/useMountAnimation';
 
 const money = (v) =>
   Math.abs(v) >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
@@ -18,6 +19,7 @@ export function DonutChart({ data, centerValue, centerLabel, size = 168, thickne
   const total = items.reduce((s, d) => s + d.value, 0);
   const r = (size - thickness) / 2;
   const c = 2 * Math.PI * r;
+  const mounted = useMountAnimation();
   let offset = 0;
 
   return (
@@ -34,10 +36,11 @@ export function DonutChart({ data, centerValue, centerLabel, size = 168, thickne
                 key={i}
                 cx={size / 2} cy={size / 2} r={r} fill="none"
                 stroke={d.color} strokeWidth={thickness}
-                strokeDasharray={`${len} ${c - len}`}
+                strokeDasharray={mounted ? `${len} ${c - len}` : `0 ${c}`}
                 strokeDashoffset={-offset}
                 transform={`rotate(-90 ${size / 2} ${size / 2})`}
                 strokeLinecap="butt"
+                style={{ transition: `stroke-dasharray 0.9s cubic-bezier(0.16, 1, 0.3, 1) ${i * 90}ms` }}
               >
                 <title>{`${d.label}: ${d.value} (${Math.round(frac * 100)}%)`}</title>
               </circle>
@@ -125,6 +128,7 @@ export function LineChart({ series, xLabels, height = 220 }) {
 // Tiny inline trend for KPI cards. Stretches to fill its container width.
 export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = true }) {
   const gid = useId();
+  const mounted = useMountAnimation();
   const n = values.length;
   if (!n) return null;
   const W = 120, H = height, pad = 2;
@@ -142,8 +146,13 @@ export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = 
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      {fill && <path d={area} fill={`url(#${gid})`} />}
-      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      {fill && (
+        <path d={area} fill={`url(#${gid})`}
+          style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.6s ease 0.5s' }} />
+      )}
+      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"
+        pathLength="1" strokeDasharray="1"
+        style={{ strokeDashoffset: mounted ? 0 : 1, transition: 'stroke-dashoffset 0.9s cubic-bezier(0.16, 1, 0.3, 1)' }} />
     </svg>
   );
 }
@@ -153,6 +162,7 @@ export function Sparkline({ values = [], color = '#C0873A', height = 34, fill = 
 // formatted via `format` (money by default).
 export function AreaChart({ values = [], xLabels = [], color = '#C0873A', height = 240, format = money }) {
   const gid = useId();
+  const mounted = useMountAnimation();
   const W = 720, H = height;
   const padL = 48, padR = 16, padT = 16, padB = 28;
   const iw = W - padL - padR, ih = H - padT - padB;
@@ -181,10 +191,14 @@ export function AreaChart({ values = [], xLabels = [], color = '#C0873A', height
           </g>
         );
       })}
-      <path d={area} fill={`url(#${gid})`} />
-      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      <path d={area} fill={`url(#${gid})`}
+        style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.7s ease 0.6s' }} />
+      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"
+        pathLength="1" strokeDasharray="1"
+        style={{ strokeDashoffset: mounted ? 0 : 1, transition: 'stroke-dashoffset 1.1s cubic-bezier(0.16, 1, 0.3, 1)' }} />
       {values.map((v, i) => (
-        <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="#fff" stroke={color} strokeWidth="1.5" />
+        <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="#fff" stroke={color} strokeWidth="1.5"
+          style={{ opacity: mounted ? 1 : 0, transition: `opacity 0.3s ease ${0.15 + (i / Math.max(1, values.length - 1)) * 0.9}s` }} />
       ))}
       {xLabels.map((lb, i) => (
         (i % tickEvery === 0 || i === n - 1) && (

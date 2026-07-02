@@ -1,5 +1,6 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useMemo, useState } from 'react';
+import { useMountAnimation } from '../hooks/useMountAnimation';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   formatDistanceToNow, parseISO, isWithinInterval,
@@ -214,12 +215,37 @@ function DeltaBadge({ current, previous }) {
   );
 }
 
+// Count-up number (Apex-style). Animates 0 → value on mount / value change,
+// eased out over ~0.9s. `format` turns the interpolated number into display text.
+function CountUp({ value, format = (v) => v }) {
+  const reduced = typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const [display, setDisplay] = useState(0);
+  const rafRef = useRef();
+  useEffect(() => {
+    if (reduced) return;
+    const from = 0, dur = 900, t0 = performance.now();
+    const tick = (t) => {
+      const p = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplay(from + (value - from) * eased);
+      if (p < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [value, reduced]);
+  return <>{format(reduced ? value : display)}</>;
+}
+
 // Apex-style KPI stat card: label + icon, big value, delta + caption, sparkline.
-function StatCard({ icon: Icon, label, value, valueTitle, delta, caption, spark, sparkColor = ACCENT, onClick }) {
+// Pass `raw` (number) + `format` to get the count-up animation; `value` is the
+// static fallback for non-numeric values ("—").
+function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, caption, spark, sparkColor = ACCENT, onClick, delay = 0 }) {
   return (
     <button
       onClick={onClick}
-      className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-left hover:shadow-md transition-shadow flex flex-col min-w-0"
+      style={{ animationDelay: `${delay}ms` }}
+      className="animate-fade-up bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-left hover:shadow-md transition-shadow flex flex-col min-w-0"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-slate-500 font-medium truncate">{label}</span>
@@ -227,7 +253,9 @@ function StatCard({ icon: Icon, label, value, valueTitle, delta, caption, spark,
           <Icon size={15} className="text-slate-500" />
         </span>
       </div>
-      <div className="mt-2 text-2xl font-bold text-slate-900 truncate" title={valueTitle}>{value}</div>
+      <div className="mt-2 text-2xl font-bold text-slate-900 truncate" title={valueTitle}>
+        {raw !== undefined ? <CountUp value={raw} format={format} /> : value}
+      </div>
       <div className="mt-1 flex items-center gap-1.5 min-w-0 text-xs">
         {delta}
         <span className="text-slate-400 truncate">{caption}</span>
@@ -303,6 +331,7 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
 
 // ─── Targets (Apex "Revenue Targets" / "Quarterly Targets") ───────────────────
 function ProgressRow({ label, current, target, fmt = (v) => v, color = 'bg-amber-500' }) {
+  const mounted = useMountAnimation();
   const pctDone = target > 0 ? Math.min(100, (current / target) * 100) : 0;
   return (
     <div>
@@ -313,7 +342,10 @@ function ProgressRow({ label, current, target, fmt = (v) => v, color = 'bg-amber
         </span>
       </div>
       <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-        <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${pctDone}%` }} />
+        <div
+          className={`h-full rounded-full ${color}`}
+          style={{ width: mounted ? `${pctDone}%` : '0%', transition: 'width 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.15s' }}
+        />
       </div>
       <div className="mt-1 text-right text-xs text-slate-400 tabular-nums">{pctDone.toFixed(0)}%</div>
     </div>
@@ -754,7 +786,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={DollarSign} label="Total Revenue"
-          value={fmtCompact(lM(analytics.acceptedValue))}
+          raw={lM(analytics.acceptedValue)} format={fmtCompact}
           valueTitle={fmt$(lM(analytics.acceptedValue))}
           delta={<DeltaBadge current={analytics.acceptedValue} previous={analytics.acceptedValuePrev} />}
           caption={`vs previous · ${rangeLabel}`}
@@ -762,8 +794,8 @@ export default function Dashboard() {
           onClick={() => navigate('/quotes')}
         />
         <StatCard
-          icon={BarChart2} label="Pipeline Value"
-          value={fmtCompact(lM(analytics.pipelineValue))}
+          icon={BarChart2} label="Pipeline Value" delay={70}
+          raw={lM(analytics.pipelineValue)} format={fmtCompact}
           valueTitle={fmt$(lM(analytics.pipelineValue))}
           delta={<span className="text-xs font-semibold text-blue-600">{lI(analytics.pipelineCount)}</span>}
           caption={`open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''}`}
@@ -772,8 +804,8 @@ export default function Dashboard() {
           onClick={() => navigate('/quotes')}
         />
         <StatCard
-          icon={CheckCircle2} label="Quotes Won"
-          value={lI(analytics.acceptedCount)}
+          icon={CheckCircle2} label="Quotes Won" delay={140}
+          raw={lI(analytics.acceptedCount)} format={(v) => Math.round(v)}
           delta={<DeltaBadge current={analytics.acceptedCount} previous={analytics.acceptedCountPrev} />}
           caption={`avg ${fmtCompact(lM(analytics.acceptedAvg))}`}
           spark={monthly.map(m => m.acceptedCount)}
@@ -781,8 +813,10 @@ export default function Dashboard() {
           onClick={() => navigate('/quotes')}
         />
         <StatCard
-          icon={Percent} label="Win Rate"
-          value={analytics.winRate !== null ? `${lW(analytics.winRate).toFixed(0)}%` : '—'}
+          icon={Percent} label="Win Rate" delay={210}
+          {...(analytics.winRate !== null
+            ? { raw: lW(analytics.winRate), format: (v) => `${v.toFixed(0)}%` }
+            : { value: '—' })}
           delta={analytics.winRate !== null && analytics.winRatePrev !== null
             ? <DeltaBadge current={analytics.winRate} previous={analytics.winRatePrev} /> : null}
           caption={analytics.decisions > 0 ? `${lI(analytics.decisions)} decisions` : 'no decisions yet'}
@@ -793,10 +827,12 @@ export default function Dashboard() {
       </div>
 
       {/* ── Needs Attention ──────────────────────────────────────────────────── */}
-      <NeedsAttention jobs={jobs} quotes={quotes} navigate={navigate} infl={lI} />
+      <div className="animate-fade-up" style={{ animationDelay: '120ms' }}>
+        <NeedsAttention jobs={jobs} quotes={quotes} navigate={navigate} infl={lI} />
+      </div>
 
       {/* ── Row 2 · Revenue area chart + Pipeline donut ──────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up" style={{ animationDelay: '200ms' }}>
         <Card className="lg:col-span-2 min-w-0">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -840,7 +876,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Row 3 · Top products + Sales by category donut ───────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up" style={{ animationDelay: '280ms' }}>
         <div className="lg:col-span-2 min-w-0">
           <TopProducts products={products} lM={lM} lI={lI} />
         </div>
@@ -861,7 +897,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Row 4 · Recent quotes + Targets / Top salespeople ────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up" style={{ animationDelay: '360ms' }}>
         <div className="lg:col-span-2 min-w-0">
           <RecentQuotes quotes={quotes} customers={customers} navigate={navigate} lM={lM} />
         </div>
@@ -877,7 +913,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Row 5 · Recent jobs table + Activity feed ────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up" style={{ animationDelay: '440ms' }}>
         <Card className="lg:col-span-2 min-w-0 overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <h2 className="font-semibold text-slate-800 text-sm">Recent Jobs</h2>
