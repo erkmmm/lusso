@@ -72,19 +72,22 @@ const wandLabel     = (w) => [w.qty ? `${w.qty} ×` : '', w.colour, w.length ? `
 
 // Wands required per curtain, keyed by Control code. Most specific code first
 // so "C/O F/R" isn't caught by "C/O" or "F/R".
+// Keys are letters-only so every notation matches: FR / F/R, C/O-FR / C/O F/R,
+// C/O / CO, etc. Most specific first so C/O-FR isn't caught by C/O or F/R.
 const WAND_RULES = [
-  { code: 'C/O F/R', wands: 4 },
-  { code: 'C/O',     wands: 2 },
-  { code: 'F/R',     wands: 2 },
-  { code: 'LHS',     wands: 1 },
-  { code: 'RHS',     wands: 1 },
+  { code: 'COFR', wands: 4 },
+  { code: 'CO',   wands: 2 },
+  { code: 'FR',   wands: 2 },
+  { code: 'LHS',  wands: 1 },
+  { code: 'RHS',  wands: 1 },
 ];
 const normOp = (op) => String(op || '').toUpperCase().replace(/\s*\/\s*/g, '/').replace(/\s+/g, ' ').trim();
+const opKey  = (op) => String(op || '').toUpperCase().replace(/[^A-Z]/g, ''); // letters only
 function wandsForOp(op) {
-  const s = normOp(op);
-  if (!s) return 0;
-  for (const r of WAND_RULES) if (s === r.code) return r.wands;      // exact
-  for (const r of WAND_RULES) if (s.includes(r.code)) return r.wands; // tolerant of extra text
+  const k = opKey(op);
+  if (!k) return 0;
+  for (const r of WAND_RULES) if (k === r.code) return r.wands;      // exact
+  for (const r of WAND_RULES) if (k.includes(r.code)) return r.wands; // tolerant of extra text
   return 0;
 }
 const remoteLabel   = (r) => [r.qty ? `${r.qty} ×` : '', r.type, r.colour].filter(Boolean).join(' ');
