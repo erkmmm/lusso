@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Copy, Printer,
+  Copy, Printer, Maximize2, Minimize2,
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
@@ -379,7 +379,8 @@ export default function NewMeasureSheet() {
   const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true });
   const [expandedItems,  setExpandedItems]  = useState(() => new Set(sheet.lineItems.map(li => li.id)));
   const [itemLayout,     setItemLayout]     = useState(() => localStorage.getItem('lusso_ms_layout') === 'table' ? 'table' : 'cards');
-  const chooseLayout = (l) => { setItemLayout(l); localStorage.setItem('lusso_ms_layout', l); };
+  const [tableFull, setTableFull] = useState(false);
+  const chooseLayout = (l) => { setItemLayout(l); localStorage.setItem('lusso_ms_layout', l); if (l !== 'table') setTableFull(false); };
 
   // ── Derived: search results & customer jobs ────────────────────────────────
   const searchResults = useMemo(() =>
@@ -953,7 +954,13 @@ export default function NewMeasureSheet() {
         {openSections.items && (
           <div className="space-y-4">
             {/* Layout switch — card view (default) or spreadsheet table */}
-            <div className="flex justify-end">
+            <div className="flex justify-end items-center gap-2">
+              {itemLayout === 'table' && (
+                <button type="button" onClick={() => setTableFull(true)}
+                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                  <Maximize2 size={13} /> Fullscreen
+                </button>
+              )}
               <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
                 {[['cards', 'Cards'], ['table', 'Table']].map(([val, label]) => (
                   <button key={val} type="button" onClick={() => chooseLayout(val)}
@@ -966,14 +973,48 @@ export default function NewMeasureSheet() {
               </div>
             </div>
 
-            {itemLayout === 'table' && (
-              <MeasureSheetTable
-                lineItems={sheet.lineItems}
-                setLineItem={setLineItem}
-                removeLineItem={removeLineItem}
-                productTypes={productTypes}
-                errors={errors}
-              />
+            {/* Inline table (full-bleed so it uses the page width) */}
+            {itemLayout === 'table' && !tableFull && (
+              <div className="-mx-4 sm:mx-0">
+                <MeasureSheetTable
+                  lineItems={sheet.lineItems}
+                  setLineItem={setLineItem}
+                  removeLineItem={removeLineItem}
+                  productTypes={productTypes}
+                  errors={errors}
+                />
+              </div>
+            )}
+
+            {/* Fullscreen table — the whole viewport for editing on phone/iPad */}
+            {itemLayout === 'table' && tableFull && (
+              <div className="fixed inset-0 z-50 bg-white flex flex-col">
+                <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 flex-shrink-0">
+                  <div className="min-w-0">
+                    <h2 className="font-semibold text-slate-800 text-sm truncate">Line items — table</h2>
+                    <p className="text-xs text-slate-400 truncate">{sheet.customerName || 'Measure sheet'} · {sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button type="button" onClick={addLineItem}
+                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50">
+                      <Plus size={14} /> Add line
+                    </button>
+                    <button type="button" onClick={() => setTableFull(false)}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white">
+                      <Minimize2 size={13} /> Done
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto p-3">
+                  <MeasureSheetTable
+                    lineItems={sheet.lineItems}
+                    setLineItem={setLineItem}
+                    removeLineItem={removeLineItem}
+                    productTypes={productTypes}
+                    errors={errors}
+                  />
+                </div>
+              </div>
             )}
 
             {itemLayout === 'cards' && sheet.lineItems.map((item, idx) => {
