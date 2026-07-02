@@ -10,11 +10,13 @@ import {
   Briefcase, ClipboardList, CheckCircle2, Clock,
   AlertTriangle, TrendingUp, TrendingDown, Users, ArrowRight, Plus,
   DollarSign, ChevronDown, BarChart2, HardHat, Percent,
-  SlidersHorizontal, Eye, FileText, X, Mail,
+  SlidersHorizontal, Eye, FileText, X, Mail, Target, Package,
+  Pencil, Trophy,
 } from 'lucide-react';
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
-  getQuotesFiltered, computeQuoteTotals, getInstallRequests,
+  getQuotesFiltered, computeQuoteTotals, calcItemPricing,
+  getInstallRequests,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
@@ -129,6 +131,43 @@ function quoteTotal(q) {
   );
   return total;
 }
+
+// Line items that actually count toward a quote's total (mirrors computeQuoteTotals).
+function activeLineItems(q) {
+  const selected = q.selectedLineItemIds || [];
+  return (q.lineItems || []).filter(li =>
+    li.type === 'Required' || li.type === 'Part' ||
+    ((li.type === 'Optional' || li.type === 'Multiple Choice') && selected.includes(li.id))
+  );
+}
+
+// Per-line revenue — new pricing model when present, legacy fallback otherwise.
+function lineItemRevenue(li) {
+  if (li.unitCostPrice !== undefined) {
+    const { lineTotal } = calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity);
+    return lineTotal;
+  }
+  return ((Number(li.unitPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
+}
+
+// ─── Monthly targets (persisted) ───────────────────────────────────────────────
+const TARGETS_KEY = 'lusso_dashboard_targets';
+const DEFAULT_TARGETS = { revenue: 50000, quotesWon: 10, newCustomers: 8 };
+function loadTargets() {
+  try { return { ...DEFAULT_TARGETS, ...JSON.parse(localStorage.getItem(TARGETS_KEY)) }; }
+  catch { return DEFAULT_TARGETS; }
+}
+function saveTargets(t) { localStorage.setItem(TARGETS_KEY, JSON.stringify(t)); }
+
+// Quote status pill colours (quote statuses aren't in the job StatusBadge map).
+const QUOTE_STATUS_STYLE = {
+  Accepted: 'bg-green-100 text-green-700',
+  Declined: 'bg-red-100 text-red-600',
+  Sent:     'bg-blue-100 text-blue-700',
+  Viewed:   'bg-cyan-100 text-cyan-700',
+  Waiting:  'bg-amber-100 text-amber-700',
+  Draft:    'bg-slate-100 text-slate-600',
+};
 
 function pct(current, previous) {
   if (previous === 0) return current > 0 ? 100 : 0;
@@ -262,6 +301,226 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
   );
 }
 
+// ─── Targets (Apex "Revenue Targets" / "Quarterly Targets") ───────────────────
+function ProgressRow({ label, current, target, fmt = (v) => v, color = 'bg-amber-500' }) {
+  const pctDone = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+        <span className="text-sm font-medium text-slate-700">{label}</span>
+        <span className="text-xs text-slate-400 tabular-nums">
+          <span className="text-slate-800 font-semibold">{fmt(current)}</span> / {fmt(target)}
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+        <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${pctDone}%` }} />
+      </div>
+      <div className="mt-1 text-right text-xs text-slate-400 tabular-nums">{pctDone.toFixed(0)}%</div>
+    </div>
+  );
+}
+
+function TargetsCard({ revenue, quotesWon, newCustomers, lM, lI }) {
+  const [targets, setTargets] = useState(loadTargets);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState(targets);
+
+  const startEdit = () => { setDraft(targets); setEditing(true); };
+  const save = () => {
+    const next = {
+      revenue:      Math.max(0, Number(draft.revenue)      || 0),
+      quotesWon:    Math.max(0, Number(draft.quotesWon)    || 0),
+      newCustomers: Math.max(0, Number(draft.newCustomers) || 0),
+    };
+    setTargets(next); saveTargets(next); setEditing(false);
+  };
+
+  return (
+    <Card className="min-w-0">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Target size={15} className="text-amber-500" /> Monthly Targets
+        </h2>
+        {editing ? (
+          <div className="flex items-center gap-2">
+            <button onClick={() => setEditing(false)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+            <button onClick={save} className="text-xs font-semibold text-amber-600 hover:text-amber-700">Save</button>
+          </div>
+        ) : (
+          <button onClick={startEdit} title="Edit targets" className="text-slate-300 hover:text-slate-500 p-1 transition-colors">
+            <Pencil size={13} />
+          </button>
+        )}
+      </div>
+      <div className="p-5 space-y-5">
+        {editing ? (
+          <>
+            {[
+              { key: 'revenue',      label: 'Revenue ($)' },
+              { key: 'quotesWon',    label: 'Quotes won' },
+              { key: 'newCustomers', label: 'New customers' },
+            ].map(f => (
+              <label key={f.key} className="block">
+                <span className="text-xs font-medium text-slate-500">{f.label}</span>
+                <input
+                  type="number" min="0" value={draft[f.key]}
+                  onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value }))}
+                  className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </label>
+            ))}
+          </>
+        ) : (
+          <>
+            <ProgressRow label="Revenue"       current={lM(revenue)}    target={lM(targets.revenue)} fmt={fmtCompact} color="bg-amber-500" />
+            <ProgressRow label="Quotes won"    current={lI(quotesWon)}    target={lI(targets.quotesWon)}    color="bg-green-500" />
+            <ProgressRow label="New customers" current={lI(newCustomers)} target={lI(targets.newCustomers)} color="bg-blue-500" />
+            <p className="text-xs text-slate-400">Progress this calendar month.</p>
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Top Products (Apex "Top Selling Products") ────────────────────────────────
+function TopProducts({ products, lM, lI }) {
+  const maxRev = Math.max(1, ...products.map(p => p.revenue));
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Package size={15} className="text-amber-500" /> Top Products
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">By accepted quote revenue in period</p>
+      </div>
+      {products.length === 0 ? (
+        <p className="px-5 py-8 text-center text-sm text-slate-400">No accepted quotes in this period.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+                <th className="px-5 py-2.5 text-left font-medium w-8">#</th>
+                <th className="px-5 py-2.5 text-left font-medium">Product</th>
+                <th className="px-5 py-2.5 text-right font-medium">Units</th>
+                <th className="px-5 py-2.5 text-right font-medium">Revenue</th>
+                <th className="px-5 py-2.5 text-left font-medium w-32">Share</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {products.map((p, i) => (
+                <tr key={p.name} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-3 text-slate-400 tabular-nums">{i + 1}</td>
+                  <td className="px-5 py-3 font-medium text-slate-800">{p.name}</td>
+                  <td className="px-5 py-3 text-right text-slate-600 tabular-nums">{lI(p.units)}</td>
+                  <td className="px-5 py-3 text-right font-medium text-slate-800 tabular-nums">{fmtCompact(lM(p.revenue))}</td>
+                  <td className="px-5 py-3">
+                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden w-full min-w-16">
+                      <div className="h-full rounded-full bg-amber-400" style={{ width: `${(p.revenue / maxRev) * 100}%` }} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Recent Quotes (Apex "Recent Deals") ───────────────────────────────────────
+function RecentQuotes({ quotes, customers, navigate, lM }) {
+  const recent = [...quotes]
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))
+    .slice(0, 6);
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <FileText size={15} className="text-amber-500" /> Recent Quotes
+        </h2>
+        <button onClick={() => navigate('/quotes')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
+          View all <ArrowRight size={12} />
+        </button>
+      </div>
+      {recent.length === 0 ? (
+        <p className="px-5 py-8 text-center text-sm text-slate-400">No quotes yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+                <th className="px-5 py-2.5 text-left font-medium whitespace-nowrap">Quote</th>
+                <th className="px-5 py-2.5 text-left font-medium">Customer</th>
+                <th className="px-5 py-2.5 text-right font-medium">Value</th>
+                <th className="px-5 py-2.5 text-left font-medium">Stage</th>
+                <th className="px-5 py-2.5 text-right font-medium whitespace-nowrap">Updated</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {recent.map(q => {
+                const cust = customers.find(c => c.id === q.customerId);
+                return (
+                  <tr
+                    key={q.id}
+                    onClick={() => navigate(`/quotes/${q.id}`)}
+                    className="hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{q.quoteNumber || '—'}</td>
+                    <td className="px-5 py-3 font-medium text-slate-800 truncate max-w-40">{cust?.name || 'Customer'}</td>
+                    <td className="px-5 py-3 text-right font-medium text-slate-800 tabular-nums whitespace-nowrap">{fmtCompact(lM(quoteTotal(q)))}</td>
+                    <td className="px-5 py-3">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${QUOTE_STATUS_STYLE[q.status] || 'bg-slate-100 text-slate-600'}`}>
+                        {q.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right text-slate-400 text-xs whitespace-nowrap">
+                      {(q.updatedAt || q.createdAt) ? format(parseISO(q.updatedAt || q.createdAt), 'd MMM') : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Top Salespeople (Apex "Top Sales Reps") ───────────────────────────────────
+function TopSalesReps({ reps, lM, lI, lW }) {
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Trophy size={15} className="text-amber-500" /> Top Salespeople
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">Won revenue in period</p>
+      </div>
+      <div className="divide-y divide-slate-50">
+        {reps.map((r, i) => (
+          <div key={r.name} className="flex items-center gap-3 px-5 py-3">
+            <span className="w-5 text-xs font-semibold text-slate-400 tabular-nums">{i + 1}</span>
+            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-amber-700 font-bold text-xs">
+                {r.name.split(' ').map(w => w[0]).slice(0, 2).join('')}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-800 truncate">{r.name}</p>
+              <p className="text-xs text-slate-400">{lI(r.won)} won{r.winRate !== null ? ` · ${lW(r.winRate).toFixed(0)}% win rate` : ''}</p>
+            </div>
+            <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0">{fmtCompact(lM(r.revenue))}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   useDataRefresh();
@@ -361,6 +620,53 @@ export default function Dashboard() {
       winRate, winRatePrev, decisions,
     };
   }, [quotes, globalRange]);
+
+  // ── Top products + category split (accepted quotes in range) ────────────────
+  const products = useMemo(() => {
+    const range = getDateRange(globalRange);
+    const accepted = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
+    const m = {};
+    accepted.forEach(q => activeLineItems(q).forEach(li => {
+      const name = (li.productNameSnapshot || li.productType || li.description || '').trim() || 'Other';
+      if (!m[name]) m[name] = { name, units: 0, revenue: 0 };
+      m[name].units   += Number(li.quantity) || 1;
+      m[name].revenue += lineItemRevenue(li);
+    }));
+    return Object.values(m).sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+  }, [quotes, globalRange]);
+
+  // ── Salesperson leaderboard (accepted/declined in range) ─────────────────────
+  const reps = useMemo(() => {
+    const range = getDateRange(globalRange);
+    const m = {};
+    quotes.forEach(q => {
+      const name = (q.salesperson || '').trim();
+      if (!name) return;
+      if (!m[name]) m[name] = { name, won: 0, lost: 0, revenue: 0 };
+      if (q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range)) {
+        m[name].won += 1; m[name].revenue += quoteTotal(q);
+      } else if (q.status === 'Declined' && inRange(q.updatedAt, range)) {
+        m[name].lost += 1;
+      }
+    });
+    return Object.values(m)
+      .filter(r => r.won + r.lost > 0)
+      .map(r => ({ ...r, winRate: r.won + r.lost > 0 ? (r.won / (r.won + r.lost)) * 100 : null }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+  }, [quotes, globalRange]);
+
+  // ── This-calendar-month progress (for targets) ───────────────────────────────
+  const monthProgress = useMemo(() => {
+    const now = new Date();
+    const range = { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
+    const acc = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
+    return {
+      revenue:      acc.reduce((s, q) => s + quoteTotal(q), 0),
+      quotesWon:    acc.length,
+      newCustomers: customers.filter(c => inRange(c.createdAt, range)).length,
+    };
+  }, [quotes, customers]);
 
   // Hero revenue chart + monthly/yearly toggle.
   const [revView, setRevView] = useState('monthly');
@@ -533,7 +839,44 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* ── Row 3 · Recent jobs table + Activity feed ────────────────────────── */}
+      {/* ── Row 3 · Top products + Sales by category donut ───────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 min-w-0">
+          <TopProducts products={products} lM={lM} lI={lI} />
+        </div>
+        <Card className="min-w-0">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-800 text-sm">Sales by Category</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Revenue by product type</p>
+          </div>
+          <div className="p-5">
+            <DonutChart
+              data={products.map((p, i) => ({ label: p.name, value: Math.round(lM(p.revenue)), color: PIPELINE_RAMP[(i * 2) % PIPELINE_RAMP.length] }))}
+              centerValue={fmtCompact(products.reduce((s, p) => s + lM(p.revenue), 0))}
+              centerLabel="accepted"
+              valueFmt={fmtCompact}
+            />
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Row 4 · Recent quotes + Targets / Top salespeople ────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 min-w-0">
+          <RecentQuotes quotes={quotes} customers={customers} navigate={navigate} lM={lM} />
+        </div>
+        <div className="min-w-0 space-y-6">
+          <TargetsCard
+            revenue={monthProgress.revenue}
+            quotesWon={monthProgress.quotesWon}
+            newCustomers={monthProgress.newCustomers}
+            lM={lM} lI={lI}
+          />
+          {reps.length > 1 && <TopSalesReps reps={reps} lM={lM} lI={lI} lW={lW} />}
+        </div>
+      </div>
+
+      {/* ── Row 5 · Recent jobs table + Activity feed ────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2 min-w-0 overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">

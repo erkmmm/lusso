@@ -13,7 +13,7 @@ const money = (v) =>
 
 // ── Donut ────────────────────────────────────────────────────────────────────
 // data: [{ label, value, color }]. Renders an SVG donut + a legend beside it.
-export function DonutChart({ data, centerValue, centerLabel, size = 168, thickness = 22 }) {
+export function DonutChart({ data, centerValue, centerLabel, size = 168, thickness = 22, valueFmt = (v) => v }) {
   const items = (data || []).filter((d) => d.value > 0);
   const total = items.reduce((s, d) => s + d.value, 0);
   const r = (size - thickness) / 2;
@@ -60,7 +60,7 @@ export function DonutChart({ data, centerValue, centerLabel, size = 168, thickne
             <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: d.color }} />
             <span className="text-slate-600 truncate flex-1">{d.label}</span>
             <span className="text-slate-400 tabular-nums">{total > 0 ? Math.round((d.value / total) * 100) : 0}%</span>
-            <span className="text-slate-800 font-medium tabular-nums w-8 text-right">{d.value}</span>
+            <span className="text-slate-800 font-medium tabular-nums min-w-8 text-right">{valueFmt(d.value)}</span>
           </li>
         ))}
         {items.length === 0 && <li className="text-xs text-slate-400">No data in range.</li>}
