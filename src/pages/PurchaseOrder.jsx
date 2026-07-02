@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { format, addDays, parseISO } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
-import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus } from 'lucide-react';
+import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown } from 'lucide-react';
 import {
   getMeasureSheet, getCustomer, getJob,
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
@@ -70,8 +70,8 @@ const wandIsEmpty   = (w) => !w.qty && !w.colour && !w.length;
 const remoteIsEmpty = (r) => !r.qty && !r.type && !r.colour;
 const wandLabel     = (w) => [w.qty ? `${w.qty} ×` : '', w.colour, w.length ? `${w.length}mm` : ''].filter(Boolean).join(' ');
 
-// Wands required per curtain, keyed by operation type (trackType). Most specific
-// code first so "C/O F/R" isn't caught by "C/O" or "F/R".
+// Wands required per curtain, keyed by Control code. Most specific code first
+// so "C/O F/R" isn't caught by "C/O" or "F/R".
 const WAND_RULES = [
   { code: 'C/O F/R', wands: 4 },
   { code: 'C/O',     wands: 2 },
@@ -119,15 +119,15 @@ export default function PurchaseOrder() {
   const updateWand = (id, f, v) => setWands(w => w.map(x => x.id === id ? { ...x, [f]: v } : x));
   const removeWand = (id) => setWands(w => w.filter(x => x.id !== id));
 
-  // Wands required from the curtains' operation types (× line quantity).
+  // Wands required from the curtains' Control codes (F/R, LHS, RHS, C/O…), × line qty.
   const wandCalc = useMemo(() => {
     const byCode = {};
     let total = 0, unmatched = 0;
     curtains.forEach(c => {
-      const per = wandsForOp(c.trackType);
+      const per = wandsForOp(c.control);
       const qty = Math.max(1, Number(c.quantity) || 1);
-      if (per <= 0) { if (c.trackType) unmatched += 1; return; }
-      const code = normOp(c.trackType);
+      if (per <= 0) { if (c.control) unmatched += 1; return; }
+      const code = normOp(c.control);
       byCode[code] = byCode[code] || { count: 0, wands: 0 };
       byCode[code].count += qty;
       byCode[code].wands += per * qty;
@@ -178,6 +178,7 @@ export default function PurchaseOrder() {
   // Motorised tracks are the exception, so the Motor side column is off by
   // default and only added when this order actually has motors. Remembered.
   const [motorised, setMotorised] = useState(() => localStorage.getItem('lusso_po_motorised') === 'true');
+  const [motorOpen, setMotorOpen] = useState(() => localStorage.getItem('lusso_po_motorised') === 'true');
   const toggleMotorised = () => setMotorised(v => { const n = !v; localStorage.setItem('lusso_po_motorised', String(n)); return n; });
 
   if (!sheet) {
@@ -510,19 +511,49 @@ export default function PurchaseOrder() {
             </div>
           </Card>
 
-          {/* Motorised toggle — controls the Motor side column on the PO */}
+          {/* Motorised order — expandable; controls the Motor side column on the PO */}
           <Card>
-            <div className="px-5 py-4 flex items-center justify-between gap-4">
-              <div className="min-w-0">
+            <button type="button" onClick={() => setMotorOpen(o => !o)} aria-expanded={motorOpen}
+              className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left">
+              <div className="flex items-center gap-2 min-w-0">
                 <h2 className="font-semibold text-slate-800 text-sm">Motorised order</h2>
-                <p className="text-xs text-slate-400 mt-0.5">Adds the Motor side (L/R) column and per-curtain motor side inputs. Leave off for non-motorised orders.</p>
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${motorised ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{motorised ? 'On' : 'Off'}</span>
               </div>
-              <button type="button" onClick={toggleMotorised} role="switch" aria-checked={motorised}
-                title="Add or remove the Motor side column on this PO"
-                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${motorised ? 'bg-amber-500' : 'bg-slate-200'}`}>
-                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${motorised ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
+              <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 transition-transform ${motorOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {motorOpen && (
+              <div className="px-5 pb-5 border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-xs text-slate-500 flex-1">Adds the Motor side (L/R) column to the PO plus the per-curtain inputs below. Leave off for non-motorised orders.</p>
+                  <button type="button" onClick={toggleMotorised} role="switch" aria-checked={motorised}
+                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${motorised ? 'bg-amber-500' : 'bg-slate-200'}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${motorised ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                {motorised && (
+                  <div className="mt-4">
+                    <p className="text-xs font-medium text-slate-600 mb-2">Motor side (per curtain)</p>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {curtains.map((it, i) => (
+                        <div key={it.id || i} className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2">
+                          <span className="text-sm text-slate-700 truncate">{i + 1}. {it.location || '—'}</span>
+                          <div className="flex gap-1 flex-shrink-0">
+                            {['L', 'R'].map(side => (
+                              <button key={side} onClick={() => setMotor(it, i, motorFor(it, i) === side ? '' : side)}
+                                className={`text-xs font-semibold w-8 py-1 rounded-md border transition-colors ${
+                                  motorFor(it, i) === side ? 'bg-amber-500 text-white border-amber-500' : 'text-slate-500 border-slate-200 hover:border-slate-300'
+                                }`}>
+                                {side}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </Card>
 
           {/* Accessories — repeatable wand & remote entries (hidden until added) */}
@@ -531,19 +562,25 @@ export default function PurchaseOrder() {
               <h2 className="font-semibold text-slate-800 text-sm">Accessories</h2>
               <p className="text-xs text-slate-400 mt-0.5">Add wands and remotes as needed — only added items appear on the PO.</p>
             </div>
-            {wandCalc.total > 0 && (
+            {wandCalc.total > 0 ? (
               <div className="mx-5 mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-amber-800">Suggested: {wandCalc.total} wand{wandCalc.total !== 1 ? 's' : ''}</p>
                   <p className="text-xs text-amber-700 mt-0.5">
                     {Object.entries(wandCalc.byCode).map(([code, d]) => `${d.count}× ${code} → ${d.wands}`).join('  ·  ')}
-                    {wandCalc.unmatched > 0 && `  ·  ${wandCalc.unmatched} without a recognised operation type`}
+                    {wandCalc.unmatched > 0 && `  ·  ${wandCalc.unmatched} without a recognised control code`}
                   </p>
                 </div>
                 <button type="button" onClick={addSuggestedWands}
                   className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white flex-shrink-0">
                   <Plus size={13} /> Add {wandCalc.total} wands
                 </button>
+              </div>
+            ) : (
+              <div className="mx-5 mt-4 rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">
+                  Auto wand count: set each curtain's <span className="font-medium text-slate-600">Control</span> to F/R, LHS, RHS, C/O or C/O F/R and Lusso will suggest the wand quantity here (F/R 2, LHS 1, RHS 1, C/O 2, C/O F/R 4).
+                </p>
               </div>
             )}
             <div className="p-5 space-y-6">
@@ -586,33 +623,6 @@ export default function PurchaseOrder() {
               ))}
             </div>
           </Card>
-
-          {/* Editable motor side per curtain — only when this order is motorised */}
-          {motorised && (
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm">Motor side (per curtain)</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Set L or R for each curtain — this fills the Motor side column on the PO.</p>
-            </div>
-            <div className="p-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {curtains.map((it, i) => (
-                <div key={it.id || i} className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2">
-                  <span className="text-sm text-slate-700 truncate">{i + 1}. {it.location || '—'}</span>
-                  <div className="flex gap-1 flex-shrink-0">
-                    {['L', 'R'].map(side => (
-                      <button key={side} onClick={() => setMotor(it, i, motorFor(it, i) === side ? '' : side)}
-                        className={`text-xs font-semibold w-8 py-1 rounded-md border transition-colors ${
-                          motorFor(it, i) === side ? 'bg-amber-500 text-white border-amber-500' : 'text-slate-500 border-slate-200 hover:border-slate-300'
-                        }`}>
-                        {side}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-          )}
 
           {/* PO preview (printed/exported layout) */}
           <Card>
