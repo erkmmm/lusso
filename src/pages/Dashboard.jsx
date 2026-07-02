@@ -22,6 +22,8 @@ import {
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
+import { DonutChart, LineChart } from '../components/DashboardCharts';
+import { CHART_COLORS, PIPELINE_RAMP } from '../lib/chartColors';
 
 // ─── Widget definitions ────────────────────────────────────────────────────────
 const WIDGET_DEFS = [
@@ -30,7 +32,8 @@ const WIDGET_DEFS = [
   { key: 'salesPerformance',  label: 'Sales Performance',      desc: 'Win rate, pipeline value & quotes accepted' },
   { key: 'revenue',           label: 'Revenue',                desc: 'Accepted quote value — monthly & yearly views' },
   { key: 'stalledJobs',       label: 'Stalled Jobs',           desc: 'Jobs with no activity for 14+ days' },
-  { key: 'jobPipeline',       label: 'Job Pipeline',           desc: 'Job counts by status stage' },
+  { key: 'jobPipeline',       label: 'Job Pipeline',           desc: 'Donut of jobs by status stage' },
+  { key: 'jobTypes',          label: 'Jobs by Type',           desc: 'Donut of jobs by product type' },
   { key: 'recentJobs',        label: 'Recent Jobs',            desc: 'Last 5 updated jobs' },
   { key: 'recentActivity',    label: 'Recent Activity',        desc: 'Latest changes and events' },
 ];
@@ -396,9 +399,7 @@ function RevenueCard({ quotes, navigate, larpMul = 1, yearlyRows, maxValue, lI, 
     return { ...m, value: accepted.reduce((s, q) => s + quoteTotal(q), 0), count: accepted.length };
   });
 
-  const maxVal   = Math.max(...data.map(d => d.value), 1);
   const totalVal = data.reduce((s, d) => s + d.value, 0);
-  const bestMon  = data.reduce((best, d) => d.value > best.value ? d : best, data[0]);
 
   return (
     <Card>
@@ -434,37 +435,18 @@ function RevenueCard({ quotes, navigate, larpMul = 1, yearlyRows, maxValue, lI, 
       </div>
 
       {view === 'monthly' ? (
-        <div className="px-5 pt-6 pb-4">
-          <div className="flex items-end gap-1.5 h-28">
-            {data.map((m, i) => {
-              const barPct = maxVal > 0 ? (m.value / maxVal) * 100 : 0;
-              const isCurrent = m.year === now.getFullYear() && m.month === now.getMonth();
-              const isBest    = m.value === bestMon.value && m.value > 0;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1 group min-w-0">
-                  <div className="w-full flex items-end justify-center" style={{ height: '90px' }}>
-                    <div
-                      className={`w-full rounded-t-md transition-all duration-500 ${
-                        isBest    ? 'bg-amber-500 hover:bg-amber-400' :
-                        isCurrent ? 'bg-teal-400 hover:bg-teal-300' :
-                                    'bg-slate-200 hover:bg-slate-300'
-                      }`}
-                      style={{ height: `${Math.max(barPct, barPct > 0 ? 5 : 0)}%` }}
-                      title={`${m.label}: ${fmt$(m.value * larpMul)} (${m.count} quotes)`}
-                    />
-                  </div>
-                  <span className={`text-[10px] truncate w-full text-center ${isCurrent ? 'text-teal-600 font-semibold' : 'text-slate-400'}`}>
-                    {m.label}
-                  </span>
-                </div>
-              );
-            })}
+        <div className="px-5 pt-4 pb-4">
+          <div className="flex items-center gap-4 mb-1">
+            <div className="flex items-center gap-1.5"><span className="w-4 h-0.5 rounded-full" style={{ background: '#2E6E65' }} /><span className="text-xs text-slate-500">Accepted value</span></div>
+            <div className="flex items-center gap-1.5"><span className="w-4 h-0.5 rounded-full" style={{ background: '#C0873A' }} /><span className="text-xs text-slate-500">Won count</span></div>
           </div>
-          <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-50">
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-amber-500" /><span className="text-xs text-slate-500">Best month</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-teal-400" /><span className="text-xs text-slate-500">Current month</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-200" /><span className="text-xs text-slate-500">Other months</span></div>
-          </div>
+          <LineChart
+            xLabels={data.map((m) => m.label)}
+            series={[
+              { name: 'Accepted value', color: '#2E6E65', axis: 'left',  values: data.map((m) => m.value * larpMul) },
+              { name: 'Won count',      color: '#C0873A', axis: 'right', values: data.map((m) => m.count) },
+            ]}
+          />
         </div>
       ) : (
         <>
@@ -665,10 +647,16 @@ export default function Dashboard() {
   useDataRefresh();
   const navigate  = useNavigate();
   const { isAM = true, displayName = '', isSP } = useProfile() || {};
-  const jobs      = getJobsFiltered(isAM, displayName);
+  const [salesFilter, setSalesFilter] = useState('all');
+
   const customers = getCustomersFiltered(isAM, displayName);
   const activity  = getActivity();
-  const quotes    = getQuotesFiltered(isAM, displayName);
+
+  // Optional salesperson filter (account managers only — SPs already see just
+  // theirs). Both branches are getter calls, keeping these stable for the memos.
+  const salespeople = [...new Set(getJobsFiltered(isAM, displayName).map(j => j.assignedStaff).filter(Boolean))].sort();
+  const jobs   = salesFilter === 'all' ? getJobsFiltered(isAM, displayName)   : getJobsFiltered(false, salesFilter);
+  const quotes = salesFilter === 'all' ? getQuotesFiltered(isAM, displayName) : getQuotesFiltered(false, salesFilter);
 
   const [globalRange, setGlobalRange] = useState('thisfy');
   const [prefs, setPrefs]             = useState(loadPrefs);
@@ -703,6 +691,16 @@ export default function Dashboard() {
     const urgent = jobs.filter(j => ['Urgent','High'].includes(j.urgency)).length;
     const awaitingApproval = counts['Awaiting Approval'] || 0;
     return { counts, active, urgent, awaitingApproval };
+  }, [jobs]);
+
+  // Jobs grouped by product type (for the donut) — largest first.
+  const jobsByType = useMemo(() => {
+    const m = {};
+    jobs.forEach(j => { const t = (j.jobType || '').trim() || 'Unspecified'; m[t] = (m[t] || 0) + 1; });
+    return Object.entries(m)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .map((d, i) => ({ ...d, color: CHART_COLORS[i % CHART_COLORS.length] }));
   }, [jobs]);
 
   // Installs booked over the next 7 days (excludes declined/cancelled requests)
@@ -872,9 +870,24 @@ export default function Dashboard() {
       {/* ── Sales Performance ────────────────────────────────────────────────── */}
       {visible('salesPerformance') && (
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 gap-3">
             <h2 className="font-semibold text-slate-800">Sales Performance</h2>
-            <DateRangeSelect value={globalRange} onChange={setGlobalRange} />
+            <div className="flex items-center gap-2">
+              {isAM && salespeople.length > 0 && (
+                <div className="relative">
+                  <select
+                    value={salesFilter}
+                    onChange={e => setSalesFilter(e.target.value)}
+                    className="appearance-none text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg pl-3 pr-7 py-1.5 border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors"
+                  >
+                    <option value="all">All salespeople</option>
+                    {salespeople.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
+              )}
+              <DateRangeSelect value={globalRange} onChange={setGlobalRange} />
+            </div>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
 
@@ -989,63 +1002,41 @@ export default function Dashboard() {
         />
       )}
 
-      {/* ── Job Pipeline ─────────────────────────────────────────────────────── */}
-      {visible('jobPipeline') && (() => {
-        const phases = [
-          { label: 'Discovery', bar: 'bg-slate-400',  text: 'text-slate-500',  keys: ['New Enquiry', 'Measure Booked', 'Measured'] },
-          { label: 'Quoting',   bar: 'bg-blue-400',   text: 'text-blue-600',   keys: ['Quote Required', 'Quoted', 'Awaiting Approval'] },
-          { label: 'Active',    bar: 'bg-amber-500',  text: 'text-amber-600',  keys: ['Approved', 'Ordered', 'Installation Booked'] },
-          { label: 'Done',      bar: 'bg-green-500',  text: 'text-green-600',  keys: ['Installed', 'Completed'] },
-        ];
+      {/* ── Pipeline + Job types (donuts) ─────────────────────────────────────── */}
+      {(visible('jobPipeline') || visible('jobTypes')) && (() => {
         const dc = larpActive
           ? Object.fromEntries(Object.entries(stats.counts).map(([k, v]) => [k, Math.round(v * 91)]))
           : stats.counts;
-        const maxCount = Math.max(...STAT_GROUPS.map(s => dc[s.key] || 0), 1);
-        const total = STAT_GROUPS.reduce((sum, s) => sum + (dc[s.key] || 0), 0);
+        const pipelineData  = STAT_GROUPS.map((s, i) => ({ label: s.label, value: dc[s.key] || 0, color: PIPELINE_RAMP[i] }));
+        const pipelineTotal = pipelineData.reduce((sum, d) => sum + d.value, 0);
+        const typeData      = jobsByType.map((d) => ({ ...d, value: lI(d.value) }));
+        const typeTotal     = typeData.reduce((sum, d) => sum + d.value, 0);
+        const both = visible('jobPipeline') && visible('jobTypes');
         return (
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h2 className="font-semibold text-slate-800 text-sm">Job Pipeline</h2>
-                <span className="text-xs text-slate-400">{total} total</span>
-              </div>
-              <button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
-                View all <ArrowRight size={12} />
-              </button>
-            </div>
-            <div className="px-5 py-4 space-y-5">
-              {phases.map(phase => {
-                const phaseTotal = phase.keys.reduce((sum, k) => sum + (dc[k] || 0), 0);
-                return (
-                  <div key={phase.label}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`text-[10px] font-bold tracking-widest uppercase ${phase.text}`}>{phase.label}</span>
-                      <span className="text-xs text-slate-400">{phaseTotal} job{phaseTotal !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {phase.keys.map(key => {
-                        const count = dc[key] || 0;
-                        const barWidth = `${Math.max((count / maxCount) * 100, count > 0 ? 3 : 0)}%`;
-                        return (
-                          <button
-                            key={key}
-                            onClick={() => navigate(`/jobs?status=${encodeURIComponent(key)}`)}
-                            className="w-full flex items-center gap-3 py-1 hover:bg-slate-50 rounded-lg px-2 -mx-2 transition-colors text-left"
-                          >
-                            <span className="text-xs text-slate-600 w-36 flex-shrink-0 truncate">{key}</span>
-                            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div className={`h-full ${phase.bar} rounded-full transition-all duration-500`} style={{ width: barWidth }} />
-                            </div>
-                            <span className={`text-sm font-bold w-6 text-right tabular-nums ${count > 0 ? 'text-slate-800' : 'text-slate-300'}`}>{count}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
+          <div className={`grid gap-6 ${both ? 'lg:grid-cols-2' : 'lg:grid-cols-1'}`}>
+            {visible('jobPipeline') && (
+              <Card>
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                  <h2 className="font-semibold text-slate-800 text-sm">Job pipeline</h2>
+                  <button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">View all <ArrowRight size={12} /></button>
+                </div>
+                <div className="p-5">
+                  <DonutChart data={pipelineData} centerValue={pipelineTotal} centerLabel="jobs" />
+                </div>
+              </Card>
+            )}
+            {visible('jobTypes') && (
+              <Card>
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                  <h2 className="font-semibold text-slate-800 text-sm">Jobs by type</h2>
+                  <button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">View all <ArrowRight size={12} /></button>
+                </div>
+                <div className="p-5">
+                  <DonutChart data={typeData} centerValue={typeTotal} centerLabel="jobs" />
+                </div>
+              </Card>
+            )}
+          </div>
         );
       })()}
 
