@@ -735,15 +735,20 @@ export default function Dashboard() {
     return months.map(m => {
       const range = { start: m.start, end: m.end };
       const acc = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
-      const dec = quotes.filter(q => q.status === 'Declined' && inRange(q.updatedAt, range));
       const created = quotes.filter(q => inRange(q.createdAt, range));
-      const decisions = acc.length + dec.length;
+      // Same cohort-based win rate as the KPI: quotes sent this month that
+      // reached an outcome (Expired = loss; open quotes excluded).
+      const cohort = quotes.filter(q => {
+        const d = q.sentAt || q.createdAt;
+        return d && inRange(d, range) && ['Accepted', 'Completed', 'Declined', 'Expired'].includes(q.status);
+      });
+      const won = cohort.filter(q => q.status === 'Accepted' || q.status === 'Completed').length;
       return {
         label: m.label,
         acceptedValue: acc.reduce((s, q) => s + quoteTotal(q), 0),
         acceptedCount: acc.length,
         newQuotes: created.length,
-        winRate: decisions > 0 ? (acc.length / decisions) * 100 : 0,
+        winRate: cohort.length > 0 ? (won / cohort.length) * 100 : 0,
       };
     });
   }, [quotes]);
@@ -770,12 +775,21 @@ export default function Dashboard() {
     const acceptedValuePrev = acceptedPrev.reduce((s, q) => s + quoteTotal(q), 0);
     const acceptedAvg       = accepted.length > 0 ? acceptedValue / accepted.length : 0;
 
-    const declined     = quotes.filter(q => q.status === 'Declined' && inRange(q.updatedAt, range));
-    const declinedPrev = quotes.filter(q => q.status === 'Declined' && inRange(q.updatedAt, prev));
-    const decisions     = accepted.length + declined.length;
-    const decisionsPrev = acceptedPrev.length + declinedPrev.length;
-    const winRate     = decisions > 0     ? (accepted.length / decisions) * 100         : null;
-    const winRatePrev = decisionsPrev > 0 ? (acceptedPrev.length / decisionsPrev) * 100 : null;
+    // Win rate — cohort-based: of quotes SENT in the period that reached an
+    // outcome, how many were won? Expired counts as a loss (customers rarely
+    // formally decline — quotes mostly lapse); still-open quotes are excluded.
+    const RESOLVED = ['Accepted', 'Completed', 'Declined', 'Expired'];
+    const isWon    = (q) => q.status === 'Accepted' || q.status === 'Completed';
+    const resolvedSentIn = (r) => quotes.filter(q => {
+      const d = q.sentAt || q.createdAt;
+      return d && inRange(d, r) && RESOLVED.includes(q.status);
+    });
+    const cohort     = resolvedSentIn(range);
+    const cohortPrev = resolvedSentIn(prev);
+    const decisions     = cohort.length;
+    const decisionsPrev = cohortPrev.length;
+    const winRate     = decisions > 0     ? (cohort.filter(isWon).length / decisions) * 100         : null;
+    const winRatePrev = decisionsPrev > 0 ? (cohortPrev.filter(isWon).length / decisionsPrev) * 100 : null;
 
     return {
       pipelineValue, pipelineCount: pipelineQuotes.length,
@@ -844,7 +858,8 @@ export default function Dashboard() {
       if (!m[name]) m[name] = { name, won: 0, lost: 0, revenue: 0 };
       if (q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range)) {
         m[name].won += 1; m[name].revenue += quoteTotal(q);
-      } else if (q.status === 'Declined' && inRange(q.updatedAt, range)) {
+      } else if ((q.status === 'Declined' || q.status === 'Expired') && inRange(q.updatedAt, range)) {
+        // Expired counts as a loss — same win-rate definition as the KPI.
         m[name].lost += 1;
       }
     });
@@ -999,7 +1014,7 @@ export default function Dashboard() {
             : { value: '—' })}
           delta={analytics.winRate !== null && analytics.winRatePrev !== null
             ? <DeltaBadge current={analytics.winRate} previous={analytics.winRatePrev} /> : null}
-          caption={analytics.decisions > 0 ? `${lI(analytics.decisions)} decisions` : 'no decisions yet'}
+          caption={analytics.decisions > 0 ? `of ${lI(analytics.decisions)} resolved quotes` : 'no resolved quotes yet'}
           spark={monthly.map(m => m.winRate)}
           sparkColor="#9333EA"
           onClick={() => navigate('/quotes')}
