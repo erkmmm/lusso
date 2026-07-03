@@ -16,8 +16,11 @@ export const CHART_COLORS = [
 ];
 
 // Pipeline progression: cool (early) → green (done). Reads as forward motion,
-// not an arbitrary rainbow. 11 stops for the job status ladder.
+// not an arbitrary rainbow. 13 stops for the job status ladder (minus
+// Cancelled): New Enquiry … Received, Installation Booked, Installed,
+// Rework (rose — needs attention), Completed.
 export const PIPELINE_RAMP = [
   '#8A93A3', '#6E7E9B', '#556E9A', '#46618F', '#3E6E86',
-  '#2E6E65', '#3C7A57', '#5A8A4A', '#C0873A', '#A9772F', '#3B6D3A',
+  '#2E6E65', '#3C7A57', '#5A8A4A', '#7A8A45', '#C0873A',
+  '#A9772F', '#C4698F', '#3B6D3A',
 ];

@@ -17,7 +17,7 @@ import {
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
   getQuotesFiltered, computeQuoteTotals, calcItemPricing,
-  getInstallRequests,
+  getInstallRequests, JOB_STATUSES,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
@@ -35,11 +35,10 @@ function loadLarp() {
 }
 function saveLarp(v) { localStorage.setItem(LARP_KEY, v ? 'true' : 'false'); }
 
-// Ordered job pipeline stages (label === status key). Coloured via PIPELINE_RAMP.
-const PIPELINE_STAGES = [
-  'New Enquiry', 'Measure Booked', 'Measured', 'Quote Required', 'Quoted',
-  'Awaiting Approval', 'Approved', 'Ordered', 'Installation Booked', 'Installed', 'Completed',
-];
+// Ordered job pipeline stages (label === status key). Derived from the
+// canonical status ladder so new statuses appear automatically; Cancelled is
+// excluded — it's an exit, not a stage. Coloured via PIPELINE_RAMP.
+const PIPELINE_STAGES = JOB_STATUSES.filter(s => s !== 'Cancelled');
 
 // Quote statuses that count as "in the pipeline" (sent, not yet decided).
 const PIPELINE_STATUSES = ['Draft', 'Sent', 'Viewed', 'Waiting'];
