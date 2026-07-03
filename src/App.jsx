@@ -91,10 +91,14 @@ function AppRoutes() {
       }
 
       await hydrateFromSupabase();
-      setHydrating(false);
     };
 
-    run();
+    // Never strand the user on the syncing screen: any hydration failure
+    // (network, storage quota, bad record) logs and falls through to the app
+    // with whatever local data exists. The visibility/poll re-hydrates later.
+    run()
+      .catch(e => console.error('[app] hydration failed — continuing with local data:', e))
+      .finally(() => setHydrating(false));
   // Depend on user.id, NOT the user object — Supabase fires onAuthStateChange
   // with a fresh user object on every token refresh, which would otherwise
   // re-run this effect, show the loading screen, and unmount in-progress forms.
@@ -177,6 +181,9 @@ function AppRoutes() {
         {hydrating && (
           <p className="text-slate-500 dark:text-slate-300 text-sm font-medium animate-pulse">Syncing from cloud…</p>
         )}
+        {/* Escape hatch — if loading hangs (e.g. a stale cached build), let the
+            user force a fresh reload instead of being stranded here. */}
+        <SlowLoadRetry />
       </div>
     );
   }
@@ -272,6 +279,25 @@ function AppRoutes() {
 }
 
 // ── Update banner — shown when a new deployment is detected ──────────────────
+// Shows a reload button if the loading screen has been up for 12+ seconds —
+// an escape hatch so a hung sync (or stale cached build) never strands anyone.
+function SlowLoadRetry() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 12000);
+    return () => clearTimeout(t);
+  }, []);
+  if (!slow) return null;
+  return (
+    <button
+      onClick={() => window.location.reload()}
+      className="mt-2 text-xs font-medium text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 hover:text-slate-600 transition-colors"
+    >
+      Taking a while? Tap to reload
+    </button>
+  );
+}
+
 function UpdateBanner() {
   const { updateAvailable, applyUpdate } = useVersionCheck();
   if (!updateAvailable) return null;
