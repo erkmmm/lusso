@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   formatDistanceToNow, parseISO, isWithinInterval,
-  subDays, subMonths, startOfYear, endOfYear,
+  subDays, subMonths, startOfYear,
   format, differenceInDays,
 } from 'date-fns';
 import {
@@ -90,11 +90,18 @@ const DATE_RANGE_OPTIONS = [
   { value: 'ytd',    label: 'Year to date' },
   { value: 'thisfy', label: 'This financial year' },
   { value: 'prevfy', label: 'Previous financial year' },
-  { value: 'prevyr', label: 'Previous calendar year' },
 ];
+
+// Calendar-year values look like 'yr2015' (rendered as their own optgroup).
+const yearValue = (value) => /^yr(\d{4})$/.exec(value)?.[1];
 
 function getDateRange(value) {
   const now = new Date();
+  const yr = yearValue(value);
+  if (yr) {
+    const y = Number(yr);
+    return { start: new Date(y, 0, 1), end: new Date(y, 11, 31, 23, 59, 59) };
+  }
   switch (value) {
     case '30d':    return { start: subDays(now, 30),   end: now };
     case '90d':    return { start: subDays(now, 90),   end: now };
@@ -102,15 +109,13 @@ function getDateRange(value) {
     case 'ytd':    return { start: startOfYear(now),   end: now };
     case 'thisfy': return getCurrentAusFY();
     case 'prevfy': return getPreviousAusFY();
-    case 'prevyr': return {
-      start: startOfYear(new Date(now.getFullYear() - 1, 0, 1)),
-      end:   endOfYear(new Date(now.getFullYear() - 1, 0, 1)),
-    };
     default: return { start: subDays(now, 30), end: now };
   }
 }
 
 function getPreviousPeriod(value) {
+  const yr = yearValue(value);
+  if (yr) return getDateRange(`yr${Number(yr) - 1}`); // vs the prior calendar year
   const { start, end } = getDateRange(value);
   const duration = end - start;
   return { start: new Date(start - duration), end: new Date(start) };
@@ -187,7 +192,7 @@ function fmtCompact(value) {
 }
 
 // ─── Small shared UI ───────────────────────────────────────────────────────────
-function DateRangeSelect({ value, onChange }) {
+function DateRangeSelect({ value, onChange, years = [] }) {
   return (
     <div className="relative">
       <select
@@ -196,6 +201,11 @@ function DateRangeSelect({ value, onChange }) {
         className="appearance-none text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 rounded-lg pl-3 pr-7 py-2 border border-slate-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors"
       >
         {DATE_RANGE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+        {years.length > 0 && (
+          <optgroup label="Calendar years">
+            {years.map(y => <option key={y} value={`yr${y}`}>{y}</option>)}
+          </optgroup>
+        )}
       </select>
       <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
     </div>
@@ -711,7 +721,20 @@ export default function Dashboard() {
     return rows;
   }, [quotes]);
 
-  const rangeLabel = DATE_RANGE_OPTIONS.find(o => o.value === globalRange)?.label || '';
+  const rangeLabel = yearValue(globalRange)
+    || DATE_RANGE_OPTIONS.find(o => o.value === globalRange)?.label
+    || '';
+
+  // Calendar years covered by the quote history (newest first) — feeds the
+  // range dropdown so imported years like 2015 are directly selectable.
+  const quoteYears = useMemo(() => {
+    const ys = new Set();
+    quotes.forEach(q => {
+      const d = q.sentAt || q.createdAt;
+      if (d) ys.add(Number(d.slice(0, 4)));
+    });
+    return [...ys].filter(y => y >= 2000).sort((a, b) => b - a);
+  }, [quotes]);
 
   // Pipeline donut data
   const dc = larpActive
@@ -752,7 +775,7 @@ export default function Dashboard() {
               <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
           )}
-          <DateRangeSelect value={globalRange} onChange={setGlobalRange} />
+          <DateRangeSelect value={globalRange} onChange={setGlobalRange} years={quoteYears} />
           {isAM && (
             <button
               onClick={() => updateLarp(!larpMode)}
