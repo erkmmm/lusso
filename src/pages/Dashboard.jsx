@@ -793,24 +793,45 @@ export default function Dashboard() {
     const range = getDateRange(globalRange);
     const accepted = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
     const m = {};
-    accepted.forEach(q => activeLineItems(q).forEach(li => {
-      const name = categorizeProduct(li.productNameSnapshot || li.productType || '', li.description || '');
-      if (!m[name]) m[name] = { name, units: 0, revenue: 0, items: {} };
-      const qty = Number(li.quantity) || 1;
-      const rev = lineItemRevenue(li);
-      m[name].units   += qty;
-      m[name].revenue += rev;
-      // Drill-down level: the item code is the actual product ("RB 40 Block");
-      // uncoded lines fall back to their title.
-      const key = (li.description || '').trim() || (li.productNameSnapshot || '').trim() || 'Unspecified';
-      if (!m[name].items[key]) m[name].items[key] = { name: key, units: 0, revenue: 0 };
-      m[name].items[key].units   += qty;
-      m[name].items[key].revenue += rev;
-    }));
-    return Object.values(m)
+    accepted.forEach(q => {
+      // Inc-GST, mirroring quoteTotal() — so the category totals reconcile
+      // exactly with the Total Revenue KPI for the same period.
+      const gstMul = q.includesGST === false ? 1 : 1 + (Number(q.gstRate) || 10) / 100;
+      activeLineItems(q).forEach(li => {
+        const name = categorizeProduct(li.productNameSnapshot || li.productType || '', li.description || '');
+        if (!m[name]) m[name] = { name, units: 0, revenue: 0, items: {} };
+        const qty = Number(li.quantity) || 1;
+        const rev = lineItemRevenue(li) * gstMul;
+        m[name].units   += qty;
+        m[name].revenue += rev;
+        // Drill-down level: the item code is the actual product ("RB 40 Block");
+        // uncoded lines fall back to their title.
+        const key = (li.description || '').trim() || (li.productNameSnapshot || '').trim() || 'Unspecified';
+        if (!m[name].items[key]) m[name].items[key] = { name: key, units: 0, revenue: 0 };
+        m[name].items[key].units   += qty;
+        m[name].items[key].revenue += rev;
+      });
+    });
+    let cats = Object.values(m)
       .map(c => ({ ...c, items: Object.values(c.items).sort((a, b) => b.revenue - a.revenue) }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 8);
+      .sort((a, b) => b.revenue - a.revenue);
+    // Fold the tail into "Other" instead of dropping it, so the category
+    // totals cover 100% of the period's revenue.
+    if (cats.length > 8) {
+      let head = cats.slice(0, 7);
+      const rest = cats.slice(7);
+      const existingOther = head.find(c => c.name === 'Other');
+      if (existingOther) { rest.push(existingOther); head = head.filter(c => c.name !== 'Other'); }
+      const other = rest.reduce((acc, c) => ({
+        name: 'Other',
+        units: acc.units + c.units,
+        revenue: acc.revenue + c.revenue,
+        items: [...acc.items, ...c.items],
+      }), { name: 'Other', units: 0, revenue: 0, items: [] });
+      other.items.sort((a, b) => b.revenue - a.revenue);
+      cats = [...head, other].sort((a, b) => b.revenue - a.revenue);
+    }
+    return cats;
   }, [quotes, globalRange]);
 
   // ── Salesperson leaderboard (accepted/declined in range) ─────────────────────
