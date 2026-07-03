@@ -175,7 +175,7 @@ export default function ImportQuotes() {
                   ))}
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  Old "Awaiting Acceptance" quotes import as Expired so they don't inflate your live pipeline; Withdrawn imports as Declined.
+                  "Awaiting Acceptance" imports as Waiting; Withdrawn imports as Declined. The dashboard's pipeline only counts recent open quotes, so old Waiting quotes won't inflate it.
                 </p>
               </div>
             </div>

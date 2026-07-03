@@ -27,13 +27,14 @@ export function classifyQuotientCsv(headers) {
 }
 
 // ── Status mapping ─────────────────────────────────────────────────────────────
-// Historical "Awaiting Acceptance" becomes Expired so decade-old quotes don't
-// inflate the live pipeline. Withdrawn maps to Declined (noted on the quote).
+// "Awaiting Acceptance" maps to Waiting (truthful — the customer never
+// decided; the dashboard's pipeline metric applies its own recency window so
+// decade-old Waiting quotes don't inflate it). Withdrawn maps to Declined.
 const STATUS_MAP = {
   'accepted':            'Accepted',
   'declined':            'Declined',
   'expired':             'Expired',
-  'awaiting acceptance': 'Expired',
+  'awaiting acceptance': 'Waiting',
   'withdrawn':           'Declined',
   'draft':               'Draft',
   'sent':                'Sent',

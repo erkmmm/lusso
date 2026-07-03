@@ -637,7 +637,15 @@ export default function Dashboard() {
     const range = getDateRange(globalRange);
     const prev  = getPreviousPeriod(globalRange);
 
-    const pipelineQuotes = quotes.filter(q => PIPELINE_STATUSES.includes(q.status));
+    // Pipeline = open quotes sent (or created) in the last 12 months. Imported
+    // history keeps its honest Waiting/Sent statuses; the recency window is
+    // what keeps years-old undecided quotes from inflating this number.
+    const pipelineCutoff = subMonths(new Date(), 12);
+    const pipelineQuotes = quotes.filter(q => {
+      if (!PIPELINE_STATUSES.includes(q.status)) return false;
+      const d = q.sentAt || q.createdAt;
+      return d ? new Date(d) >= pipelineCutoff : true; // undated drafts stay in
+    });
     const pipelineValue  = pipelineQuotes.reduce((s, q) => s + quoteTotal(q), 0);
 
     const accepted     = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
@@ -819,7 +827,7 @@ export default function Dashboard() {
           raw={lM(analytics.pipelineValue)} format={fmtCompact}
           valueTitle={fmt$(lM(analytics.pipelineValue))}
           delta={<span className="text-xs font-semibold text-blue-600">{lI(analytics.pipelineCount)}</span>}
-          caption={`open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''}`}
+          caption={`open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''} (last 12 mo)`}
           spark={monthly.map(m => m.newQuotes)}
           sparkColor="#2E6E65"
           onClick={() => navigate('/quotes')}
