@@ -9,14 +9,16 @@
  *
  * Matching order (deliberate):
  *   1. Services (labour, removal, freight …)
- *   2. The CODE's product match — codes are clean, so "MOT VEN" lands in
+ *   2. Parts words in the CODE — a code that says charger/remote/clip IS a
+ *      part even when it name-drops a product, e.g.
+ *      "Acmeda USB Wall Charger (Curtains)".
+ *   3. The CODE's product match — codes are clean, so "MOT VEN" lands in
  *      Venetians and "MOT RB40 Block" in Roller Blinds: motorised items
  *      belong to their underlying product, not a generic Motorised bucket.
- *   3. Parts & accessories (clips, remotes, hubs, chargers …) — checked
- *      before title-product words so "The Clip" isn't a roller blind…
- *   4. The TITLE's product match — …while a roller blind whose description
- *      mentions "bottom clips" stays a roller blind via its code in step 2.
- *   5. Pure motor items with no underlying product → Motors & Controls.
+ *   4. Parts words in the TITLE — "The Clip" isn't a roller blind…
+ *   5. The TITLE's product match — …while an RB-coded blind whose
+ *      description mentions "bottom clips" stays a roller blind via step 3.
+ *   6. Pure motor items with no underlying product → Motors & Controls.
  */
 const SERVICE = [/\b(serv|labou?r|removal|install(ation)? only|repair|call ?out|freight|delivery)\b/];
 
@@ -43,10 +45,11 @@ export function categorizeProduct(name = '', code = '') {
   const allHay   = `${codeHay} ${titleHay}`;
 
   if (test(SERVICE, allHay)) return 'Service & Install';
+  if (test(PARTS, codeHay)) return 'Parts & Accessories';
   for (const [category, re] of PRODUCTS) {
     if (re.test(codeHay)) return category;
   }
-  if (test(PARTS, allHay)) return 'Parts & Accessories';
+  if (test(PARTS, titleHay)) return 'Parts & Accessories';
   for (const [category, re] of PRODUCTS) {
     if (re.test(titleHay)) return category;
   }
