@@ -2202,6 +2202,68 @@ export const createImportBatch = (fileName, totalRows) => {
   return saveImportBatch(batch);
 };
 
+// ─── Quotient quote-history import ─────────────────────────────────────────────
+// Executes a plan built by buildQuotientImportPlan (src/lib/quotientQuotes.js):
+// creates missing customers, writes historical quotes with computed totals,
+// and bulk-syncs both to Supabase in chunks. Safe to re-run — the plan builder
+// already skipped quote numbers that exist.
+export const runQuotientQuoteImport = async (plan, onProgress = () => {}) => {
+  const batch = saveImportBatch({
+    id: uuidv4(),
+    fileName: plan.fileName || 'Quotient quote history',
+    uploadedBy: 'Admin',
+    source: 'Quotient Quotes CSV Import',
+    status: 'Importing',
+    totalRows: plan.quotes.length,
+    importedCount: 0, updatedCount: 0, duplicateCount: plan.stats.skippedExisting,
+    errorCount: 0, skippedCount: 0,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  });
+
+  // Enrich quotes with persisted totals, mirroring saveQuote().
+  const enriched = plan.quotes.map(q => {
+    const { subtotal, gst, total } = computeQuoteTotals(
+      q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, q.selectedLineItemIds
+    );
+    const totalCost = q.lineItems.reduce((s, li) => s + (Number(li.unitCostPrice) || 0) * (Number(li.quantity) || 1), 0);
+    return { ...q, totalSell: subtotal, gstAmount: gst, grandTotal: total, totalCost };
+  });
+
+  // localStorage writes are all-or-nothing per key; quota failures abort
+  // cleanly before any cloud writes.
+  const customers = [...getCustomers(), ...plan.newCustomers.map(c => ({
+    ...c, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  }))];
+  const quotes = [...getQuotes(), ...enriched];
+  try {
+    set('lusso_customers', customers);
+    set('lusso_quotes', quotes);
+  } catch (e) {
+    saveImportBatch({ ...batch, status: 'Failed', errorCount: plan.quotes.length, completedAt: new Date().toISOString() });
+    throw new Error(`Device storage is full — import aborted before syncing (${e.message}). Try importing fewer files at once.`, { cause: e });
+  }
+
+  // Cloud sync (chunked). Customers first so quote FKs resolve.
+  onProgress('customers', 0, plan.newCustomers.length);
+  const cRes = await db.bulkSaveCustomers(
+    customers.filter(c => plan.newCustomers.some(n => n.id === c.id)),
+    (done, tot) => onProgress('customers', done, tot)
+  );
+  onProgress('quotes', 0, enriched.length);
+  const qRes = await db.bulkSaveQuotes(enriched, (done, tot) => onProgress('quotes', done, tot));
+
+  const errors = (cRes?.failed || 0) + (qRes?.failed || 0);
+  saveImportBatch({
+    ...batch,
+    status: 'Completed',
+    importedCount: enriched.length,
+    errorCount: errors,
+    completedAt: new Date().toISOString(),
+  });
+  return { imported: enriched.length, customersCreated: plan.newCustomers.length, skipped: plan.stats.skippedExisting, errors };
+};
+
 export const runContactImport = async (batchId, rows) => {
   const batch = getImportBatch(batchId);
   if (!batch) return null;

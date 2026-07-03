@@ -147,6 +147,7 @@ const EXCLUDE_COLUMNS = {
     'version', 'measure_sheet_id', 'site_address', 'terms_and_conditions',
     'internal_notes', 'follow_up_date', 'show_sizes_to_client',
     'viewed_at', 'declined_at', 'accepted_by', 'activity', 'deleted_by',
+    'source', 'import_note',
     // DB has: grand_total, gst_amount, public_token, comments, selected_line_item_ids,
     //         total_cost, total_sell, xero_invoice_id, xero_invoice_number,
     //         xero_invoice_status, xero_invoice_url, xero_invoice_created_at,
@@ -480,6 +481,31 @@ async function remove(table, id) {
   }
 }
 
+// Chunked bulk upsert for large imports (thousands of rows in ~dozens of
+// requests). Same column filtering as upsert(); returns the failed-row count.
+async function bulkUpsert(table, records, onProgress, chunkSize = 200) {
+  if (!supabase || !records?.length) return { failed: 0 };
+  const excludeSet = new Set(EXCLUDE_COLUMNS[table] || []);
+  const rows = records.map(r =>
+    Object.fromEntries(Object.entries(toDb(r)).filter(([k]) => !excludeSet.has(k)))
+  );
+  let failed = 0;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await supabase.from(table).upsert(chunk, { onConflict: 'id' });
+    if (error) {
+      console.error(`[db] bulkUpsert ${table} chunk ${i / chunkSize}:`, error.message);
+      // Fall back to per-row upsert so one bad row doesn't sink 200 good ones
+      // (per-row also self-heals unknown columns).
+      for (const rec of records.slice(i, i + chunkSize)) {
+        try { await upsert(table, rec); } catch { failed++; }
+      }
+    }
+    onProgress?.(Math.min(i + chunkSize, rows.length), rows.length);
+  }
+  return { failed };
+}
+
 // ── Per-entity write helpers ─────────────────────────────────────────
 // Call these alongside the existing localStorage writes so Supabase stays in sync.
 
@@ -528,6 +554,11 @@ export const db = {
   // Quotes
   saveQuote:          (r) => upsert('quotes', r),
   deleteQuote:        (id) => remove('quotes', id),
+
+  // Bulk imports (Quotient history) — chunked so thousands of records sync
+  // in a handful of requests instead of one request per row.
+  bulkSaveCustomers:  (rows, onProgress) => bulkUpsert('customers', rows, onProgress),
+  bulkSaveQuotes:     (rows, onProgress) => bulkUpsert('quotes', rows, onProgress),
 
   // Installers
   saveInstaller:      (r) => upsert('installers', r),

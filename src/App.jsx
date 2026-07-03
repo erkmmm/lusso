@@ -31,6 +31,7 @@ import InstallationCalendar from './pages/InstallationCalendar';
 import InstallResponse from './pages/InstallResponse';
 import Settings from './pages/Settings';
 import Quotes from './pages/Quotes';
+import ImportQuotes from './pages/ImportQuotes';
 import QuoteBuilder from './pages/QuoteBuilder';
 import QuoteView from './pages/QuoteView';
 import CustomerQuotePage from './pages/CustomerQuotePage';
@@ -253,6 +254,7 @@ function AppRoutes() {
               <Route path="/priced-items"               element={<PricedItems />} />
               <Route path="/priced-items/import-pdf"   element={<ImportSupplierPDF />} />
               <Route path="/quotes"                     element={<Quotes />} />
+              <Route path="/quotes/import"                     element={<ImportQuotes />} />
               <Route path="/quotes/new"                        element={<QuoteBuilder />} />
               <Route path="/quotes/new-from-job/:jobId"        element={<QuoteFromJob />} />
               <Route path="/quotes/:id"                        element={<QuoteView />} />
