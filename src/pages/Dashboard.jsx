@@ -24,6 +24,7 @@ import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
 import { DonutChart, AreaChart, Sparkline } from '../components/DashboardCharts';
 import { PIPELINE_RAMP } from '../lib/chartColors';
+import { categorizeProduct } from '../lib/productCategories';
 
 // Chart accent follows the active colour theme (Apex emerald by default).
 const ACCENT = 'var(--brand-500)';
@@ -432,7 +433,7 @@ function TopProducts({ products, lM, lI }) {
         <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
           <Package size={15} className="text-amber-500" /> Top Products
         </h2>
-        <p className="text-xs text-slate-400 mt-0.5">By accepted quote revenue in period</p>
+        <p className="text-xs text-slate-400 mt-0.5">Accepted revenue by product category</p>
       </div>
       {products.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-slate-400">No accepted quotes in this period.</p>
@@ -618,7 +619,14 @@ export default function Dashboard() {
   const navigate  = useNavigate();
   const { isAM = true, displayName = '', isSP } = useProfile() || {};
   const [salesFilter, setSalesFilter] = useState('all');
-  const [globalRange, setGlobalRange] = useState('thisfy');
+  // Range selection persists across refreshes and navigation.
+  const RANGE_KEY = 'lusso_dashboard_range';
+  const [globalRange, setGlobalRangeState] = useState(() => {
+    const stored = localStorage.getItem(RANGE_KEY);
+    const valid = stored && (DATE_RANGE_OPTIONS.some(o => o.value === stored) || /^yr\d{4}$/.test(stored));
+    return valid ? stored : 'thisfy';
+  });
+  const setGlobalRange = (v) => { setGlobalRangeState(v); localStorage.setItem(RANGE_KEY, v); };
   const [larpMode, setLarpMode]       = useState(loadLarp);
 
   const customers = getCustomersFiltered(isAM, displayName);
@@ -720,18 +728,21 @@ export default function Dashboard() {
     };
   }, [quotes, globalRange]);
 
-  // ── Top products + category split (accepted quotes in range) ────────────────
+  // ── Top categories + category split (accepted quotes in range) ──────────────
+  // Grouped by product CATEGORY (keyword rules over item code + title) —
+  // imported Quotient titles are unique room descriptions, so grouping by
+  // name would make every line its own "product".
   const products = useMemo(() => {
     const range = getDateRange(globalRange);
     const accepted = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
     const m = {};
     accepted.forEach(q => activeLineItems(q).forEach(li => {
-      const name = (li.productNameSnapshot || li.productType || li.description || '').trim() || 'Other';
+      const name = categorizeProduct(li.productNameSnapshot || li.productType || '', li.description || '');
       if (!m[name]) m[name] = { name, units: 0, revenue: 0 };
       m[name].units   += Number(li.quantity) || 1;
       m[name].revenue += lineItemRevenue(li);
     }));
-    return Object.values(m).sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+    return Object.values(m).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
   }, [quotes, globalRange]);
 
   // ── Salesperson leaderboard (accepted/declined in range) ─────────────────────
