@@ -13,7 +13,7 @@
 const RULES = [
   ['Service & Install',    /\b(serv|labou?r|removal|install(ation)? only|repair|call ?out|freight|delivery)\b/],
   ['Accessories & Remotes',/\b(rem(ote)?s?|hub|wand|charger|battery pack|acmeda ch|somfy|automate|bridge|link)\b|^rem\b/],
-  ['Motorised Blinds',     /^mot\b|\bmotoris|motor\b|\bmt\b/],
+  ['Motorised',            /^mot\b|\bmotoris|motor\b|\bmt\b/],
   ['Curtains & Sheers',    /^curt\b|curtain|sheer|ripple|wave ?fold|s-?fold|knife pleat|pencil pleat|drape|reverse pleat/],
   ['Roman Blinds',         /roman/],
   ['Roller Blinds',        /^rb\b|^rb\d|roller|dual blind|block ?out blind|screen blind|sunscreen/],

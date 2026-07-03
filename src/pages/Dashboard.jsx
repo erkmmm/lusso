@@ -1,6 +1,6 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useMountAnimation } from '../hooks/useMountAnimation';
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   formatDistanceToNow, parseISO, isWithinInterval,
@@ -425,8 +425,17 @@ function TargetsCard({ revenue, quotesWon, newCustomers, lM, lI }) {
 }
 
 // ─── Top Products (Apex "Top Selling Products") ────────────────────────────────
+// Category rows expand to the individual products inside them (item codes),
+// each with units, average unit price and revenue.
+const SUB_LIMIT = 10;
 function TopProducts({ products, lM, lI }) {
   const maxRev = Math.max(1, ...products.map(p => p.revenue));
+  const [expanded, setExpanded] = useState(new Set());
+  const toggle = (name) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
   return (
     <Card className="min-w-0 overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100">
@@ -442,23 +451,45 @@ function TopProducts({ products, lM, lI }) {
         {/* Phone: stacked rows — no sideways scrolling */}
         <div className="sm:hidden divide-y divide-slate-50">
           {products.map((p, i) => (
-            <div key={p.name} className="px-4 py-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-sm font-medium text-slate-800 truncate">
-                  <span className="text-slate-400 tabular-nums mr-1.5">{i + 1}.</span>{p.name}
-                </p>
-                <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0">{fmtCompact(lM(p.revenue))}</span>
-              </div>
-              <div className="mt-1.5 flex items-center gap-2">
-                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden flex-1">
-                  <div className="h-full rounded-full bg-amber-400" style={{ width: `${(p.revenue / maxRev) * 100}%` }} />
+            <div key={p.name}>
+              <button onClick={() => toggle(p.name)} className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5 min-w-0">
+                    <ChevronDown size={13} className={`text-slate-400 flex-shrink-0 transition-transform ${expanded.has(p.name) ? '' : '-rotate-90'}`} />
+                    <span className="text-slate-400 tabular-nums">{i + 1}.</span>
+                    <span className="truncate">{p.name}</span>
+                  </p>
+                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0">{fmtCompact(lM(p.revenue))}</span>
                 </div>
-                <span className="text-xs text-slate-400 tabular-nums flex-shrink-0">{lI(p.units)} unit{lI(p.units) !== 1 ? 's' : ''}</span>
-              </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden flex-1">
+                    <div className="h-full rounded-full bg-amber-400" style={{ width: `${(p.revenue / maxRev) * 100}%` }} />
+                  </div>
+                  <span className="text-xs text-slate-400 tabular-nums flex-shrink-0">{lI(p.units)} unit{lI(p.units) !== 1 ? 's' : ''}</span>
+                </div>
+              </button>
+              {expanded.has(p.name) && (
+                <div className="bg-slate-50/60 divide-y divide-slate-100">
+                  {p.items.slice(0, SUB_LIMIT).map(it => (
+                    <div key={it.name} className="px-4 py-2 pl-9">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="text-xs text-slate-600 truncate">{it.name}</p>
+                        <span className="text-xs font-medium text-slate-800 tabular-nums flex-shrink-0">{fmtCompact(lM(it.revenue))}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 tabular-nums">
+                        {lI(it.units)} unit{lI(it.units) !== 1 ? 's' : ''} · avg {fmtCompact(lM(it.revenue / Math.max(1, it.units)))}
+                      </p>
+                    </div>
+                  ))}
+                  {p.items.length > SUB_LIMIT && (
+                    <p className="px-4 py-2 pl-9 text-[11px] text-slate-400">…and {p.items.length - SUB_LIMIT} more</p>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
-        {/* Tablet/desktop: full table */}
+        {/* Tablet/desktop: full table with expandable rows */}
         <div className="hidden sm:block overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
@@ -472,17 +503,43 @@ function TopProducts({ products, lM, lI }) {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {products.map((p, i) => (
-                <tr key={p.name} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-5 py-3 text-slate-400 tabular-nums">{i + 1}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{p.name}</td>
-                  <td className="px-5 py-3 text-right text-slate-600 tabular-nums">{lI(p.units)}</td>
-                  <td className="px-5 py-3 text-right font-medium text-slate-800 tabular-nums">{fmtCompact(lM(p.revenue))}</td>
-                  <td className="px-5 py-3">
-                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden w-full min-w-16">
-                      <div className="h-full rounded-full bg-amber-400" style={{ width: `${(p.revenue / maxRev) * 100}%` }} />
-                    </div>
-                  </td>
-                </tr>
+                <Fragment key={p.name}>
+                  <tr onClick={() => toggle(p.name)} className="hover:bg-slate-50 transition-colors cursor-pointer">
+                    <td className="px-5 py-3 text-slate-400 tabular-nums">{i + 1}</td>
+                    <td className="px-5 py-3 font-medium text-slate-800">
+                      <span className="flex items-center gap-1.5">
+                        <ChevronDown size={13} className={`text-slate-400 transition-transform ${expanded.has(p.name) ? '' : '-rotate-90'}`} />
+                        {p.name}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right text-slate-600 tabular-nums">{lI(p.units)}</td>
+                    <td className="px-5 py-3 text-right font-medium text-slate-800 tabular-nums">{fmtCompact(lM(p.revenue))}</td>
+                    <td className="px-5 py-3">
+                      <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden w-full min-w-16">
+                        <div className="h-full rounded-full bg-amber-400" style={{ width: `${(p.revenue / maxRev) * 100}%` }} />
+                      </div>
+                    </td>
+                  </tr>
+                  {expanded.has(p.name) && (
+                    <tr>
+                      <td colSpan={5} className="p-0 bg-slate-50/60">
+                        <div className="divide-y divide-slate-100">
+                          {p.items.slice(0, SUB_LIMIT).map(it => (
+                            <div key={it.name} className="flex items-center gap-3 pl-16 pr-5 py-2">
+                              <span className="text-xs text-slate-600 truncate flex-1">{it.name}</span>
+                              <span className="text-xs text-slate-400 tabular-nums flex-shrink-0 w-16 text-right">{lI(it.units)} unit{lI(it.units) !== 1 ? 's' : ''}</span>
+                              <span className="text-xs text-slate-400 tabular-nums flex-shrink-0 w-20 text-right">avg {fmtCompact(lM(it.revenue / Math.max(1, it.units)))}</span>
+                              <span className="text-xs font-medium text-slate-800 tabular-nums flex-shrink-0 w-20 text-right">{fmtCompact(lM(it.revenue))}</span>
+                            </div>
+                          ))}
+                          {p.items.length > SUB_LIMIT && (
+                            <p className="pl-16 pr-5 py-2 text-[11px] text-slate-400">…and {p.items.length - SUB_LIMIT} more</p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -738,11 +795,22 @@ export default function Dashboard() {
     const m = {};
     accepted.forEach(q => activeLineItems(q).forEach(li => {
       const name = categorizeProduct(li.productNameSnapshot || li.productType || '', li.description || '');
-      if (!m[name]) m[name] = { name, units: 0, revenue: 0 };
-      m[name].units   += Number(li.quantity) || 1;
-      m[name].revenue += lineItemRevenue(li);
+      if (!m[name]) m[name] = { name, units: 0, revenue: 0, items: {} };
+      const qty = Number(li.quantity) || 1;
+      const rev = lineItemRevenue(li);
+      m[name].units   += qty;
+      m[name].revenue += rev;
+      // Drill-down level: the item code is the actual product ("RB 40 Block");
+      // uncoded lines fall back to their title.
+      const key = (li.description || '').trim() || (li.productNameSnapshot || '').trim() || 'Unspecified';
+      if (!m[name].items[key]) m[name].items[key] = { name: key, units: 0, revenue: 0 };
+      m[name].items[key].units   += qty;
+      m[name].items[key].revenue += rev;
     }));
-    return Object.values(m).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+    return Object.values(m)
+      .map(c => ({ ...c, items: Object.values(c.items).sort((a, b) => b.revenue - a.revenue) }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
   }, [quotes, globalRange]);
 
   // ── Salesperson leaderboard (accepted/declined in range) ─────────────────────
