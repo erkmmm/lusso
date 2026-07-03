@@ -860,6 +860,7 @@ function ImportsSection({ navigate }) {
 
   const lastContact    = contactBatches[0];
   const lastPriced     = pricedItemBatches[0];
+  const lastQuotes     = contactBatches.find(b => b.source === 'Quotient Quotes CSV Import');
 
   const tiles = [
     {
@@ -872,6 +873,17 @@ function ImportsSection({ navigate }) {
         ? `Last run: ${new Date(lastContact.completedAt || lastContact.createdAt).toLocaleDateString('en-AU')} · ${lastContact.importedCount} imported`
         : 'No imports yet',
       action: () => navigate('/import'),
+    },
+    {
+      icon:  FileText,
+      color: 'text-green-600',
+      bg:    'bg-green-50',
+      label: 'Import Quotes (Quotient)',
+      desc:  'Upload Quotient "Summary of Quotes" + "Price Items" CSVs to bring in your full quote history.',
+      meta:  lastQuotes
+        ? `Last run: ${new Date(lastQuotes.completedAt || lastQuotes.createdAt).toLocaleDateString('en-AU')} · ${lastQuotes.importedCount} imported`
+        : 'No imports yet',
+      action: () => navigate('/quotes/import'),
     },
     {
       icon:  Library,
