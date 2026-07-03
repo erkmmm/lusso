@@ -10,6 +10,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { lsGet, lsSet } from './storage';
 
 // ── Field name converters ────────────────────────────────────────────
 // Two-pass conversion handles acronyms (GST, API, etc.) correctly:
@@ -42,10 +43,10 @@ export function fromDb(obj) {
 
 const fromDbAll = (rows) => (rows || []).map(fromDb);
 
-// ── localStorage helpers (mirrors data.js internals) ─────────────────
+// ── localStorage helpers (shared codec — large values LZ-compressed) ──
 const LS = {
-  get: (key) => { try { return JSON.parse(localStorage.getItem(key)) ?? []; } catch { return []; } },
-  set: (key, val) => localStorage.setItem(key, JSON.stringify(val)),
+  get: (key) => lsGet(key) ?? [],
+  set: (key, val) => lsSet(key, val),
 };
 
 const KEYS = {

@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { lsGet, lsSet } from './storage';
 import { db, batchUpsertCustomers, batchUpsertPricedItems, hydrateFromSupabase } from './db';
 import { supabase } from '../lib/supabase';
 import { removeTakeoffPlan } from '../lib/takeoffStorage';
@@ -406,18 +407,13 @@ const SEED_PRODUCT_TYPES = [
 ];
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
+// Large values are LZ-compressed via the shared codec so the full dataset
+// (incl. imported quote history) fits within the localStorage quota.
 
-const get = (key) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-};
+const get = (key) => lsGet(key);
 
 const set = (key, value) => {
-  localStorage.setItem(key, JSON.stringify(value));
+  lsSet(key, value);
   window.dispatchEvent(new CustomEvent('lusso:data-changed', { detail: { key } }));
 };
 
@@ -2230,16 +2226,19 @@ export const runQuotientQuoteImport = async (plan, onProgress = () => {}) => {
     return { ...q, totalSell: subtotal, gstAmount: gst, grandTotal: total, totalCost };
   });
 
-  // localStorage writes are all-or-nothing per key; quota failures abort
-  // cleanly before any cloud writes.
-  const customers = [...getCustomers(), ...plan.newCustomers.map(c => ({
+  // Local writes are atomic: on quota failure both keys roll back to their
+  // prior values and nothing syncs to the cloud.
+  const prevCustomers = getCustomers();
+  const prevQuotes    = getQuotes();
+  const customers = [...prevCustomers, ...plan.newCustomers.map(c => ({
     ...c, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   }))];
-  const quotes = [...getQuotes(), ...enriched];
+  const quotes = [...prevQuotes, ...enriched];
   try {
     set('lusso_customers', customers);
     set('lusso_quotes', quotes);
   } catch (e) {
+    try { set('lusso_customers', prevCustomers); set('lusso_quotes', prevQuotes); } catch { /* best effort */ }
     saveImportBatch({ ...batch, status: 'Failed', errorCount: plan.quotes.length, completedAt: new Date().toISOString() });
     throw new Error(`Device storage is full — import aborted before syncing (${e.message}). Try importing fewer files at once.`, { cause: e });
   }
