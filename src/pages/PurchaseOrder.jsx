@@ -280,42 +280,44 @@ export default function PurchaseOrder() {
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
 
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(20);
-    doc.text('LUSSO', 40, 42);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
-    doc.text('Curtain Purchase Order', 40, 58);
+    // Larger type throughout — the workroom teams read this on paper, so the
+    // table is the biggest font that still fits all columns on landscape A4.
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20);
+    doc.text('LUSSO', 24, 42);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(90);
+    doc.text('Curtain Purchase Order', 24, 60);
 
-    doc.setFontSize(9); doc.setTextColor(60);
+    doc.setFontSize(11); doc.setTextColor(60);
     [
       [jobNumber && `Job #: ${jobNumber}`, customerName && `Customer: ${customerName}`].filter(Boolean).join('    '),
       [`Date ordered: ${dateOrdered}`, dateRequiredDisplay && `Required: ${dateRequiredDisplay}`].filter(Boolean).join('    '),
-    ].filter(Boolean).forEach((line, i) => doc.text(line, pageW - 40, 40 + i * 13, { align: 'right' }));
+    ].filter(Boolean).forEach((line, i) => doc.text(line, pageW - 24, 42 + i * 15, { align: 'right' }));
 
     autoTable(doc, {
       head: [headers],
       body: rows.map(r => r.map(c => (c === '' || c == null ? '' : String(c)))),
       startY: 78,
-      margin: { left: 40, right: 40 },
-      styles: { fontSize: 6.5, cellPadding: 3, overflow: 'linebreak' },
-      headStyles: { fillColor: [241, 241, 241], textColor: [40, 40, 40], fontStyle: 'bold' },
+      margin: { left: 24, right: 24 },
+      styles: { fontSize: 10, cellPadding: 4, overflow: 'linebreak', valign: 'middle' },
+      headStyles: { fillColor: [241, 241, 241], textColor: [40, 40, 40], fontStyle: 'bold', fontSize: 9 },
     });
 
-    let y = (doc.lastAutoTable?.finalY || 78) + 22;
-    doc.setFontSize(9); doc.setTextColor(40);
+    let y = (doc.lastAutoTable?.finalY || 78) + 24;
+    doc.setFontSize(11); doc.setTextColor(40);
     if (hasAccessories) {
-      doc.setFont('helvetica', 'bold'); doc.text('Order accessories', 40, y); y += 14;
+      doc.setFont('helvetica', 'bold'); doc.text('Order accessories', 24, y); y += 16;
       doc.setFont('helvetica', 'normal');
-      liveWands.forEach(w => { doc.text(`Wand: ${wandLabel(w)}`, 40, y); y += 12; });
-      liveRemotes.forEach(r => { doc.text(`Remote: ${remoteLabel(r)}`, 40, y); y += 12; });
+      liveWands.forEach(w => { doc.text(`Wand: ${wandLabel(w)}`, 24, y); y += 15; });
+      liveRemotes.forEach(r => { doc.text(`Remote: ${remoteLabel(r)}`, 24, y); y += 15; });
       y += 8;
     }
     if (extraNotes.trim()) {
-      doc.setFont('helvetica', 'bold'); doc.text('Extra notes', 40, y); y += 14;
+      doc.setFont('helvetica', 'bold'); doc.text('Extra notes', 24, y); y += 16;
       doc.setFont('helvetica', 'normal');
-      doc.text(doc.splitTextToSize(extraNotes, pageW - 80), 40, y);
+      doc.text(doc.splitTextToSize(extraNotes, pageW - 48), 24, y);
     }
-    doc.setFontSize(8); doc.setTextColor(140);
-    doc.text('Should you have any questions please call 0755284006 or email info@lusso.com.au — Address 3 Crinum Cres Southport', 40, pageH - 24);
+    doc.setFontSize(9.5); doc.setTextColor(140);
+    doc.text('Should you have any questions please call 0755284006 or email info@lusso.com.au — Address 3 Crinum Cres Southport', 24, pageH - 24);
 
     return doc;
   };
