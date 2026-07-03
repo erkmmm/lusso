@@ -77,6 +77,7 @@ export default function Quotes() {
   const navigate = useNavigate();
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [sortBy, setSortBy]             = useState('newest');
   const [openMenuId, setOpenMenuId]     = useState(null);
   const [selectMode, setSelectMode]     = useState(false);
   const [selected, setSelected]         = useState(new Set());
@@ -90,13 +91,42 @@ export default function Quotes() {
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
+    // Precompute lookups once — with thousands of imported quotes, per-row
+    // customers.find() or totals inside the comparator would be O(n²).
+    const custName = new Map(customers.map(c => [c.id, c.name || '']));
+    const totalOf = new Map(quotes.map(q => [
+      q.id,
+      q.grandTotal ?? computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, q.selectedLineItemIds || []).total,
+    ]));
+    const nameOf = (q) => custName.get(q.customerId) || '';
+    const newest = (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt);
+    const SORTS = {
+      newest,
+      oldest:      (a, b) => new Date(a.updatedAt) - new Date(b.updatedAt),
+      valueDesc:   (a, b) => totalOf.get(b.id) - totalOf.get(a.id),
+      valueAsc:    (a, b) => totalOf.get(a.id) - totalOf.get(b.id),
+      salesperson: (a, b) => (a.salesperson || 'zzz').localeCompare(b.salesperson || 'zzz') || newest(a, b),
+      customer:    (a, b) => nameOf(a).localeCompare(nameOf(b)) || newest(a, b),
+    };
     return quotes.filter(q => {
-      const cust = customers.find(c => c.id === q.customerId);
-      const matchSearch = !term || [q.quoteNumber, q.title, cust?.name, q.siteAddress, q.salesperson].join(' ').toLowerCase().includes(term);
+      const matchSearch = !term || [q.quoteNumber, q.title, nameOf(q), q.siteAddress, q.salesperson].join(' ').toLowerCase().includes(term);
       const matchStatus = statusFilter === 'All' || q.status === statusFilter;
       return matchSearch && matchStatus;
-    }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  }, [quotes, customers, search, statusFilter]);
+    }).sort(SORTS[sortBy] || newest);
+  }, [quotes, customers, search, statusFilter, sortBy]);
+
+  // Render in pages of 100 — thousands of imported quotes would otherwise
+  // mount thousands of rows at once. Reset to the first page whenever the
+  // filters change (render-time state adjustment, per React docs).
+  const PAGE = 100;
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  const filterKey = `${search}|${statusFilter}|${sortBy}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
+    setVisibleCount(PAGE);
+  }
+  const visible = filtered.slice(0, visibleCount);
 
   const stats = useMemo(() => {
     const allTotal      = quotes.reduce((s, q) => s + computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST).total, 0);
@@ -204,20 +234,35 @@ export default function Quotes() {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by customer, quote number, address, salesperson…"
-          className="w-full pl-9 pr-10 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-        />
-        {search && (
-          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-            <X size={14} />
-          </button>
-        )}
+      {/* Search + sort */}
+      <div className="flex gap-2">
+        <div className="relative flex-1 min-w-0">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by customer, quote number, address, salesperson…"
+            className="w-full pl-9 pr-10 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <select
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value)}
+          title="Sort quotes"
+          className="flex-shrink-0 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 px-3 py-2.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400"
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="valueDesc">Value: high to low</option>
+          <option value="valueAsc">Value: low to high</option>
+          <option value="salesperson">Salesperson A–Z</option>
+          <option value="customer">Customer A–Z</option>
+        </select>
       </div>
 
       {/* Status tabs */}
@@ -288,7 +333,7 @@ export default function Quotes() {
             </div>
           )}
 
-          {filtered.map(quote => {
+          {visible.map(quote => {
             const cust      = customers.find(c => c.id === quote.customerId);
             const { total } = computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST);
             const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
@@ -446,6 +491,15 @@ export default function Quotes() {
               </div>
             );
           })}
+
+          {filtered.length > visibleCount && (
+            <button
+              onClick={() => setVisibleCount(c => c + PAGE)}
+              className="w-full py-3 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              Show more ({filtered.length - visibleCount} remaining)
+            </button>
+          )}
         </div>
       )}
 
