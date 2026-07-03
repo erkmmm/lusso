@@ -437,7 +437,28 @@ function TopProducts({ products, lM, lI }) {
       {products.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-slate-400">No accepted quotes in this period.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* Phone: stacked rows — no sideways scrolling */}
+        <div className="sm:hidden divide-y divide-slate-50">
+          {products.map((p, i) => (
+            <div key={p.name} className="px-4 py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-sm font-medium text-slate-800 truncate">
+                  <span className="text-slate-400 tabular-nums mr-1.5">{i + 1}.</span>{p.name}
+                </p>
+                <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0">{fmtCompact(lM(p.revenue))}</span>
+              </div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden flex-1">
+                  <div className="h-full rounded-full bg-amber-400" style={{ width: `${(p.revenue / maxRev) * 100}%` }} />
+                </div>
+                <span className="text-xs text-slate-400 tabular-nums flex-shrink-0">{lI(p.units)} unit{lI(p.units) !== 1 ? 's' : ''}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Tablet/desktop: full table */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
@@ -465,6 +486,7 @@ function TopProducts({ products, lM, lI }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </Card>
   );
@@ -488,7 +510,35 @@ function RecentQuotes({ quotes, customers, navigate, lM }) {
       {recent.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-slate-400">No quotes yet.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* Phone: stacked rows — no sideways scrolling */}
+        <div className="sm:hidden divide-y divide-slate-50">
+          {recent.map(q => {
+            const cust = customers.find(c => c.id === q.customerId);
+            return (
+              <button
+                key={q.id}
+                onClick={() => navigate(`/quotes/${q.id}`)}
+                className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-slate-800 truncate">{cust?.name || 'Customer'}</p>
+                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0">{fmtCompact(lM(quoteTotal(q)))}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <span className="text-xs text-slate-400 truncate">
+                    {q.quoteNumber || '—'}{(q.updatedAt || q.createdAt) ? ` · ${format(parseISO(q.updatedAt || q.createdAt), 'd MMM')}` : ''}
+                  </span>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${QUOTE_STATUS_STYLE[q.status] || 'bg-slate-100 text-slate-600'}`}>
+                    {q.status}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {/* Tablet/desktop: full table */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
@@ -525,6 +575,7 @@ function RecentQuotes({ quotes, customers, navigate, lM }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </Card>
   );
@@ -950,7 +1001,35 @@ export default function Dashboard() {
               View all <ArrowRight size={12} />
             </button>
           </div>
-          <div className="overflow-x-auto">
+          {/* Phone: stacked rows — no sideways scrolling */}
+          <div className="sm:hidden divide-y divide-slate-50">
+            {recentJobs.map(job => {
+              const cust = customers.find(c => c.id === job.customerId);
+              return (
+                <button
+                  key={job.id}
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                  className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors flex items-center gap-3"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-amber-700 font-bold text-xs">{cust?.name?.charAt(0) || 'J'}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{cust?.name || 'Customer'}</p>
+                    <p className="text-xs text-slate-400 truncate">
+                      {job.jobNumber}{job.jobType ? ` · ${job.jobType}` : ''}
+                    </p>
+                  </div>
+                  <StatusBadge status={job.status} size="sm" />
+                </button>
+              );
+            })}
+            {recentJobs.length === 0 && (
+              <p className="px-4 py-8 text-center text-sm text-slate-400">No jobs yet.</p>
+            )}
+          </div>
+          {/* Tablet/desktop: full table */}
+          <div className="hidden sm:block overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">

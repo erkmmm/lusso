@@ -7,6 +7,24 @@
     <title>Lusso</title>
     <meta name="description" content="Lusso Job Management" />
 
+    <!-- Apply dark mode before first paint (mirrors ThemeContext resolve())
+         so the loading screen renders the right colour from the first frame -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('lusso_theme') || 'light';
+          var h = new Date().getHours();
+          var dark =
+            t === 'dark' ||
+            (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ||
+            (t === 'schedule' && (h >= 19 || h < 7));
+          if (dark) document.documentElement.classList.add('dark');
+          var c = localStorage.getItem('lusso_color_theme');
+          if (c && c !== 'taupe') document.documentElement.classList.add('theme-' + c);
+        } catch (e) { /* first visit / private mode — default light */ }
+      })();
+    </script>
+
     <!-- PWA manifest -->
     <link rel="manifest" href="/manifest.json" />
 

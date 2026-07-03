@@ -732,3 +732,8 @@ button:not(:disabled):active {
   .fixed.inset-0.z-50 > * { animation: none; }
   button:not(:disabled):active { transform: none; }
 }
+
+/* ── Loading screen: pure white in light mode, pure black in dark mode ─────── */
+/* Placed after the .dark overrides so nothing remaps it. */
+.loading-screen { background-color: #ffffff; }
+.dark .loading-screen { background-color: #000000; }

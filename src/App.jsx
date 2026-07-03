@@ -170,12 +170,12 @@ function AppRoutes() {
   // Still loading auth session OR syncing from cloud
   if (user === undefined || hydrating) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[#0F3535]">
+      <div className="loading-screen min-h-screen flex flex-col items-center justify-center gap-3">
         <div className="w-10 h-10 rounded-2xl bg-amber-500 flex items-center justify-center animate-pulse">
           <span className="text-white font-bold text-lg">L</span>
         </div>
         {hydrating && (
-          <p className="text-teal-300 text-sm font-medium animate-pulse">Syncing from cloud…</p>
+          <p className="text-slate-500 dark:text-slate-300 text-sm font-medium animate-pulse">Syncing from cloud…</p>
         )}
       </div>
     );
