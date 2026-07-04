@@ -743,19 +743,19 @@ export default function Dashboard() {
       const range = { start: m.start, end: m.end };
       const acc = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
       const created = quotes.filter(q => inRange(q.createdAt, range));
-      // Same cohort-based win rate as the KPI: quotes sent this month that
-      // reached an outcome (Expired = loss; open quotes excluded).
-      const cohort = quotes.filter(q => {
-        const d = q.sentAt || q.createdAt;
-        return d && inRange(d, range) && ['Accepted', 'Completed', 'Declined', 'Expired'].includes(q.status);
-      });
-      const won = cohort.filter(q => q.status === 'Accepted' || q.status === 'Completed').length;
+      // Same resolution-based win rate as the KPI: outcomes that happened
+      // this month (Expired = loss; open quotes excluded).
+      const wins = quotes.filter(q =>
+        (q.status === 'Accepted' || q.status === 'Completed') && inRange(q.acceptedAt || q.updatedAt, range)).length;
+      const losses = quotes.filter(q =>
+        (q.status === 'Declined' && inRange(q.declinedAt || q.updatedAt, range)) ||
+        (q.status === 'Expired'  && inRange(q.updatedAt, range))).length;
       return {
         label: m.label,
         acceptedValue: acc.reduce((s, q) => s + quoteTotal(q), 0),
         acceptedCount: acc.length,
         newQuotes: created.length,
-        winRate: cohort.length > 0 ? (won / cohort.length) * 100 : 0,
+        winRate: wins + losses > 0 ? (wins / (wins + losses)) * 100 : 0,
       };
     });
   }, [quotes]);
@@ -782,21 +782,25 @@ export default function Dashboard() {
     const acceptedValuePrev = acceptedPrev.reduce((s, q) => s + quoteTotal(q), 0);
     const acceptedAvg       = accepted.length > 0 ? acceptedValue / accepted.length : 0;
 
-    // Win rate — cohort-based: of quotes SENT in the period that reached an
-    // outcome, how many were won? Expired counts as a loss (customers rarely
-    // formally decline — quotes mostly lapse); still-open quotes are excluded.
-    const RESOLVED = ['Accepted', 'Completed', 'Declined', 'Expired'];
-    const isWon    = (q) => q.status === 'Accepted' || q.status === 'Completed';
-    const resolvedSentIn = (r) => quotes.filter(q => {
-      const d = q.sentAt || q.createdAt;
-      return d && inRange(d, r) && RESOLVED.includes(q.status);
-    });
-    const cohort     = resolvedSentIn(range);
-    const cohortPrev = resolvedSentIn(prev);
-    const decisions     = cohort.length;
-    const decisionsPrev = cohortPrev.length;
-    const winRate     = decisions > 0     ? (cohort.filter(isWon).length / decisions) * 100         : null;
-    const winRatePrev = decisionsPrev > 0 ? (cohortPrev.filter(isWon).length / decisionsPrev) * 100 : null;
+    // Win rate — resolution-based: outcomes that HAPPENED in the period,
+    // whenever the quote was sent. Wins = accepted in period; losses =
+    // declined or expired in period (customers rarely formally decline —
+    // quotes mostly lapse, so Expired counts as a loss). Cohort-by-sent-date
+    // reads 100% on short recent windows because losses lag wins.
+    const resolutionsIn = (r) => {
+      const wins = quotes.filter(q =>
+        (q.status === 'Accepted' || q.status === 'Completed') && inRange(q.acceptedAt || q.updatedAt, r));
+      const losses = quotes.filter(q =>
+        (q.status === 'Declined' && inRange(q.declinedAt || q.updatedAt, r)) ||
+        (q.status === 'Expired'  && inRange(q.updatedAt, r)));
+      return { wins: wins.length, losses: losses.length };
+    };
+    const res     = resolutionsIn(range);
+    const resPrev = resolutionsIn(prev);
+    const decisions     = res.wins + res.losses;
+    const decisionsPrev = resPrev.wins + resPrev.losses;
+    const winRate     = decisions > 0     ? (res.wins / decisions) * 100         : null;
+    const winRatePrev = decisionsPrev > 0 ? (resPrev.wins / decisionsPrev) * 100 : null;
 
     return {
       pipelineValue, pipelineCount: pipelineQuotes.length,
