@@ -9,16 +9,18 @@
  *
  * Matching order (deliberate):
  *   1. Services (labour, removal, freight …)
- *   2. Parts words in the CODE — a code that says charger/remote/clip IS a
+ *   2. Anchored product PREFIX on the code (after stripping a leading
+ *      MOT/MT) — a code that STARTS with RB/CURT/ROMAN/VEN/… IS that
+ *      product, even if it also mentions a part word: "RB 40 Block Battery"
+ *      is a roller blind, "MOT VEN" is a venetian.
+ *   3. Parts words in the CODE — a code that says charger/remote/clip IS a
  *      part even when it name-drops a product, e.g.
  *      "Acmeda USB Wall Charger (Curtains)".
- *   3. The CODE's product match — codes are clean, so "MOT VEN" lands in
- *      Venetians and "MOT RB40 Block" in Roller Blinds: motorised items
- *      belong to their underlying product, not a generic Motorised bucket.
- *   4. Parts words in the TITLE — "The Clip" isn't a roller blind…
- *   5. The TITLE's product match — …while an RB-coded blind whose
- *      description mentions "bottom clips" stays a roller blind via step 3.
- *   6. Pure motor items with no underlying product → Motors & Controls.
+ *   4. The CODE's product match (anywhere in the code).
+ *   5. Parts words in the TITLE — "The Clip" isn't a roller blind…
+ *   6. The TITLE's product match — …while an RB-coded blind whose
+ *      description mentions "bottom clips" stays a roller blind via step 2.
+ *   7. Pure motor items with no underlying product → Motors & Controls.
  */
 const SERVICE = [/\b(serv|labou?r|removal|install(ation)? only|repair|call ?out|freight|delivery)\b/];
 
@@ -37,14 +39,30 @@ const PRODUCTS = [
 const PARTS  = [/\bclips?\b|tensioner|chain tension|\brem(ote)?s?\b|hub\b|charger|wand|acmeda ch\b|battery|dock|spline|\bparts?\b/];
 const MOTORS = [/\bmot\b|\bmt\b|motoris|motor\b|somfy|automate|glydea/];
 
+// Anchored code prefixes — the strongest signal there is.
+const CODE_PREFIXES = [
+  ['Curtains & Sheers',  /^curt\b/],
+  ['Roman Blinds',       /^roman\b/],
+  ['Venetians',          /^ven\b/],
+  ['Verticals',          /^vert\b/],
+  ['Shutters',           /^shut\b/],
+  ['External & Awnings', /^ext\b/],
+  ['Roller Blinds',      /^rb\s*\d*\b/],
+];
+
 const test = (rules, hay) => rules.some(re => re.test(hay));
 
 export function categorizeProduct(name = '', code = '') {
-  const codeHay  = code.toLowerCase();
+  const codeHay  = code.toLowerCase().trim();
   const titleHay = name.toLowerCase();
   const allHay   = `${codeHay} ${titleHay}`;
 
   if (test(SERVICE, allHay)) return 'Service & Install';
+  // "MOT RB40…" / "MT VEN…" are the motorised version of the product.
+  const codeCore = codeHay.replace(/^(mot|mt)\s+/, '');
+  for (const [category, re] of CODE_PREFIXES) {
+    if (re.test(codeCore)) return category;
+  }
   if (test(PARTS, codeHay)) return 'Parts & Accessories';
   for (const [category, re] of PRODUCTS) {
     if (re.test(codeHay)) return category;

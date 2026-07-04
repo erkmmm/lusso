@@ -270,7 +270,9 @@ function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, ca
         <span className="text-slate-400 truncate">{caption}</span>
       </div>
       {spark && spark.length > 1 && (
-        <div className="mt-3 -mb-1"><Sparkline values={spark} color={sparkColor} height={34} /></div>
+        /* mt-auto bottom-aligns the sparkline in every card, so a card whose
+           caption wraps to one line doesn't show a hole under the numbers */
+        <div className="mt-auto pt-3 -mb-1"><Sparkline values={spark} color={sparkColor} height={34} /></div>
       )}
     </button>
   );
@@ -689,7 +691,12 @@ export default function Dashboard() {
   const customers = getCustomersFiltered(isAM, displayName);
   const activity  = getActivity();
 
-  const salespeople = [...new Set(getJobsFiltered(isAM, displayName).map(j => j.assignedStaff).filter(Boolean))].sort();
+  // Every salesperson seen anywhere — job assignments AND quote salespeople
+  // (the imported history carries names that never appear on a job).
+  const salespeople = [...new Set([
+    ...getJobsFiltered(isAM, displayName).map(j => j.assignedStaff),
+    ...getQuotesFiltered(isAM, displayName).map(q => (q.salesperson || '').trim()),
+  ].filter(Boolean))].sort();
   const jobs   = salesFilter === 'all' ? getJobsFiltered(isAM, displayName)   : getJobsFiltered(false, salesFilter);
   const quotes = salesFilter === 'all' ? getQuotesFiltered(isAM, displayName) : getQuotesFiltered(false, salesFilter);
 
