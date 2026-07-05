@@ -12,7 +12,7 @@ import {
   AlertTriangle, TrendingUp, TrendingDown, Users, ArrowRight, Plus,
   DollarSign, ChevronDown, BarChart2, HardHat, Percent,
   SlidersHorizontal, Eye, FileText, X, Mail, Target, Package,
-  Pencil, Trophy, CalendarDays, Timer,
+  Pencil, Trophy, CalendarDays, Timer, FileDown,
 } from 'lucide-react';
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
@@ -25,6 +25,7 @@ import Card from '../components/Card';
 import { DonutChart, AreaChart, Sparkline } from '../components/DashboardCharts';
 import { PIPELINE_RAMP } from '../lib/chartColors';
 import { categorizeProduct } from '../lib/productCategories';
+import { downloadDashboardReport } from '../lib/dashboardReport';
 
 // Chart accent follows the active colour theme (Apex emerald by default).
 const ACCENT = 'var(--brand-500)';
@@ -1188,6 +1189,53 @@ export default function Dashboard() {
     || DATE_RANGE_OPTIONS.find(o => o.value === globalRange)?.label
     || '';
 
+  // ── PDF report export — snapshots exactly what's on screen ──────────────────
+  const [exporting, setExporting] = useState(false);
+  const handleExportPdf = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await downloadDashboardReport({
+        periodLabel: rangeLabel,
+        salesperson: salesFilter !== 'all' ? salesFilter : null,
+        generatedAt: format(new Date(), 'd MMM yyyy, h:mm a'),
+        revenue: lM(analytics.acceptedValue),
+        revenueDeltaPct: analytics.acceptedValuePrev > 0
+          ? ((analytics.acceptedValue - analytics.acceptedValuePrev) / analytics.acceptedValuePrev) * 100 : null,
+        pipelineValue: lM(analytics.pipelineValue),
+        pipelineCount: lI(analytics.pipelineCount),
+        quotesWon: lI(analytics.acceptedCount),
+        avgQuote: lM(analytics.acceptedAvg),
+        winRate: analytics.winRate !== null ? lW(analytics.winRate) : null,
+        decisions: lI(analytics.decisions),
+        marginValue: insights.marginPct !== null ? lM(insights.marginValue) : null,
+        marginPct: insights.marginPct,
+        knownShare: insights.knownShare,
+        medianDays: insights.medianDays,
+        instantPct: insights.instantPct,
+        repeatPct: insights.repeatPct !== null ? lW(insights.repeatPct) : null,
+        repeatCount: lI(insights.repeatCount),
+        buckets: insights.buckets.map(([label, n]) => [label, lI(n)]),
+        categories: products.map(p => ({ name: p.name, units: lI(p.units), revenue: lM(p.revenue) })),
+        topCustomers: topCustomers.map(c => ({ name: c.name, count: lI(c.count), total: lM(c.total) })),
+        reps: reps.map(r => ({ name: r.name, won: lI(r.won), winRate: r.winRate !== null ? lW(r.winRate) : null, revenue: lM(r.revenue) })),
+        seasonality: { avg: seasonality.avg.map(v => lM(v)), years: seasonality.years },
+        followUps: followUps.map(f => ({
+          customer: customers.find(c => c.id === f.q.customerId)?.name || 'Customer',
+          quoteNumber: f.q.quoteNumber || '—',
+          value: lM(quoteTotal(f.q)),
+          sentDays: f.sentDays, expDays: f.expDays,
+          unopened: f.unopened, expiring: f.expiring,
+        })),
+      });
+    } catch (e) {
+      console.error('[dashboard] PDF export failed:', e);
+      window.alert(`PDF export failed: ${e.message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Calendar years covered by the quote history (newest first) — feeds the
   // range dropdown so imported years like 2015 are directly selectable.
   const quoteYears = useMemo(() => {
@@ -1239,6 +1287,15 @@ export default function Dashboard() {
             </div>
           )}
           <DateRangeSelect value={globalRange} onChange={setGlobalRange} years={quoteYears} />
+          <button
+            onClick={handleExportPdf}
+            disabled={exporting}
+            title="Export PDF report"
+            className="flex items-center justify-center gap-1.5 rounded-lg p-2 sm:px-3 border bg-white text-slate-500 border-slate-200 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          >
+            <FileDown size={15} />
+            <span className="hidden sm:inline text-xs font-medium">{exporting ? 'Exporting…' : 'Report'}</span>
+          </button>
           {isAM && (
             <button
               onClick={() => updateLarp(!larpMode)}
