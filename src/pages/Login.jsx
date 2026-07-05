@@ -57,12 +57,9 @@ export default function Login() {
       <div className="hidden lg:flex w-[420px] flex-shrink-0 bg-sidebar flex-col justify-between px-10 py-12">
         <div>
           <div className="flex items-center gap-3 mb-12">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center">
-              <span className="text-white font-bold text-base">L</span>
-            </div>
             <div>
-              <div className="text-white font-bold text-lg leading-tight">Lusso</div>
-              <div className="text-sidebar-text text-xs">Job Management</div>
+              <img src="/brand/lusso-white.png" alt="Lusso" className="h-8 w-auto" />
+              <div className="text-sidebar-text text-xs mt-1.5">Job Management</div>
             </div>
           </div>
 
@@ -82,10 +79,7 @@ export default function Login() {
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">L</span>
-            </div>
-            <span className="font-bold text-slate-900 text-lg">Lusso</span>
+            <img src="/brand/lusso-black.png" alt="Lusso" className="h-7 w-auto" />
           </div>
 
           {/* Tabs */}

@@ -8,6 +8,8 @@
  * module has no store dependencies and is testable in Node.
  */
 
+import { getLogoDataUrl, LOGO_ASPECT } from './brandLogo';
+
 const fmt$ = (v) => `$${Math.round(v || 0).toLocaleString('en-AU')}`;
 const pct  = (v) => (v === null || v === undefined ? '—' : `${Number(v).toFixed(0)}%`);
 
@@ -22,8 +24,13 @@ export async function buildDashboardReport(s) {
   const M = 40; // margin
 
   // ── Header ──
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(20);
-  doc.text('LUSSO', M, 48);
+  const logo = await getLogoDataUrl();
+  if (logo) {
+    doc.addImage(logo, 'PNG', M, 28, 24 * LOGO_ASPECT, 24);
+  } else {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(20);
+    doc.text('LUSSO', M, 48);
+  }
   doc.setFont('helvetica', 'normal'); doc.setFontSize(13); doc.setTextColor(90);
   doc.text('Business Report', M, 66);
   doc.setFontSize(10); doc.setTextColor(120);

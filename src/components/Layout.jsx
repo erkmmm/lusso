@@ -182,12 +182,9 @@ export default function Layout({ children }) {
 
         {/* Logo */}
         <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border">
-          <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-sm">L</span>
-          </div>
           <div>
-            <div className="text-white font-semibold text-sm leading-tight">Lusso</div>
-            <div className="text-slate-400 text-xs">Job Management</div>
+            <img src="/brand/lusso-white.png" alt="Lusso" className="h-6 w-auto" />
+            <div className="text-slate-400 text-xs mt-1">Job Management</div>
           </div>
           <button aria-label="Close sidebar" className="ml-auto lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}>
             <X size={18} />
@@ -317,7 +314,7 @@ export default function Layout({ children }) {
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-1.5 text-sm text-slate-500 min-w-0">
-            <span className="text-amber-600 font-medium">Lusso</span>
+            <img src="/brand/lusso-black.png" alt="Lusso" className="h-4 w-auto" />
             <ChevronRight size={14} />
           </div>
           <div className="flex-1" />

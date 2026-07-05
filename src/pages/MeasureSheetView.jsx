@@ -40,7 +40,7 @@ function PrintView({ sheet, customer, job }) {
       {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #174D4D', paddingBottom: '10px', marginBottom: '12px' }}>
         <div>
-          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#174D4D', letterSpacing: '-0.5px' }}>LUSSO</div>
+          <img src={`${window.location.origin}/brand/lusso-black.png`} alt="Lusso" style={{ height: '30px', width: 'auto', display: 'block' }} />
           <div style={{ fontSize: '10px', color: '#666', marginTop: '1px' }}>Job Management Platform</div>
         </div>
         <div style={{ textAlign: 'right' }}>

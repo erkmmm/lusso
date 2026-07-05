@@ -334,10 +334,7 @@ function ResponseShell({ children }) {
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Lusso header */}
       <div className="bg-sidebar px-6 py-4 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center">
-          <span className="text-white font-bold text-sm">L</span>
-        </div>
-        <span className="text-white font-semibold">Lusso</span>
+        <img src="/brand/lusso-white.png" alt="Lusso" className="h-5 w-auto" />
         <span className="text-slate-400 text-sm ml-1">Installer Portal</span>
       </div>
       <div className="flex-1 flex items-start justify-center px-4 py-8">

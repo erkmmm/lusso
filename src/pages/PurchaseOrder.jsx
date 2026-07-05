@@ -9,6 +9,7 @@ import {
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
   addActivity,
 } from '../store/data';
+import { getLogoDataUrl, LOGO_ASPECT } from '../lib/brandLogo';
 import { useProfile } from '../contexts/UserProfileContext';
 import { sendPurchaseOrder } from '../lib/email';
 import { toast } from '../components/ToastContainer';
@@ -282,8 +283,13 @@ export default function PurchaseOrder() {
 
     // Larger type throughout — the workroom teams read this on paper, so the
     // table is the biggest font that still fits all columns on landscape A4.
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20);
-    doc.text('LUSSO', 24, 42);
+    const logo = await getLogoDataUrl();
+    if (logo) {
+      doc.addImage(logo, 'PNG', 24, 24, 22 * LOGO_ASPECT, 22);
+    } else {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20);
+      doc.text('LUSSO', 24, 42);
+    }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(90);
     doc.text('Curtain Purchase Order', 24, 60);
 

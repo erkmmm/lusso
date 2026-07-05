@@ -38,12 +38,9 @@ export default function ResetPassword() {
       <div className="hidden lg:flex w-[420px] flex-shrink-0 bg-sidebar flex-col justify-between px-10 py-12">
         <div>
           <div className="flex items-center gap-3 mb-12">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center">
-              <span className="text-white font-bold text-base">L</span>
-            </div>
             <div>
-              <div className="text-white font-bold text-lg leading-tight">Lusso</div>
-              <div className="text-sidebar-text text-xs">Job Management</div>
+              <img src="/brand/lusso-white.png" alt="Lusso" className="h-8 w-auto" />
+              <div className="text-sidebar-text text-xs mt-1.5">Job Management</div>
             </div>
           </div>
           <h2 className="text-white text-3xl font-bold leading-snug">

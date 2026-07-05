@@ -14,10 +14,7 @@ export default function PendingApproval() {
 
         {/* Logo */}
         <div className="flex items-center gap-3 justify-center mb-10">
-          <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center">
-            <span className="text-white font-bold text-base">L</span>
-          </div>
-          <span className="font-bold text-slate-900 text-lg">Lusso</span>
+          <img src="/brand/lusso-black.png" alt="Lusso" className="h-8 w-auto" />
         </div>
 
         {/* Card */}

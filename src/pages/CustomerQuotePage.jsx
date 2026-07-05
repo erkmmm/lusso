@@ -41,7 +41,7 @@ function PrintDocument({ quote, customer, settings, totals }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', borderBottom: '2px solid #c8d8e8', paddingBottom: '16px' }}>
         {/* Brand */}
         <div>
-          <div style={{ fontSize: '22pt', fontWeight: '800', letterSpacing: '-0.02em', color: '#1a2332' }}>LUSSO</div>
+          <img src={`${window.location.origin}/brand/lusso-black.png`} alt="Lusso" style={{ height: '38px', width: 'auto', display: 'block', marginBottom: '4px' }} />
           <div style={{ fontSize: '9pt', color: '#c68a2a', fontWeight: '600', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Fashion for Windows</div>
         </div>
         {/* Quote meta */}
