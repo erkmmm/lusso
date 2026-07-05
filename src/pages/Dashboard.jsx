@@ -758,7 +758,7 @@ function DecisionTime({ insights, lI }) {
         </h2>
         <p className="text-xs text-slate-400 mt-0.5">
           {lI(sentCount)} sent → {lI(wonOfSent)} won
-          {medianDays !== null && <> · median <b className="text-slate-600">{medianDays}d</b> to a yes</>}
+          {medianDays !== null && <> · median <b className="text-slate-600">{medianDays}d</b> when they go away to decide</>}
         </p>
       </div>
       <div className="p-5 space-y-2.5">
@@ -776,7 +776,7 @@ function DecisionTime({ insights, lI }) {
           ))
         )}
         {decisionCount > 0 && (
-          <p className="text-xs text-slate-400 pt-1">How long accepted quotes took, from sent to yes.</p>
+          <p className="text-xs text-slate-400 pt-1">How long wins took from sent to yes. “On the spot” = accepted within an hour (closed at the consult).</p>
         )}
       </div>
     </Card>
@@ -1077,14 +1077,23 @@ export default function Dashboard() {
     const knownShare = sell > 0 ? Math.min(100, (sellKnown / sell) * 100) : 0;
 
     // Decision time: days from sent → accepted for wins in the period.
-    const days = accepted
+    // Wins accepted within an hour of sending are on-the-spot sales (entered
+    // in one sitting after the consult) — a close-rate stat, not a customer
+    // decision interval, so they're reported separately and excluded from
+    // the median. Verified against the data: 375 wins share the exact same
+    // send/accept second.
+    const HOUR = 1 / 24;
+    const daysAll = accepted
       .filter(q => q.sentAt && q.acceptedAt)
       .map(q => (new Date(q.acceptedAt) - new Date(q.sentAt)) / 86400000)
       .filter(d => d >= 0 && d < 365)
       .sort((a, b) => a - b);
-    const medianDays = days.length ? Math.round(days[Math.floor(days.length / 2)]) : null;
-    const buckets = [['Same week', 0], ['1–2 wks', 0], ['2–4 wks', 0], ['1–2 mths', 0], ['2 mths+', 0]];
-    days.forEach(d => { buckets[d <= 7 ? 0 : d <= 14 ? 1 : d <= 30 ? 2 : d <= 60 ? 3 : 4][1]++; });
+    const instant    = daysAll.filter(d => d < HOUR).length;
+    const considered = daysAll.filter(d => d >= HOUR);
+    const medianDays = considered.length ? Math.round(considered[Math.floor(considered.length / 2)]) : null;
+    const instantPct = daysAll.length ? (instant / daysAll.length) * 100 : null;
+    const buckets = [['On the spot', instant], ['Same week', 0], ['1–2 wks', 0], ['2–4 wks', 0], ['1–2 mths', 0], ['2 mths+', 0]];
+    considered.forEach(d => { buckets[d <= 7 ? 1 : d <= 14 ? 2 : d <= 30 ? 3 : d <= 60 ? 4 : 5][1]++; });
 
     // Sent → won for quotes sent in the period (long-range conversion view).
     const sentIn = quotes.filter(q => q.sentAt && inRange(q.sentAt, range));
@@ -1111,7 +1120,7 @@ export default function Dashboard() {
 
     return {
       marginValue: gpKnown, marginPct, knownShare,
-      medianDays, decisionCount: days.length, buckets,
+      medianDays, decisionCount: daysAll.length, instantPct, buckets,
       sentCount: sentIn.length, wonOfSent,
       repeatPct, repeatCount: repeatCusts.size,
     };
@@ -1322,7 +1331,7 @@ export default function Dashboard() {
             ? { raw: insights.medianDays, format: (v) => `${Math.round(v)}d` }
             : { value: '—' })}
           caption={insights.medianDays !== null
-            ? `median, over ${lI(insights.decisionCount)} wins — time your follow-up call`
+            ? `median wait${insights.instantPct !== null ? ` · ${insights.instantPct.toFixed(0)}% say yes on the spot` : ''}`
             : 'no wins with dates in period'}
         />
         <StatCard
