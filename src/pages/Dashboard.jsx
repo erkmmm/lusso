@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   formatDistanceToNow, parseISO, isWithinInterval,
-  subDays, subMonths, startOfYear,
+  subDays, subMonths, subYears, startOfYear,
   format, differenceInDays,
 } from 'date-fns';
 import {
@@ -12,7 +12,7 @@ import {
   AlertTriangle, TrendingUp, TrendingDown, Users, ArrowRight, Plus,
   DollarSign, ChevronDown, BarChart2, HardHat, Percent,
   SlidersHorizontal, Eye, FileText, X, Mail, Target, Package,
-  Pencil, Trophy,
+  Pencil, Trophy, CalendarDays, Timer,
 } from 'lucide-react';
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
@@ -114,12 +114,13 @@ function getDateRange(value) {
   }
 }
 
+// Comparison period = the SAME window one year earlier (seasonal business —
+// June should compare with last June, not with May).
 function getPreviousPeriod(value) {
   const yr = yearValue(value);
   if (yr) return getDateRange(`yr${Number(yr) - 1}`); // vs the prior calendar year
   const { start, end } = getDateRange(value);
-  const duration = end - start;
-  return { start: new Date(start - duration), end: new Date(start) };
+  return { start: subYears(start, 1), end: subYears(end, 1) };
 }
 
 function inRange(dateStr, range) {
@@ -672,6 +673,175 @@ function TopSalesReps({ reps, lM, lI, lW }) {
   );
 }
 
+// Follow-up detection: open quotes from the last 90 days that the customer
+// never opened (3+ days after sending) or that expire within 14 days.
+function computeFollowUps(quotes) {
+  const now = Date.now(), DAY = 86400000;
+  return quotes
+    .filter(q => ['Sent', 'Viewed', 'Waiting'].includes(q.status) && q.sentAt
+      && (now - new Date(q.sentAt).getTime()) < 90 * DAY)
+    .map(q => {
+      const opened   = !!(q.firstOpenedAt || q.viewedAt);
+      const sentDays = Math.floor((now - new Date(q.sentAt).getTime()) / DAY);
+      const expDays  = q.expiryDate ? Math.ceil((new Date(q.expiryDate).getTime() - now) / DAY) : null;
+      const unopened = !opened && sentDays >= 3;
+      const expiring = expDays !== null && expDays >= 0 && expDays <= 14;
+      return (unopened || expiring) ? { q, sentDays, expDays, unopened, expiring } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.sentDays - a.sentDays)
+    .slice(0, 8);
+}
+
+// ─── Follow-ups: quotes that need chasing ──────────────────────────────────────
+function FollowUps({ items, customers, navigate, lM }) {
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Mail size={15} className="text-amber-500" /> Follow-ups
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">Open quotes the customer never opened, or expiring within 14 days</p>
+      </div>
+      {items.length === 0 ? (
+        <div className="px-5 py-8 text-center">
+          <CheckCircle2 size={24} className="text-green-400 mx-auto mb-2" />
+          <p className="text-sm text-slate-500 font-medium">Nothing needs chasing</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-50">
+          {items.map(({ q, sentDays, expDays, unopened, expiring }) => {
+            const cust = customers.find(c => c.id === q.customerId);
+            return (
+              <button
+                key={q.id}
+                onClick={() => navigate(`/quotes/${q.id}`)}
+                className="w-full px-5 py-3 text-left hover:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-slate-800 truncate">{cust?.name || 'Customer'}</p>
+                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0">{fmtCompact(lM(quoteTotal(q)))}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <span className="text-xs text-slate-400 truncate">{q.quoteNumber || '—'} · sent {sentDays}d ago</span>
+                  <span className="flex gap-1.5 flex-shrink-0">
+                    {unopened && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
+                        <Eye size={10} /> Not opened
+                      </span>
+                    )}
+                    {expiring && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                        Expires {expDays === 0 ? 'today' : `in ${expDays}d`}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Decision Time: sent→won conversion + how long customers take ─────────────
+function DecisionTime({ insights, lI }) {
+  const { sentCount, wonOfSent, medianDays, decisionCount, buckets } = insights;
+  const maxBucket = Math.max(1, ...buckets.map(([, n]) => n));
+  return (
+    <Card className="min-w-0">
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Timer size={15} className="text-amber-500" /> Decision Time
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          {lI(sentCount)} sent → {lI(wonOfSent)} won
+          {medianDays !== null && <> · median <b className="text-slate-600">{medianDays}d</b> to a yes</>}
+        </p>
+      </div>
+      <div className="p-5 space-y-2.5">
+        {decisionCount === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-4">No wins in this period.</p>
+        ) : (
+          buckets.map(([label, n]) => (
+            <div key={label} className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 w-20 flex-shrink-0">{label}</span>
+              <div className="h-2 rounded-full bg-slate-100 overflow-hidden flex-1">
+                <div className="h-full rounded-full bg-amber-400" style={{ width: `${(n / maxBucket) * 100}%` }} />
+              </div>
+              <span className="text-xs text-slate-600 tabular-nums w-8 text-right">{lI(n)}</span>
+            </div>
+          ))
+        )}
+        {decisionCount > 0 && (
+          <p className="text-xs text-slate-400 pt-1">How long accepted quotes took, from sent to yes.</p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Seasonality: average accepted revenue per calendar month, all years ───────
+function Seasonality({ data, lM }) {
+  const max = Math.max(1, ...data.avg);
+  const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+  return (
+    <Card className="min-w-0">
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <CalendarDays size={15} className="text-amber-500" /> Seasonality
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">Average accepted revenue by month across {data.years} year{data.years !== 1 ? 's' : ''}</p>
+      </div>
+      <div className="px-5 pt-5 pb-4">
+        <div className="flex items-end gap-1.5 h-28">
+          {data.avg.map((v, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0" title={fmt$(lM(v))}>
+              <div className="w-full flex items-end h-full">
+                <div className="w-full bg-amber-400 hover:bg-amber-500 rounded-t transition-colors" style={{ height: `${Math.max(2, (v / max) * 100)}%` }} />
+              </div>
+              <span className="text-[10px] text-slate-400">{MONTHS[i]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Top Customers by lifetime value ───────────────────────────────────────────
+function TopCustomers({ items, navigate, lM, lI }) {
+  return (
+    <Card className="min-w-0">
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Users size={15} className="text-amber-500" /> Top Customers
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">Lifetime accepted value</p>
+      </div>
+      <div className="divide-y divide-slate-50">
+        {items.map((c, i) => (
+          <button
+            key={c.customerId}
+            onClick={() => navigate(`/customers/${c.customerId}`)}
+            className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 transition-colors"
+          >
+            <span className="w-5 text-xs font-semibold text-slate-400 tabular-nums">{i + 1}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-800 truncate">{c.name}</p>
+              <p className="text-xs text-slate-400">{lI(c.count)} accepted quote{lI(c.count) !== 1 ? 's' : ''}</p>
+            </div>
+            <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0">{fmtCompact(lM(c.total))}</span>
+          </button>
+        ))}
+        {items.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-400">No accepted quotes yet.</p>}
+      </div>
+    </Card>
+  );
+}
+
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   useDataRefresh();
@@ -750,12 +920,19 @@ export default function Dashboard() {
       const losses = quotes.filter(q =>
         (q.status === 'Declined' && inRange(q.declinedAt || q.updatedAt, range)) ||
         (q.status === 'Expired'  && inRange(q.updatedAt, range))).length;
+      // Gross margin % for the month (only lines with a known cost).
+      let sellKnown = 0, gpKnown = 0;
+      acc.forEach(q => activeLineItems(q).forEach(li => {
+        const c = ((Number(li.unitCostPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
+        if (c > 0) { const s = lineItemRevenue(li); sellKnown += s; gpKnown += s - c; }
+      }));
       return {
         label: m.label,
         acceptedValue: acc.reduce((s, q) => s + quoteTotal(q), 0),
         acceptedCount: acc.length,
         newQuotes: created.length,
         winRate: wins + losses > 0 ? (wins / (wins + losses)) * 100 : 0,
+        marginPct: sellKnown > 0 ? (gpKnown / sellKnown) * 100 : 0,
       };
     });
   }, [quotes]);
@@ -881,6 +1058,98 @@ export default function Dashboard() {
       .slice(0, 5);
   }, [quotes, globalRange]);
 
+  // ── Insight metrics: margin, decision time, sent→won, repeat business ───────
+  const insights = useMemo(() => {
+    const range = getDateRange(globalRange);
+    const accepted = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
+
+    // Gross margin (ex-GST — GST isn't profit). Only lines with a known cost
+    // count, and we report how much of the revenue that covers.
+    let sell = 0, sellKnown = 0, gpKnown = 0;
+    accepted.forEach(q => activeLineItems(q).forEach(li => {
+      const s = lineItemRevenue(li);
+      sell += s;
+      const c = ((Number(li.unitCostPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
+      if (c > 0) { sellKnown += s; gpKnown += s - c; }
+    }));
+    const marginPct  = sellKnown > 0 ? (gpKnown / sellKnown) * 100 : null;
+    // Discount lines (negative, no cost) can push the ratio past 100 — cap it.
+    const knownShare = sell > 0 ? Math.min(100, (sellKnown / sell) * 100) : 0;
+
+    // Decision time: days from sent → accepted for wins in the period.
+    const days = accepted
+      .filter(q => q.sentAt && q.acceptedAt)
+      .map(q => (new Date(q.acceptedAt) - new Date(q.sentAt)) / 86400000)
+      .filter(d => d >= 0 && d < 365)
+      .sort((a, b) => a - b);
+    const medianDays = days.length ? Math.round(days[Math.floor(days.length / 2)]) : null;
+    const buckets = [['Same week', 0], ['1–2 wks', 0], ['2–4 wks', 0], ['1–2 mths', 0], ['2 mths+', 0]];
+    days.forEach(d => { buckets[d <= 7 ? 0 : d <= 14 ? 1 : d <= 30 ? 2 : d <= 60 ? 3 : 4][1]++; });
+
+    // Sent → won for quotes sent in the period (long-range conversion view).
+    const sentIn = quotes.filter(q => q.sentAt && inRange(q.sentAt, range));
+    const wonOfSent = sentIn.filter(q => q.status === 'Accepted' || q.status === 'Completed').length;
+
+    // Repeat business: share of the period's accepted revenue from customers
+    // who had already accepted an earlier quote (any time).
+    const firstWin = new Map();
+    quotes.forEach(q => {
+      if (q.status !== 'Accepted' && q.status !== 'Completed') return;
+      const t = new Date(q.acceptedAt || q.updatedAt).getTime();
+      if (!Number.isFinite(t)) return;
+      if (!firstWin.has(q.customerId) || t < firstWin.get(q.customerId)) firstWin.set(q.customerId, t);
+    });
+    let repeatRev = 0, totalRev = 0;
+    const repeatCusts = new Set();
+    accepted.forEach(q => {
+      const t = new Date(q.acceptedAt || q.updatedAt).getTime();
+      const v = quoteTotal(q);
+      totalRev += v;
+      if (firstWin.get(q.customerId) < t) { repeatRev += v; repeatCusts.add(q.customerId); }
+    });
+    const repeatPct = totalRev > 0 ? (repeatRev / totalRev) * 100 : null;
+
+    return {
+      marginValue: gpKnown, marginPct, knownShare,
+      medianDays, decisionCount: days.length, buckets,
+      sentCount: sentIn.length, wonOfSent,
+      repeatPct, repeatCount: repeatCusts.size,
+    };
+  }, [quotes, globalRange]);
+
+  // ── Seasonality: average accepted revenue per calendar month, all years ─────
+  const seasonality = useMemo(() => {
+    const sums = Array(12).fill(0);
+    const years = new Set();
+    quotes.forEach(q => {
+      if (q.status !== 'Accepted') return;
+      const d = q.acceptedAt || q.updatedAt;
+      if (!d) return;
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return;
+      years.add(dt.getFullYear());
+      sums[dt.getMonth()] += quoteTotal(q);
+    });
+    const n = Math.max(1, years.size);
+    return { avg: sums.map(s => s / n), years: years.size };
+  }, [quotes]);
+
+  // ── Top customers by lifetime accepted value ─────────────────────────────────
+  const topCustomers = useMemo(() => {
+    const m = new Map();
+    quotes.forEach(q => {
+      if (q.status !== 'Accepted' && q.status !== 'Completed') return;
+      if (!m.has(q.customerId)) m.set(q.customerId, { customerId: q.customerId, total: 0, count: 0 });
+      const e = m.get(q.customerId);
+      e.total += quoteTotal(q); e.count += 1;
+    });
+    return [...m.values()].sort((a, b) => b.total - a.total).slice(0, 5)
+      .map(e => ({ ...e, name: customers.find(c => c.id === e.customerId)?.name || 'Customer' }));
+  }, [quotes, customers]);
+
+  // ── Follow-ups: recent open quotes never opened, or expiring soon ───────────
+  const followUps = useMemo(() => computeFollowUps(quotes), [quotes]);
+
   // ── This-calendar-month progress (for targets) ───────────────────────────────
   const monthProgress = useMemo(() => {
     const now = new Date();
@@ -995,7 +1264,7 @@ export default function Dashboard() {
           raw={lM(analytics.acceptedValue)} format={fmtCompact}
           valueTitle={fmt$(lM(analytics.acceptedValue))}
           delta={<DeltaBadge current={analytics.acceptedValue} previous={analytics.acceptedValuePrev} />}
-          caption={`vs previous · ${rangeLabel}`}
+          caption={`vs same time last year · ${rangeLabel}`}
           spark={monthly.map(m => m.acceptedValue)}
           onClick={() => navigate('/quotes')}
         />
@@ -1032,9 +1301,52 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* ── Row 1b · Insight KPIs: margin, decision speed, repeat business ────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard
+          icon={TrendingUp} label="Gross Margin" delay={60}
+          {...(insights.marginPct !== null
+            ? { raw: lM(insights.marginValue), format: fmtCompact }
+            : { value: '—' })}
+          delta={insights.marginPct !== null
+            ? <span className="text-xs font-semibold text-green-600">{insights.marginPct.toFixed(0)}%</span> : null}
+          caption={insights.marginPct !== null
+            ? `margin · costs known for ${insights.knownShare.toFixed(0)}% of revenue`
+            : 'no cost prices in period'}
+          spark={monthly.map(m => m.marginPct)}
+          sparkColor="#16A34A"
+        />
+        <StatCard
+          icon={Timer} label="Days to Win" delay={120}
+          {...(insights.medianDays !== null
+            ? { raw: insights.medianDays, format: (v) => `${Math.round(v)}d` }
+            : { value: '—' })}
+          caption={insights.medianDays !== null
+            ? `median, over ${lI(insights.decisionCount)} wins — time your follow-up call`
+            : 'no wins with dates in period'}
+        />
+        <StatCard
+          icon={Users} label="Repeat Revenue" delay={180}
+          {...(insights.repeatPct !== null
+            ? { raw: lW(insights.repeatPct), format: (v) => `${v.toFixed(0)}%` }
+            : { value: '—' })}
+          caption={insights.repeatPct !== null
+            ? `from ${lI(insights.repeatCount)} returning customer${lI(insights.repeatCount) !== 1 ? 's' : ''}`
+            : 'no accepted quotes in period'}
+        />
+      </div>
+
       {/* ── Needs Attention ──────────────────────────────────────────────────── */}
       <div className="animate-fade-up" style={{ animationDelay: '120ms' }}>
         <NeedsAttention jobs={jobs} quotes={quotes} navigate={navigate} infl={lI} />
+      </div>
+
+      {/* ── Row 1c · Follow-ups + Decision time ─────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up" style={{ animationDelay: '160ms' }}>
+        <div className="lg:col-span-2 min-w-0">
+          <FollowUps items={followUps} customers={customers} navigate={navigate} lM={lM} />
+        </div>
+        <DecisionTime insights={insights} lI={lI} />
       </div>
 
       {/* ── Row 2 · Revenue area chart + Pipeline donut ──────────────────────── */}
@@ -1100,6 +1412,14 @@ export default function Dashboard() {
             />
           </div>
         </Card>
+      </div>
+
+      {/* ── Row 3b · Seasonality + Top customers ─────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up" style={{ animationDelay: '320ms' }}>
+        <div className="lg:col-span-2 min-w-0">
+          <Seasonality data={seasonality} lM={lM} />
+        </div>
+        <TopCustomers items={topCustomers} navigate={navigate} lM={lM} lI={lI} />
       </div>
 
       {/* ── Row 4 · Recent quotes + Targets / Top salespeople ────────────────── */}
