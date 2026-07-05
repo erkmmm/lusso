@@ -737,3 +737,10 @@ button:not(:disabled):active {
 /* Placed after the .dark overrides so nothing remaps it. */
 .loading-screen { background-color: #ffffff; }
 .dark .loading-screen { background-color: #000000; }
+
+/* Loading-screen logo swaps with the mode (Tailwind dark: is media-query
+   based in this app, so explicit .dark-class rules are needed). */
+.loading-logo-light { display: block; }
+.loading-logo-dark  { display: none; }
+.dark .loading-logo-light { display: none; }
+.dark .loading-logo-dark  { display: block; }
