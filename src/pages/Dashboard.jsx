@@ -255,7 +255,7 @@ function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, ca
     <button
       onClick={onClick}
       style={{ animationDelay: `${delay}ms` }}
-      className="animate-fade-up bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-left hover:shadow-md transition-shadow flex flex-col min-w-0"
+      className="animate-fade-up bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5 text-left hover:shadow-md transition-shadow flex flex-col min-w-0"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-slate-500 font-medium truncate">{label}</span>
@@ -319,7 +319,7 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
           {infl(items.reduce((s, i) => s + i.count, 0))}
         </span>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
         {items.map(({ icon: Icon, ...i }) => (
           <button
             key={i.key}
@@ -1258,7 +1258,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Row 1 · KPI stat cards ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           icon={DollarSign} label="Total Revenue"
           raw={lM(analytics.acceptedValue)} format={fmtCompact}
@@ -1302,7 +1302,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Row 1b · Insight KPIs: margin, decision speed, repeat business ────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
         <StatCard
           icon={TrendingUp} label="Gross Margin" delay={60}
           {...(insights.marginPct !== null
