@@ -509,44 +509,6 @@ export default function PurchaseOrder() {
             </Card>
           )}
 
-          {/* Order details */}
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm">Order Details</h2>
-            </div>
-            <div className="p-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="text-sm">
-                <span className="block text-xs text-slate-500 mb-1">Date required</span>
-                {dateRequired === 'ASAP' ? (
-                  <div className={`${inputCls} flex items-center justify-between`}>
-                    <span className="font-medium text-slate-800">ASAP</span>
-                    <button type="button" onClick={() => setDateRequired('')}
-                      className="text-xs text-amber-600 hover:underline">Pick a date</button>
-                  </div>
-                ) : (
-                  <input type="date" className={inputCls} value={dateRequired}
-                    onChange={e => setDateRequired(e.target.value)} />
-                )}
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 21), 'yyyy-MM-dd'))}
-                    className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">3 weeks</button>
-                  <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 28), 'yyyy-MM-dd'))}
-                    className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">4 weeks</button>
-                  <button type="button" onClick={() => setDateRequired('ASAP')}
-                    className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">ASAP</button>
-                </div>
-              </div>
-              <label className="text-sm">
-                <span className="block text-xs text-slate-500 mb-1">Date ordered</span>
-                <input className={inputCls} value={dateOrdered} disabled />
-              </label>
-              <label className="text-sm sm:col-span-2 lg:col-span-3">
-                <span className="block text-xs text-slate-500 mb-1">Extra notes</span>
-                <textarea rows={2} className={inputCls} value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="Anything the supplier should know…" />
-              </label>
-            </div>
-          </Card>
-
           {/* Motorised order — expandable; controls the Motor side column on the PO */}
           <Card>
             <button type="button" onClick={() => setMotorOpen(o => !o)} aria-expanded={motorOpen}
@@ -731,63 +693,106 @@ export default function PurchaseOrder() {
             </div>
           </Card>
 
-          {/* ── Send / export — at the bottom, after you've reviewed the PO ── */}
+          {/* ── Order details + send — at the bottom, after reviewing the PO ── */}
           <Card>
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-              <h2 className="font-semibold text-slate-800 text-sm">Send this order</h2>
-              <button onClick={handleSavePreset}
-                className="text-xs font-medium text-amber-600 hover:underline flex items-center gap-1 flex-shrink-0">
-                <Save size={12} /> {activePreset ? 'Update preset' : 'Save as preset'}
-              </button>
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800 text-sm">Order details &amp; send</h2>
             </div>
             <div className="p-5 space-y-4">
-              {/* Recipient */}
-              <div>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">Supplier email</label>
-                <input
-                  type="email"
-                  list="po-preset-emails"
-                  value={recipient}
-                  onChange={e => applyRecipient(e.target.value)}
-                  placeholder="supplier@email.com"
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-amber-400"
-                />
-                <datalist id="po-preset-emails">
-                  {presets.map(p => <option key={p.id} value={p.email} />)}
-                </datalist>
-              </div>
-
-              {/* Message */}
-              <div>
-                <p className="text-xs text-slate-500 mb-1">
-                  Message sent with the PO{recipient ? ` to ${recipient}` : ''}
-                  {activePreset && <span className="ml-1 text-amber-600">· auto-filled from saved preset</span>}
-                </p>
-                <textarea rows={4} value={message} onChange={e => setMessage(e.target.value)}
-                  className={inputCls} placeholder="Message to the supplier…" />
-              </div>
-
-              {presets.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-slate-500 mb-1.5">Saved message presets</p>
-                  <div className="space-y-1.5">
-                    {presets.map(p => (
-                      <div key={p.id} className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${activePreset?.id === p.id ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium text-slate-700 truncate block">{p.email}</span>
-                          <span className="text-xs text-slate-400 truncate block">{p.message?.replace(/\n/g, ' ') || '—'}</span>
-                        </div>
-                        <button onClick={() => applyRecipient(p.email)}
-                          className="text-xs font-medium text-amber-600 hover:underline flex-shrink-0">Use</button>
-                        <button onClick={() => handleDeletePreset(p)}
-                          className="text-slate-400 hover:text-red-500 flex-shrink-0" title="Delete preset">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
+              {/* Date required + date ordered */}
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="text-sm">
+                  <span className="block text-xs text-slate-500 mb-1">Date required</span>
+                  {dateRequired === 'ASAP' ? (
+                    <div className={`${inputCls} flex items-center justify-between`}>
+                      <span className="font-medium text-slate-800">ASAP</span>
+                      <button type="button" onClick={() => setDateRequired('')}
+                        className="text-xs text-amber-600 hover:underline">Pick a date</button>
+                    </div>
+                  ) : (
+                    <input type="date" className={inputCls} value={dateRequired}
+                      onChange={e => setDateRequired(e.target.value)} />
+                  )}
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 21), 'yyyy-MM-dd'))}
+                      className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">3 weeks</button>
+                    <button type="button" onClick={() => setDateRequired(format(addDays(new Date(), 28), 'yyyy-MM-dd'))}
+                      className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">4 weeks</button>
+                    <button type="button" onClick={() => setDateRequired('ASAP')}
+                      className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">ASAP</button>
                   </div>
                 </div>
-              )}
+                <label className="text-sm">
+                  <span className="block text-xs text-slate-500 mb-1">Date ordered</span>
+                  <input className={inputCls} value={dateOrdered} disabled />
+                </label>
+              </div>
+
+              {/* Extra notes */}
+              <label className="text-sm block">
+                <span className="block text-xs text-slate-500 mb-1">Extra notes</span>
+                <textarea rows={2} className={inputCls} value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="Anything the supplier should know…" />
+              </label>
+
+              {/* Send section */}
+              <div className="border-t border-slate-100 pt-4 space-y-4">
+                {/* Recipient */}
+                <div>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">Supplier email</label>
+                  <input
+                    type="email"
+                    list="po-preset-emails"
+                    value={recipient}
+                    onChange={e => applyRecipient(e.target.value)}
+                    placeholder="supplier@email.com"
+                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  <datalist id="po-preset-emails">
+                    {presets.map(p => <option key={p.id} value={p.email} />)}
+                  </datalist>
+                </div>
+
+                {/* Saved presets — dropdown */}
+                {presets.length > 0 && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 mb-1 block">Use a saved supplier message</label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <select
+                          value={activePreset?.id || ''}
+                          onChange={e => { const p = presets.find(x => x.id === e.target.value); if (p) applyRecipient(p.email); }}
+                          className="appearance-none w-full border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        >
+                          <option value="">Choose a preset…</option>
+                          {presets.map(p => <option key={p.id} value={p.id}>{p.email}</option>)}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                      {activePreset && (
+                        <button onClick={() => handleDeletePreset(activePreset)} title="Delete this preset"
+                          className="flex-shrink-0 text-slate-400 hover:text-red-500 p-2 border border-slate-200 rounded-lg hover:bg-slate-50">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Message */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs text-slate-500">
+                      Message sent with the PO{recipient ? ` to ${recipient}` : ''}
+                      {activePreset && <span className="ml-1 text-amber-600">· from saved preset</span>}
+                    </p>
+                    <button onClick={handleSavePreset}
+                      className="text-xs font-medium text-amber-600 hover:underline flex items-center gap-1 flex-shrink-0">
+                      <Save size={12} /> {activePreset ? 'Update preset' : 'Save as preset'}
+                    </button>
+                  </div>
+                  <textarea rows={4} value={message} onChange={e => setMessage(e.target.value)}
+                    className={inputCls} placeholder="Message to the supplier…" />
+                </div>
 
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-1">
@@ -808,6 +813,7 @@ export default function PurchaseOrder() {
                   <Download size={14} /> Export XLSX
                 </button>
               </div>
+              </div>{/* end send section */}
             </div>
           </Card>
         </>
