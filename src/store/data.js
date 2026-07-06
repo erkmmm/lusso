@@ -679,6 +679,19 @@ export const updateJobStatus = (jobId, newStatus, user = 'System') => {
   addActivity({ jobId, type: 'status_change', message: `Status changed to ${newStatus}`, user });
 };
 
+// Forward-only auto-advance: quote/measure/PO/install events nudge the linked
+// job ahead so the job is always the single source of truth — they never move
+// it backwards and never touch finished jobs. Manual overrides stay possible.
+export const advanceJobStatus = (jobId, newStatus, user = 'System') => {
+  if (!jobId) return;
+  const job = getJob(jobId);
+  if (!job) return;
+  const cur  = JOB_STATUSES.indexOf(job.status);
+  const next = JOB_STATUSES.indexOf(newStatus);
+  if (cur < 0 || next < 0 || next <= cur) return;
+  updateJobStatus(jobId, newStatus, user);
+};
+
 // ─── Measure Sheets ───────────────────────────────────────────────────────────
 
 export const getMeasureSheets = () => (get('lusso_measure_sheets') || []).filter(ms => !ms.deletedAt);
@@ -721,6 +734,7 @@ export const saveMeasureSheet = (sheet) => {
   }
   set('lusso_measure_sheets', sheets);
   db.saveMeasureSheet(sheets[sheets.findIndex(s => s.id === sheet.id)]);
+  advanceJobStatus(sheet.jobId, 'Measured', sheet.measurer || 'System');
 };
 
 // ─── Takeoffs (PDF plan markups) ────────────────────────────────────────────────
@@ -1745,6 +1759,19 @@ export const saveQuote = (quote) => {
     createdAt:  quote.createdAt || now,
     updatedAt:  now,
   };
+  // Every new quote belongs to a job — create one on the spot if none exists,
+  // so work never floats in two places (Option B: the job is the spine).
+  if (idx < 0 && !enriched.jobId && enriched.customerId) {
+    const job = createJob({
+      customerId: enriched.customerId,
+      title: enriched.title || 'Quote',
+      assignedStaff: enriched.salesperson || '',
+      createdBy: enriched.salesperson || 'System',
+    });
+    enriched.jobId = job.id;
+    updateJobStatus(job.id, 'Quote Required', enriched.salesperson || 'System');
+  }
+
   if (idx >= 0) {
     list[idx] = enriched;
   } else {
@@ -1752,6 +1779,7 @@ export const saveQuote = (quote) => {
   }
   set('lusso_quotes', list);
   db.saveQuote(list[list.findIndex(q => q.id === quote.id)]);
+  advanceJobStatus(enriched.jobId, 'Quote Required', enriched.salesperson || 'System');
 };
 
 export const createQuote = (data) => {
@@ -1818,6 +1846,7 @@ export const sendQuote = (quoteId, user = 'System') => {
   list[idx].activity = [entry, ...(list[idx].activity || [])];
   set('lusso_quotes', list);
   db.saveQuote(list[idx]);
+  advanceJobStatus(list[idx].jobId, 'Quoted', user);
   return list[idx];
 };
 
@@ -1845,7 +1874,7 @@ export const acceptQuote = (quoteId, acceptanceInfo = {}) => {
   list[idx].activity = [entry, ...(list[idx].activity || [])];
   set('lusso_quotes', list);
   db.saveQuote(list[idx]);
-  if (list[idx].jobId) updateJobStatus(list[idx].jobId, 'Awaiting Approval', info.name || 'Customer');
+  advanceJobStatus(list[idx].jobId, 'Approved', info.name || 'Customer');
   return list[idx];
 };
 

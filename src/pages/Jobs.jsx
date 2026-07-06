@@ -86,8 +86,10 @@ export default function Jobs() {
   const staffList = getActiveEmployees();
 
   const filtered = useMemo(() => {
+    // Map lookup — customers.find per job is O(n²) with the imported history.
+    const custById = new Map(customers.map(c => [c.id, c]));
     return jobs.filter(job => {
-      const customer = customers.find(c => c.id === job.customerId);
+      const customer = custById.get(job.customerId);
       const term = search.toLowerCase();
       if (term) {
         const haystack = [
@@ -104,6 +106,17 @@ export default function Jobs() {
       return true;
     }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   }, [jobs, customers, search, status, urgency, staff]);
+
+  // Render in pages of 100 — reset when filters change.
+  const PAGE = 100;
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  const filterKey = `${search}|${status}|${urgency}|${staff}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
+    setVisibleCount(PAGE);
+  }
+  const visible = filtered.slice(0, visibleCount);
 
   const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); };
   const hasFilters = status || urgency || staff || search;
@@ -290,7 +303,7 @@ export default function Jobs() {
             </div>
           )}
 
-          {filtered.map(job => {
+          {visible.map(job => {
             const customer  = customers.find(c => c.id === job.customerId);
             const isSelected = selected.has(job.id);
             return (
@@ -358,6 +371,15 @@ export default function Jobs() {
               </div>
             );
           })}
+
+          {filtered.length > visibleCount && (
+            <button
+              onClick={() => setVisibleCount(c => c + PAGE)}
+              className="w-full py-3 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              Show more ({filtered.length - visibleCount} remaining)
+            </button>
+          )}
         </div>
       )}
 

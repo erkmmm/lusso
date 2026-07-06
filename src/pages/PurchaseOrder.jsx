@@ -7,7 +7,7 @@ import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronD
 import {
   getMeasureSheet, getCustomer, getJob,
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
-  addActivity,
+  addActivity, advanceJobStatus,
 } from '../store/data';
 import { getLogoDataUrl, LOGO_ASPECT } from '../lib/brandLogo';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -355,7 +355,8 @@ export default function PurchaseOrder() {
         contentBase64,
       });
       localStorage.setItem(RECIPIENT_KEY, to);
-      // Stage 2: log a note on the linked job recording the send.
+      // Stage 2: log a note on the linked job recording the send, and move
+      // the job forward — a sent PO means the order is placed.
       if (sheet.jobId) {
         addActivity({
           jobId: sheet.jobId,
@@ -363,6 +364,7 @@ export default function PurchaseOrder() {
           message: `Curtain PO sent to ${to}`,
           user: displayName || 'System',
         });
+        advanceJobStatus(sheet.jobId, 'Ordered', displayName || 'System');
       }
       toast(`Purchase order sent to ${to}.`);
     } catch (err) {
