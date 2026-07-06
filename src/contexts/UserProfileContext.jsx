@@ -55,22 +55,39 @@ export function UserProfileProvider({ children }) {
 
     const load = async () => {
       if (supabase) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-
-        if (!cancelled) {
+        // Retry transient failures (a token refresh mid-load, a network blip).
+        // PostgREST returns code PGRST116 when the row genuinely doesn't exist
+        // — that's the ONLY case where we treat the user as new.
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { data, error } = await supabase
+            .from('profiles').select('*').eq('id', user.id).single();
+          if (cancelled) return;
           if (data && !error) {
             const p = fromSupabase(data);
             saveProfile(p);
             setProfile(p);
             return;
           }
+          lastError = error;
+          if (error?.code === 'PGRST116') break; // definitively no row — new user
+          await new Promise(r => setTimeout(r, 400 * (attempt + 1))); // backoff, retry
+        }
+
+        // Fetch failed for a reason OTHER than "row doesn't exist" (network,
+        // auth, RLS). NEVER fabricate a profile here — fall back to this user's
+        // OWN cached profile if present, otherwise keep loading (the effect
+        // re-runs on the next auth event) rather than dropping them to pending.
+        if (lastError && lastError.code !== 'PGRST116') {
+          if (!cancelled) {
+            const cached = getProfileByEmail(user.email);
+            if (cached) setProfile(cached);
+          }
+          return;
         }
       }
 
+      // No Supabase, or a genuine no-row result → this is a brand-new user.
       if (!cancelled) {
         const meta = user.user_metadata || {};
         const fallbackName = meta.full_name || meta.name || user.email.split('@')[0];

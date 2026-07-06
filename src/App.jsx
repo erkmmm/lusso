@@ -49,12 +49,16 @@ import Inbox from './pages/Inbox';
 import Reviews from './pages/Reviews';
 import { useProfile } from './contexts/UserProfileContext';
 
-// Data keys cleared on version change — excludes UI prefs like theme/schema
+// Data keys cleared on version change — excludes UI prefs like theme/schema.
+// NOTE: lusso_user_profiles is deliberately NOT wiped — it's the signed-in
+// user's own profile cache. Wiping it meant that if the post-deploy profile
+// re-fetch ever hiccuped, the app fabricated a fresh (pending) profile and
+// locked a real account manager out onto the approval screen.
 const DATA_KEYS = [
   'lusso_customers','lusso_jobs','lusso_measure_sheets','lusso_quotes',
   'lusso_installers','lusso_install_requests','lusso_staff','lusso_notifications',
   'lusso_product_types','lusso_priced_items','lusso_priced_item_batches',
-  'lusso_import_batches','lusso_calendar_events','lusso_user_profiles',
+  'lusso_import_batches','lusso_calendar_events',
   'lusso_employees','lusso_tasks','lusso_job_counter','lusso_quote_counter',
 ];
 
@@ -91,12 +95,18 @@ function AppRoutes() {
         initStore(); // re-init with clean slate
       }
 
-      await hydrateFromSupabase();
+      // Cap hydration: if a query hangs (e.g. a stuck token refresh), don't
+      // trap the user on the syncing screen — open the app with cached data and
+      // let the visibility/poll re-hydrate catch up once the connection recovers.
+      await Promise.race([
+        hydrateFromSupabase(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('hydration timed out')), 15000)),
+      ]);
     };
 
-    // Never strand the user on the syncing screen: any hydration failure
-    // (network, storage quota, bad record) logs and falls through to the app
-    // with whatever local data exists. The visibility/poll re-hydrates later.
+    // Never strand the user on the syncing screen: any hydration failure or
+    // timeout (network, storage quota, stuck session) logs and falls through to
+    // the app with whatever local data exists. The visibility/poll re-hydrates.
     run()
       .catch(e => console.error('[app] hydration failed — continuing with local data:', e))
       .finally(() => setHydrating(false));
@@ -280,22 +290,37 @@ function AppRoutes() {
 }
 
 // ── Update banner — shown when a new deployment is detected ──────────────────
-// Shows a reload button if the loading screen has been up for 12+ seconds —
-// an escape hatch so a hung sync (or stale cached build) never strands anyone.
+// Escape hatches on the loading screen: after 12s offer a reload, and a
+// full sign-out+reset so a stuck session (or wrongly-cached profile) can
+// always be broken out of and re-authenticated.
 function SlowLoadRetry() {
   const [slow, setSlow] = useState(false);
+  const { signOut } = useAuth();
   useEffect(() => {
     const t = setTimeout(() => setSlow(true), 12000);
     return () => clearTimeout(t);
   }, []);
   if (!slow) return null;
+  const hardReset = async () => {
+    try { await signOut(); } catch { /* ignore */ }
+    try { localStorage.removeItem('lusso_user_profiles'); localStorage.removeItem('lusso_last_version'); } catch { /* ignore */ }
+    window.location.reload();
+  };
   return (
-    <button
-      onClick={() => window.location.reload()}
-      className="mt-2 text-xs font-medium text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 hover:text-slate-600 transition-colors"
-    >
-      Taking a while? Tap to reload
-    </button>
+    <div className="mt-3 flex flex-col items-center gap-2">
+      <button
+        onClick={() => window.location.reload()}
+        className="text-xs font-medium text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 hover:text-slate-600 transition-colors"
+      >
+        Taking a while? Tap to reload
+      </button>
+      <button
+        onClick={hardReset}
+        className="text-xs font-medium text-slate-400 dark:text-slate-500 hover:text-slate-600 underline"
+      >
+        Still stuck? Sign out and start over
+      </button>
+    </div>
   );
 }
 
