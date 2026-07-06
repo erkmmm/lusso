@@ -80,7 +80,10 @@ function AppRoutes() {
 
   useEffect(() => {
     initStore();
-    if (!user || mfaRequired) return; // don't sync until 2FA is satisfied
+    if (!user) return;
+    // Note: we hydrate even while mfaRequired — the challenge screen covers the
+    // UI, and RLS already restricts reads at the DB. Gating hydration here once
+    // caused an empty app when a stale factor flipped mfaRequired unexpectedly.
 
     const run = async () => {
       setHydrating(true);
@@ -111,11 +114,11 @@ function AppRoutes() {
     run()
       .catch(e => console.error('[app] hydration failed — continuing with local data:', e))
       .finally(() => setHydrating(false));
-  // Depend on user.id (NOT the user object — onAuthStateChange gives a fresh
-  // object on every token refresh) plus mfaRequired, so hydration kicks off
-  // once a second factor is satisfied.
+  // Depend on user.id only — NOT the user object (onAuthStateChange gives a
+  // fresh object on every token refresh) and NOT mfaRequired (hydration is
+  // independent of the 2FA challenge now).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, mfaRequired]);
+  }, [user?.id]);
 
   // Re-hydrate when the tab becomes visible again (catches changes made on
   // other devices while this tab was in the background or screen was off).

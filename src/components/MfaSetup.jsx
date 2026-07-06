@@ -25,11 +25,18 @@ export default function MfaSetup() {
   const startEnroll = async () => {
     setBusy(true); setError('');
     try {
-      const { data, error: err } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
+      // Clear any half-finished (unverified) factor from a previous attempt so
+      // enrol can't fail with "a factor already exists".
+      const { data: existing } = await supabase.auth.mfa.listFactors();
+      for (const f of (existing?.totp || [])) {
+        if (f.status !== 'verified') { try { await supabase.auth.mfa.unenroll({ factorId: f.id }); } catch { /* ignore */ } }
+      }
+      const friendlyName = `Authenticator ${new Date().toISOString().slice(0, 16)}`;
+      const { data, error: err } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName });
       if (err) throw err;
       setEnrolling({ factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret });
     } catch (e) {
-      setError(e.message || 'Could not start setup.');
+      setError(e?.message || e?.error_description || (typeof e === 'string' ? e : 'Could not start setup — please try again.'));
     } finally { setBusy(false); }
   };
 

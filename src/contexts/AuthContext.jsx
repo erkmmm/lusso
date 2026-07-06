@@ -11,11 +11,17 @@ export function AuthProvider({ children }) {
   const [mfaRequired, setMfaRequired] = useState(false);
 
   // Ask Supabase whether this session needs to step up to aal2. Never throws.
+  // Guarded by an actual VERIFIED factor so a half-finished (unverified)
+  // enrolment can never gate the app or lock anyone out.
   const recheckMfa = useCallback(async () => {
     if (!supabase) return;
     try {
-      const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      setMfaRequired(!!data && data.currentLevel === 'aal1' && data.nextLevel === 'aal2');
+      const [{ data: aal }, { data: factors }] = await Promise.all([
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+        supabase.auth.mfa.listFactors(),
+      ]);
+      const hasVerified = (factors?.totp || []).some(f => f.status === 'verified');
+      setMfaRequired(hasVerified && aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2');
     } catch {
       setMfaRequired(false);
     }
