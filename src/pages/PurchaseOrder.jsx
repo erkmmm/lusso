@@ -126,6 +126,25 @@ export default function PurchaseOrder() {
     return next;
   });
 
+  // Split-across-suppliers flow: keys already put on a PO this session (sent,
+  // downloaded or printed). Whatever's left over can be carried into a fresh
+  // order in one tap without re-ticking.
+  const [orderedKeys, setOrderedKeys] = useState(() => new Set());
+  const [nextDismissed, setNextDismissed] = useState(false);
+  const markOrdered = () => {
+    setOrderedKeys(prev => new Set([...prev, ...curtains.map(c => c._key)]));
+    setNextDismissed(false); // re-arm the carry-over prompt for the new leftover
+  };
+  const remaining = allCurtains.filter(c => !orderedKeys.has(c._key));
+  const startNextPO = () => {
+    // Keep only the not-yet-ordered curtains selected.
+    setExcludedKeys(new Set(orderedKeys));
+    setRecipient('');
+    setNextDismissed(true); // those items are now selected — hide the prompt until the next order
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    toast(`Next order started — ${remaining.length} remaining curtain${remaining.length !== 1 ? 's' : ''} selected.`);
+  };
+
   // Per-order inputs
   const [dateRequired, setDateRequired] = useState('');
   const [extraNotes, setExtraNotes] = useState('');
@@ -285,6 +304,7 @@ export default function PurchaseOrder() {
     const run = () => { try { cw.focus(); cw.onafterprint = cleanup; cw.print(); } catch { window.print(); cleanup(); } setTimeout(cleanup, 60000); };
     if (cw.document.readyState === 'complete') setTimeout(run, 50);
     else iframe.onload = () => setTimeout(run, 50);
+    markOrdered();
   };
 
   // ── PDF (same PO data as the XLSX export) — used for download + email ──────
@@ -348,6 +368,7 @@ export default function PurchaseOrder() {
   const handleDownloadPdf = async () => {
     try {
       (await buildPdfDoc()).save(`${fileBase}.pdf`);
+      markOrdered();
     } catch (e) {
       console.error('[PO] PDF download failed', e);
       toast('Could not generate the PDF.', 'error');
@@ -380,6 +401,7 @@ export default function PurchaseOrder() {
         });
         advanceJobStatus(sheet.jobId, 'Ordered', displayName || 'System');
       }
+      markOrdered();
       toast(`Purchase order sent to ${to}.`);
     } catch (err) {
       toast(err.message || 'Could not send the purchase order.', 'error');
@@ -455,6 +477,25 @@ export default function PurchaseOrder() {
           </div>
         </div>
       </Card>
+
+      {/* Carry-over prompt: some curtains ordered, others still to place */}
+      {orderedKeys.size > 0 && remaining.length > 0 && !nextDismissed && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-amber-800">
+              {remaining.length} curtain{remaining.length !== 1 ? 's' : ''} not yet ordered
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">Start a fresh PO with just those — e.g. for a different supplier.</p>
+          </div>
+          <button onClick={startNextPO}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white text-xs font-semibold rounded-lg px-3 py-2 transition-colors">
+            <Plus size={13} /> Next PO
+          </button>
+          <button onClick={() => setNextDismissed(true)} className="flex-shrink-0 text-xs font-medium text-amber-600 hover:text-amber-800 px-1.5">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {allCurtains.length === 0 ? (
         <Card><p className="p-8 text-center text-sm text-slate-400">This measure sheet has no curtain items to order.</p></Card>
