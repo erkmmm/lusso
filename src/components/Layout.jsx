@@ -132,6 +132,15 @@ export default function Layout({ children }) {
     if (window.history.length > 1) navigate(-1);
     else navigate('/');
   };
+
+  // Content scrolls inside <main>, not the window, so React Router can't reset
+  // it. Scroll the page to the top on every route change (incl. back/forward)
+  // so you always land at the top of the page you arrive on.
+  const mainRef = useRef(null);
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0 });
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
   const { isAM, displayName, profile } = useProfile() || {};
 
   const unread = notifications.filter(n => !n.isRead).length;
@@ -388,7 +397,7 @@ export default function Layout({ children }) {
         </header>
 
         {/* Page content — extra bottom padding on mobile for bottom nav */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
+        <main ref={mainRef} className="flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
           {children}
         </main>
       </div>
