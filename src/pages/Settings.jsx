@@ -22,7 +22,6 @@ import {
 } from '../store/data';
 import { pushAllToSupabase, hydrateFromSupabase } from '../store/db';
 import Card from '../components/Card';
-import MfaSetup from '../components/MfaSetup';
 import { toast } from '../components/ToastContainer';
 import {
   xeroGetConnection, xeroStartOAuth, xeroDisconnect,
@@ -296,9 +295,6 @@ export default function Settings() {
                 })}
               </div>
             </Card>
-
-            {/* Security — two-factor authentication (only meaningful when signed in to the cloud) */}
-            {isCloud && <MfaSetup />}
 
             {/* Cloud sync status */}
             <Card>

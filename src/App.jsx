@@ -46,7 +46,6 @@ import NewJob from './pages/NewJob';
 import PendingApproval from './pages/PendingApproval';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import Inbox from './pages/Inbox';
-import MfaChallenge from './pages/MfaChallenge';
 import Reviews from './pages/Reviews';
 import { useProfile } from './contexts/UserProfileContext';
 
@@ -74,16 +73,13 @@ async function fetchBuildVersion() {
 }
 
 function AppRoutes() {
-  const { user, mfaRequired } = useAuth();
+  const { user } = useAuth();
   const { profile, needsOnboarding } = useProfile() || {};
   const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
     initStore();
     if (!user) return;
-    // Note: we hydrate even while mfaRequired — the challenge screen covers the
-    // UI, and RLS already restricts reads at the DB. Gating hydration here once
-    // caused an empty app when a stale factor flipped mfaRequired unexpectedly.
 
     const run = async () => {
       setHydrating(true);
@@ -115,8 +111,7 @@ function AppRoutes() {
       .catch(e => console.error('[app] hydration failed — continuing with local data:', e))
       .finally(() => setHydrating(false));
   // Depend on user.id only — NOT the user object (onAuthStateChange gives a
-  // fresh object on every token refresh) and NOT mfaRequired (hydration is
-  // independent of the 2FA challenge now).
+  // fresh object on every token refresh).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -213,11 +208,6 @@ function AppRoutes() {
         <Route path="*"                         element={<Login />} />
       </Routes>
     );
-  }
-
-  // Password accepted but the account has two-factor — require the code first.
-  if (mfaRequired) {
-    return <MfaChallenge />;
   }
 
   // Pending user — show waiting screen regardless of route
