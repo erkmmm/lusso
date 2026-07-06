@@ -682,10 +682,15 @@ function computeFollowUps(quotes) {
     .filter(q => ['Sent', 'Viewed', 'Waiting'].includes(q.status) && q.sentAt
       && (now - new Date(q.sentAt).getTime()) < 90 * DAY)
     .map(q => {
+      // Imported (Quotient) quotes carry no open-tracking data — Quotient's
+      // export never said whether the customer opened them — so "never opened"
+      // can't be inferred for them. Only quotes actually sent through Lusso
+      // have firstOpenedAt/viewedAt.
+      const imported = q.source === 'Quotient Import' || (q.quoteNumber || '').startsWith('QNT-');
       const opened   = !!(q.firstOpenedAt || q.viewedAt);
       const sentDays = Math.floor((now - new Date(q.sentAt).getTime()) / DAY);
       const expDays  = q.expiryDate ? Math.ceil((new Date(q.expiryDate).getTime() - now) / DAY) : null;
-      const unopened = !opened && sentDays >= 3;
+      const unopened = !imported && !opened && sentDays >= 3;
       const expiring = expDays !== null && expDays >= 0 && expDays <= 14;
       return (unopened || expiring) ? { q, sentDays, expDays, unopened, expiring } : null;
     })
@@ -1195,8 +1200,10 @@ export default function Dashboard() {
     if (exporting) return;
     setExporting(true);
     try {
+      const reportRange = getDateRange(globalRange);
       await downloadDashboardReport({
         periodLabel: rangeLabel,
+        periodDates: `${format(reportRange.start, 'd MMM yyyy')} – ${format(reportRange.end, 'd MMM yyyy')}`,
         salesperson: salesFilter !== 'all' ? salesFilter : null,
         generatedAt: format(new Date(), 'd MMM yyyy, h:mm a'),
         revenue: lM(analytics.acceptedValue),

@@ -107,10 +107,24 @@ export default function PurchaseOrder() {
   const fileBase = `Curtain PO - ${jobNumber || customerName || 'sheet'}`.replace(/[\\/:*?"<>|]/g, '');
   const defaultMessage = `Hi,\n\nPlease find attached the curtain purchase order${jobNumber ? ` for job ${jobNumber}` : ''}${customerName ? ` (${customerName})` : ''}.\n\nThanks,\nLusso`;
 
-  const curtains = useMemo(
-    () => (sheet?.lineItems || []).filter(isCurtain),
+  const allCurtains = useMemo(
+    () => (sheet?.lineItems || []).filter(isCurtain).map((it, i) => ({ ...it, _key: it.id || `idx-${i}` })),
     [sheet],
   );
+
+  // Which line items go on THIS order — some curtains may go to a different
+  // supplier, or the customer didn't proceed with all of them. Excluded by
+  // key, so a fresh order includes everything by default.
+  const [excludedKeys, setExcludedKeys] = useState(() => new Set());
+  const curtains = useMemo(
+    () => allCurtains.filter(c => !excludedKeys.has(c._key)),
+    [allCurtains, excludedKeys],
+  );
+  const toggleCurtain = (key) => setExcludedKeys(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   // Per-order inputs
   const [dateRequired, setDateRequired] = useState('');
@@ -173,11 +187,11 @@ export default function PurchaseOrder() {
   // Per-line motor side, keyed by item id (defaults to the stored motorSide).
   const [motorSides, setMotorSides] = useState(() => {
     const init = {};
-    curtains.forEach((it, i) => { init[it.id || i] = it.motorSide || ''; });
+    allCurtains.forEach((it) => { init[it._key] = it.motorSide || ''; });
     return init;
   });
-  const motorFor = (it, i) => motorSides[it.id || i] ?? '';
-  const setMotor = (it, i, v) => setMotorSides(m => ({ ...m, [it.id || i]: v }));
+  const motorFor = (it) => motorSides[it._key] ?? '';
+  const setMotor = (it, v) => setMotorSides(m => ({ ...m, [it._key]: v }));
 
   // Motorised tracks are the exception, so the Motor side column is off by
   // default and only added when this order actually has motors. Remembered.
@@ -197,7 +211,7 @@ export default function PurchaseOrder() {
   // Drop the trailing Motor side column when this order isn't motorised.
   const headers = motorised ? PO_HEADERS : PO_HEADERS.filter(h => h !== 'Motor side (L/R)');
   const rows = curtains.map((it, i) => {
-    const cells = rowCells(it, i, motorFor(it, i));
+    const cells = rowCells(it, i, motorFor(it));
     return motorised ? cells : cells.slice(0, -1);
   });
 
@@ -404,7 +418,9 @@ export default function PurchaseOrder() {
               <FileText size={18} /> Curtain Purchase Order
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">
-              {curtains.length} curtain{curtains.length !== 1 ? 's' : ''} from {customerName || 'this sheet'}
+              {curtains.length === allCurtains.length
+                ? `${curtains.length} curtain${curtains.length !== 1 ? 's' : ''}`
+                : `${curtains.length} of ${allCurtains.length} curtains selected`} from {customerName || 'this sheet'}
               {jobNumber ? ` · ${jobNumber}` : ''}
             </p>
           </div>
@@ -440,10 +456,52 @@ export default function PurchaseOrder() {
         </div>
       </Card>
 
-      {curtains.length === 0 ? (
+      {allCurtains.length === 0 ? (
         <Card><p className="p-8 text-center text-sm text-slate-400">This measure sheet has no curtain items to order.</p></Card>
       ) : (
         <>
+          {/* Line-item selection — choose which curtains go on this order */}
+          {allCurtains.length > 1 && (
+            <Card>
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-slate-800 text-sm">Curtains on this order</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">Untick anything going to a different supplier, or that the customer didn't proceed with.</p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button onClick={() => setExcludedKeys(new Set())}
+                    className="text-xs font-medium text-amber-600 hover:underline">All</button>
+                  <span className="text-slate-300">·</span>
+                  <button onClick={() => setExcludedKeys(new Set(allCurtains.map(c => c._key)))}
+                    className="text-xs font-medium text-slate-500 hover:underline">None</button>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {allCurtains.map((c, i) => {
+                  const included = !excludedKeys.has(c._key);
+                  return (
+                    <button key={c._key} onClick={() => toggleCurtain(c._key)}
+                      className={`w-full flex items-center gap-3 px-5 py-2.5 text-left hover:bg-slate-50 transition-colors ${included ? '' : 'opacity-50'}`}>
+                      <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${included ? 'bg-amber-500 border-amber-500' : 'border-slate-300'}`}>
+                        {included && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5L5 9L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </span>
+                      <span className="text-xs text-slate-400 tabular-nums w-5 flex-shrink-0">{i + 1}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-slate-800">{c.location || 'Curtain'}</span>
+                        <span className="text-xs text-slate-400 ml-2">
+                          {[c.fabricColour, (c.widthMm || c.width) && `${c.widthMm || c.width}×${c.dropMm || c.drop || '?'}`, c.control].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {curtains.length === 0 && (
+                <p className="px-5 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700">Nothing selected — tick at least one curtain to build the order.</p>
+              )}
+            </Card>
+          )}
+
           {/* Email message + presets */}
           <Card>
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
@@ -552,9 +610,9 @@ export default function PurchaseOrder() {
                           <span className="text-sm text-slate-700 truncate">{i + 1}. {it.location || '—'}</span>
                           <div className="flex gap-1 flex-shrink-0">
                             {['L', 'R'].map(side => (
-                              <button key={side} onClick={() => setMotor(it, i, motorFor(it, i) === side ? '' : side)}
+                              <button key={side} onClick={() => setMotor(it, motorFor(it) === side ? '' : side)}
                                 className={`text-xs font-semibold w-8 py-1 rounded-md border transition-colors ${
-                                  motorFor(it, i) === side ? 'bg-amber-500 text-white border-amber-500' : 'text-slate-500 border-slate-200 hover:border-slate-300'
+                                  motorFor(it) === side ? 'bg-amber-500 text-white border-amber-500' : 'text-slate-500 border-slate-200 hover:border-slate-300'
                                 }`}>
                                 {side}
                               </button>

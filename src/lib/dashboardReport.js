@@ -36,9 +36,10 @@ export async function buildDashboardReport(s) {
   doc.setFontSize(10); doc.setTextColor(120);
   const meta = [
     `Period: ${s.periodLabel}`,
+    s.periodDates ? s.periodDates : null,
     s.salesperson ? `Salesperson: ${s.salesperson}` : 'All salespeople',
     `Generated: ${s.generatedAt}`,
-  ];
+  ].filter(Boolean);
   meta.forEach((line, i) => doc.text(line, pageW - M, 40 + i * 13, { align: 'right' }));
 
   let y = 88;
