@@ -46,6 +46,7 @@ import NewJob from './pages/NewJob';
 import PendingApproval from './pages/PendingApproval';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import Inbox from './pages/Inbox';
+import MfaChallenge from './pages/MfaChallenge';
 import Reviews from './pages/Reviews';
 import { useProfile } from './contexts/UserProfileContext';
 
@@ -73,13 +74,13 @@ async function fetchBuildVersion() {
 }
 
 function AppRoutes() {
-  const { user } = useAuth();
+  const { user, mfaRequired } = useAuth();
   const { profile, needsOnboarding } = useProfile() || {};
   const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
     initStore();
-    if (!user) return;
+    if (!user || mfaRequired) return; // don't sync until 2FA is satisfied
 
     const run = async () => {
       setHydrating(true);
@@ -110,11 +111,11 @@ function AppRoutes() {
     run()
       .catch(e => console.error('[app] hydration failed — continuing with local data:', e))
       .finally(() => setHydrating(false));
-  // Depend on user.id, NOT the user object — Supabase fires onAuthStateChange
-  // with a fresh user object on every token refresh, which would otherwise
-  // re-run this effect, show the loading screen, and unmount in-progress forms.
+  // Depend on user.id (NOT the user object — onAuthStateChange gives a fresh
+  // object on every token refresh) plus mfaRequired, so hydration kicks off
+  // once a second factor is satisfied.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, mfaRequired]);
 
   // Re-hydrate when the tab becomes visible again (catches changes made on
   // other devices while this tab was in the background or screen was off).
@@ -209,6 +210,11 @@ function AppRoutes() {
         <Route path="*"                         element={<Login />} />
       </Routes>
     );
+  }
+
+  // Password accepted but the account has two-factor — require the code first.
+  if (mfaRequired) {
+    return <MfaChallenge />;
   }
 
   // Pending user — show waiting screen regardless of route
