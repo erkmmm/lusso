@@ -7,7 +7,7 @@ import {
   Calendar, ClipboardList, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, ChevronDown, HardHat, Plus, Upload,
-  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic,
+  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import ConsultRecordings from '../components/ConsultRecordings';
@@ -73,6 +73,7 @@ export default function JobProfile() {
   const [confirmDeleteQuoteId, setConfirmDeleteQuoteId] = useState(null);
   const [reviewPrompt, setReviewPrompt]   = useState(false);
   const [confirmDeleteJob, setConfirmDeleteJob] = useState(false);
+  const [moreOpen, setMoreOpen]           = useState(false);
   const { displayName = '' } = useProfile() || {};
 
   useDataRefresh();
@@ -130,6 +131,7 @@ export default function JobProfile() {
             </div>
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2 flex-shrink-0">
+              {/* Primary create actions */}
               <button onClick={() => navigate(`/quotes/new-from-job/${id}`)}
                 className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white transition-colors">
                 <Plus size={14} /> New Quote
@@ -138,22 +140,38 @@ export default function JobProfile() {
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white transition-colors">
                 <ClipboardList size={14} /> <span className="hidden sm:inline">New Measure</span>
               </button>
-              <button onClick={() => navigate(`/jobs/${id}/takeoff`)}
-                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
-                <Ruler size={14} /> <span className="hidden sm:inline">Plan Takeoff</span>
-              </button>
-              <button onClick={() => setShowCalendar(true)}
-                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
-                <CalendarPlus size={14} />
-              </button>
+              {/* Status control */}
               <button onClick={() => setEditingStatus(!editingStatus)}
                 className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${editingStatus ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:bg-slate-50'}`}>
                 <ChevronDown size={14} /> <span className="hidden sm:inline">Status</span>
               </button>
-              <button onClick={() => setConfirmDeleteJob(true)} title="Delete job"
-                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors">
-                <Trash2 size={14} /> <span className="hidden sm:inline">Delete</span>
-              </button>
+              {/* Overflow menu — occasional + destructive actions */}
+              <div className="relative">
+                <button onClick={() => setMoreOpen(o => !o)} aria-label="More actions" aria-expanded={moreOpen}
+                  className={`flex items-center px-2.5 py-2 rounded-lg border transition-colors ${moreOpen ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                  <MoreHorizontal size={16} />
+                </button>
+                {moreOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
+                    <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-white rounded-xl border border-slate-200 shadow-xl py-1">
+                      <button onClick={() => { navigate(`/jobs/${id}/takeoff`); setMoreOpen(false); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                        <Ruler size={15} className="text-slate-400" /> Plan Takeoff
+                      </button>
+                      <button onClick={() => { setShowCalendar(true); setMoreOpen(false); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                        <CalendarPlus size={15} className="text-slate-400" /> Add to calendar
+                      </button>
+                      <div className="my-1 border-t border-slate-100" />
+                      <button onClick={() => { setConfirmDeleteJob(true); setMoreOpen(false); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50">
+                        <Trash2 size={15} /> Delete job
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
