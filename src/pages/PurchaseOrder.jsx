@@ -214,6 +214,7 @@ export default function PurchaseOrder() {
   // default and only added when this order actually has motors. Remembered.
   const [motorised, setMotorised] = useState(() => localStorage.getItem('lusso_po_motorised') === 'true');
   const [motorOpen, setMotorOpen] = useState(() => localStorage.getItem('lusso_po_motorised') === 'true');
+  const [curtainsOpen, setCurtainsOpen] = useState(false);
   const toggleMotorised = () => setMotorised(v => { const n = !v; localStorage.setItem('lusso_po_motorised', String(n)); return n; });
 
   if (!sheet) {
@@ -467,47 +468,63 @@ export default function PurchaseOrder() {
         <Card><p className="p-8 text-center text-sm text-slate-400">This measure sheet has no curtain items to order.</p></Card>
       ) : (
         <>
-          {/* Line-item selection — choose which curtains go on this order */}
-          {allCurtains.length > 1 && (
-            <Card>
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="font-semibold text-slate-800 text-sm">Curtains on this order</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Untick anything going to a different supplier, or that the customer didn't proceed with.</p>
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => setExcludedKeys(new Set())}
-                    className="text-xs font-medium text-amber-600 hover:underline">All</button>
-                  <span className="text-slate-300">·</span>
-                  <button onClick={() => setExcludedKeys(new Set(allCurtains.map(c => c._key)))}
-                    className="text-xs font-medium text-slate-500 hover:underline">None</button>
-                </div>
-              </div>
-              <div className="divide-y divide-slate-50">
-                {allCurtains.map((c, i) => {
-                  const included = !excludedKeys.has(c._key);
-                  return (
-                    <button key={c._key} onClick={() => toggleCurtain(c._key)}
-                      className={`w-full flex items-center gap-3 px-5 py-2.5 text-left hover:bg-slate-50 transition-colors ${included ? '' : 'opacity-50'}`}>
-                      <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${included ? 'bg-amber-500 border-amber-500' : 'border-slate-300'}`}>
-                        {included && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5L5 9L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                      </span>
-                      <span className="text-xs text-slate-400 tabular-nums w-5 flex-shrink-0">{i + 1}</span>
-                      <span className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-slate-800">{c.location || 'Curtain'}</span>
-                        <span className="text-xs text-slate-400 ml-2">
-                          {[c.fabricColour, (c.widthMm || c.width) && `${c.widthMm || c.width}×${c.dropMm || c.drop || '?'}`, c.control].filter(Boolean).join(' · ')}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {curtains.length === 0 && (
-                <p className="px-5 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700">Nothing selected — tick at least one curtain to build the order.</p>
-              )}
-            </Card>
-          )}
+          {/* Line-item selection — collapsed by default (rarely changed) */}
+          {allCurtains.length > 1 && (() => {
+            const partial = curtains.length !== allCurtains.length;
+            return (
+              <Card>
+                <button type="button" onClick={() => setCurtainsOpen(o => !o)} aria-expanded={curtainsOpen}
+                  className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left hover:bg-slate-50/60 transition-colors">
+                  <div className="min-w-0">
+                    <h2 className="font-semibold text-slate-800 text-sm">Curtains on this order</h2>
+                    <p className={`text-xs mt-0.5 ${partial ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                      {partial
+                        ? `${curtains.length} of ${allCurtains.length} selected — tap to change`
+                        : `All ${allCurtains.length} curtains — tap to pick which go on this order`}
+                    </p>
+                  </div>
+                  <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 transition-transform ${curtainsOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {curtainsOpen && (
+                  <>
+                    <div className="px-5 py-2.5 border-t border-slate-100 flex items-center justify-between gap-3">
+                      <p className="text-xs text-slate-400 min-w-0">Untick anything going to a different supplier, or that the customer didn't proceed with.</p>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => setExcludedKeys(new Set())}
+                          className="text-xs font-medium text-amber-600 hover:underline">All</button>
+                        <span className="text-slate-300">·</span>
+                        <button onClick={() => setExcludedKeys(new Set(allCurtains.map(c => c._key)))}
+                          className="text-xs font-medium text-slate-500 hover:underline">None</button>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-50 border-t border-slate-100">
+                      {allCurtains.map((c, i) => {
+                        const included = !excludedKeys.has(c._key);
+                        return (
+                          <button key={c._key} onClick={() => toggleCurtain(c._key)}
+                            className={`w-full flex items-center gap-3 px-5 py-2.5 text-left hover:bg-slate-50 transition-colors ${included ? '' : 'opacity-50'}`}>
+                            <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${included ? 'bg-amber-500 border-amber-500' : 'border-slate-300'}`}>
+                              {included && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5L5 9L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </span>
+                            <span className="text-xs text-slate-400 tabular-nums w-5 flex-shrink-0">{i + 1}</span>
+                            <span className="flex-1 min-w-0">
+                              <span className="text-sm font-medium text-slate-800">{c.location || 'Curtain'}</span>
+                              <span className="text-xs text-slate-400 ml-2">
+                                {[c.fabricColour, (c.widthMm || c.width) && `${c.widthMm || c.width}×${c.dropMm || c.drop || '?'}`, c.control].filter(Boolean).join(' · ')}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+                {curtains.length === 0 && (
+                  <p className="px-5 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700">Nothing selected — tap above and tick at least one curtain.</p>
+                )}
+              </Card>
+            );
+          })()}
 
           {/* Motorised order — expandable; controls the Motor side column on the PO */}
           <Card>
