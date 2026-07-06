@@ -340,7 +340,8 @@ export default function Layout({ children }) {
             </button>
           )}
           <div className="flex items-center gap-1.5 text-sm text-slate-500 min-w-0">
-            <img src="/brand/lusso-black.png" alt="Lusso" className="h-4 w-auto" />
+            <img src="/brand/lusso-black.png" alt="Lusso" className="brand-logo-light h-4 w-auto" />
+            <img src="/brand/lusso-white.png" alt="Lusso" className="brand-logo-dark h-4 w-auto" />
             <ChevronRight size={14} />
           </div>
           <div className="flex-1" />
