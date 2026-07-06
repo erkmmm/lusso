@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { format, addDays, parseISO } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
@@ -107,19 +107,15 @@ export default function PurchaseOrder() {
   const fileBase = `Curtain PO - ${jobNumber || customerName || 'sheet'}`.replace(/[\\/:*?"<>|]/g, '');
   const defaultMessage = `Hi,\n\nPlease find attached the curtain purchase order${jobNumber ? ` for job ${jobNumber}` : ''}${customerName ? ` (${customerName})` : ''}.\n\nThanks,\nLusso`;
 
-  const allCurtains = useMemo(
-    () => (sheet?.lineItems || []).filter(isCurtain).map((it, i) => ({ ...it, _key: it.id || `idx-${i}` })),
-    [sheet],
-  );
+  // React Compiler memoizes these — a manual useMemo can't be preserved once
+  // the derived objects flow into other hooks, so leave them as plain derivations.
+  const allCurtains = (sheet?.lineItems || []).filter(isCurtain).map((it, i) => ({ ...it, _key: it.id || `idx-${i}` }));
 
   // Which line items go on THIS order — some curtains may go to a different
   // supplier, or the customer didn't proceed with all of them. Excluded by
   // key, so a fresh order includes everything by default.
   const [excludedKeys, setExcludedKeys] = useState(() => new Set());
-  const curtains = useMemo(
-    () => allCurtains.filter(c => !excludedKeys.has(c._key)),
-    [allCurtains, excludedKeys],
-  );
+  const curtains = allCurtains.filter(c => !excludedKeys.has(c._key));
   const toggleCurtain = (key) => setExcludedKeys(prev => {
     const next = new Set(prev);
     next.has(key) ? next.delete(key) : next.add(key);
@@ -156,8 +152,10 @@ export default function PurchaseOrder() {
   const updateWand = (id, f, v) => setWands(w => w.map(x => x.id === id ? { ...x, [f]: v } : x));
   const removeWand = (id) => setWands(w => w.filter(x => x.id !== id));
 
-  // Wands required from the curtains' Control codes (F/R, LHS, RHS, C/O…), × line qty.
-  const wandCalc = useMemo(() => {
+  // Wands required from the curtains' Control codes (F/R, LHS, RHS, C/O…), × line
+  // qty. Plain derivation — React Compiler memoizes it (curtains is recomputed
+  // each render, so a manual useMemo dep can't be preserved).
+  const wandCalc = (() => {
     const byCode = {};
     let total = 0, unmatched = 0;
     curtains.forEach(c => {
@@ -171,7 +169,7 @@ export default function PurchaseOrder() {
       total += per * qty;
     });
     return { total, byCode, unmatched };
-  }, [curtains]);
+  })();
 
   const addSuggestedWands = () => setWands(w => [...w, { id: uuidv4(), qty: String(wandCalc.total), colour: '', length: '' }]);
   const addRemote    = () => setRemotes(r => [...r, { id: uuidv4(), qty: '', type: '', colour: '' }]);
@@ -432,50 +430,18 @@ export default function PurchaseOrder() {
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
       <BackButton fallback={`/measure-sheets/${id}`} />
 
-      {/* Header + actions */}
+      {/* Header — actions live at the bottom (review the PO first) */}
       <Card className="p-5">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <FileText size={18} /> Curtain Purchase Order
-            </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              {curtains.length === allCurtains.length
-                ? `${curtains.length} curtain${curtains.length !== 1 ? 's' : ''}`
-                : `${curtains.length} of ${allCurtains.length} curtains selected`} from {customerName || 'this sheet'}
-              {jobNumber ? ` · ${jobNumber}` : ''}
-            </p>
-          </div>
-          <div className="flex gap-2 flex-wrap items-center w-full sm:w-auto sm:flex-shrink-0 sm:justify-end">
-            <input
-              type="email"
-              list="po-preset-emails"
-              value={recipient}
-              onChange={e => applyRecipient(e.target.value)}
-              placeholder="supplier@email.com"
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-full sm:w-52 focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-            <datalist id="po-preset-emails">
-              {presets.map(p => <option key={p.id} value={p.email} />)}
-            </datalist>
-            <button onClick={handleSend} disabled={sending || !curtains.length}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white">
-              {sending ? <Loader size={13} className="animate-spin" /> : <Send size={13} />} Send PO
-            </button>
-            <button onClick={handlePrint}
-              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
-              <Printer size={13} /> Print
-            </button>
-            <button onClick={handleDownloadPdf} disabled={!curtains.length}
-              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
-              <FileText size={13} /> Download PDF
-            </button>
-            <button onClick={handleExport}
-              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
-              <Download size={13} /> Export XLSX
-            </button>
-          </div>
-        </div>
+        <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <FileText size={18} /> Curtain Purchase Order
+        </h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          {curtains.length === allCurtains.length
+            ? `${curtains.length} curtain${curtains.length !== 1 ? 's' : ''}`
+            : `${curtains.length} of ${allCurtains.length} curtains selected`} from {customerName || 'this sheet'}
+          {jobNumber ? ` · ${jobNumber}` : ''}
+        </p>
+        <p className="text-xs text-slate-400 mt-1.5">Review the order below — send, print or download it at the bottom.</p>
       </Card>
 
       {/* Carry-over prompt: some curtains ordered, others still to place */}
@@ -542,48 +508,6 @@ export default function PurchaseOrder() {
               )}
             </Card>
           )}
-
-          {/* Email message + presets */}
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-              <h2 className="font-semibold text-slate-800 text-sm">Email message</h2>
-              <button onClick={handleSavePreset}
-                className="text-xs font-medium text-amber-600 hover:underline flex items-center gap-1 flex-shrink-0">
-                <Save size={12} /> {activePreset ? 'Update preset' : 'Save as preset'}
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <p className="text-xs text-slate-500 mb-1">
-                  Body sent with the PO{recipient ? ` to ${recipient}` : ''}
-                  {activePreset && <span className="ml-1 text-amber-600">· auto-filled from saved preset</span>}
-                </p>
-                <textarea rows={4} value={message} onChange={e => setMessage(e.target.value)}
-                  className={inputCls} placeholder="Message to the supplier…" />
-              </div>
-              {presets.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-slate-500 mb-1.5">Saved message presets</p>
-                  <div className="space-y-1.5">
-                    {presets.map(p => (
-                      <div key={p.id} className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${activePreset?.id === p.id ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium text-slate-700 truncate block">{p.email}</span>
-                          <span className="text-xs text-slate-400 truncate block">{p.message?.replace(/\n/g, ' ') || '—'}</span>
-                        </div>
-                        <button onClick={() => applyRecipient(p.email)}
-                          className="text-xs font-medium text-amber-600 hover:underline flex-shrink-0">Use</button>
-                        <button onClick={() => handleDeletePreset(p)}
-                          className="text-slate-400 hover:text-red-500 flex-shrink-0" title="Delete preset">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
 
           {/* Order details */}
           <Card>
@@ -804,6 +728,86 @@ export default function PurchaseOrder() {
               <p className="text-[11px] text-slate-400 mt-4 pt-3 border-t border-slate-100">
                 Should you have any questions please call 0755284006 or email info@lusso.com.au — Address 3 Crinum Cres Southport
               </p>
+            </div>
+          </Card>
+
+          {/* ── Send / export — at the bottom, after you've reviewed the PO ── */}
+          <Card>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+              <h2 className="font-semibold text-slate-800 text-sm">Send this order</h2>
+              <button onClick={handleSavePreset}
+                className="text-xs font-medium text-amber-600 hover:underline flex items-center gap-1 flex-shrink-0">
+                <Save size={12} /> {activePreset ? 'Update preset' : 'Save as preset'}
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Recipient */}
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Supplier email</label>
+                <input
+                  type="email"
+                  list="po-preset-emails"
+                  value={recipient}
+                  onChange={e => applyRecipient(e.target.value)}
+                  placeholder="supplier@email.com"
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+                <datalist id="po-preset-emails">
+                  {presets.map(p => <option key={p.id} value={p.email} />)}
+                </datalist>
+              </div>
+
+              {/* Message */}
+              <div>
+                <p className="text-xs text-slate-500 mb-1">
+                  Message sent with the PO{recipient ? ` to ${recipient}` : ''}
+                  {activePreset && <span className="ml-1 text-amber-600">· auto-filled from saved preset</span>}
+                </p>
+                <textarea rows={4} value={message} onChange={e => setMessage(e.target.value)}
+                  className={inputCls} placeholder="Message to the supplier…" />
+              </div>
+
+              {presets.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-slate-500 mb-1.5">Saved message presets</p>
+                  <div className="space-y-1.5">
+                    {presets.map(p => (
+                      <div key={p.id} className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${activePreset?.id === p.id ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium text-slate-700 truncate block">{p.email}</span>
+                          <span className="text-xs text-slate-400 truncate block">{p.message?.replace(/\n/g, ' ') || '—'}</span>
+                        </div>
+                        <button onClick={() => applyRecipient(p.email)}
+                          className="text-xs font-medium text-amber-600 hover:underline flex-shrink-0">Use</button>
+                        <button onClick={() => handleDeletePreset(p)}
+                          className="text-slate-400 hover:text-red-500 flex-shrink-0" title="Delete preset">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button onClick={handleSend} disabled={sending || !curtains.length}
+                  className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white">
+                  {sending ? <Loader size={14} className="animate-spin" /> : <Send size={14} />} Send PO
+                </button>
+                <button onClick={handlePrint}
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50">
+                  <Printer size={14} /> Print
+                </button>
+                <button onClick={handleDownloadPdf} disabled={!curtains.length}
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
+                  <FileText size={14} /> Download PDF
+                </button>
+                <button onClick={handleExport}
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50">
+                  <Download size={14} /> Export XLSX
+                </button>
+              </div>
             </div>
           </Card>
         </>
