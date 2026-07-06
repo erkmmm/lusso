@@ -6,7 +6,7 @@ import {
   Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus, Edit3,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { getCustomers, getCustomersFiltered, getJobsByCustomer, saveCustomer, deleteCustomer, restoreCustomer, bulkDeleteCustomers } from '../store/data';
+import { getCustomers, getCustomersFiltered, getJobs, getJobsByCustomer, saveCustomer, deleteCustomer, restoreCustomer, bulkDeleteCustomers } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
@@ -97,6 +97,28 @@ export default function Customers() {
       [c.name, c.phone, c.email, c.address].join(' ').toLowerCase().includes(term)
     );
   }, [customers, search]);
+
+  // Per-customer job stats computed in ONE pass over all jobs, instead of
+  // scanning every job for every customer row (was O(customers × jobs) — froze
+  // the page once the imported history added thousands of jobs).
+  const jobStats = useMemo(() => {
+    const m = new Map();
+    getJobs().forEach(j => {
+      let e = m.get(j.customerId);
+      if (!e) { e = { total: 0, active: 0, latest: null }; m.set(j.customerId, e); }
+      e.total += 1;
+      if (j.status !== 'Completed' && j.status !== 'Cancelled') e.active += 1;
+      if (!e.latest || new Date(j.updatedAt) > new Date(e.latest.updatedAt)) e.latest = j;
+    });
+    return m;
+  }, [customers]);
+
+  // Render in pages — thousands of customer cards would otherwise mount at once.
+  const PAGE = 60;
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  const [prevSearch, setPrevSearch] = useState(search);
+  if (prevSearch !== search) { setPrevSearch(search); setVisibleCount(PAGE); }
+  const visible = filtered.slice(0, visibleCount);
 
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()); };
 
@@ -233,10 +255,9 @@ export default function Customers() {
         </Card>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(customer => {
-            const jobs = getJobsByCustomer(customer.id);
-            const activeJobs = jobs.filter(j => j.status !== 'Completed' && j.status !== 'Cancelled');
-            const latestJob = [...jobs].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+          {visible.map(customer => {
+            const stats = jobStats.get(customer.id) || { total: 0, active: 0, latest: null };
+            const jobCount = stats.total, activeCount = stats.active, latestJob = stats.latest;
             const isSelected = selected.has(customer.id);
 
             return (
@@ -287,7 +308,7 @@ export default function Customers() {
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold text-slate-900 text-sm truncate">{customer.name}</div>
                       {customer.businessName && <div className="text-xs text-slate-500 truncate">{customer.businessName}</div>}
-                      <div className="text-xs text-slate-400">{jobs.length} job{jobs.length !== 1 ? 's' : ''} · {activeJobs.length} active</div>
+                      <div className="text-xs text-slate-400">{jobCount} job{jobCount !== 1 ? 's' : ''} · {activeCount} active</div>
                     </div>
                     {!selectMode && <ChevronRight size={16} className="text-slate-300 group-hover:text-amber-500 flex-shrink-0 transition-colors" />}
                   </div>
@@ -307,6 +328,15 @@ export default function Customers() {
             );
           })}
         </div>
+      )}
+
+      {filtered.length > visibleCount && (
+        <button
+          onClick={() => setVisibleCount(c => c + PAGE)}
+          className="w-full mt-4 py-3 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          Show more ({filtered.length - visibleCount} remaining)
+        </button>
       )}
 
       {/* Confirmation modal */}
