@@ -18,7 +18,6 @@ import { syncNow } from '../store/db';
 import Card from '../components/Card';
 import ConsultRecorder from '../components/ConsultRecorder';
 import MeasureSheetTable from '../components/MeasureSheetTable';
-import BackButton from '../components/BackButton';
 import PricedItemPicker from '../components/PricedItemPicker';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 
@@ -623,7 +622,6 @@ export default function NewMeasureSheet() {
 
       {/* Header */}
       <div className="flex items-center gap-3">
-        <BackButton fallback={prelinkedJobId ? `/jobs/${prelinkedJobId}` : sheet?.jobId ? `/jobs/${sheet.jobId}` : '/measure-sheets'} />
         <div className="flex-1">
           <h1 className="text-xl font-bold text-slate-900">
             {isEdit ? 'Edit Measure Sheet' : prelinkedCustomer ? `New Measure Sheet — ${prelinkedCustomer.name}` : 'New Measure Sheet'}

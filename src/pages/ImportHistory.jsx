@@ -6,7 +6,6 @@ import {
   History, Users, Library, Download, Search,
   ChevronDown, Filter, FileText,
 } from 'lucide-react';
-import BackButton from '../components/BackButton';
 import { getImportBatches, getPricedItemBatches } from '../store/data';
 import Card from '../components/Card';
 
@@ -124,7 +123,6 @@ export default function ImportHistory() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <BackButton fallback="/settings" />
           <div>
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
               <History size={20} className="text-amber-500"/> Import History

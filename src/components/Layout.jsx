@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, Users,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
-  ChevronDown, Home, UserCog, Users2, Inbox,
+  ChevronDown, Home, UserCog, Users2, Inbox, ArrowLeft,
 } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
@@ -122,7 +122,16 @@ export default function Layout({ children }) {
   const sideNewRef    = useRef(null); // wraps sidebar + New section
   const mobileSheetRef = useRef(null); // mobile action sheet
   const navigate      = useNavigate();
+  const location      = useLocation();
   const { user, signOut } = useAuth();
+
+  // Global back — shown on every page except the dashboard. Goes back in
+  // history, or to the dashboard if there's nowhere to go back to.
+  const isDashboard = location.pathname === '/';
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate('/');
+  };
   const { isAM, displayName, profile } = useProfile() || {};
 
   const unread = notifications.filter(n => !n.isRead).length;
@@ -314,6 +323,13 @@ export default function Layout({ children }) {
           <button aria-label="Open navigation" className="lg:hidden text-slate-500 hover:text-slate-800" onClick={() => setSidebarOpen(true)}>
             <Menu size={20} />
           </button>
+          {!isDashboard && (
+            <button aria-label="Back" onClick={goBack}
+              className="flex items-center gap-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg px-2 py-1.5 transition-colors flex-shrink-0">
+              <ArrowLeft size={18} />
+              <span className="hidden sm:inline text-sm font-medium">Back</span>
+            </button>
+          )}
           <div className="flex items-center gap-1.5 text-sm text-slate-500 min-w-0">
             <img src="/brand/lusso-black.png" alt="Lusso" className="h-4 w-auto" />
             <ChevronRight size={14} />

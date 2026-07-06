@@ -10,7 +10,6 @@ import {
   Package, ClipboardList, BookOpen, Sparkles, Info, Check, Copy,
   AlertCircle, CheckCircle2, X, Loader2, ExternalLink,
 } from 'lucide-react';
-import BackButton from '../components/BackButton';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
@@ -662,7 +661,6 @@ export default function QuoteBuilder() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Quote not found.</p>
-        <BackButton fallback="/quotes" className="mt-2" />
       </div>
     );
   }
@@ -957,7 +955,6 @@ export default function QuoteBuilder() {
       {/* Header — buttons show icon+label on sm+, icon-only on mobile */}
       <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
-          <BackButton fallback={form?.jobId ? `/jobs/${form.jobId}` : '/quotes'} />
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-slate-900 truncate">{isEdit ? 'Edit Quote' : 'New Quote'}</h1>
             {form.quoteNumber && <p className="text-sm text-slate-400">{form.quoteNumber}</p>}

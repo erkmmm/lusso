@@ -14,7 +14,6 @@ import { useProfile } from '../contexts/UserProfileContext';
 import { sendPurchaseOrder } from '../lib/email';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
-import BackButton from '../components/BackButton';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const RECIPIENT_KEY = 'lusso_po_recipient';
@@ -220,7 +219,6 @@ export default function PurchaseOrder() {
   if (!sheet) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
-        <BackButton fallback="/measure-sheets" />
         <p className="mt-6 text-slate-500">Measure sheet not found.</p>
       </div>
     );
@@ -429,7 +427,6 @@ export default function PurchaseOrder() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      <BackButton fallback={`/measure-sheets/${id}`} />
 
       {/* Header — actions live at the bottom (review the PO first) */}
       <Card className="p-5">

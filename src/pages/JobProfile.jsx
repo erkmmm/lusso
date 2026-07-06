@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import ConsultRecordings from '../components/ConsultRecordings';
-import BackButton from '../components/BackButton';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import {
   getJob, getCustomer, getMeasureSheetsByJob, getActivityByJob,
@@ -82,7 +81,6 @@ export default function JobProfile() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Job not found.</p>
-        <BackButton fallback="/jobs" className="mt-2" />
       </div>
     );
   }
@@ -105,7 +103,6 @@ export default function JobProfile() {
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-4">
-      <BackButton fallback={job?.customerId ? `/customers/${job.customerId}` : '/jobs'} />
 
       {/* ── Compact header ─────────────────────────────────────────────── */}
       <Card className="overflow-hidden">

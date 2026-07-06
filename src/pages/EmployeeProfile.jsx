@@ -6,7 +6,6 @@ import {
   UserCog, AlertTriangle, CheckCircle2, MapPin,
   ToggleLeft, ToggleRight, User, Shield,
 } from 'lucide-react';
-import BackButton from '../components/BackButton';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getEmployeeByIdFromSupabase, updateEmployeeProfile,
@@ -115,7 +114,6 @@ export default function EmployeeProfile() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Employee not found.</p>
-        <BackButton fallback="/employees" className="mt-3" />
       </div>
     );
   }
@@ -174,7 +172,6 @@ export default function EmployeeProfile() {
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-24">
 
       {/* Back */}
-      <BackButton fallback="/employees" />
 
       {/* Header card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">

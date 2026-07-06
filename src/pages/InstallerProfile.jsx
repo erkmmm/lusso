@@ -12,7 +12,6 @@ import {
   getJob, getCustomer, INSTALLER_SERVICES, INSTALL_REQUEST_STATUS_COLORS,
 } from '../store/data';
 import Card from '../components/Card';
-import BackButton from '../components/BackButton';
 import StatusBadge from '../components/StatusBadge';
 
 export default function InstallerProfile() {
@@ -58,7 +57,6 @@ export default function InstallerProfile() {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
-      <BackButton fallback="/installers" />
 
       {/* Header */}
       <Card className="p-5">

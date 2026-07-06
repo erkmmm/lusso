@@ -15,7 +15,6 @@ import {
   savePricedItemBatch,
 } from '../store/data';
 import Card from '../components/Card';
-import BackButton from '../components/BackButton';
 import { v4 as uuidv4 } from 'uuid';
 
 // ─── Field definitions ────────────────────────────────────────────────────────
@@ -446,17 +445,6 @@ export default function PricedItems() {
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
 
       {/* Back button — guards against leaving mid-import */}
-      <BackButton
-        fallback="/settings"
-        guard={() => {
-          // Warn if the user is mid-import (file selected, not yet done)
-          if (activeTab === 'import' && step !== 'upload' && step !== 'done') {
-            return window.confirm('You have an import in progress. Leave this page?');
-          }
-          return true;
-        }}
-      />
-
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900">Priced Items</h1>

@@ -9,7 +9,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { extractPdfText } from '../lib/pdfExtract';
 import { supabase } from '../lib/supabase';
 import { getPricedItems, savePricedItemBatch, runPricedItemImport, getProductTypes } from '../store/data';
-import BackButton from '../components/BackButton';
 import { toast } from '../components/ToastContainer';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -372,7 +371,6 @@ export default function ImportSupplierPDF() {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-5 pb-20">
-      <BackButton fallback="/priced-items" />
 
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">

@@ -6,7 +6,6 @@ import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, Ale
 import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, createJobFromMeasureSheet } from '../store/data';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
-import BackButton from '../components/BackButton';
 
 // Date + time, matching the app's 'd MMM yyyy' convention plus a 12h clock.
 const fmtDateTime = (dateStr) => {
@@ -315,7 +314,6 @@ export default function MeasureSheetView() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Measure sheet not found.</p>
-        <BackButton fallback="/measure-sheets" className="mt-2" />
       </div>
     );
   }
@@ -330,7 +328,6 @@ export default function MeasureSheetView() {
       <div className="screen-only">
 
       {/* Back */}
-      <BackButton fallback={sheet?.jobId ? `/jobs/${sheet.jobId}` : '/measure-sheets'} />
 
       {/* Header */}
       <Card className="p-5">

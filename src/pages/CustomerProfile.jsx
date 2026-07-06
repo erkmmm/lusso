@@ -7,7 +7,6 @@ import {
   Search, Loader, ExternalLink, Trash2,
 } from 'lucide-react';
 import OptionsMenu from '../components/OptionsMenu';
-import BackButton from '../components/BackButton';
 import { format, parseISO } from 'date-fns';
 import { getCustomer, getJobsByCustomer, saveCustomer, updateCustomerXeroContact, deleteCustomer, restoreCustomer } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
@@ -31,7 +30,6 @@ export default function CustomerProfile() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Customer not found.</p>
-        <BackButton fallback="/customers" className="mt-2" />
       </div>
     );
   }
@@ -51,7 +49,6 @@ export default function CustomerProfile() {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6 overflow-x-hidden pb-24">
-      <BackButton fallback="/customers" />
 
       {/* Header */}
       <Card className="p-5">

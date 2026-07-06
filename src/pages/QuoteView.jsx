@@ -9,7 +9,6 @@ import {
   ChevronDown, ChevronUp, Briefcase, Phone, Mail, AlertCircle,
   Activity, Wifi, X, ExternalLink, RefreshCw, Loader,
 } from 'lucide-react';
-import BackButton from '../components/BackButton';
 import {
   getQuote, getCustomer, getJob,
   QUOTE_STATUS_COLORS, computeQuoteTotals, calcItemPricing,
@@ -110,7 +109,6 @@ export default function QuoteView() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Quote not found.</p>
-        <BackButton fallback="/quotes" className="mt-2" />
       </div>
     );
   }
@@ -221,7 +219,6 @@ export default function QuoteView() {
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5 overflow-x-hidden">
       {/* Back */}
-      <BackButton fallback="/quotes" />
 
       {/* Send error / success banner */}
       {sendError && (

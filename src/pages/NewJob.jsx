@@ -19,7 +19,6 @@ import {
   Search, User, Briefcase, X, UserCheck, UserPlus,
   ChevronRight, Loader2, AlertCircle, ArrowLeft,
 } from 'lucide-react';
-import BackButton from '../components/BackButton';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
@@ -209,7 +208,6 @@ export default function NewJob() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto pb-32 space-y-5 overflow-x-hidden">
-      <BackButton fallback="/jobs" />
 
       <div>
         <h1 className="text-2xl font-bold text-slate-900">New Job</h1>

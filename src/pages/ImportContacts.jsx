@@ -10,7 +10,6 @@ import {
   getCustomers, createImportBatch, runContactImport,
   saveImportBatch, getImportBatches,
 } from '../store/data';
-import BackButton from '../components/BackButton';
 import Card from '../components/Card';
 
 // ─── Field definitions ─────────────────────────────────────────────────────────
@@ -362,7 +361,6 @@ export default function ImportContacts() {
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <BackButton fallback="/customers" />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Import Contacts</h1>

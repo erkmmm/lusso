@@ -8,7 +8,6 @@ import { getCustomers, getQuotes, runQuotientQuoteImport } from '../store/data';
 import { parseCSV, rowsToObjects } from '../lib/csv';
 import { classifyQuotientCsv, buildQuotientImportPlan } from '../lib/quotientQuotes';
 import Card from '../components/Card';
-import BackButton from '../components/BackButton';
 
 const fmt$ = (n) => `$${Math.round(n).toLocaleString('en-AU')}`;
 
@@ -82,7 +81,6 @@ export default function ImportQuotes() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
-      <BackButton fallback="/quotes" />
 
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Import Quotient Quotes</h1>

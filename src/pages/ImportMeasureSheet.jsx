@@ -8,7 +8,6 @@ import {
   X, Trash2, ArrowRight, Search, ClipboardList, Plus,
   UserCheck, UserPlus,
 } from 'lucide-react';
-import BackButton from '../components/BackButton';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getCustomers, getJobs, saveMeasureSheet, getMeasureSheetsByJob,
@@ -582,7 +581,6 @@ export default function ImportMeasureSheet() {
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5 pb-24">
 
       {/* Header */}
-      <BackButton fallback={preJobId ? `/jobs/${preJobId}` : '/measure-sheets'} />
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Import Measure Sheet</h1>
         <p className="text-slate-500 text-sm mt-0.5">Convert an Excel measure sheet into a Lusso record</p>

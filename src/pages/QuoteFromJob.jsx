@@ -5,7 +5,6 @@ import {
   FileText, CheckSquare, Square,
   AlertCircle, ClipboardList,
 } from 'lucide-react';
-import BackButton from '../components/BackButton';
 import {
   getJob, getCustomer, getMeasureSheetsByJob,
   createQuote, saveQuote, addActivity, getQuotesByJob,
@@ -163,7 +162,6 @@ export default function QuoteFromJob() {
     return (
       <div className="p-6 text-center">
         <p className="text-slate-500">Job not found.</p>
-        <BackButton fallback="/jobs" className="mt-2" />
       </div>
     );
   }
@@ -226,7 +224,6 @@ export default function QuoteFromJob() {
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-5 pb-32">
       {/* Back */}
-      <BackButton fallback={jobId ? `/jobs/${jobId}` : '/jobs'} />
 
       {/* Header */}
       <div>
