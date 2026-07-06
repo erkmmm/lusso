@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, ShieldOff, Loader2 } from 'lucide-react';
+import { ShieldCheck, ShieldOff, Loader2, KeyRound, Copy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { generateBackupCodes } from '../lib/mfaAdmin';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from './ToastContainer';
 import Card from './Card';
@@ -14,6 +15,7 @@ export default function MfaSetup() {
   const [code, setCode]  = useState('');
   const [busy, setBusy]  = useState(false);
   const [error, setError] = useState('');
+  const [backupCodes, setBackupCodes] = useState(null); // shown once after generating
 
   const load = () => supabase.auth.mfa.listFactors().then(({ data }) => {
     setFactors((data?.totp || []).filter(f => f.status === 'verified'));
@@ -53,6 +55,16 @@ export default function MfaSetup() {
   const cancelEnroll = async () => {
     if (enrolling?.factorId) { try { await supabase.auth.mfa.unenroll({ factorId: enrolling.factorId }); } catch { /* ignore */ } }
     setEnrolling(null); setCode(''); setError('');
+  };
+
+  const makeBackupCodes = async () => {
+    setBusy(true); setError('');
+    try {
+      const { codes } = await generateBackupCodes();
+      setBackupCodes(codes);
+    } catch (e) {
+      setError(e.message || 'Could not generate codes.');
+    } finally { setBusy(false); }
   };
 
   const remove = async (factorId) => {
@@ -112,19 +124,50 @@ export default function MfaSetup() {
               </div>
             </form>
           </div>
+        ) : backupCodes ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <KeyRound size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700">Save these somewhere safe — each works once if you ever lose your phone. They won’t be shown again.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {backupCodes.map(c => (
+                <div key={c} className="font-mono text-sm text-slate-700 text-center bg-slate-50 border border-slate-200 rounded-md py-1.5 select-all">{c}</div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { navigator.clipboard?.writeText(backupCodes.join('\n')); toast('Backup codes copied.'); }}
+                className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
+                <Copy size={13} /> Copy all
+              </button>
+              <button onClick={() => setBackupCodes(null)}
+                className="flex-1 text-xs font-semibold py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white">
+                I’ve saved them
+              </button>
+            </div>
+          </div>
         ) : enabled ? (
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
-              <ShieldCheck size={18} className="text-green-600" />
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+                <ShieldCheck size={18} className="text-green-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-800">Two-factor is on</p>
+                <p className="text-xs text-slate-400">You’ll enter a code from your app at each login.</p>
+              </div>
+              <button onClick={() => remove(factors[0].id)} disabled={busy}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 flex-shrink-0">
+                <ShieldOff size={13} /> Turn off
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-800">Two-factor is on</p>
-              <p className="text-xs text-slate-400">You’ll enter a code from your app at each login.</p>
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+              <p className="text-xs text-slate-400 min-w-0">Backup codes let you get in if you lose your phone.</p>
+              <button onClick={makeBackupCodes} disabled={busy}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50 flex-shrink-0">
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />} Generate backup codes
+              </button>
             </div>
-            <button onClick={() => remove(factors[0].id)} disabled={busy}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 flex-shrink-0">
-              <ShieldOff size={13} /> Turn off
-            </button>
           </div>
         ) : (
           <div className="flex items-center gap-3">

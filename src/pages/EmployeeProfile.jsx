@@ -4,9 +4,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Edit3, Save, X, Mail, Phone, Briefcase,
   UserCog, AlertTriangle, CheckCircle2, MapPin,
-  ToggleLeft, ToggleRight, User, Shield,
+  ToggleLeft, ToggleRight, User, Shield, ShieldOff,
 } from 'lucide-react';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import { useProfile } from '../contexts/UserProfileContext';
+import { resetUserMfa } from '../lib/mfaAdmin';
 import {
   getEmployeeByIdFromSupabase, updateEmployeeProfile,
   suspendUser, reactivateUser,
@@ -98,6 +100,17 @@ export default function EmployeeProfile() {
   const [error,   setError]   = useState('');
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+  const { isAM = false } = useProfile() || {};
+
+  const handleResetMfa = async () => {
+    if (!window.confirm(`Reset two-factor authentication for ${emp.displayName}? They'll log in with just their password and can set it up again on a new device.`)) return;
+    try {
+      await resetUserMfa(emp.id);
+      showToast('Two-factor reset — they can log in and re-enrol.');
+    } catch (e) {
+      showToast(`Reset failed: ${e.message}`);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,6 +223,12 @@ export default function EmployeeProfile() {
               {isActive ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
               {isActive ? 'Suspend' : 'Reactivate'}
             </button>
+            {isAM && (
+              <button onClick={handleResetMfa} title="Clear this person's two-factor if they've lost their device"
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition-colors">
+                <ShieldOff size={14} /> <span className="hidden sm:inline">Reset 2FA</span>
+              </button>
+            )}
             {!editing && (
               <button onClick={startEdit}
                 className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
