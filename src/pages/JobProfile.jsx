@@ -21,6 +21,9 @@ import {
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
 import { toast } from '../components/ToastContainer';
+import ReviewAskModal from '../components/ReviewAskModal';
+import { useProfile } from '../contexts/UserProfileContext';
+import { getReviewRequestByJob } from '../store/data';
 import Card from '../components/Card';
 import InstallationSection from '../components/InstallationSection';
 import CalendarEventModal from '../components/CalendarEventModal';
@@ -69,6 +72,8 @@ export default function JobProfile() {
   const [jobEdits,      setJobEdits]      = useState({});
   const [showCalendar,  setShowCalendar]  = useState(false);
   const [confirmDeleteQuoteId, setConfirmDeleteQuoteId] = useState(null);
+  const [reviewPrompt, setReviewPrompt]   = useState(false);
+  const { displayName = '' } = useProfile() || {};
 
   useDataRefresh();
 
@@ -81,7 +86,15 @@ export default function JobProfile() {
     );
   }
 
-  const handleStatusChange = (s) => { updateJobStatus(id, s, 'Admin'); setEditingStatus(false); };
+  const handleStatusChange = (s) => {
+    updateJobStatus(id, s, 'Admin');
+    setEditingStatus(false);
+    // Peak-happiness moment: offer to ask for a Google review when the job
+    // completes — only if this customer hasn't been asked for this job.
+    if (s === 'Completed' && (customer?.mobile || customer?.phone) && !getReviewRequestByJob(id)) {
+      setReviewPrompt(true);
+    }
+  };
   const handleSaveNotes    = () => { saveJob({ ...job, internalNotes: notesValue }); setEditingNotes(false); toast('Notes saved.'); };
   const handleSaveJobEdits = () => { saveJob({ ...job, ...jobEdits }); setEditingJob(false); setJobEdits({}); toast('Job updated.'); };
 
@@ -591,6 +604,16 @@ export default function JobProfile() {
           onClose={() => setShowCalendar(false)}
         />
       )}
+
+      {/* Google review ask — offered when the job is marked Completed */}
+      {reviewPrompt && customer && (
+        <ReviewAskModal
+          customer={customer}
+          jobId={id}
+          senderFirstName={displayName.split(' ')[0]}
+          onClose={() => setReviewPrompt(false)}
+        />
+      )}
     </div>
   );
 }
@@ -609,6 +632,7 @@ function Field({ label, children }) {
     <div>
       <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
       {children}
+
     </div>
   );
 }

@@ -2203,6 +2203,29 @@ export const createImportBatch = (fileName, totalRows) => {
 // creates missing customers, writes historical quotes with computed totals,
 // and bulk-syncs both to Supabase in chunks. Safe to re-run — the plan builder
 // already skipped quote numbers that exist.
+// ─── Google review requests ────────────────────────────────────────────────────
+// One record per ask, so nobody gets double-asked and conversion is visible.
+export const GOOGLE_REVIEW_URL = 'https://search.google.com/local/writereview?placeid=ChIJscqHCScFkWsRDQvVRjxuzao';
+
+export const buildReviewMessage = (customerFirstName, senderName) =>
+  `Hi ${customerFirstName || 'there'}, it's ${senderName || 'the team'} from Lusso. ` +
+  `We hope you're loving your new window furnishings! If you have 30 seconds, ` +
+  `a Google review would mean the world to our family business: ${GOOGLE_REVIEW_URL}`;
+
+export const getReviewRequests = () => (get('lusso_review_requests') || []).filter(r => !r.deletedAt);
+export const getReviewRequestByJob = (jobId) => getReviewRequests().find(r => r.jobId === jobId);
+
+export const saveReviewRequest = (req) => {
+  const list = get('lusso_review_requests') || [];
+  const idx = list.findIndex(r => r.id === req.id);
+  const now = new Date().toISOString();
+  const record = { ...req, updatedAt: now, createdAt: req.createdAt || now };
+  if (idx >= 0) list[idx] = record; else list.unshift(record);
+  set('lusso_review_requests', list);
+  db.saveReviewRequest(record);
+  return record;
+};
+
 export const runQuotientQuoteImport = async (plan, onProgress = () => {}) => {
   const batch = saveImportBatch({
     id: uuidv4(),

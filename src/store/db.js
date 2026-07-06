@@ -65,6 +65,7 @@ const KEYS = {
   employees:            'lusso_employees',
   tasks:                'lusso_tasks',
   takeoffs:             'lusso_takeoffs',
+  reviewRequests:       'lusso_review_requests',
   measureSheetOptions:  'lusso_measure_sheet_options',
 };
 
@@ -189,6 +190,7 @@ const TABLES = [
   { table: 'po_message_presets',     key: 'lusso_po_message_presets' },
   { table: 'suppliers',              key: 'lusso_suppliers' },
   { table: 'takeoffs',               key: KEYS.takeoffs },
+  { table: 'review_requests',        key: KEYS.reviewRequests },
   { table: 'measure_sheet_options',  key: KEYS.measureSheetOptions },
   // NOTE: 'activity' is intentionally NOT here — it's append-only and synced
   // via a union (see hydrateFromSupabase) so existing local history is never
@@ -555,6 +557,9 @@ export const db = {
   // Quotes
   saveQuote:          (r) => upsert('quotes', r),
   deleteQuote:        (id) => remove('quotes', id),
+
+  // Review requests (Google review asks)
+  saveReviewRequest:  (r) => upsert('review_requests', r),
 
   // Bulk imports (Quotient history) — chunked so thousands of records sync
   // in a handful of requests instead of one request per row.

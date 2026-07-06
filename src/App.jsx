@@ -46,6 +46,7 @@ import NewJob from './pages/NewJob';
 import PendingApproval from './pages/PendingApproval';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import Inbox from './pages/Inbox';
+import Reviews from './pages/Reviews';
 import { useProfile } from './contexts/UserProfileContext';
 
 // Data keys cleared on version change — excludes UI prefs like theme/schema
@@ -269,6 +270,7 @@ function AppRoutes() {
               <Route path="/employees/:id"              element={<EmployeeProfile />} />
               <Route path="/users"                      element={<Navigate to="/employees" replace />} />
               <Route path="/inbox"                      element={<Inbox />} />
+              <Route path="/reviews"                    element={<Reviews />} />
               <Route path="*"                           element={<Dashboard />} />
             </Routes>
           </Layout>

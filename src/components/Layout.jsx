@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, Users,
-  Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays,
+  Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, UserCog, Users2, Inbox,
 } from 'lucide-react';
@@ -33,6 +33,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/installers', label: 'Installers', icon: HardHat },
       { to: '/calendar',   label: 'Calendar',   icon: CalendarDays, countKey: 'todayInstalls' },
+      { to: '/reviews',    label: 'Reviews',    icon: Star },
     ],
   },
   {
