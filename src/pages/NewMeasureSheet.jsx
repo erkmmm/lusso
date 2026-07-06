@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -984,20 +985,29 @@ export default function NewMeasureSheet() {
               </div>
             )}
 
-            {/* Fullscreen table — the whole viewport for editing on phone/iPad */}
-            {itemLayout === 'table' && tableFull && (
-              <div className="fixed inset-0 z-50 bg-white flex flex-col">
+            {/* Fullscreen table — the whole viewport for editing on phone/iPad.
+                Portalled to <body> so it clears the app header/sidebar, which
+                live in an overflow-hidden column that would otherwise trap it. */}
+            {itemLayout === 'table' && tableFull && createPortal(
+              <div className="fixed inset-0 z-[60] bg-white flex flex-col">
                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 flex-shrink-0">
                   <div className="min-w-0">
                     <h2 className="font-semibold text-slate-800 text-sm truncate">Line items — table</h2>
-                    <p className="text-xs text-slate-400 truncate">{sheet.customerName || 'Measure sheet'} · {sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-slate-400 truncate">
+                      {sheet.customerName || 'Measure sheet'} · {sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''}
+                      {savedAt && <span className="text-green-600"> · Saved {savedAt.toLocaleTimeString()}</span>}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button type="button" onClick={addLineItem}
                       className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50">
                       <Plus size={14} /> Add line
                     </button>
-                    <button type="button" onClick={() => setTableFull(false)}
+                    <button type="button" onClick={handleSaveDraft}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white">
+                      <Save size={13} /> Save
+                    </button>
+                    <button type="button" onClick={() => { handleSaveDraft(); setTableFull(false); }}
                       className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white">
                       <Minimize2 size={13} /> Done
                     </button>
@@ -1012,7 +1022,8 @@ export default function NewMeasureSheet() {
                     errors={errors}
                   />
                 </div>
-              </div>
+              </div>,
+              document.body
             )}
 
             {itemLayout === 'cards' && sheet.lineItems.map((item, idx) => {
