@@ -7,7 +7,7 @@ import {
   Calendar, ClipboardList, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, ChevronDown, HardHat, Plus, Upload,
-  CalendarPlus, Trash2, Wrench, Bot, MessageSquare, Ruler, Mic,
+  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import ConsultRecordings from '../components/ConsultRecordings';
@@ -16,7 +16,7 @@ import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import {
   getJob, getCustomer, getMeasureSheetsByJob, getActivityByJob,
   updateJobStatus, saveJob, JOB_STATUSES, STATUS_COLORS, getQuotesByJob,
-  deleteQuote, computeQuoteTotals,
+  deleteQuote, deleteJob,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -73,6 +73,7 @@ export default function JobProfile() {
   const [showCalendar,  setShowCalendar]  = useState(false);
   const [confirmDeleteQuoteId, setConfirmDeleteQuoteId] = useState(null);
   const [reviewPrompt, setReviewPrompt]   = useState(false);
+  const [confirmDeleteJob, setConfirmDeleteJob] = useState(false);
   const { displayName = '' } = useProfile() || {};
 
   useDataRefresh();
@@ -151,6 +152,10 @@ export default function JobProfile() {
               <button onClick={() => setEditingStatus(!editingStatus)}
                 className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${editingStatus ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:bg-slate-50'}`}>
                 <ChevronDown size={14} /> <span className="hidden sm:inline">Status</span>
+              </button>
+              <button onClick={() => setConfirmDeleteJob(true)} title="Delete job"
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors">
+                <Trash2 size={14} /> <span className="hidden sm:inline">Delete</span>
               </button>
             </div>
           </div>
@@ -613,6 +618,41 @@ export default function JobProfile() {
           senderFirstName={displayName.split(' ')[0]}
           onClose={() => setReviewPrompt(false)}
         />
+      )}
+
+      {/* Delete-job confirmation */}
+      {confirmDeleteJob && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setConfirmDeleteJob(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Trash2 size={18} className="text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Delete this job?</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {customer?.name ? `${customer.name}'s job ` : 'This job '}({job.jobNumber})
+                  {measureSheets.length > 0
+                    ? ` and its ${measureSheets.length} measure sheet${measureSheets.length !== 1 ? 's' : ''} will be permanently removed.`
+                    : ' will be permanently removed.'}
+                  {quotes.length > 0 && (
+                    <> Its {quotes.length} quote{quotes.length !== 1 ? 's' : ''} {quotes.length !== 1 ? 'are' : 'is'} kept (unlinked) and will still show on the customer.</>
+                  )} This can't be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setConfirmDeleteJob(false)}
+                className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium py-2.5 rounded-xl transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => { deleteJob(id, displayName || 'Admin'); toast('Job deleted.'); navigate(job.customerId ? `/customers/${job.customerId}` : '/jobs'); }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors">
+                Delete Job
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
