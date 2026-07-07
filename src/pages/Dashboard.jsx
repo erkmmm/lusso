@@ -294,8 +294,8 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
   const pendingInstalls = getInstallRequests().filter(r => r.status === 'Sent').length;
 
   const items = [
-    { key: 'stalled',   count: stalled,         label: 'Stalled jobs',     sub: 'No activity 14+ days', icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',   onClick: () => navigate('/jobs') },
-    { key: 'quotesOut', count: quotesOut,       label: 'Quotes out',       sub: 'Awaiting customer',    icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/quotes') },
+    { key: 'stalled',   count: stalled,         label: 'Stalled jobs',     sub: 'No activity 14+ days', icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',   onClick: () => navigate('/jobs?stalled=1') },
+    { key: 'quotesOut', count: quotesOut,       label: 'Quotes out',       sub: 'Awaiting customer',    icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/quotes?status=Out') },
     { key: 'install',   count: pendingInstalls, label: 'Install requests', sub: 'Awaiting installer',   icon: HardHat,       color: 'text-blue-600',  bg: 'bg-blue-50',  onClick: () => navigate('/calendar') },
   ].filter(i => i.count > 0);
 

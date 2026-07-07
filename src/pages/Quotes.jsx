@@ -1,6 +1,6 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus, FileText, Search, X, Eye, Edit3, Copy, Send,
   CheckCircle2, XCircle, MoreHorizontal, TrendingUp, Clock,
@@ -75,8 +75,11 @@ function DeleteModal({ count, onConfirm, onCancel }) {
 export default function Quotes() {
   useDataRefresh();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [search, setSearch]             = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
+  // "Out" (from the dashboard's Needs Attention tile, ?status=Out) means quotes
+  // awaiting the customer — Sent or Viewed.
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'All');
   const [sortBy, setSortBy]             = useState('newest');
   const [openMenuId, setOpenMenuId]     = useState(null);
   const [selectMode, setSelectMode]     = useState(false);
@@ -110,7 +113,10 @@ export default function Quotes() {
     };
     return quotes.filter(q => {
       const matchSearch = !term || [q.quoteNumber, q.title, nameOf(q), q.siteAddress, q.salesperson].join(' ').toLowerCase().includes(term);
-      const matchStatus = statusFilter === 'All' || q.status === statusFilter;
+      const matchStatus =
+        statusFilter === 'All' ? true :
+        statusFilter === 'Out' ? (q.status === 'Sent' || q.status === 'Viewed') :
+        q.status === statusFilter;
       return matchSearch && matchStatus;
     }).sort(SORTS[sortBy] || newest);
   }, [quotes, customers, search, statusFilter, sortBy]);
@@ -187,6 +193,13 @@ export default function Quotes() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Quotes</h1>
           <p className="text-slate-500 text-sm mt-0.5">{filtered.length} quote{filtered.length !== 1 ? 's' : ''}</p>
+          {statusFilter === 'Out' && (
+            <button onClick={() => setStatusFilter('All')}
+              className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors">
+              <Clock size={12} /> Out — awaiting customer (sent / viewed)
+              <X size={12} />
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2 self-start">
           {quotes.length > 0 && (

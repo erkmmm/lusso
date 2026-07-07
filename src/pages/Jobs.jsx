@@ -73,6 +73,9 @@ export default function Jobs() {
   const [search, setSearch]         = useState('');
   const [status, setStatus]         = useState(searchParams.get('status') || '');
   const [urgency, setUrgency]       = useState(searchParams.get('urgency') === 'urgent' ? 'High' : '');
+  // "Stalled" = open job with no activity 14+ days (matches the dashboard's
+  // Needs Attention tile, which links here with ?stalled=1).
+  const [stalled, setStalled]       = useState(searchParams.get('stalled') === '1');
   const [staff, setStaff]           = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
@@ -103,14 +106,19 @@ export default function Jobs() {
         if (urgency === 'High' && job.urgency !== 'High' && job.urgency !== 'Urgent') return false;
       }
       if (staff && job.assignedStaff !== staff) return false;
+      if (stalled) {
+        if (['Completed', 'Cancelled'].includes(job.status)) return false;
+        if (!job.updatedAt) return false;
+        if ((Date.now() - new Date(job.updatedAt).getTime()) / 86400000 < 14) return false;
+      }
       return true;
     }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  }, [jobs, customers, search, status, urgency, staff]);
+  }, [jobs, customers, search, status, urgency, staff, stalled]);
 
   // Render in pages of 100 — reset when filters change.
   const PAGE = 100;
   const [visibleCount, setVisibleCount] = useState(PAGE);
-  const filterKey = `${search}|${status}|${urgency}|${staff}`;
+  const filterKey = `${search}|${status}|${urgency}|${staff}|${stalled}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (prevFilterKey !== filterKey) {
     setPrevFilterKey(filterKey);
@@ -118,7 +126,7 @@ export default function Jobs() {
   }
   const visible = filtered.slice(0, visibleCount);
 
-  const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); };
+  const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); setStalled(false); };
   const hasFilters = status || urgency || staff || search;
 
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()); };
@@ -153,6 +161,13 @@ export default function Jobs() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Jobs</h1>
           <p className="text-slate-500 text-sm mt-0.5">{filtered.length} job{filtered.length !== 1 ? 's' : ''} found</p>
+          {stalled && (
+            <button onClick={() => setStalled(false)}
+              className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors">
+              <AlertTriangle size={12} /> Stalled jobs · no activity 14+ days
+              <X size={12} />
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2 self-start">
           {jobs.length > 0 && (
