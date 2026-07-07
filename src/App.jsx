@@ -136,53 +136,55 @@ function AppRoutes() {
   }, [user]);
 
   // ── Polling fallback ──────────────────────────────────────────────────
-  // Realtime WebSocket events aren't reliably delivered in all environments.
-  // Poll Supabase every 4 seconds while the tab is visible.
-  // Each poll fetches only the max(updated_at) across key tables — tiny query.
-  // If anything changed since last poll, do a full hydration.
+  // Realtime already delivers live changes; this poll is only a safety net for
+  // environments where the WebSocket is dropped. It is deliberately LIGHT: a
+  // long interval, few tables, and exponential backoff on failure — an earlier
+  // 4-second/7-table version was overloading the database on a busy day.
   const lastSeenRef = useRef(null);
   useEffect(() => {
     if (!user || !supabase) return;
 
-    let interval = null;
+    const BASE_MS = 30000;   // normal cadence
+    const MAX_MS  = 300000;  // back off up to 5 min after repeated failures
+    let delay = BASE_MS;
+    let timer = null;
+    let stopped = false;
 
     const poll = async () => {
-      if (document.visibilityState !== 'visible') return;
+      if (stopped) return;
+      if (document.visibilityState !== 'visible') { timer = setTimeout(poll, delay); return; }
       try {
-        // Probe the latest updated_at across all key tables in parallel (single-row each)
-        const POLL_TABLES = ['jobs','customers','measure_sheets','quotes','installers','calendar_events','priced_items'];
+        // Probe max(updated_at) on a few core tables only (single row each).
+        const POLL_TABLES = ['jobs', 'quotes', 'customers'];
         const results = await Promise.all(
           POLL_TABLES.map(t =>
             supabase.from(t).select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle()
           )
         );
-        // Find the most recent updated_at across all tables
-        const latest = results
-          .map(r => r.data?.updated_at)
-          .filter(Boolean)
-          .sort()
-          .pop() ?? null;
+        const latest = results.map(r => r.data?.updated_at).filter(Boolean).sort().pop() ?? null;
 
         if (!lastSeenRef.current) {
-          // First poll — record baseline only, no hydrate (mount already did that)
-          lastSeenRef.current = latest;
+          lastSeenRef.current = latest; // baseline only
         } else if (latest && latest !== lastSeenRef.current) {
           lastSeenRef.current = latest;
           await hydrateFromSupabase();
           window.dispatchEvent(new CustomEvent('lusso:data-changed'));
         }
-      } catch { /* silently ignore poll errors */ }
+        delay = BASE_MS; // success — reset cadence
+      } catch {
+        delay = Math.min(MAX_MS, delay * 2); // failure — back off, don't pile on
+      } finally {
+        if (!stopped) timer = setTimeout(poll, delay);
+      }
     };
 
-    // Start polling after a short delay so mount hydration completes first
-    const start = setTimeout(() => {
-      poll();
-      interval = setInterval(poll, 4000);
-    }, 3000);
+    // Start polling after a delay so mount hydration completes first
+    const start = setTimeout(poll, 8000);
 
     return () => {
+      stopped = true;
       clearTimeout(start);
-      if (interval) clearInterval(interval);
+      if (timer) clearTimeout(timer);
     };
   }, [user]);
 
