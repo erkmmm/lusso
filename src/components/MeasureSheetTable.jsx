@@ -23,7 +23,7 @@ function Sel({ value, onChange, options, err }) {
 }
 
 const HEADERS = [
-  '#', 'Location', 'Product', 'W', 'D', 'Qty', 'Fabric',
+  '#', 'Location', 'Product', 'Width', 'Drop', 'Qty', 'Fabric',
   'Control', 'Return', 'Motor Side', 'Fixing', 'Heading', 'Hem',
   'Track Colour', 'Bottom Rail Colour', 'Operation Type', 'Bottom Rail Type',
   'Chain Colour', 'Lining', 'Lining Fabric', 'Notes', '',
@@ -36,7 +36,9 @@ export default function MeasureSheetTable({ lineItems, setLineItem, removeLineIt
         <thead>
           <tr className="bg-slate-50 border-b border-slate-200">
             {HEADERS.map((h, i) => (
-              <th key={i} className="border-r border-slate-100 px-2 py-2 text-left text-xs font-medium text-slate-500 whitespace-nowrap">{h}</th>
+              <th key={i} className={`border-r border-slate-100 px-2 py-2 text-left text-xs font-semibold whitespace-nowrap ${
+                h === 'Width' || h === 'Drop' ? 'text-amber-700 bg-amber-50' : 'text-slate-500 font-medium'
+              }`}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -63,9 +65,9 @@ export default function MeasureSheetTable({ lineItems, setLineItem, removeLineIt
                     {productTypes.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </Cell>
-                <Cell w={64}><input type="number" inputMode="numeric" min="0" value={item.widthMm ?? ''} onChange={e => setLineItem(idx, 'widthMm', e.target.value)} className={`${cellInput} text-right`} /></Cell>
-                <Cell w={64}><input type="number" inputMode="numeric" min="0" value={item.dropMm ?? ''} onChange={e => setLineItem(idx, 'dropMm', e.target.value)} className={`${cellInput} text-right`} /></Cell>
-                <Cell w={52}><input type="number" inputMode="numeric" min="0" value={item.quantity ?? ''} onChange={e => setLineItem(idx, 'quantity', e.target.value)} className={`${cellInput} text-right`} /></Cell>
+                <Cell w={92} min={92}><input type="number" inputMode="numeric" min="0" value={item.widthMm ?? ''} onChange={e => setLineItem(idx, 'widthMm', e.target.value)} placeholder="mm" className={`${cellInput} text-right font-semibold text-slate-900 bg-amber-50/50 focus:bg-amber-100`} /></Cell>
+                <Cell w={92} min={92}><input type="number" inputMode="numeric" min="0" value={item.dropMm ?? ''} onChange={e => setLineItem(idx, 'dropMm', e.target.value)} placeholder="mm" className={`${cellInput} text-right font-semibold text-slate-900 bg-amber-50/50 focus:bg-amber-100`} /></Cell>
+                <Cell w={56} min={56}><input type="number" inputMode="numeric" min="0" value={item.quantity ?? ''} onChange={e => setLineItem(idx, 'quantity', e.target.value)} className={`${cellInput} text-right`} /></Cell>
                 <Cell min={140}><input value={item.fabricColour || ''} onChange={e => setLineItem(idx, 'fabricColour', e.target.value)} placeholder="Fabric / colour" className={cellInput} /></Cell>
                 <Cell min={90}><Sel value={item.control} onChange={v => setLineItem(idx, 'control', v)} options={getMsOptions('control')} /></Cell>
                 <Cell min={90}><Sel value={item.returnSide} onChange={v => setLineItem(idx, 'returnSide', v)} options={getMsOptions('returnSide')} /></Cell>

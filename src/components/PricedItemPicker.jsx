@@ -116,6 +116,7 @@ export default function PricedItemPicker({
               <Search size={13} className="text-slate-400 flex-shrink-0" />
               <input
                 ref={inputRef}
+                autoFocus
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search by name, category, supplier…"
