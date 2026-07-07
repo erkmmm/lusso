@@ -21,6 +21,7 @@ import ConsultRecorder from '../components/ConsultRecorder';
 import MeasureSheetTable from '../components/MeasureSheetTable';
 import PricedItemPicker from '../components/PricedItemPicker';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import { toast } from '../components/ToastContainer';
 
 // ─── Customer search & duplicate helpers ──────────────────────────────────────
 
@@ -400,11 +401,21 @@ export default function NewMeasureSheet() {
   }, [sheet.customerName, sheet.phone, sheet.email, sheet.siteAddress, customerMode, allCustomers, prelinkedCustomer]);
 
   // ── Auto-save ──────────────────────────────────────────────────────────────
+  // Keep the latest sheet + submitted flag in a ref so the interval can read
+  // them without being torn down and recreated on every keystroke (which used
+  // to reset the 60s timer so it effectively never fired while typing on site).
+  const autosaveRef = useRef({ sheet, submitted: false });
+  useEffect(() => { autosaveRef.current.sheet = sheet; }, [sheet]);
+  useEffect(() => { autosaveRef.current.submitted = submitted; }, [submitted]);
   useEffect(() => {
-    if (sheet.status === 'Submitted') return;
-    const t = setInterval(() => { saveMeasureSheet({ ...sheet, status: 'Draft' }); setSavedAt(new Date()); }, 30000);
+    const t = setInterval(() => {
+      const { sheet: s, submitted: done } = autosaveRef.current;
+      if (done) return;                       // stop once the sheet is finalised
+      saveMeasureSheet({ ...s, status: s.status || 'Draft' }); // preserve status (don't downgrade a Submitted sheet)
+      setSavedAt(new Date());
+    }, 60000);
     return () => clearInterval(t);
-  }, [sheet]);
+  }, []);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const setField     = (field, value) => setSheet(s => ({ ...s, [field]: value }));
@@ -487,7 +498,8 @@ export default function NewMeasureSheet() {
     if (!sheet.measurer.trim()) e.measurer = 'Measurer is required';
     sheet.lineItems.forEach((item, i) => {
       if (!item.location.trim())  e[`item_${i}_location`]    = 'Location required';
-      if (!item.productTypeId)    e[`item_${i}_productType`] = 'Product type required';
+      // Product type is intentionally NOT required — a sheet can be saved/submitted
+      // with the product still to be decided (common when measuring on site).
     });
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -495,8 +507,9 @@ export default function NewMeasureSheet() {
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSaveDraft = () => {
-    saveMeasureSheet({ ...sheet, status: 'Draft' });
+    saveMeasureSheet({ ...sheet, status: sheet.status || 'Draft' });
     setSavedAt(new Date());
+    toast('Measure sheet saved');
   };
 
   const handleSubmit = async () => {
@@ -1087,27 +1100,34 @@ export default function NewMeasureSheet() {
                     </button>
                   </div>
 
-                  {/* Core fields */}
-                  <div className="px-4 pt-3 pb-2 grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Qty</label>
-                      <input type="number" min="1" value={item.quantity}
-                        onChange={e => setLineItem(idx, 'quantity', Number(e.target.value))} className={inp()} />
+                  {/* Core fields — Width & Drop get their own prominent row with
+                      large touch targets + numeric keyboards for on-site use. */}
+                  <div className="px-4 pt-3 pb-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Width (mm)</label>
+                        <input type="number" inputMode="numeric" min="1" value={item.widthMm}
+                          onChange={e => setLineItem(idx, 'widthMm', e.target.value)} placeholder="e.g. 1800"
+                          className="w-full border border-slate-200 rounded-lg text-base px-3 py-3 bg-white text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Drop (mm)</label>
+                        <input type="number" inputMode="numeric" min="1" value={item.dropMm}
+                          onChange={e => setLineItem(idx, 'dropMm', e.target.value)} placeholder="e.g. 2400"
+                          className="w-full border border-slate-200 rounded-lg text-base px-3 py-3 bg-white text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Width (mm)</label>
-                      <input type="number" min="1" value={item.widthMm}
-                        onChange={e => setLineItem(idx, 'widthMm', e.target.value)} placeholder="e.g. 1800" className={inp()} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Drop (mm)</label>
-                      <input type="number" min="1" value={item.dropMm}
-                        onChange={e => setLineItem(idx, 'dropMm', e.target.value)} placeholder="e.g. 2400" className={inp()} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Fabric / Colour</label>
-                      <input value={item.fabricColour}
-                        onChange={e => setLineItem(idx, 'fabricColour', e.target.value)} placeholder="e.g. Arctic White" className={inp()} />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Qty</label>
+                        <input type="number" inputMode="numeric" min="1" value={item.quantity}
+                          onChange={e => setLineItem(idx, 'quantity', Number(e.target.value))} className={inp()} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Fabric / Colour</label>
+                        <input value={item.fabricColour}
+                          onChange={e => setLineItem(idx, 'fabricColour', e.target.value)} placeholder="e.g. Arctic White" className={inp()} />
+                      </div>
                     </div>
                   </div>
 
@@ -1186,13 +1206,12 @@ export default function NewMeasureSheet() {
           </p>
         )}
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          {/* In edit mode there's no "draft" concept — sheet is already saved */}
-          {!isEdit && (
-            <button onClick={handleSaveDraft} disabled={submitting}
-              className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50">
-              <Save size={15} /> Save Draft
-            </button>
-          )}
+          {/* Manual save (stays on the page, shows a confirmation toast). Works
+              in both new and edit mode so on-site users can save at any time. */}
+          <button onClick={handleSaveDraft} disabled={submitting}
+            className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50">
+            <Save size={15} /> {isEdit ? 'Save' : 'Save Draft'}
+          </button>
           <div className="flex items-center gap-2 min-w-0 ml-auto">
             {savedAt && <span className="text-xs text-slate-400 hidden sm:block whitespace-nowrap">Saved {savedAt.toLocaleTimeString()}</span>}
             <button onClick={handleSubmit} disabled={submitting}
