@@ -54,14 +54,6 @@ import { useProfile } from './contexts/UserProfileContext';
 // user's own profile cache. Wiping it meant that if the post-deploy profile
 // re-fetch ever hiccuped, the app fabricated a fresh (pending) profile and
 // locked a real account manager out onto the approval screen.
-const DATA_KEYS = [
-  'lusso_customers','lusso_jobs','lusso_measure_sheets','lusso_quotes',
-  'lusso_installers','lusso_install_requests','lusso_staff','lusso_notifications',
-  'lusso_product_types','lusso_priced_items','lusso_priced_item_batches',
-  'lusso_import_batches','lusso_calendar_events',
-  'lusso_employees','lusso_tasks','lusso_job_counter','lusso_quote_counter',
-];
-
 /** Fetch the stamped build version from /version.json */
 async function fetchBuildVersion() {
   try {
@@ -81,27 +73,40 @@ function AppRoutes() {
     initStore();
     if (!user) return;
 
+    // Do we already have cached data on this device? If so, render the app
+    // instantly from cache and refresh in the background — NEVER block behind
+    // the syncing screen. Only a first-ever login (empty cache) waits.
+    const hasLocalData = ['lusso_customers', 'lusso_jobs', 'lusso_quotes']
+      .some(k => (localStorage.getItem(k) || '').length > 20);
+
     const run = async () => {
-      setHydrating(true);
-
-      // Version-based auto-reset: if a new build was deployed since this device
-      // last loaded, wipe stale local data so hydration starts clean.
+      // Track the deployed build for reference. We intentionally do NOT wipe
+      // local data on a new build: hydrateFromSupabase() already pulls a fresh,
+      // authoritative copy (and keeps newer local edits), so wiping only risked
+      // flashing an empty app if the re-download was slow on a mobile connection.
       const deployedVersion = await fetchBuildVersion();
-      const storedVersion   = localStorage.getItem('lusso_last_version');
-      if (deployedVersion && deployedVersion !== storedVersion) {
-        console.info(`[app] new build ${deployedVersion} — clearing local data cache`);
-        DATA_KEYS.forEach(k => localStorage.removeItem(k));
-        localStorage.setItem('lusso_last_version', deployedVersion);
-        initStore(); // re-init with clean slate
-      }
+      if (deployedVersion) localStorage.setItem('lusso_last_version', deployedVersion);
 
-      // Cap hydration: if a query hangs (e.g. a stuck token refresh), don't
-      // trap the user on the syncing screen — open the app with cached data and
-      // let the visibility/poll re-hydrate catch up once the connection recovers.
-      await Promise.race([
-        hydrateFromSupabase(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('hydration timed out')), 15000)),
-      ]);
+      if (!hasLocalData) {
+        // First load / empty cache: fully hydrate before showing the app so we
+        // never flash an empty Jobs/Customers list. Generous timeout (slow
+        // mobile + thousands of rows); SlowLoadRetry is the escape hatch.
+        setHydrating(true);
+        await Promise.race([
+          hydrateFromSupabase(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('hydration timed out')), 45000)),
+        ]);
+      } else {
+        // Have cache: the app is already rendered from it. Refresh in the
+        // background, but don't let a hung request block — fall through to
+        // cached data after 20s and let the visibility/poll catch up.
+        await Promise.race([
+          hydrateFromSupabase(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('hydration timed out')), 20000)),
+        ]);
+      }
+      // Fresh data is in localStorage now — nudge pages to re-render with it.
+      window.dispatchEvent(new CustomEvent('lusso:data-changed'));
     };
 
     // Never strand the user on the syncing screen: any hydration failure or
