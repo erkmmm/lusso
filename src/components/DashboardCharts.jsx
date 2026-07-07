@@ -6,6 +6,7 @@
  */
 import { useId } from 'react';
 import { useMountAnimation } from '../hooks/useMountAnimation';
+import { useDashPrivacy, FIG_BLUR } from './PrivacyFig';
 
 const money = (v) =>
   Math.abs(v) >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
@@ -20,6 +21,7 @@ export function DonutChart({ data, centerValue, centerLabel, size = 168, thickne
   const r = (size - thickness) / 2;
   const c = 2 * Math.PI * r;
   const mounted = useMountAnimation();
+  const priv = useDashPrivacy();
   let offset = 0;
 
   return (
@@ -51,7 +53,7 @@ export function DonutChart({ data, centerValue, centerLabel, size = 168, thickne
         </svg>
         {(centerValue != null || centerLabel) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-            {centerValue != null && <span className="text-2xl font-bold text-slate-900 leading-none">{centerValue}</span>}
+            {centerValue != null && <span className={`text-2xl font-bold text-slate-900 leading-none ${priv ? FIG_BLUR : ''}`}>{centerValue}</span>}
             {centerLabel && <span className="text-[11px] text-slate-400 mt-1">{centerLabel}</span>}
           </div>
         )}
@@ -63,7 +65,7 @@ export function DonutChart({ data, centerValue, centerLabel, size = 168, thickne
             <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: d.color }} />
             <span className="text-slate-600 truncate flex-1">{d.label}</span>
             <span className="text-slate-400 tabular-nums">{total > 0 ? Math.round((d.value / total) * 100) : 0}%</span>
-            <span className="text-slate-800 font-medium tabular-nums min-w-8 text-right">{valueFmt(d.value)}</span>
+            <span className={`text-slate-800 font-medium tabular-nums min-w-8 text-right ${priv ? FIG_BLUR : ''}`}>{valueFmt(d.value)}</span>
           </li>
         ))}
         {items.length === 0 && <li className="text-xs text-slate-400">No data in range.</li>}
@@ -167,6 +169,7 @@ export function Sparkline({ values = [], color = 'var(--brand-500)', height = 34
 export function AreaChart({ values = [], xLabels = [], color = 'var(--brand-500)', height = 240, format = money }) {
   const gid = useId();
   const mounted = useMountAnimation();
+  const priv = useDashPrivacy();
   const W = 720, H = height;
   const padL = 48, padR = 16, padT = 16, padB = 28;
   const iw = W - padL - padR, ih = H - padT - padB;
@@ -192,7 +195,7 @@ export function AreaChart({ values = [], xLabels = [], color = 'var(--brand-500)
         return (
           <g key={i}>
             <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#EEEFEA" strokeWidth="1" />
-            <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize="10" fill="#9AA0A6">{format(g * max)}</text>
+            <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize="10" fill="#9AA0A6" style={priv ? { filter: 'blur(4px)' } : undefined}>{format(g * max)}</text>
           </g>
         );
       })}

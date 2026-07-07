@@ -11,7 +11,7 @@ import {
   Briefcase, ClipboardList, CheckCircle2, Clock,
   AlertTriangle, TrendingUp, TrendingDown, Users, ArrowRight, Plus,
   DollarSign, ChevronDown, BarChart2, HardHat, Percent,
-  SlidersHorizontal, Eye, FileText, X, Mail, Target, Package,
+  SlidersHorizontal, Eye, EyeOff, FileText, X, Mail, Target, Package,
   Pencil, Trophy, CalendarDays, Timer, FileDown,
 } from 'lucide-react';
 import {
@@ -23,6 +23,7 @@ import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
 import { DonutChart, AreaChart, Sparkline } from '../components/DashboardCharts';
+import { PrivacyCtx, Fig } from '../components/PrivacyFig';
 import { PIPELINE_RAMP } from '../lib/chartColors';
 import { categorizeProduct } from '../lib/productCategories';
 import { downloadDashboardReport } from '../lib/dashboardReport';
@@ -221,7 +222,7 @@ function DeltaBadge({ current, previous }) {
   const Icon   = isUp ? TrendingUp : TrendingDown;
   return (
     <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${isUp ? 'text-green-600' : 'text-red-500'}`}>
-      <Icon size={12} />{Math.abs(change).toFixed(1)}%
+      <Icon size={12} /><Fig>{Math.abs(change).toFixed(1)}%</Fig>
     </span>
   );
 }
@@ -265,7 +266,7 @@ function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, ca
         </span>
       </div>
       <div className="mt-2 text-2xl font-bold text-slate-900 truncate" title={valueTitle}>
-        {raw !== undefined ? <CountUp value={raw} format={format} /> : value}
+        <Fig>{raw !== undefined ? <CountUp value={raw} format={format} /> : value}</Fig>
       </div>
       <div className="mt-1 flex items-center gap-1.5 min-w-0 text-xs">
         {delta}
@@ -351,7 +352,7 @@ function ProgressRow({ label, current, target, fmt = (v) => v, color = 'bg-amber
       <div className="flex items-baseline justify-between gap-2 mb-1.5">
         <span className="text-sm font-medium text-slate-700">{label}</span>
         <span className="text-xs text-slate-400 tabular-nums">
-          <span className="text-slate-800 font-semibold">{fmt(current)}</span> / {fmt(target)}
+          <Fig><span className="text-slate-800 font-semibold">{fmt(current)}</span> / {fmt(target)}</Fig>
         </span>
       </div>
       <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
@@ -463,7 +464,7 @@ function TopProducts({ products, lM, lI }) {
                     <span className="text-slate-400 tabular-nums">{i + 1}.</span>
                     <span className="truncate">{p.name}</span>
                   </p>
-                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0">{fmtCompact(lM(p.revenue))}</span>
+                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(p.revenue))}</Fig></span>
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden flex-1">
@@ -478,10 +479,10 @@ function TopProducts({ products, lM, lI }) {
                     <div key={it.name} className="px-4 py-2 pl-9">
                       <div className="flex items-baseline justify-between gap-3">
                         <p className="text-xs text-slate-600 truncate">{it.name}</p>
-                        <span className="text-xs font-medium text-slate-800 tabular-nums flex-shrink-0">{fmtCompact(lM(it.revenue))}</span>
+                        <span className="text-xs font-medium text-slate-800 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(it.revenue))}</Fig></span>
                       </div>
                       <p className="text-[11px] text-slate-400 tabular-nums">
-                        {lI(it.units)} unit{lI(it.units) !== 1 ? 's' : ''} · avg {fmtCompact(lM(it.revenue / Math.max(1, it.units)))}
+                        {lI(it.units)} unit{lI(it.units) !== 1 ? 's' : ''} · avg <Fig>{fmtCompact(lM(it.revenue / Math.max(1, it.units)))}</Fig>
                       </p>
                     </div>
                   ))}
@@ -517,7 +518,7 @@ function TopProducts({ products, lM, lI }) {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-right text-slate-600 tabular-nums">{lI(p.units)}</td>
-                    <td className="px-5 py-3 text-right font-medium text-slate-800 tabular-nums">{fmtCompact(lM(p.revenue))}</td>
+                    <td className="px-5 py-3 text-right font-medium text-slate-800 tabular-nums"><Fig>{fmtCompact(lM(p.revenue))}</Fig></td>
                     <td className="px-5 py-3">
                       <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden w-full min-w-16">
                         <div className="h-full rounded-full bg-amber-400" style={{ width: `${(p.revenue / maxRev) * 100}%` }} />
@@ -532,8 +533,8 @@ function TopProducts({ products, lM, lI }) {
                             <div key={it.name} className="flex items-center gap-3 pl-16 pr-5 py-2">
                               <span className="text-xs text-slate-600 truncate flex-1">{it.name}</span>
                               <span className="text-xs text-slate-400 tabular-nums flex-shrink-0 w-16 text-right">{lI(it.units)} unit{lI(it.units) !== 1 ? 's' : ''}</span>
-                              <span className="text-xs text-slate-400 tabular-nums flex-shrink-0 w-20 text-right">avg {fmtCompact(lM(it.revenue / Math.max(1, it.units)))}</span>
-                              <span className="text-xs font-medium text-slate-800 tabular-nums flex-shrink-0 w-20 text-right">{fmtCompact(lM(it.revenue))}</span>
+                              <span className="text-xs text-slate-400 tabular-nums flex-shrink-0 w-20 text-right">avg <Fig>{fmtCompact(lM(it.revenue / Math.max(1, it.units)))}</Fig></span>
+                              <span className="text-xs font-medium text-slate-800 tabular-nums flex-shrink-0 w-20 text-right"><Fig>{fmtCompact(lM(it.revenue))}</Fig></span>
                             </div>
                           ))}
                           {p.items.length > SUB_LIMIT && (
@@ -585,7 +586,7 @@ function RecentQuotes({ quotes, customers, navigate, lM }) {
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium text-slate-800 truncate">{cust?.name || 'Customer'}</p>
-                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0">{fmtCompact(lM(quoteTotal(q)))}</span>
+                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(quoteTotal(q)))}</Fig></span>
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <span className="text-xs text-slate-400 truncate">
@@ -622,7 +623,7 @@ function RecentQuotes({ quotes, customers, navigate, lM }) {
                   >
                     <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{q.quoteNumber || '—'}</td>
                     <td className="px-5 py-3 font-medium text-slate-800 truncate max-w-40">{cust?.name || 'Customer'}</td>
-                    <td className="px-5 py-3 text-right font-medium text-slate-800 tabular-nums whitespace-nowrap">{fmtCompact(lM(quoteTotal(q)))}</td>
+                    <td className="px-5 py-3 text-right font-medium text-slate-800 tabular-nums whitespace-nowrap"><Fig>{fmtCompact(lM(quoteTotal(q)))}</Fig></td>
                     <td className="px-5 py-3">
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${QUOTE_STATUS_STYLE[q.status] || 'bg-slate-100 text-slate-600'}`}>
                         {q.status}
@@ -666,7 +667,7 @@ function TopSalesReps({ reps, lM, lI, lW }) {
               <p className="text-sm font-medium text-slate-800 truncate">{r.name}</p>
               <p className="text-xs text-slate-400">{lI(r.won)} won{r.winRate !== null ? ` · ${lW(r.winRate).toFixed(0)}% win rate` : ''}</p>
             </div>
-            <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0">{fmtCompact(lM(r.revenue))}</span>
+            <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(r.revenue))}</Fig></span>
           </div>
         ))}
       </div>
@@ -726,7 +727,7 @@ function FollowUps({ items, customers, navigate, lM }) {
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium text-slate-800 truncate">{cust?.name || 'Customer'}</p>
-                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0">{fmtCompact(lM(quoteTotal(q)))}</span>
+                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(quoteTotal(q)))}</Fig></span>
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <span className="text-xs text-slate-400 truncate">{q.quoteNumber || '—'} · sent {sentDays}d ago</span>
@@ -839,7 +840,7 @@ function TopCustomers({ items, navigate, lM, lI }) {
               <p className="text-sm font-medium text-slate-800 truncate">{c.name}</p>
               <p className="text-xs text-slate-400">{lI(c.count)} accepted quote{lI(c.count) !== 1 ? 's' : ''}</p>
             </div>
-            <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0">{fmtCompact(lM(c.total))}</span>
+            <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(c.total))}</Fig></span>
           </button>
         ))}
         {items.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-400">No accepted quotes yet.</p>}
@@ -863,6 +864,10 @@ export default function Dashboard() {
   });
   const setGlobalRange = (v) => { setGlobalRangeState(v); localStorage.setItem(RANGE_KEY, v); };
   const [larpMode, setLarpMode]       = useState(loadLarp);
+  // Privacy mode — blur every figure so clients on site can't read them.
+  const PRIVACY_KEY = 'lusso_dashboard_privacy';
+  const [privacy, setPrivacy] = useState(() => localStorage.getItem(PRIVACY_KEY) === 'true');
+  const updatePrivacy = (v) => { setPrivacy(v); localStorage.setItem(PRIVACY_KEY, v ? 'true' : 'false'); };
 
   const customers = getCustomersFiltered(isAM, displayName);
   const activity  = getActivity();
@@ -1267,6 +1272,7 @@ export default function Dashboard() {
   const revTotal  = revValues.reduce((s, v) => s + v, 0);
 
   return (
+    <PrivacyCtx.Provider value={privacy}>
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -1294,6 +1300,17 @@ export default function Dashboard() {
             </div>
           )}
           <DateRangeSelect value={globalRange} onChange={setGlobalRange} years={quoteYears} />
+          <button
+            onClick={() => updatePrivacy(!privacy)}
+            title={privacy ? 'Figures hidden — tap to show' : 'Hide figures (for when clients can see the screen)'}
+            aria-pressed={privacy}
+            className={`flex items-center justify-center gap-1.5 rounded-lg p-2 sm:px-3 border transition-colors ${
+              privacy ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            {privacy ? <EyeOff size={15} /> : <Eye size={15} />}
+            <span className="hidden sm:inline text-xs font-medium">{privacy ? 'Hidden' : 'Hide figures'}</span>
+          </button>
           <button
             onClick={handleExportPdf}
             disabled={exporting}
@@ -1345,7 +1362,7 @@ export default function Dashboard() {
           icon={BarChart2} label="Pipeline Value" delay={70}
           raw={lM(analytics.pipelineValue)} format={fmtCompact}
           valueTitle={fmt$(lM(analytics.pipelineValue))}
-          delta={<span className="text-xs font-semibold text-blue-600">{lI(analytics.pipelineCount)}</span>}
+          delta={<span className="text-xs font-semibold text-blue-600"><Fig>{lI(analytics.pipelineCount)}</Fig></span>}
           caption={`open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''} (last 12 mo)`}
           spark={monthly.map(m => m.newQuotes)}
           sparkColor="#2E6E65"
@@ -1355,7 +1372,7 @@ export default function Dashboard() {
           icon={CheckCircle2} label="Quotes Won" delay={140}
           raw={lI(analytics.acceptedCount)} format={(v) => Math.round(v)}
           delta={<DeltaBadge current={analytics.acceptedCount} previous={analytics.acceptedCountPrev} />}
-          caption={`avg ${fmtCompact(lM(analytics.acceptedAvg))}`}
+          caption={<>avg <Fig>{fmtCompact(lM(analytics.acceptedAvg))}</Fig></>}
           spark={monthly.map(m => m.acceptedCount)}
           sparkColor="#16A34A"
           onClick={() => navigate('/quotes')}
@@ -1382,7 +1399,7 @@ export default function Dashboard() {
             ? { raw: lM(insights.marginValue), format: fmtCompact }
             : { value: '—' })}
           delta={insights.marginPct !== null
-            ? <span className="text-xs font-semibold text-green-600">{insights.marginPct.toFixed(0)}%</span> : null}
+            ? <span className="text-xs font-semibold text-green-600"><Fig>{insights.marginPct.toFixed(0)}%</Fig></span> : null}
           caption={insights.marginPct !== null
             ? `margin · costs known for ${insights.knownShare.toFixed(0)}% of revenue`
             : 'no cost prices in period'}
@@ -1629,5 +1646,6 @@ export default function Dashboard() {
       </div>
 
     </div>
+    </PrivacyCtx.Provider>
   );
 }
