@@ -5,7 +5,7 @@ import {
   Search, Filter, Plus, Briefcase, SlidersHorizontal, X,
   Trash2, CheckSquare, Square, AlertTriangle,
 } from 'lucide-react';
-import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, getActiveEmployees, deleteJob, bulkDeleteJobs } from '../store/data';
+import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -106,11 +106,7 @@ export default function Jobs() {
         if (urgency === 'High' && job.urgency !== 'High' && job.urgency !== 'Urgent') return false;
       }
       if (staff && job.assignedStaff !== staff) return false;
-      if (stalled) {
-        if (['Completed', 'Cancelled'].includes(job.status)) return false;
-        if (!job.updatedAt) return false;
-        if ((Date.now() - new Date(job.updatedAt).getTime()) / 86400000 < 14) return false;
-      }
+      if (stalled && !isStalledJob(job)) return false;
       return true;
     }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   }, [jobs, customers, search, status, urgency, staff, stalled]);

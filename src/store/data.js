@@ -599,6 +599,20 @@ export const getJob = (id) => (get('lusso_jobs') || []).find(j => j.id === id);
 
 export const getJobsByCustomer = (customerId) => getJobs().filter(j => j.customerId === customerId);
 
+// A job "needs attention" (stalled) when it's still open and hasn't been worked
+// on in STALLED_DAYS. Only a real edit — which bumps updatedAt — clears it, so
+// the flag stays put until you actually do something to the job. Robust to a
+// missing/odd timestamp: unknown last-activity counts as stalled (better shown
+// than silently dropped, which is what a slow/partial data load used to do).
+export const STALLED_DAYS = 14;
+export function isStalledJob(job) {
+  if (!job || ['Completed', 'Cancelled'].includes(job.status)) return false;
+  const raw = job.updatedAt || job.createdAt;
+  const t = raw ? new Date(raw).getTime() : NaN;
+  const idleDays = Number.isNaN(t) ? Infinity : (Date.now() - t) / 86400000;
+  return idleDays >= STALLED_DAYS;
+}
+
 export const nextJobNumber = () => {
   const n = (get('lusso_job_counter') || 0) + 1;
   set('lusso_job_counter', n);

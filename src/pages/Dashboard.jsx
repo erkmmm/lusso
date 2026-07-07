@@ -17,7 +17,7 @@ import {
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
   getQuotesFiltered, computeQuoteTotals, calcItemPricing,
-  getInstallRequests, JOB_STATUSES,
+  getInstallRequests, JOB_STATUSES, isStalledJob,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
@@ -283,13 +283,7 @@ function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, ca
 
 // ─── Needs Attention ──────────────────────────────────────────────────────────
 function NeedsAttention({ jobs, quotes, navigate, infl }) {
-  const now      = new Date();
-  const TERMINAL = ['Completed', 'Cancelled'];
-
-  const stalled = jobs.filter(j =>
-    !TERMINAL.includes(j.status) && j.updatedAt &&
-    differenceInDays(now, parseISO(j.updatedAt)) >= 14
-  ).length;
+  const stalled = jobs.filter(isStalledJob).length;
   const quotesOut       = quotes.filter(q => ['Sent', 'Viewed'].includes(q.status)).length;
   const pendingInstalls = getInstallRequests().filter(r => r.status === 'Sent').length;
 
