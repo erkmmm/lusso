@@ -865,9 +865,10 @@ export default function Dashboard() {
   const setGlobalRange = (v) => { setGlobalRangeState(v); localStorage.setItem(RANGE_KEY, v); };
   const [larpMode, setLarpMode]       = useState(loadLarp);
   // Privacy mode — blur every figure so clients on site can't read them.
-  const PRIVACY_KEY = 'lusso_dashboard_privacy';
-  const [privacy, setPrivacy] = useState(() => localStorage.getItem(PRIVACY_KEY) === 'true');
-  const updatePrivacy = (v) => { setPrivacy(v); localStorage.setItem(PRIVACY_KEY, v ? 'true' : 'false'); };
+  // Always starts hidden each time the dashboard opens (safest on site); the
+  // salesperson taps to reveal for the current view only.
+  const [privacy, setPrivacy] = useState(true);
+  const updatePrivacy = (v) => setPrivacy(v);
 
   const customers = getCustomersFiltered(isAM, displayName);
   const activity  = getActivity();
