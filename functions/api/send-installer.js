@@ -39,7 +39,7 @@ export async function onRequestPost(context) {
     return json(400, { error: 'Invalid JSON in request body' });
   }
 
-  const { request, installer, job } = body || {};
+  const { request, installer, job, measureSheet } = body || {};
 
   if (!request)           return json(400, { error: 'Missing installation request data' });
   if (!installer?.email)  return json(400, { error: 'Installer email address is missing' });
@@ -62,6 +62,40 @@ export async function onRequestPost(context) {
     : 'TBC';
 
   const firstName = installer.name?.split(' ')[0] || installer.name || 'there';
+
+  // ── Measure sheet table — so the installer sees exactly what to install ──────
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const measureSheetHtml = (() => {
+    const items = measureSheet?.lineItems || [];
+    if (!items.length) return '';
+    const th = 'padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#5E6B6B;';
+    const td = 'padding:8px 10px;border-top:1px solid #E6ECEA;font-size:13px;color:#1F2A2A;';
+    const rows = items.map((li, i) => {
+      const product = li.productNameSnapshot || li.productType || '—';
+      const w = li.widthMm || li.width || '';
+      const d = li.dropMm  || li.drop  || '';
+      const size = (w || d) ? `${w || '?'} × ${d || '?'}` : '—';
+      return `<tr>
+        <td style="${td}color:#8A9696;">${i + 1}</td>
+        <td style="${td}font-weight:600;">${esc(li.location) || '—'}</td>
+        <td style="${td}">${esc(product)}</td>
+        <td style="${td}text-align:right;white-space:nowrap;">${esc(size)}</td>
+        <td style="${td}text-align:center;">${esc(li.quantity ?? 1)}</td>
+        <td style="${td}color:#5E6B6B;">${esc(li.fabricColour) || '—'}</td>
+        <td style="${td}color:#5E6B6B;">${esc(li.control) || '—'}</td>
+        <td style="${td}color:#5E6B6B;">${esc(li.fixing) || '—'}</td>
+      </tr>`;
+    }).join('');
+    return `<p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#1F2A2A;">📐 Measure Sheet (${items.length} item${items.length !== 1 ? 's' : ''})</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #DDE5E2;border-radius:8px;border-collapse:collapse;overflow:hidden;margin-bottom:24px;">
+        <tr style="background:#F0F4F3;">
+          <th style="${th}">#</th><th style="${th}">Location</th><th style="${th}">Product</th>
+          <th style="${th}text-align:right;">W × D (mm)</th><th style="${th}text-align:center;">Qty</th>
+          <th style="${th}">Fabric</th><th style="${th}">Control</th><th style="${th}">Fixing</th>
+        </tr>
+        ${rows}
+      </table>`;
+  })();
 
   const html = `<!DOCTYPE html>
 <html>
@@ -100,6 +134,7 @@ export async function onRequestPost(context) {
             </table>
             ${request.serviceRequired ? `<p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#1F2A2A;">🔧 Service Required</p><p style="margin:0 0 20px;padding:12px 16px;background:#F7F8F6;border:1px solid #DDE5E2;border-radius:8px;font-size:14px;color:#1F2A2A;">${request.serviceRequired}</p>` : ''}
             ${request.productSummary ? `<p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#1F2A2A;">📦 Product Summary</p><p style="margin:0 0 20px;padding:12px 16px;background:#F7F8F6;border:1px solid #DDE5E2;border-radius:8px;font-size:14px;color:#5E6B6B;">${request.productSummary}</p>` : ''}
+            ${measureSheetHtml}
             ${request.installationNotes ? `<p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#1F2A2A;">📝 Notes</p><p style="margin:0 0 20px;padding:12px 16px;background:#F7F8F6;border:1px solid #DDE5E2;border-radius:8px;font-size:14px;color:#5E6B6B;">${request.installationNotes}</p>` : ''}
             <p style="margin:0 0 28px;padding:12px 16px;background:#F0F4FF;border:1px solid #C0CCEE;border-radius:8px;font-size:13px;color:#5E6B6B;">
               🔒 Full address and customer details will be shared once you accept.

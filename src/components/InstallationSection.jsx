@@ -147,7 +147,9 @@ export default function InstallationSection({ jobId, customer }) {
     setSendingEmail(true);
     try {
       const job = getJob(request.jobId);
-      await sendInstallerEmail(request, installer, job);
+      // Include the measure sheet so the installer sees exactly what to install.
+      const sheet = getMeasureSheetByJob(request.jobId);
+      await sendInstallerEmail(request, installer, job, sheet);
       sendInstallRequest(request.id, 'Admin');
       setEmailModal(null);
       refresh();

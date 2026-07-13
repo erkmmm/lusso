@@ -84,15 +84,18 @@ export async function sendQuoteEmail(quote, customer, emailIntro) {
 
 /**
  * Send an installation request email to the installer.
- * @param {object} request   - install request object
- * @param {object} installer - installer object (must have .email)
- * @param {object} job       - job object (for reference number)
+ * @param {object} request      - install request object
+ * @param {object} installer    - installer object (must have .email)
+ * @param {object} job          - job object (for reference number)
+ * @param {object} [measureSheet] - the job's measure sheet, so the installer
+ *                                  sees exactly what they're installing.
  */
-export async function sendInstallerEmail(request, installer, job) {
+export async function sendInstallerEmail(request, installer, job, measureSheet = null) {
   return post('send-installer', {
     request,
     installer,
     job,
+    measureSheet,
     appUrl: window.location.origin,
   });
 }
