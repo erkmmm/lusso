@@ -161,7 +161,7 @@ export default function QuoteFromJob() {
   if (!job) {
     return (
       <div className="p-6 text-center">
-        <p className="text-slate-500">Job not found.</p>
+        <p className="text-slate-500">Project not found.</p>
       </div>
     );
   }
@@ -262,7 +262,7 @@ export default function QuoteFromJob() {
           {sheets.length === 0 ? (
             <div className="text-center py-6">
               <ClipboardList size={28} className="text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-medium text-slate-500">No measure sheets found for this job.</p>
+              <p className="text-sm font-medium text-slate-500">No measure sheets found for this project.</p>
               <p className="text-xs text-slate-400 mt-1">Complete a measure sheet first, then return to create a quote.</p>
               <button
                 onClick={() => navigate(`/measure-sheets/new`)}

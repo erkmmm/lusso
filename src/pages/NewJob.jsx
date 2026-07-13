@@ -210,9 +210,9 @@ export default function NewJob() {
     <div className="p-4 sm:p-6 max-w-2xl mx-auto pb-32 space-y-5 overflow-x-hidden">
 
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">New Job</h1>
+        <h1 className="text-2xl font-bold text-slate-900">New Project</h1>
         <p className="text-slate-500 text-sm mt-0.5">
-          {step === 0 ? 'Step 1 of 2 — Choose a customer' : 'Step 2 of 2 — Job details'}
+          {step === 0 ? 'Step 1 of 2 · Choose a customer' : 'Step 2 of 2 · Project details'}
         </p>
       </div>
 
@@ -387,7 +387,7 @@ export default function NewJob() {
           {/* Job details form */}
           <Card className="p-5">
             <h2 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
-              <Briefcase size={15} className="text-slate-400" /> Job Details
+              <Briefcase size={15} className="text-slate-400" /> Project Details
             </h2>
 
             <div className="space-y-4">
@@ -409,7 +409,7 @@ export default function NewJob() {
                 {/* Job type */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Job Type <span className="text-red-400">*</span>
+                    Project Type <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={jobType}
@@ -528,7 +528,7 @@ export default function NewJob() {
             >
               {saving
                 ? <><Loader2 size={15} className="animate-spin" /> Creating…</>
-                : <><Briefcase size={15} /> Create Job &amp; Open Workspace</>
+                : <><Briefcase size={15} /> Create Project &amp; Open</>
               }
             </button>
           </div>

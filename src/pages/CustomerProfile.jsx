@@ -164,25 +164,25 @@ export default function CustomerProfile() {
           <Card>
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
               <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                <Briefcase size={15} /> Jobs ({jobs.length})
+                <Briefcase size={15} /> Projects ({jobs.length})
               </h2>
               <button
                 onClick={() => navigate(`/jobs/new?customerId=${id}`)}
                 className="flex items-center gap-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
               >
-                <Plus size={13} /> New Job
+                <Plus size={13} /> New Project
               </button>
             </div>
 
             {jobs.length === 0 ? (
               <div className="p-8 text-center">
                 <Briefcase size={28} className="mx-auto mb-2 text-slate-300" />
-                <p className="text-sm text-slate-400">No jobs yet.</p>
+                <p className="text-sm text-slate-400">No projects yet.</p>
                 <button
                   onClick={() => navigate(`/jobs/new?customerId=${id}`)}
                   className="mt-2 text-xs text-amber-600 hover:underline font-medium"
                 >
-                  Create the first job →
+                  Create the first project →
                 </button>
               </div>
             ) : (

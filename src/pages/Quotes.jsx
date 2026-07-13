@@ -192,7 +192,7 @@ export default function Quotes() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Quotes</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{filtered.length} quote{filtered.length !== 1 ? 's' : ''}</p>
+          <p className="text-slate-500 text-sm mt-0.5">{filtered.length} quote{filtered.length !== 1 ? 's' : ''} across your projects</p>
           {statusFilter === 'Out' && (
             <button onClick={() => setStatusFilter('All')}
               className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors">
@@ -216,10 +216,11 @@ export default function Quotes() {
             )
           )}
           <button
-            onClick={() => navigate('/quotes/new')}
+            onClick={() => navigate('/jobs/new')}
+            title="Quotes are created inside a project — start one here"
             className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
           >
-            <Plus size={16} /> New Quote
+            <Plus size={16} /> New Project
           </button>
         </div>
       </div>
@@ -323,10 +324,10 @@ export default function Quotes() {
           <EmptyState
             icon={FileText}
             title={search || statusFilter !== 'All' ? 'No quotes match your filters' : 'No quotes yet'}
-            description={search || statusFilter !== 'All' ? 'Try adjusting your search or filter.' : 'Create your first quote from a measure sheet or from scratch.'}
+            description={search || statusFilter !== 'All' ? 'Try adjusting your search or filter.' : 'Quotes live inside a project. Start a project and the quote is created there, pre-filled.'}
             action={!search && statusFilter === 'All' ? (
-              <button onClick={() => navigate('/quotes/new')} className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-                New Quote
+              <button onClick={() => navigate('/jobs/new')} className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+                New Project
               </button>
             ) : null}
           />

@@ -248,7 +248,7 @@ export default function JobProfile() {
             {/* Job Details */}
             <Card>
               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Briefcase size={15} /> Job Details</h2>
+                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Briefcase size={15} /> Project Details</h2>
                 <button onClick={() => setEditingJob(!editingJob)} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
                   {editingJob ? <><X size={12} /> Cancel</> : <><Edit3 size={12} /> Edit</>}
                 </button>
@@ -283,7 +283,7 @@ export default function JobProfile() {
                   </div>
                 ) : (
                   <div className="grid sm:grid-cols-2 gap-4 text-sm">
-                    <DetailRow icon={<Briefcase size={13} />} label="Job Type"      value={job.jobType} />
+                    <DetailRow icon={<Briefcase size={13} />} label="Project Type"  value={job.jobType} />
                     <DetailRow icon={<User size={13} />}      label="Assigned Staff" value={job.assignedStaff} />
                     <DetailRow icon={<Calendar size={13} />}  label="Measure Date"  value={job.measureDate  ? format(parseISO(job.measureDate),  'd MMM yyyy') : '—'} />
                     <DetailRow icon={<Calendar size={13} />}  label="Quote Due"     value={job.quoteDueDate ? format(parseISO(job.quoteDueDate), 'd MMM yyyy') : '—'} />
@@ -411,7 +411,7 @@ export default function JobProfile() {
               <div className="px-5 py-12 text-center">
                 <FileText size={32} className="mx-auto mb-3 text-slate-300" />
                 <p className="text-sm font-medium text-slate-600">No quotes yet</p>
-                <p className="text-xs text-slate-400 mt-1">Create the first quote for this job.</p>
+                <p className="text-xs text-slate-400 mt-1">Create the first quote for this project.</p>
                 <button onClick={() => navigate(`/quotes/new-from-job/${id}`)}
                   className="mt-4 text-xs text-amber-600 hover:underline font-medium">
                   Create first quote →
@@ -644,9 +644,9 @@ export default function JobProfile() {
                 <Trash2 size={18} className="text-red-500" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-base">Delete this job?</h3>
+                <h3 className="font-bold text-slate-900 text-base">Delete this project?</h3>
                 <p className="text-sm text-slate-500 mt-1">
-                  {customer?.name ? `${customer.name}'s job ` : 'This job '}({job.jobNumber})
+                  {customer?.name ? `${customer.name}'s project ` : 'This project '}({job.jobNumber})
                   {measureSheets.length > 0
                     ? ` and its ${measureSheets.length} measure sheet${measureSheets.length !== 1 ? 's' : ''} will be permanently removed.`
                     : ' will be permanently removed.'}
@@ -661,9 +661,9 @@ export default function JobProfile() {
                 className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium py-2.5 rounded-xl transition-colors">
                 Cancel
               </button>
-              <button onClick={() => { deleteJob(id, displayName || 'Admin'); toast('Job deleted.'); navigate(job.customerId ? `/customers/${job.customerId}` : '/jobs'); }}
+              <button onClick={() => { deleteJob(id, displayName || 'Admin'); toast('Project deleted.'); navigate(job.customerId ? `/customers/${job.customerId}` : '/jobs'); }}
                 className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors">
-                Delete Job
+                Delete Project
               </button>
             </div>
           </div>

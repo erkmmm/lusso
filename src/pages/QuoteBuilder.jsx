@@ -1,5 +1,5 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -562,6 +562,15 @@ export default function QuoteBuilder() {
   const [params]    = useSearchParams();
   const isEdit      = Boolean(id && id !== 'new');
 
+  // Single front door: a quote is always created INSIDE a project (pre-filled
+  // with the customer + measurements). If someone reaches the bare /quotes/new
+  // with no project/customer context, send them to start a project instead of
+  // re-entering the customer here — that double-entry is exactly what we removed.
+  const nakedNewQuote = !isEdit && !params.get('jobId') && !params.get('customerId') && !params.get('measureSheetId');
+  useEffect(() => {
+    if (nakedNewQuote) navigate('/jobs/new', { replace: true });
+  }, [nakedNewQuote, navigate]);
+
   const settings      = getQuoteSettings();
   const productTypes  = getActiveProductTypes();
   const customers     = getCustomers();
@@ -656,6 +665,9 @@ export default function QuoteBuilder() {
     return next;
   });
   const expandItem  = (itemId) => setExpandedItems(prev => new Set([...prev, itemId]));
+
+  // Redirecting a bare /quotes/new to the project flow — render nothing.
+  if (nakedNewQuote) return null;
 
   if (!form) {
     return (

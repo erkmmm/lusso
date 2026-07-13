@@ -155,12 +155,12 @@ export default function Jobs() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Jobs</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{filtered.length} job{filtered.length !== 1 ? 's' : ''} found</p>
+          <h1 className="text-2xl font-bold text-slate-900">Projects</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{filtered.length} project{filtered.length !== 1 ? 's' : ''}</p>
           {stalled && (
             <button onClick={() => setStalled(false)}
               className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors">
-              <AlertTriangle size={12} /> Stalled jobs · no activity 14+ days
+              <AlertTriangle size={12} /> Stalled projects · no activity 14+ days
               <X size={12} />
             </button>
           )}
@@ -183,7 +183,7 @@ export default function Jobs() {
             onClick={() => navigate('/jobs/new')}
             className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
           >
-            <Plus size={16} /> New Job
+            <Plus size={16} /> New Project
           </button>
         </div>
       </div>
@@ -195,7 +195,7 @@ export default function Jobs() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, phone, address, job type…"
+            placeholder="Search by name, phone, address, type…"
             className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
           />
           {search && (
@@ -293,7 +293,7 @@ export default function Jobs() {
         <Card>
           <EmptyState
             icon={Briefcase}
-            title="No jobs found"
+            title="No projects found"
             description="Try adjusting your search or filters."
             action={hasFilters && (
               <button onClick={clearFilters} className="text-sm text-amber-600 hover:underline">Clear filters</button>

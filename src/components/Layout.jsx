@@ -23,7 +23,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/',               label: 'Dashboard', icon: LayoutDashboard, exact: true },
       { to: '/customers', label: 'Customers', icon: Users,     countKey: 'customers' },
-      { to: '/jobs',      label: 'Jobs',      icon: Briefcase, countKey: 'jobs' },
+      { to: '/jobs',      label: 'Projects',  icon: Briefcase, countKey: 'jobs' },
       { to: '/quotes',    label: 'Quotes',    icon: FileText,  countKey: 'quotes' },
       { to: '/inbox',     label: 'Inbox',     icon: Inbox },
     ],
@@ -51,23 +51,17 @@ const NAV_SECTIONS = [
 ];
 
 // ── + New actions ─────────────────────────────────────────────────────────────
-// "New Measure Sheet" is intentionally absent — create/import from inside a Job Workspace.
+// One front door. A project is the whole piece of work for a customer; quotes,
+// measure sheets and POs are created INSIDE it (pre-filled), so the customer is
+// only ever entered once. There is deliberately no standalone "New Quote".
 const NEW_ACTIONS = [
   {
-    label: 'New Job',
-    sub:   'Create a job for a customer',
+    label: 'New Project',
+    sub:   'Start a job for a customer — quote, measure & order all live inside it',
     to:    '/jobs/new',
     icon:  Briefcase,
     color: 'text-amber-600',
     bg:    'bg-amber-50',
-  },
-  {
-    label: 'New Quote',
-    sub:   'Price and quote a job',
-    to:    '/quotes/new',
-    icon:  FileText,
-    color: 'text-blue-600',
-    bg:    'bg-blue-50',
   },
   {
     label: 'New Customer',
@@ -425,7 +419,7 @@ export default function Layout({ children }) {
                   </span>
                 )}
               </div>
-              <span>Jobs</span>
+              <span>Projects</span>
             </>
           )}
         </NavLink>
