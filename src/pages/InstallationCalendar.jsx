@@ -652,7 +652,7 @@ function NeedsInstaller({ navigate }) {
         {unscheduled.map(job => {
           const cust = getCustomer(job.customerId);
           return (
-            <button key={job.id} onClick={() => navigate(`/jobs/${job.id}`)}
+            <button key={job.id} onClick={() => navigate(`/jobs/${job.id}?schedule=1`)}
               className="w-full flex items-center gap-2 text-xs text-amber-800 hover:text-amber-900 bg-white rounded-lg px-3 py-2 border border-amber-100 hover:border-amber-300 transition-colors text-left">
               <span className="font-semibold">{job.jobNumber}</span>
               <span>{cust?.name}</span>
