@@ -1456,21 +1456,31 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
     (li.type === 'Optional' && selectedIds.includes(li.id)) ||
     (li.type === 'Multiple Choice' && selectedIds.includes(li.id))
   );
-  const subtotal = active.reduce((s, li) => {
-    // New pricing model (has unitCostPrice field)
+  let subtotal = 0;   // sell total, ex-GST
+  let cost     = 0;   // our cost (materials + labour) for items where it's known
+  let costKnown = active.length > 0; // false if any active item has no cost basis (e.g. imported quotes)
+  active.forEach(li => {
+    // New pricing model (has unitCostPrice field) — we know the cost basis.
     if (li.unitCostPrice !== undefined) {
-      const { lineTotal } = calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity);
-      return s + lineTotal;
+      const { lineTotal, totalCost } = calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity);
+      subtotal += lineTotal;
+      cost     += totalCost * (Number(li.quantity) || 1);
+    } else {
+      // Legacy / imported (old unitPrice + labourCost model) — no cost basis,
+      // so margin can't be computed for this quote.
+      subtotal += ((Number(li.unitPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
+      costKnown = false;
     }
-    // Legacy fallback (old unitPrice + labourCost model)
-    return s + ((Number(li.unitPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
-  }, 0);
+  });
   const gst      = includesGST ? subtotal * (gstRate / 100) : 0;
   const total    = subtotal + gst;
   const deposit  = depositType === 'Percentage' ? total * (depositValue / 100)
                  : depositType === 'Fixed Amount' ? Number(depositValue)
                  : 0;
-  return { subtotal, gst, total, deposit };
+  // Margin = gross profit ex-GST. null when the cost basis is unknown (imported).
+  const margin        = costKnown ? subtotal - cost : null;
+  const marginPercent = (costKnown && subtotal > 0) ? (margin / subtotal * 100) : null;
+  return { subtotal, gst, total, deposit, cost, margin, marginPercent, costKnown };
 };
 
 const SEED_QUOTES = [

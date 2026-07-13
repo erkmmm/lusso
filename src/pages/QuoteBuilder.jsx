@@ -1570,6 +1570,18 @@ export default function QuoteBuilder() {
                 <span>Total</span>
                 <span>{fmt(totals.total)}</span>
               </div>
+              {/* Margin — internal only; never rendered on the customer's copy. */}
+              {totals.margin !== null ? (
+                <div className="flex justify-between text-sm font-medium text-emerald-700 mt-1 pt-2 border-t border-dashed border-slate-200">
+                  <span className="flex items-center gap-1.5">Margin <span className="text-[10px] font-normal text-slate-400 uppercase tracking-wide">internal</span></span>
+                  <span>{fmt(totals.margin)}{totals.marginPercent !== null ? ` · ${Math.round(totals.marginPercent)}%` : ''}</span>
+                </div>
+              ) : (
+                <div className="flex justify-between text-xs text-slate-400 mt-1 pt-2 border-t border-dashed border-slate-200">
+                  <span>Margin</span>
+                  <span>no cost data</span>
+                </div>
+              )}
               {totals.deposit > 0 && (
                 <div className="flex justify-between text-sm text-amber-700 font-semibold bg-amber-50 rounded-lg px-3 py-2 mt-1">
                   <span>Deposit ({form.depositType === 'Percentage' ? `${form.depositValue}%` : 'Fixed'})</span>

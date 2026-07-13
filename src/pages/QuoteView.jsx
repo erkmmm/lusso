@@ -529,6 +529,17 @@ export default function QuoteView() {
                 <div className="flex justify-between text-base font-bold text-slate-900 pt-1 border-t border-slate-200">
                   <span>Total</span><span>{fmt(totals.total)}</span>
                 </div>
+                {/* Margin — internal only; not shown on the customer's copy. */}
+                {totals.margin !== null ? (
+                  <div className="flex justify-between text-sm font-medium text-emerald-700 pt-1.5 border-t border-dashed border-slate-200">
+                    <span className="flex items-center gap-1.5">Margin <span className="text-[10px] font-normal text-slate-400 uppercase tracking-wide">internal</span></span>
+                    <span>{fmt(totals.margin)}{totals.marginPercent !== null ? ` · ${Math.round(totals.marginPercent)}%` : ''}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-xs text-slate-400 pt-1.5 border-t border-dashed border-slate-200">
+                    <span>Margin</span><span>no cost data</span>
+                  </div>
+                )}
                 {totals.deposit > 0 && (
                   <div className="flex justify-between text-sm text-amber-700 font-medium">
                     <span>Deposit ({quote.depositType === 'Percentage' ? `${quote.depositValue}%` : 'Fixed'})</span>
