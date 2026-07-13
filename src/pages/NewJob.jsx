@@ -170,10 +170,10 @@ export default function NewJob() {
 
   // ── Job actions ────────────────────────────────────────────────────────────
   const validateJob = () => {
-    const errs = {};
-    if (!jobType) errs.jobType = 'Job type is required';
-    setJobErrors(errs);
-    return Object.keys(errs).length === 0;
+    // Project type is optional — you often don't know the exact product until
+    // later in the project. Nothing else is required to start a project.
+    setJobErrors({});
+    return true;
   };
 
   const handleCreateJob = async () => {
@@ -187,7 +187,7 @@ export default function NewJob() {
     try {
       const newJob = createJob({
         customerId,
-        title:              title.trim() || `${customer?.name || ''} – ${jobType}`,
+        title:              title.trim() || [customer?.name, jobType].filter(Boolean).join(' – ') || 'New project',
         jobType,
         status,
         urgency,
@@ -409,14 +409,14 @@ export default function NewJob() {
                 {/* Job type */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Project Type <span className="text-red-400">*</span>
+                    Project Type <span className="text-slate-400 font-normal">(optional)</span>
                   </label>
                   <select
                     value={jobType}
                     onChange={e => { setJobType(e.target.value); setJobErrors(er => ({ ...er, jobType: '' })); }}
                     className={inp(jobErrors.jobType)}
                   >
-                    <option value="">Select type…</option>
+                    <option value="">Not sure yet</option>
                     {JOB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   {jobErrors.jobType && <p className="text-xs text-red-500 mt-1">{jobErrors.jobType}</p>}
