@@ -14,6 +14,8 @@ import Card from '../components/Card';
 import { format, parseISO } from 'date-fns';
 
 const fmt$ = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
+// Safe short date — tolerates missing / odd timestamps from sync.
+const fmtDate = (d) => { if (!d) return null; const dt = new Date(d); return Number.isNaN(dt.getTime()) ? null : format(dt, 'd MMM yyyy'); };
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ message, onDone }) {
@@ -404,11 +406,13 @@ export default function Jobs() {
                       {(job.urgency === 'High' || job.urgency === 'Urgent') && <UrgencyBadge urgency={job.urgency} />}
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
-                      <span>{job.jobType}</span>
+                      {job.jobType && <span>{job.jobType}</span>}
                       {customer?.address && <span className="truncate max-w-[200px]">{customer.address}</span>}
                       {job.assignedStaff && <span>👤 {job.assignedStaff}</span>}
                       {job.measureDate && <span>📐 {format(parseISO(job.measureDate), 'd MMM yyyy')}</span>}
                       {job.installDate && <span>🔧 {format(parseISO(job.installDate), 'd MMM yyyy')}</span>}
+                      {job.createdAt && <span>Made {fmtDate(job.createdAt)}</span>}
+                      {job.updatedAt && <span>Edited {fmtDate(job.updatedAt)}</span>}
                     </div>
                   </div>
 
