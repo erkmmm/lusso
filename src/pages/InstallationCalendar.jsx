@@ -65,6 +65,7 @@ export default function InstallationCalendar() {
   const [selectedCalEvent, setSelectedCalEvent] = useState(null);
   const [showNewEventModal, setShowNewEventModal] = useState(false);
   const [newEventDate,      setNewEventDate]      = useState(null);
+  const [newEventJob,       setNewEventJob]       = useState(null); // { jobId, customerId } when booking from a recommendation
   const [editingEvent,      setEditingEvent]      = useState(null);
   const [showDeleteInstall, setShowDeleteInstall] = useState(false);
   const [showDeleteCal,     setShowDeleteCal]     = useState(false);
@@ -447,7 +448,11 @@ export default function InstallationCalendar() {
       })()}
 
       {/* Unscheduled installs reminder */}
-      <NeedsInstaller navigate={navigate} />
+      <NeedsInstaller onSchedule={(job) => {
+        setNewEventJob({ jobId: job.id, customerId: job.customerId });
+        setNewEventDate(null);
+        setShowNewEventModal(true);
+      }} />
 
       {/* ── Install request detail modal ── */}
       {selectedInstall && !showDeleteInstall && (() => {
@@ -627,9 +632,11 @@ export default function InstallationCalendar() {
       {(showNewEventModal || editingEvent) && (
         <CalendarEventModal
           initialDate={newEventDate}
+          initialJobId={newEventJob?.jobId || null}
+          initialCustomerId={newEventJob?.customerId || null}
           eventToEdit={editingEvent}
           onSave={() => {}}
-          onClose={() => { setShowNewEventModal(false); setNewEventDate(null); setEditingEvent(null); }}
+          onClose={() => { setShowNewEventModal(false); setNewEventDate(null); setNewEventJob(null); setEditingEvent(null); }}
         />
       )}
     </div>
@@ -637,10 +644,16 @@ export default function InstallationCalendar() {
 }
 
 // ── Unscheduled jobs widget ───────────────────────────────────────────────────
-function NeedsInstaller({ navigate }) {
+function NeedsInstaller({ onSchedule }) {
   const jobs = getJobs().filter(j => ['Received','Approved','Ordered'].includes(j.status));
   const requests = getInstallRequests();
-  const unscheduled = jobs.filter(j => !requests.some(r => r.jobId === j.id && r.status !== 'Declined' && r.status !== 'Cancelled'));
+  // A job counts as scheduled once it has an install request OR an install entry
+  // booked on the calendar (so booking via the quick popup clears it from here).
+  const installEvents = getCalendarEvents().filter(e => e.eventType === 'install' && !e.deletedAt);
+  const unscheduled = jobs.filter(j =>
+    !requests.some(r => r.jobId === j.id && r.status !== 'Declined' && r.status !== 'Cancelled') &&
+    !installEvents.some(e => e.jobId === j.id)
+  );
   if (unscheduled.length === 0) return null;
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -652,7 +665,7 @@ function NeedsInstaller({ navigate }) {
         {unscheduled.map(job => {
           const cust = getCustomer(job.customerId);
           return (
-            <button key={job.id} onClick={() => navigate(`/jobs/${job.id}?schedule=1`)}
+            <button key={job.id} onClick={() => onSchedule(job)}
               className="w-full flex items-center gap-2 text-xs text-amber-800 hover:text-amber-900 bg-white rounded-lg px-3 py-2 border border-amber-100 hover:border-amber-300 transition-colors text-left">
               <span className="font-semibold">{job.jobNumber}</span>
               <span>{cust?.name}</span>

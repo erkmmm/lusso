@@ -1,6 +1,6 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
   Edit3, Save, X, User, MapPin, Phone, Mail,
@@ -55,7 +55,6 @@ const TABS = [
 export default function JobProfile() {
   const { id }   = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { salespeople } = useActiveSalespeople();
 
   const job          = getJob(id);
@@ -64,9 +63,7 @@ export default function JobProfile() {
   const activity     = getActivityByJob(id);
   const quotes       = getQuotesByJob(id).filter(q => !q.deletedAt);
 
-  // Arriving from a "Schedule" recommendation opens straight on the Install tab,
-  // where InstallationSection then auto-opens its pre-filled booking form.
-  const [activeTab,   setActiveTab]   = useState(searchParams.get('schedule') === '1' ? 'install' : 'overview');
+  const [activeTab,   setActiveTab]   = useState('overview');
   const [editingStatus, setEditingStatus] = useState(false);
   const [editingNotes,  setEditingNotes]  = useState(false);
   const [notesValue,    setNotesValue]    = useState(job?.internalNotes || '');

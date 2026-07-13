@@ -1,5 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { format, parseISO } from 'date-fns';
 import {
@@ -50,26 +49,7 @@ export default function InstallationSection({ jobId, customer }) {
   const [creating, setCreating]     = useState(false);
   const [emailModal, setEmailModal] = useState(null); // holds { request, installer }
   const [expandedId, setExpandedId] = useState(requests[0]?.id || null);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const installerRef = useRef(null);
   const installers = getActiveInstallers();
-
-  // Arriving from a "Schedule" recommendation (Installation Calendar → ?schedule=1):
-  // open the pre-filled booking form and jump straight to the installer field so
-  // the only things left are installer, date and time.
-  useEffect(() => {
-    if (searchParams.get('schedule') === '1') {
-      setCreating(true);
-      const next = new URLSearchParams(searchParams);
-      next.delete('schedule');
-      setSearchParams(next, { replace: true }); // clear so a refresh doesn't reopen
-      setTimeout(() => {
-        installerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        installerRef.current?.focus();
-      }, 150);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const job        = getJob(jobId);
   const measureSheet = getMeasureSheetByJob(jobId);
 
@@ -204,7 +184,7 @@ export default function InstallationSection({ jobId, customer }) {
           <p className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2"><HardHat size={14} /> New Installation Request</p>
           <div className="grid sm:grid-cols-2 gap-3">
             <FormField label="Installer *">
-              <select ref={installerRef} value={form.installerId} onChange={e => setField('installerId', e.target.value)} className={inp()}>
+              <select value={form.installerId} onChange={e => setField('installerId', e.target.value)} className={inp()}>
                 <option value="">Select installer…</option>
                 {installers.map(i => (
                   <option key={i.id} value={i.id}>{i.name} — {i.businessName}</option>
