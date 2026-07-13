@@ -448,7 +448,7 @@ export default function InstallationCalendar() {
       })()}
 
       {/* Unscheduled installs reminder */}
-      <NeedsInstaller onSchedule={(job) => {
+      <NeedsInstaller navigate={navigate} onSchedule={(job) => {
         setNewEventJob({ jobId: job.id, customerId: job.customerId });
         setNewEventDate(null);
         setShowNewEventModal(true);
@@ -644,7 +644,12 @@ export default function InstallationCalendar() {
 }
 
 // ── Unscheduled jobs widget ───────────────────────────────────────────────────
-function NeedsInstaller({ onSchedule }) {
+// Strip the boilerplate quote prefix so each job shows its distinguishing detail
+// (e.g. the order number / unit) — the same customer can have several jobs.
+const jobDetail = (job) =>
+  (job.title || '').replace(/^Lusso Fashion for Windows\s*(Quotation)?\s*(for|\/)?\s*/i, '').trim();
+
+function NeedsInstaller({ navigate, onSchedule }) {
   const jobs = getJobs().filter(j => ['Received','Approved','Ordered'].includes(j.status));
   const requests = getInstallRequests();
   // A job counts as scheduled once it has an install request OR an install entry
@@ -664,13 +669,26 @@ function NeedsInstaller({ onSchedule }) {
       <div className="space-y-1.5">
         {unscheduled.map(job => {
           const cust = getCustomer(job.customerId);
+          const raw = jobDetail(job);
+          const detail = raw && raw !== cust?.name ? raw : ''; // hide when it just repeats the name
           return (
-            <button key={job.id} onClick={() => onSchedule(job)}
-              className="w-full flex items-center gap-2 text-xs text-amber-800 hover:text-amber-900 bg-white rounded-lg px-3 py-2 border border-amber-100 hover:border-amber-300 transition-colors text-left">
-              <span className="font-semibold">{job.jobNumber}</span>
-              <span>{cust?.name}</span>
-              <span className="text-amber-500 ml-auto">Schedule →</span>
-            </button>
+            <div key={job.id} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-amber-100">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-xs text-amber-900">
+                  <span className="font-semibold flex-shrink-0">{job.jobNumber}</span>
+                  <span className="truncate">{cust?.name}</span>
+                </div>
+                {detail && <p className="text-[11px] text-amber-500 truncate mt-0.5">{detail}</p>}
+              </div>
+              <button onClick={() => navigate(`/jobs/${job.id}`)}
+                className="flex-shrink-0 text-xs font-medium text-slate-500 hover:text-slate-800 border border-slate-200 hover:bg-slate-50 rounded-lg px-2.5 py-1.5 transition-colors">
+                View
+              </button>
+              <button onClick={() => onSchedule(job)}
+                className="flex-shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-400 rounded-lg px-2.5 py-1.5 transition-colors">
+                Schedule
+              </button>
+            </div>
           );
         })}
       </div>

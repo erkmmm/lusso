@@ -4,11 +4,11 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
-  Edit3, Save, X, Phone, Mail, MapPin,
+  Edit3, Save, X, Phone, Mail, MapPin, Trash2, AlertTriangle,
   CheckCircle2, XCircle, HardHat, Briefcase, Clock,
 } from 'lucide-react';
 import {
-  getInstaller, saveInstaller, getInstallRequestsByInstaller,
+  getInstaller, saveInstaller, deleteInstaller, getInstallRequestsByInstaller,
   getJob, getCustomer, INSTALLER_SERVICES, INSTALL_REQUEST_STATUS_COLORS,
 } from '../store/data';
 import Card from '../components/Card';
@@ -20,6 +20,7 @@ export default function InstallerProfile() {
   const installer = getInstaller(id); // read directly — re-renders pick up fresh data
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState({});
+  const [confirmDelete, setConfirmDelete] = useState(false);
   useDataRefresh();
 
   if (!installer) return (
@@ -40,6 +41,12 @@ export default function InstallerProfile() {
     setEditing(false);
     setEdits({});
     toast('Installer saved.');
+  };
+
+  const handleDelete = () => {
+    deleteInstaller(id, 'Admin');
+    toast('Installer deleted.');
+    navigate('/installers');
   };
 
   const toggleService = (svc) => {
@@ -79,12 +86,45 @@ export default function InstallerProfile() {
               {installer.serviceAreas && <span className="flex items-center gap-1.5"><MapPin size={13} />{installer.serviceAreas}</span>}
             </div>
           </div>
-          <button onClick={() => setEditing(!editing)}
-            className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 flex-shrink-0">
-            {editing ? <><X size={13} /> Cancel</> : <><Edit3 size={13} /> Edit</>}
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={() => setEditing(!editing)}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
+              {editing ? <><X size={13} /> Cancel</> : <><Edit3 size={13} /> Edit</>}
+            </button>
+            {!editing && (
+              <button onClick={() => setConfirmDelete(true)} title="Delete installer"
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">
+                <Trash2 size={13} /> <span className="hidden sm:inline">Delete</span>
+              </button>
+            )}
+          </div>
         </div>
       </Card>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setConfirmDelete(false)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={18} className="text-red-500" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-slate-900 text-base">Delete this installer?</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {installer.name}{installer.businessName ? ` (${installer.businessName})` : ''} will be removed from your installer list.
+                  {requests.length > 0 && <> Their {requests.length} past install request{requests.length !== 1 ? 's' : ''} stay on the jobs they belong to.</>} This can't be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-4">
+              <button onClick={() => setConfirmDelete(false)}
+                className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium py-2.5 rounded-xl transition-colors">Cancel</button>
+              <button onClick={handleDelete}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors">Delete Installer</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
