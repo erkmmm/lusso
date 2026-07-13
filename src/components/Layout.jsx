@@ -24,7 +24,6 @@ const NAV_SECTIONS = [
       { to: '/',               label: 'Dashboard', icon: LayoutDashboard, exact: true },
       { to: '/customers', label: 'Customers', icon: Users,     countKey: 'customers' },
       { to: '/jobs',      label: 'Projects',  icon: Briefcase, countKey: 'jobs' },
-      { to: '/quotes',    label: 'Quotes',    icon: FileText,  countKey: 'quotes' },
       { to: '/inbox',     label: 'Inbox',     icon: Inbox },
     ],
   },

@@ -30,7 +30,6 @@ import InstallerProfile from './pages/InstallerProfile';
 import InstallationCalendar from './pages/InstallationCalendar';
 import InstallResponse from './pages/InstallResponse';
 import Settings from './pages/Settings';
-import Quotes from './pages/Quotes';
 import ImportQuotes from './pages/ImportQuotes';
 import QuoteBuilder from './pages/QuoteBuilder';
 import QuoteView from './pages/QuoteView';
@@ -276,7 +275,8 @@ function AppRoutes() {
               <Route path="/import-history"             element={<ImportHistory />} />
               <Route path="/priced-items"               element={<PricedItems />} />
               <Route path="/priced-items/import-pdf"   element={<ImportSupplierPDF />} />
-              <Route path="/quotes"                     element={<Quotes />} />
+              {/* Quotes list is merged into Projects — quotes live inside a project now. */}
+              <Route path="/quotes"                     element={<Navigate to="/jobs" replace />} />
               <Route path="/quotes/import"                     element={<ImportQuotes />} />
               <Route path="/quotes/new"                        element={<QuoteBuilder />} />
               <Route path="/quotes/new-from-job/:jobId"        element={<QuoteFromJob />} />

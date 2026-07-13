@@ -5,13 +5,15 @@ import {
   Search, Filter, Plus, Briefcase, SlidersHorizontal, X,
   Trash2, CheckSquare, Square, AlertTriangle,
 } from 'lucide-react';
-import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob } from '../store/data';
+import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob, getQuotes, computeQuoteTotals } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
 import { format, parseISO } from 'date-fns';
+
+const fmt$ = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ message, onDone }) {
@@ -77,6 +79,7 @@ export default function Jobs() {
   // Needs Attention tile, which links here with ?stalled=1).
   const [stalled, setStalled]       = useState(searchParams.get('stalled') === '1');
   const [staff, setStaff]           = useState('');
+  const [sortBy, setSortBy]         = useState('newest');
   const [showFilters, setShowFilters] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected]     = useState(new Set());
@@ -88,9 +91,43 @@ export default function Jobs() {
   const customers = getCustomers();
   const staffList = getActiveEmployees();
 
+  // Project value = its accepted quote total (or the latest quote's total).
+  // Precomputed once per data change so sort-by-value and the card don't cost
+  // an O(jobs × quotes) scan per row.
+  const valueByJob = useMemo(() => {
+    const byJob = new Map();
+    getQuotes().forEach(q => {
+      if (!q.jobId || q.deletedAt) return;
+      const list = byJob.get(q.jobId);
+      if (list) list.push(q); else byJob.set(q.jobId, [q]);
+    });
+    const val = new Map();
+    byJob.forEach((list, jobId) => {
+      const accepted = list.find(q => q.status === 'Accepted');
+      const chosen = accepted || list.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+      const total = chosen
+        ? (chosen.grandTotal ?? computeQuoteTotals(chosen.lineItems, chosen.depositType, chosen.depositValue, chosen.gstRate, chosen.includesGST).total)
+        : 0;
+      val.set(jobId, total);
+    });
+    return val;
+    // jobs is a fresh array each render; keying on its length keeps this cheap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.length, customers.length]);
+
   const filtered = useMemo(() => {
     // Map lookup — customers.find per job is O(n²) with the imported history.
     const custById = new Map(customers.map(c => [c.id, c]));
+    const nameOf = (j) => custById.get(j.customerId)?.name || '';
+    const newest = (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt);
+    const SORTS = {
+      newest,
+      oldest:      (a, b) => new Date(a.updatedAt) - new Date(b.updatedAt),
+      valueDesc:   (a, b) => (valueByJob.get(b.id) || 0) - (valueByJob.get(a.id) || 0),
+      valueAsc:    (a, b) => (valueByJob.get(a.id) || 0) - (valueByJob.get(b.id) || 0),
+      customer:    (a, b) => nameOf(a).localeCompare(nameOf(b)) || newest(a, b),
+      salesperson: (a, b) => (a.assignedStaff || 'zzz').localeCompare(b.assignedStaff || 'zzz') || newest(a, b),
+    };
     return jobs.filter(job => {
       const customer = custById.get(job.customerId);
       const term = search.toLowerCase();
@@ -108,13 +145,13 @@ export default function Jobs() {
       if (staff && job.assignedStaff !== staff) return false;
       if (stalled && !isStalledJob(job)) return false;
       return true;
-    }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  }, [jobs, customers, search, status, urgency, staff, stalled]);
+    }).sort(SORTS[sortBy] || newest);
+  }, [jobs, customers, search, status, urgency, staff, stalled, sortBy, valueByJob]);
 
   // Render in pages of 100 — reset when filters change.
   const PAGE = 100;
   const [visibleCount, setVisibleCount] = useState(PAGE);
-  const filterKey = `${search}|${status}|${urgency}|${staff}|${stalled}`;
+  const filterKey = `${search}|${status}|${urgency}|${staff}|${stalled}|${sortBy}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (prevFilterKey !== filterKey) {
     setPrevFilterKey(filterKey);
@@ -204,6 +241,19 @@ export default function Jobs() {
             </button>
           )}
         </div>
+        <select
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value)}
+          title="Sort projects"
+          className="flex-shrink-0 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 px-3 py-2.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400"
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="valueDesc">Value: high to low</option>
+          <option value="valueAsc">Value: low to high</option>
+          <option value="salesperson">Salesperson A–Z</option>
+          <option value="customer">Customer A–Z</option>
+        </select>
         <button
           onClick={() => setShowFilters(!showFilters)}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
@@ -363,8 +413,13 @@ export default function Jobs() {
                   </div>
 
                   {!selectMode && (
-                    <div className="text-slate-300 group-hover:text-amber-500 transition-colors hidden sm:block">
-                      <Filter size={16} className="rotate-180" />
+                    <div className="text-right flex-shrink-0">
+                      {valueByJob.has(job.id)
+                        ? <>
+                            <p className="text-lg font-bold text-slate-900">{fmt$(valueByJob.get(job.id))}</p>
+                            <p className="text-xs text-slate-400">inc. GST</p>
+                          </>
+                        : <p className="text-xs text-slate-300">No quote yet</p>}
                     </div>
                   )}
                 </button>

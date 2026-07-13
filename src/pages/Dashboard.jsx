@@ -300,7 +300,7 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
   const items = [
     { key: 'stalled',    count: stalled,         label: 'Stalled projects', sub: 'No activity 14+ days',  icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',   onClick: () => navigate('/jobs?stalled=1') },
     { key: 'schedule',   count: needsScheduling, label: 'Needs scheduling', sub: 'Ready, no install booked', icon: CalendarDays, color: 'text-teal-600',  bg: 'bg-teal-50',  onClick: () => navigate('/calendar') },
-    { key: 'quotesOut',  count: quotesOut,       label: 'Quotes out',       sub: 'Awaiting customer',     icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/quotes?status=Out') },
+    { key: 'quotesOut',  count: quotesOut,       label: 'Quotes out',       sub: 'Awaiting customer',     icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/jobs') },
     { key: 'install',    count: pendingInstalls, label: 'Install requests', sub: 'Awaiting installer',    icon: HardHat,       color: 'text-blue-600',  bg: 'bg-blue-50',  onClick: () => navigate('/calendar') },
   ].filter(i => i.count > 0);
 
@@ -571,7 +571,7 @@ function RecentQuotes({ quotes, customers, navigate, lM }) {
         <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
           <FileText size={15} className="text-amber-500" /> Recent Quotes
         </h2>
-        <button onClick={() => navigate('/quotes')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
+        <button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
           View all <ArrowRight size={12} />
         </button>
       </div>
@@ -1362,7 +1362,7 @@ export default function Dashboard() {
           delta={<DeltaBadge current={analytics.acceptedValue} previous={analytics.acceptedValuePrev} />}
           caption={`vs same time last year · ${rangeLabel}`}
           spark={monthly.map(m => m.acceptedValue)}
-          onClick={() => navigate('/quotes')}
+          onClick={() => navigate('/jobs')}
         />
         <StatCard
           icon={BarChart2} label="Pipeline Value" delay={70}
@@ -1372,7 +1372,7 @@ export default function Dashboard() {
           caption={`open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''} (last 12 mo)`}
           spark={monthly.map(m => m.newQuotes)}
           sparkColor="#2E6E65"
-          onClick={() => navigate('/quotes')}
+          onClick={() => navigate('/jobs')}
         />
         <StatCard
           icon={CheckCircle2} label="Quotes Won" delay={140}
@@ -1381,7 +1381,7 @@ export default function Dashboard() {
           caption={<>avg <Fig>{fmtCompact(lM(analytics.acceptedAvg))}</Fig></>}
           spark={monthly.map(m => m.acceptedCount)}
           sparkColor="#16A34A"
-          onClick={() => navigate('/quotes')}
+          onClick={() => navigate('/jobs')}
         />
         <StatCard
           icon={Percent} label="Win Rate" delay={210}
@@ -1393,7 +1393,7 @@ export default function Dashboard() {
           caption={analytics.decisions > 0 ? `of ${lI(analytics.decisions)} resolved quotes` : 'no resolved quotes yet'}
           spark={monthly.map(m => m.winRate)}
           sparkColor="#9333EA"
-          onClick={() => navigate('/quotes')}
+          onClick={() => navigate('/jobs')}
         />
       </div>
 
