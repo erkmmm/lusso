@@ -17,7 +17,7 @@ import {
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
   getQuotesFiltered, computeQuoteTotals, calcItemPricing,
-  getInstallRequests, JOB_STATUSES, isStalledJob,
+  getInstallRequests, getCalendarEvents, JOB_STATUSES, isStalledJob,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
@@ -287,10 +287,21 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
   const quotesOut       = quotes.filter(q => ['Sent', 'Viewed'].includes(q.status)).length;
   const pendingInstalls = getInstallRequests().filter(r => r.status === 'Sent').length;
 
+  // Projects ready to install but with nothing booked yet — mirrors the
+  // calendar's "needing installation scheduling" list.
+  const installReqs   = getInstallRequests();
+  const installEvents = getCalendarEvents().filter(e => e.eventType === 'install' && !e.deletedAt);
+  const needsScheduling = jobs.filter(j =>
+    ['Received', 'Approved', 'Ordered'].includes(j.status) &&
+    !installReqs.some(r => r.jobId === j.id && r.status !== 'Declined' && r.status !== 'Cancelled') &&
+    !installEvents.some(e => e.jobId === j.id)
+  ).length;
+
   const items = [
-    { key: 'stalled',   count: stalled,         label: 'Stalled projects', sub: 'No activity 14+ days', icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',   onClick: () => navigate('/jobs?stalled=1') },
-    { key: 'quotesOut', count: quotesOut,       label: 'Quotes out',       sub: 'Awaiting customer',    icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/quotes?status=Out') },
-    { key: 'install',   count: pendingInstalls, label: 'Install requests', sub: 'Awaiting installer',   icon: HardHat,       color: 'text-blue-600',  bg: 'bg-blue-50',  onClick: () => navigate('/calendar') },
+    { key: 'stalled',    count: stalled,         label: 'Stalled projects', sub: 'No activity 14+ days',  icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',   onClick: () => navigate('/jobs?stalled=1') },
+    { key: 'schedule',   count: needsScheduling, label: 'Needs scheduling', sub: 'Ready, no install booked', icon: CalendarDays, color: 'text-teal-600',  bg: 'bg-teal-50',  onClick: () => navigate('/calendar') },
+    { key: 'quotesOut',  count: quotesOut,       label: 'Quotes out',       sub: 'Awaiting customer',     icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/quotes?status=Out') },
+    { key: 'install',    count: pendingInstalls, label: 'Install requests', sub: 'Awaiting installer',    icon: HardHat,       color: 'text-blue-600',  bg: 'bg-blue-50',  onClick: () => navigate('/calendar') },
   ].filter(i => i.count > 0);
 
   if (items.length === 0) {
@@ -315,7 +326,7 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
           {infl(items.reduce((s, i) => s + i.count, 0))}
         </span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {items.map(({ icon: Icon, ...i }) => (
           <button
             key={i.key}
