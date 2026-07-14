@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import { initStore } from './store/data';
-import { hydrateFromSupabase } from './store/db';
+import { hydrateFromSupabase, flushPending } from './store/db';
 import { supabase } from './lib/supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -130,8 +130,20 @@ function AppRoutes() {
         });
       }
     };
+    // On reconnect, immediately push anything queued while offline (on-site work)
+    // so it reaches the server before the next refresh could touch it.
+    const handleOnline = () => {
+      flushPending()
+        .then(() => hydrateFromSupabase())
+        .then(() => window.dispatchEvent(new CustomEvent('lusso:data-changed')))
+        .catch(() => {});
+    };
     document.addEventListener('visibilitychange', handleVisible);
-    return () => document.removeEventListener('visibilitychange', handleVisible);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisible);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [user]);
 
   // ── Polling fallback ──────────────────────────────────────────────────
@@ -153,6 +165,8 @@ function AppRoutes() {
       if (stopped) return;
       if (document.visibilityState !== 'visible') { timer = setTimeout(poll, delay); return; }
       try {
+        // Retry any writes still queued from a flaky connection (no-op if none).
+        await flushPending();
         // Probe max(updated_at) on a few core tables only (single row each).
         const POLL_TABLES = ['jobs', 'quotes', 'customers'];
         const results = await Promise.all(

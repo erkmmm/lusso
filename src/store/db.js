@@ -199,6 +199,34 @@ const TABLES = [
   // { table: 'employees',           key: KEYS.employees },
 ];
 
+const TABLE_TO_KEY = Object.fromEntries(TABLES.map(t => [t.table, t.key]));
+
+// ── Pending-sync outbox ───────────────────────────────────────────────────────
+// When a write to Supabase fails (e.g. a flaky on-site connection), the record
+// still lives in localStorage but is NOT on the server. We record it here so:
+//   1. hydrateFromSupabase never discards it (it isn't "deleted elsewhere" — it
+//      just hasn't synced yet), and
+//   2. flushPending() keeps retrying the write until it succeeds.
+// This prevents on-site work (new customer/job/measure sheet) from vanishing.
+const PENDING_KEY = 'lusso_pending_sync';
+const getPending = () => { try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || {}; } catch { return {}; } };
+const savePending = (p) => { try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch { /* quota */ } };
+function markPending(table, id) {
+  if (!table || !id) return;
+  const p = getPending();
+  (p[table] = p[table] || {})[id] = Date.now();
+  savePending(p);
+}
+function clearPending(table, id) {
+  const p = getPending();
+  if (p[table] && p[table][id] !== undefined) {
+    delete p[table][id];
+    if (Object.keys(p[table]).length === 0) delete p[table];
+    savePending(p);
+  }
+}
+const pendingIds = (table) => new Set(Object.keys(getPending()[table] || {}));
+
 // ── Pagination helper ─────────────────────────────────────────────────────────
 /**
  * Fetch ALL rows from a table using sequential range pages.
@@ -239,6 +267,10 @@ export async function hydrateFromSupabase() {
 
   let hadCloudData = false;
 
+  // First, push anything still waiting to sync (failed on a flaky connection),
+  // so this pull doesn't race ahead of an unsynced local record.
+  try { await flushPending(); } catch { /* never block hydration */ }
+
   await Promise.all(
     TABLES.map(async ({ table, key }) => {
       // Fetch only non-deleted records so soft-deleted items stay gone after refresh.
@@ -270,9 +302,17 @@ export async function hydrateFromSupabase() {
         return locMs > sbMs ? localRow : sbRow;
       });
 
-      // NO localOnly — Supabase is authoritative. Any local record not in
-      // Supabase was either deleted by another device or never successfully
-      // synced. In both cases it must not survive a refresh.
+      // Supabase is authoritative EXCEPT for records still in the pending-sync
+      // outbox — those were created/edited locally and haven't reached the
+      // server yet, so keep them (they'd otherwise vanish before syncing). Any
+      // other local-only record was deleted elsewhere and is correctly dropped.
+      const mergedIds = new Set(merged.map(r => r.id));
+      const pend = pendingIds(table);
+      if (pend.size) {
+        for (const localRow of local) {
+          if (pend.has(localRow.id) && !mergedIds.has(localRow.id)) merged.push(localRow);
+        }
+      }
       LS.set(key, merged);
       if (rows.length > 0) hadCloudData = true;
     })
@@ -426,8 +466,16 @@ export async function syncNow(entries, { sequential = false } = {}) {
     const excludeSet = new Set(EXCLUDE_COLUMNS[table] || []);
     let row = Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
     for (let attempt = 0; attempt < 10; attempt++) {
-      const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
-      if (!error) return;
+      let error;
+      try {
+        ({ error } = await supabase.from(table).upsert(row, { onConflict: 'id' }));
+      } catch (e) {
+        console.warn(`[db] syncNow ${table} network error:`, e?.message || e);
+        markPending(table, record.id);
+        errors.push(`${table}: ${e?.message || e}`);
+        return;
+      }
+      if (!error) { clearPending(table, record.id); return; }
       const colMatch = error.message.match(/Could not find the '([^']+)' column/);
       if (colMatch) {
         const badCol = colMatch[1];
@@ -435,6 +483,7 @@ export async function syncNow(entries, { sequential = false } = {}) {
         row = rest;
       } else {
         console.warn(`[db] syncNow ${table}:`, error.message);
+        markPending(table, record.id); // queue for retry so on-site work isn't lost
         errors.push(`${table}: ${error.message}`);
         return;
       }
@@ -460,8 +509,16 @@ async function upsert(table, record) {
   // DB), strip it and retry up to 10 times so soft-deletes and other writes
   // never fail silently.
   for (let attempt = 0; attempt < 10; attempt++) {
-    const { error } = await supabase.from(table).upsert(row, { onConflict: 'id' });
-    if (!error) return;
+    let error;
+    try {
+      ({ error } = await supabase.from(table).upsert(row, { onConflict: 'id' }));
+    } catch (e) {
+      // Network/offline throw — keep the record queued and retry later.
+      console.warn(`[db] upsert ${table} network error:`, e?.message || e);
+      markPending(table, record.id);
+      return;
+    }
+    if (!error) { clearPending(table, record.id); return; }
     const colMatch = error.message.match(/Could not find the '([^']+)' column/);
     if (colMatch) {
       const badCol = colMatch[1];
@@ -469,7 +526,10 @@ async function upsert(table, record) {
       const { [badCol]: _dropped, ...rest } = row;
       row = rest;
     } else {
+      // A real failure (network, RLS, etc.) — queue it so it isn't lost and
+      // so hydration won't wipe the local-only record before it syncs.
       console.warn(`[db] upsert ${table}:`, error.message);
+      markPending(table, record.id);
       return;
     }
   }
@@ -481,6 +541,36 @@ async function remove(table, id) {
   if (error) {
     // Use console.error so it's visible in prod DevTools, not just a warning
     console.error(`[db] DELETE ${table} id=${id} FAILED:`, error.message, error);
+  }
+}
+
+// Retry every record still in the pending-sync outbox (writes that failed on a
+// flaky connection). upsert() clears each one from the queue on success and
+// re-queues on failure. Safe and cheap to call often — no-ops when empty.
+// Parents before children so foreign keys resolve (a job needs its customer to
+// exist first, a quote/measure sheet needs its job, etc.). Tables not listed run last.
+const SYNC_ORDER = [
+  'customers', 'staff', 'installers', 'product_types', 'priced_items', 'suppliers',
+  'jobs', 'measure_sheets', 'quotes', 'installations', 'tasks', 'takeoffs',
+  'review_requests', 'notifications', 'calendar_events',
+];
+export async function flushPending() {
+  if (!supabase) return;
+  const p = getPending();
+  const tables = Object.keys(p).sort(
+    (a, b) => (SYNC_ORDER.indexOf(a) + 1 || 99) - (SYNC_ORDER.indexOf(b) + 1 || 99)
+  );
+  if (!tables.length) return;
+  for (const table of tables) {
+    const key = TABLE_TO_KEY[table];
+    const ids = Object.keys(p[table] || {});
+    if (!key) { ids.forEach(id => clearPending(table, id)); continue; }
+    const byId = new Map((LS.get(key) || []).map(r => [r.id, r]));
+    for (const id of ids) {
+      const rec = byId.get(id);
+      if (!rec) { clearPending(table, id); continue; } // gone locally → drop from queue
+      await upsert(table, rec);                         // clears on success, re-queues on failure
+    }
   }
 }
 
