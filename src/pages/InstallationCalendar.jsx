@@ -651,6 +651,7 @@ const jobDetail = (job) =>
 
 function NeedsInstaller({ navigate, onSchedule }) {
   useDataRefresh();
+  const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [confirm, setConfirm]   = useState(null); // null | string[] (job ids pending dismissal)
 
@@ -666,8 +667,8 @@ function NeedsInstaller({ navigate, onSchedule }) {
   );
   if (unscheduled.length === 0) return null;
 
-  // Keep selection in sync with what's actually visible (a job scheduled or
-  // dismissed elsewhere shouldn't linger as a phantom selection).
+  // Selection only counts jobs that are still visible (one scheduled/dismissed
+  // elsewhere shouldn't linger as a phantom selection).
   const visibleIds = new Set(unscheduled.map(j => j.id));
   const selectedVisible = [...selected].filter(id => visibleIds.has(id));
   const allSelected = selectedVisible.length === unscheduled.length;
@@ -678,10 +679,11 @@ function NeedsInstaller({ navigate, onSchedule }) {
     return next;
   });
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(unscheduled.map(j => j.id)));
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); };
 
   const runDismiss = () => {
     dismissJobScheduling(confirm);
-    setSelected(new Set());
+    exitSelect();
     setConfirm(null);
   };
 
@@ -695,21 +697,30 @@ function NeedsInstaller({ navigate, onSchedule }) {
       <div className="flex items-center gap-2 mb-3">
         <AlertTriangle size={15} className="text-amber-600" />
         <h3 className="font-semibold text-amber-800 text-sm flex-1">{unscheduled.length} job{unscheduled.length !== 1 ? 's' : ''} needing installation scheduling</h3>
-        <button onClick={toggleAll}
-          className="flex-shrink-0 text-[11px] font-medium text-amber-700 hover:text-amber-900 transition-colors">
-          {allSelected ? 'Clear all' : 'Select all'}
-        </button>
+        {selectMode ? (
+          <button onClick={toggleAll}
+            className="flex-shrink-0 text-xs font-medium text-amber-700 hover:text-amber-900 transition-colors">
+            {allSelected ? 'Clear all' : 'Select all'}
+          </button>
+        ) : (
+          <button onClick={() => setSelectMode(true)}
+            className="flex-shrink-0 text-xs font-medium text-amber-700 hover:text-amber-900 transition-colors">
+            Select
+          </button>
+        )}
       </div>
 
-      {/* Bulk action bar — only while something is selected */}
-      {selectedVisible.length > 0 && (
-        <div className="flex items-center gap-2 mb-2.5 bg-white/70 border border-amber-200 rounded-lg px-3 py-2">
-          <span className="text-xs font-medium text-amber-900 flex-1">{selectedVisible.length} selected</span>
-          <button onClick={() => setSelected(new Set())}
+      {/* Bulk action bar — only while in select mode */}
+      {selectMode && (
+        <div className="flex items-center gap-2 mb-2.5 bg-white/60 border border-amber-200 rounded-lg px-3 py-2">
+          <span className="text-xs font-medium text-amber-800 flex-1">
+            {selectedVisible.length ? `${selectedVisible.length} selected` : 'Tap jobs to select'}
+          </span>
+          <button onClick={exitSelect}
             className="text-xs font-medium text-slate-500 hover:text-slate-800 px-2 py-1">Cancel</button>
-          <button onClick={() => setConfirm(selectedVisible)}
-            className="flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-white hover:bg-red-500 border border-red-200 rounded-lg px-2.5 py-1.5 transition-colors">
-            <Trash2 size={13} /> Dismiss
+          <button onClick={() => setConfirm(selectedVisible)} disabled={!selectedVisible.length}
+            className="flex items-center gap-1 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:hover:bg-red-500 rounded-lg px-2.5 py-1.5 transition-colors">
+            <Trash2 size={13} /> Dismiss{selectedVisible.length ? ` (${selectedVisible.length})` : ''}
           </button>
         </div>
       )}
@@ -722,10 +733,15 @@ function NeedsInstaller({ navigate, onSchedule }) {
           const isSel = selected.has(job.id);
           return (
             <div key={job.id}
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 border transition-colors ${isSel ? 'bg-amber-100/70 border-amber-300' : 'bg-white border-amber-100'}`}>
-              <input type="checkbox" checked={isSel} onChange={() => toggle(job.id)}
-                className="flex-shrink-0 w-4 h-4 rounded border-amber-300 text-amber-500 focus:ring-amber-400 cursor-pointer"
-                aria-label={`Select ${cust?.name || job.jobNumber}`} />
+              onClick={selectMode ? () => toggle(job.id) : undefined}
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 border transition-colors ${
+                selectMode ? 'cursor-pointer bg-white ' + (isSel ? 'ring-2 ring-inset ring-amber-500 border-amber-500' : 'border-amber-100 hover:border-amber-300') : 'bg-white border-amber-100'
+              }`}>
+              {selectMode && (
+                <input type="checkbox" checked={isSel} readOnly tabIndex={-1}
+                  className="flex-shrink-0 w-4 h-4 accent-amber-500 pointer-events-none"
+                  aria-label={`Select ${cust?.name || job.jobNumber}`} />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-xs text-amber-900">
                   <span className="font-semibold flex-shrink-0">{job.jobNumber}</span>
@@ -733,18 +749,22 @@ function NeedsInstaller({ navigate, onSchedule }) {
                 </div>
                 {detail && <p className="text-[11px] text-amber-500 truncate mt-0.5">{detail}</p>}
               </div>
-              <button onClick={() => navigate(`/jobs/${job.id}`)}
-                className="flex-shrink-0 text-xs font-medium text-slate-500 hover:text-slate-800 border border-slate-200 hover:bg-slate-50 rounded-lg px-2.5 py-1.5 transition-colors">
-                View
-              </button>
-              <button onClick={() => onSchedule(job)}
-                className="flex-shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-400 rounded-lg px-2.5 py-1.5 transition-colors">
-                Schedule
-              </button>
-              <button onClick={() => setConfirm([job.id])} title="Dismiss from this list"
-                className="flex-shrink-0 text-slate-300 hover:text-red-500 p-1.5 transition-colors">
-                <X size={15} />
-              </button>
+              {!selectMode && (
+                <>
+                  <button onClick={() => navigate(`/jobs/${job.id}`)}
+                    className="flex-shrink-0 text-xs font-medium text-slate-500 hover:text-slate-800 border border-slate-200 hover:bg-slate-50 rounded-lg px-2.5 py-1.5 transition-colors">
+                    View
+                  </button>
+                  <button onClick={() => onSchedule(job)}
+                    className="flex-shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-400 rounded-lg px-2.5 py-1.5 transition-colors">
+                    Schedule
+                  </button>
+                  <button onClick={() => setConfirm([job.id])} title="Dismiss from this list"
+                    className="flex-shrink-0 text-slate-300 hover:text-red-500 p-1.5 transition-colors">
+                    <X size={15} />
+                  </button>
+                </>
+              )}
             </div>
           );
         })}
