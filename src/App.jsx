@@ -65,10 +65,18 @@ async function fetchBuildVersion() {
   } catch { return null; }
 }
 
+// Full hydration pulls every table, so it's the heaviest thing a client does.
+// Throttle it: at most one full hydrate per this window, no matter how many
+// triggers fire (tab focus, reconnect, poll). Without this, app-switching /
+// screen-unlocking on mobile fires a full re-hydrate every time, which was a
+// major driver of the database's disk-IO exhaustion.
+const MIN_HYDRATE_GAP_MS = 90_000;
+
 function AppRoutes() {
   const { user } = useAuth();
   const { profile, needsOnboarding } = useProfile() || {};
   const [hydrating, setHydrating] = useState(false);
+  const lastHydrateRef = useRef(0); // epoch ms of the last full hydrate
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +127,7 @@ function AppRoutes() {
         ]);
       }
       // Fresh data is in localStorage now — nudge pages to re-render with it.
+      lastHydrateRef.current = Date.now();
       window.dispatchEvent(new CustomEvent('lusso:data-changed'));
     };
 
@@ -140,17 +149,20 @@ function AppRoutes() {
   useEffect(() => {
     if (!user) return;
     const handleVisible = () => {
-      if (document.visibilityState === 'visible') {
-        hydrateFromSupabase().then(() => {
-          window.dispatchEvent(new CustomEvent('lusso:data-changed'));
-        });
-      }
+      if (document.visibilityState !== 'visible') return;
+      // Throttle: don't re-pull every table on every tab focus / screen unlock.
+      if (Date.now() - lastHydrateRef.current < MIN_HYDRATE_GAP_MS) return;
+      lastHydrateRef.current = Date.now();
+      hydrateFromSupabase().then(() => {
+        window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+      });
     };
     // On reconnect, immediately push anything queued while offline (on-site work)
-    // so it reaches the server before the next refresh could touch it.
+    // so it reaches the server before the next refresh could touch it. A reconnect
+    // is worth a hydrate even inside the throttle window.
     const handleOnline = () => {
       flushPending()
-        .then(() => hydrateFromSupabase())
+        .then(() => { lastHydrateRef.current = Date.now(); return hydrateFromSupabase(); })
         .then(() => window.dispatchEvent(new CustomEvent('lusso:data-changed')))
         .catch(() => {});
     };
@@ -171,7 +183,7 @@ function AppRoutes() {
   useEffect(() => {
     if (!user || !supabase) return;
 
-    const BASE_MS = 30000;   // normal cadence
+    const BASE_MS = 60000;   // normal cadence (lengthened to ease DB load)
     const MAX_MS  = 300000;  // back off up to 5 min after repeated failures
     let delay = BASE_MS;
     let timer = null;
@@ -195,9 +207,14 @@ function AppRoutes() {
         if (!lastSeenRef.current) {
           lastSeenRef.current = latest; // baseline only
         } else if (latest && latest !== lastSeenRef.current) {
-          lastSeenRef.current = latest;
-          await hydrateFromSupabase();
-          window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+          // Something changed elsewhere. Respect the hydrate throttle; if we're
+          // inside the window, leave lastSeenRef so the next cycle retries.
+          if (Date.now() - lastHydrateRef.current >= MIN_HYDRATE_GAP_MS) {
+            lastSeenRef.current = latest;
+            lastHydrateRef.current = Date.now();
+            await hydrateFromSupabase();
+            window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+          }
         }
         delay = BASE_MS; // success — reset cadence
       } catch {
