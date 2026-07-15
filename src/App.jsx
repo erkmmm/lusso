@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import { initStore } from './store/data';
 import { hydrateFromSupabase, flushPending } from './store/db';
+import { initDurableStore } from './store/storage';
 import { supabase } from './lib/supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -69,16 +70,28 @@ function AppRoutes() {
   const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
-    initStore();
-    if (!user) return;
-
-    // Do we already have cached data on this device? If so, render the app
-    // instantly from cache and refresh in the background — NEVER block behind
-    // the syncing screen. Only a first-ever login (empty cache) waits.
-    const hasLocalData = ['lusso_customers', 'lusso_jobs', 'lusso_quotes']
-      .some(k => (localStorage.getItem(k) || '').length > 20);
+    let cancelled = false;
 
     const run = async () => {
+      // FIRST: restore anything the browser evicted from localStorage from the
+      // durable IndexedDB backup, and request persistent (non-evictable)
+      // storage. This must run BEFORE initStore(), whose initIfEmpty/schema
+      // migration would otherwise write empty defaults over evicted keys and
+      // defeat the restore. Timeout-guarded so it can never hang startup.
+      await Promise.race([
+        initDurableStore(),
+        new Promise((res) => setTimeout(res, 3000)),
+      ]);
+      if (cancelled) return;
+      initStore();
+      if (!user) return;
+
+      // Do we already have cached data on this device (after the restore)? If so,
+      // render the app instantly from cache and refresh in the background — NEVER
+      // block behind the syncing screen. Only a first-ever login (empty) waits.
+      const hasLocalData = ['lusso_customers', 'lusso_jobs', 'lusso_quotes']
+        .some(k => (localStorage.getItem(k) || '').length > 20);
+
       // Track the deployed build for reference. We intentionally do NOT wipe
       // local data on a new build: hydrateFromSupabase() already pulls a fresh,
       // authoritative copy (and keeps newer local edits), so wiping only risked
@@ -113,7 +126,9 @@ function AppRoutes() {
     // the app with whatever local data exists. The visibility/poll re-hydrates.
     run()
       .catch(e => console.error('[app] hydration failed — continuing with local data:', e))
-      .finally(() => setHydrating(false));
+      .finally(() => { if (!cancelled) setHydrating(false); });
+
+    return () => { cancelled = true; };
   // Depend on user.id only — NOT the user object (onAuthStateChange gives a
   // fresh object on every token refresh).
   // eslint-disable-next-line react-hooks/exhaustive-deps

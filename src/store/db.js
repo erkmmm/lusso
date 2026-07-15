@@ -219,8 +219,11 @@ const TABLE_TO_KEY = Object.fromEntries(TABLES.map(t => [t.table, t.key]));
 //   2. flushPending() keeps retrying the write until it succeeds.
 // This prevents on-site work (new customer/job/measure sheet) from vanishing.
 const PENDING_KEY = 'lusso_pending_sync';
-const getPending = () => { try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || {}; } catch { return {}; } };
-const savePending = (p) => { try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch { /* quota */ } };
+// Route through lsGet/lsSet so the outbox is mirrored to the durable IndexedDB
+// backup too — it tracks unsynced work, so it must survive a localStorage
+// eviction just like the records it points at.
+const getPending = () => { try { return lsGet(PENDING_KEY) || {}; } catch { return {}; } };
+const savePending = (p) => { try { lsSet(PENDING_KEY, p); } catch { /* best-effort */ } };
 function markPending(table, id) {
   if (!table || !id) return;
   const p = getPending();
