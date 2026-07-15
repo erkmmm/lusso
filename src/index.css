@@ -44,9 +44,20 @@ html, body {
 .anim-bg body { background-color: transparent !important; }
 .anim-bg .app-shell { background-color: transparent !important; }
 .anim-bg .app-main  { background-color: transparent !important; }
-/* Side menu keeps the same gradient but behind a dark scrim, so it reads as a
-   darker, contrasting panel over the animation rather than a flat block. */
-.anim-bg .app-sidebar { background-color: rgba(6, 6, 10, 0.66) !important; }
+/* Side menu keeps the same gradient but behind a mostly-solid dark scrim, so it
+   reads as a darker, contrasting panel with just a hint of the animation. */
+.anim-bg .app-sidebar { background-color: rgba(6, 6, 10, 0.9) !important; }
+
+/* Foreground widgets (cards) go slightly translucent so a hint of the animation
+   shows through them. Relative-color syntax degrades gracefully to the opaque
+   surface on browsers that don't support it. Chrome and overlays stay solid so
+   text, the top bar and modals read cleanly. */
+.anim-bg.dark .bg-white       { background-color: rgb(from var(--surf-card) r g b / 0.9) !important; }
+.anim-bg:not(.dark) .bg-white { background-color: rgba(255, 255, 255, 0.9) !important; }
+.anim-bg.dark header.bg-white,
+.anim-bg.dark .fixed.inset-0 .bg-white       { background-color: var(--surf-card) !important; }
+.anim-bg:not(.dark) header.bg-white,
+.anim-bg:not(.dark) .fixed.inset-0 .bg-white { background-color: #ffffff !important; }
 
 @layer base {
   /* ════ TAUPE — light (default) ════ */
