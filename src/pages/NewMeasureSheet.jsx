@@ -14,7 +14,7 @@ import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
   getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
   getMsOptions, URGENCY_LEVELS, JOB_TYPES,
-  MS_SPEC_FIELDS, getVisibleSpecKeys,
+  MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers,
 } from '../store/data';
 import { syncNow } from '../store/db';
 import Card from '../components/Card';
@@ -1118,32 +1118,7 @@ export default function NewMeasureSheet() {
                           value={item.productNameSnapshot}
                           productTypes={productTypes}
                           error={!!errors[`item_${idx}_productType`]}
-                          onSelect={pricedItem => {
-                            if (!pricedItem) {
-                              setLineItem(idx, 'pricedItemId', null);
-                              setLineItem(idx, 'productNameSnapshot', '');
-                              setLineItem(idx, 'productTypeId', '');
-                              return;
-                            }
-                            // Match to a product type by category name
-                            const pt = productTypes.find(p =>
-                              p.name.toLowerCase() === (pricedItem.category || '').toLowerCase()
-                            );
-                            setLineItem(idx, 'pricedItemId', pricedItem.id);
-                            setLineItem(idx, 'productNameSnapshot', pricedItem.itemName);
-                            setLineItem(idx, 'productTypeId', pt?.id || '');
-                          }}
-                          onSelectType={pt => {
-                            if (!pt) {
-                              setLineItem(idx, 'productTypeId', '');
-                              setLineItem(idx, 'productNameSnapshot', '');
-                              setLineItem(idx, 'pricedItemId', null);
-                              return;
-                            }
-                            setLineItem(idx, 'productTypeId', pt.id);
-                            setLineItem(idx, 'productNameSnapshot', pt.name);
-                            setLineItem(idx, 'pricedItemId', null);
-                          }}
+                          {...makeProductSelectHandlers(setLineItem, idx, productTypes)}
                         />
                       </div>
                     </div>

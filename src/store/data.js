@@ -1218,6 +1218,35 @@ export const getVisibleSpecKeys = (item, productType) => {
   return MS_SPEC_KEYS.filter(k => show.has(k));
 };
 
+// Shared product-selection wiring for the measure-sheet card AND table pickers,
+// so both offer the same choices (price library + product types) and write the
+// same fields — they can never drift apart.
+export const makeProductSelectHandlers = (setLineItem, idx, productTypes) => ({
+  onSelect: (pricedItem) => {
+    if (!pricedItem) {
+      setLineItem(idx, 'pricedItemId', null);
+      setLineItem(idx, 'productNameSnapshot', '');
+      setLineItem(idx, 'productTypeId', '');
+      return;
+    }
+    const pt = productTypes.find(p => p.name.toLowerCase() === (pricedItem.category || '').toLowerCase());
+    setLineItem(idx, 'pricedItemId', pricedItem.id);
+    setLineItem(idx, 'productNameSnapshot', pricedItem.itemName);
+    setLineItem(idx, 'productTypeId', pt?.id || '');
+  },
+  onSelectType: (pt) => {
+    if (!pt) {
+      setLineItem(idx, 'productTypeId', '');
+      setLineItem(idx, 'productNameSnapshot', '');
+      setLineItem(idx, 'pricedItemId', null);
+      return;
+    }
+    setLineItem(idx, 'productTypeId', pt.id);
+    setLineItem(idx, 'productNameSnapshot', pt.name);
+    setLineItem(idx, 'pricedItemId', null);
+  },
+});
+
 export const MOUNT_TYPES = ['Ceiling Fix', 'Face Fix', 'Recess Fit', 'Outside Mount', 'Inside Mount'];
 export const CONTROL_SIDES = ['Left', 'Right', 'Centre', 'Motorised', 'N/A'];
 export const URGENCY_LEVELS = ['Low', 'Normal', 'High', 'Urgent'];

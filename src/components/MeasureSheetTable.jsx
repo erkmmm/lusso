@@ -1,5 +1,6 @@
 import { Trash2 } from 'lucide-react';
-import { getMsOptions, MS_SPEC_FIELDS, getVisibleSpecKeys } from '../store/data';
+import { getMsOptions, MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers } from '../store/data';
+import PricedItemPicker from './PricedItemPicker';
 
 // Spreadsheet-style editor for measure-sheet line items. Edits the SAME sheet
 // state (via setLineItem/removeLineItem) as the card layout, so the two stay in
@@ -80,17 +81,15 @@ export default function MeasureSheetTable({ lineItems, setLineItem, removeLineIt
                   <input value={item.location || ''} onChange={e => setLineItem(idx, 'location', e.target.value)}
                     placeholder="Room" className={`${cellInput} ${locErr ? 'ring-1 ring-red-300 rounded' : ''}`} />
                 </Cell>
-                <Cell min={130}>
-                  <select value={item.productTypeId || ''}
-                    onChange={e => {
-                      const pt = productTypes.find(p => p.id === e.target.value);
-                      setLineItem(idx, 'productTypeId', pt?.id || '');
-                      setLineItem(idx, 'productNameSnapshot', pt?.name || '');
-                    }}
-                    className={`${cellSelect} ${prodErr ? 'ring-1 ring-red-300 rounded' : ''}`}>
-                    <option value="">{item.productNameSnapshot || ''}</option>
-                    {productTypes.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                <Cell min={170}>
+                  <div className="px-1">
+                    <PricedItemPicker
+                      value={item.productNameSnapshot}
+                      productTypes={productTypes}
+                      error={prodErr}
+                      {...makeProductSelectHandlers(setLineItem, idx, productTypes)}
+                    />
+                  </div>
                 </Cell>
                 <Cell w={92} min={92}><input type="number" inputMode="numeric" min="0" value={item.widthMm ?? ''} onChange={e => setLineItem(idx, 'widthMm', e.target.value)} placeholder="mm" className={`${cellInput} text-right font-semibold text-slate-900 bg-amber-50/50 focus:bg-amber-100`} /></Cell>
                 <Cell w={92} min={92}><input type="number" inputMode="numeric" min="0" value={item.dropMm ?? ''} onChange={e => setLineItem(idx, 'dropMm', e.target.value)} placeholder="mm" className={`${cellInput} text-right font-semibold text-slate-900 bg-amber-50/50 focus:bg-amber-100`} /></Cell>

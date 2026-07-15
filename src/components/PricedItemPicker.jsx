@@ -10,6 +10,7 @@
  *   error           bool
  */
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, Package, Tag } from 'lucide-react';
 import { getPricedItems } from '../store/data';
 
@@ -23,8 +24,30 @@ export default function PricedItemPicker({
 }) {
   const [open,   setOpen]   = useState(false);
   const [query,  setQuery]  = useState('');
-  const ref      = useRef(null);
+  const [pos,    setPos]    = useState(null); // fixed-position rect for the portalled dropdown
+  const ref      = useRef(null);   // trigger wrapper (for outside-click)
+  const menuRef  = useRef(null);   // portalled dropdown (for outside-click)
   const inputRef = useRef(null);
+
+  // Position the dropdown relative to the trigger. It's portalled to <body> with
+  // fixed positioning so it's never clipped by an overflow container (e.g. the
+  // measure-sheet table's horizontal scroll). Flips above when short on space.
+  const updatePos = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const width = Math.max(r.width, 300);
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    const spaceBelow = window.innerHeight - r.bottom;
+    const flipUp = spaceBelow < 280 && r.top > spaceBelow;
+    setPos({
+      left,
+      width,
+      top: flipUp ? undefined : r.bottom + 4,
+      bottom: flipUp ? window.innerHeight - r.top + 4 : undefined,
+      maxHeight: (flipUp ? r.top : spaceBelow) - 16,
+    });
+  };
 
   const allItems = getPricedItems().filter(i => i.isActive !== false);
 
@@ -44,14 +67,32 @@ export default function PricedItemPicker({
     !q || pt.name.toLowerCase().includes(q)
   );
 
-  // Close on outside click
+  // Close on outside click — the dropdown is portalled out of `ref`, so check
+  // both the trigger and the menu, else a click inside the menu counts as
+  // "outside" and closes it before the selection registers.
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (ref.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  // Keep the portalled dropdown pinned to the trigger while open (handles the
+  // table's inner scroll and window resize).
+  useEffect(() => {
+    if (!open) return;
+    updatePos();
+    const onMove = () => updatePos();
+    window.addEventListener('scroll', onMove, true); // capture → catches inner scroll containers
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
   }, [open]);
 
   // Focus search when opened
@@ -107,11 +148,17 @@ export default function PricedItemPicker({
         )}
       </button>
 
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden">
+      {/* Dropdown — portalled to <body> so an overflow-scroll ancestor (the
+          measure-sheet table) can't clip it. Positioned fixed to the trigger. */}
+      {open && pos && createPortal(
+        <div ref={menuRef} style={{
+            position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom,
+            width: pos.width, maxHeight: pos.maxHeight, zIndex: 60,
+            display: 'flex', flexDirection: 'column',
+          }}
+          className="bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden">
           {/* Search input */}
-          <div className="p-2 border-b border-slate-100">
+          <div className="p-2 border-b border-slate-100 flex-shrink-0">
             <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-50 rounded-lg">
               <Search size={13} className="text-slate-400 flex-shrink-0" />
               <input
@@ -130,7 +177,7 @@ export default function PricedItemPicker({
             </div>
           </div>
 
-          <div className="max-h-72 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto">
             {/* Price library items */}
             {matchedItems.length > 0 && (
               <div>
@@ -204,7 +251,8 @@ export default function PricedItemPicker({
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
