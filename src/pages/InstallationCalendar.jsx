@@ -15,7 +15,7 @@ import {
   getInstallRequests, getInstallers, getJobs, getCustomers,
   getInstaller, getJob, getCustomer, INSTALL_REQUEST_STATUS_COLORS,
   getCalendarEvents, getCalendarEvent, saveCalendarEvent, deleteCalendarEvent,
-  deleteJob,
+  deleteJob, dismissJobScheduling,
 } from '../store/data';
 import CalendarEventModal, { EVENT_TYPES, EVENT_TYPE_MAP } from '../components/CalendarEventModal';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -650,29 +650,82 @@ const jobDetail = (job) =>
   (job.title || '').replace(/^Lusso Fashion for Windows\s*(Quotation)?\s*(for|\/)?\s*/i, '').trim();
 
 function NeedsInstaller({ navigate, onSchedule }) {
+  useDataRefresh();
+  const [selected, setSelected] = useState(() => new Set());
+  const [confirm, setConfirm]   = useState(null); // null | string[] (job ids pending dismissal)
+
   const jobs = getJobs().filter(j => ['Received','Approved','Ordered'].includes(j.status));
   const requests = getInstallRequests();
   // A job counts as scheduled once it has an install request OR an install entry
   // booked on the calendar (so booking via the quick popup clears it from here).
   const installEvents = getCalendarEvents().filter(e => e.eventType === 'install' && !e.deletedAt);
   const unscheduled = jobs.filter(j =>
+    !j.schedulingDismissedAt &&
     !requests.some(r => r.jobId === j.id && r.status !== 'Declined' && r.status !== 'Cancelled') &&
     !installEvents.some(e => e.jobId === j.id)
   );
   if (unscheduled.length === 0) return null;
+
+  // Keep selection in sync with what's actually visible (a job scheduled or
+  // dismissed elsewhere shouldn't linger as a phantom selection).
+  const visibleIds = new Set(unscheduled.map(j => j.id));
+  const selectedVisible = [...selected].filter(id => visibleIds.has(id));
+  const allSelected = selectedVisible.length === unscheduled.length;
+
+  const toggle = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(unscheduled.map(j => j.id)));
+
+  const runDismiss = () => {
+    dismissJobScheduling(confirm);
+    setSelected(new Set());
+    setConfirm(null);
+  };
+
+  const confirmCount = confirm?.length || 0;
+  const confirmName = confirmCount === 1
+    ? (() => { const j = unscheduled.find(x => x.id === confirm[0]); const c = j && getCustomer(j.customerId); return c?.name || j?.jobNumber || 'this job'; })()
+    : '';
+
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
       <div className="flex items-center gap-2 mb-3">
         <AlertTriangle size={15} className="text-amber-600" />
-        <h3 className="font-semibold text-amber-800 text-sm">{unscheduled.length} job{unscheduled.length !== 1 ? 's' : ''} needing installation scheduling</h3>
+        <h3 className="font-semibold text-amber-800 text-sm flex-1">{unscheduled.length} job{unscheduled.length !== 1 ? 's' : ''} needing installation scheduling</h3>
+        <button onClick={toggleAll}
+          className="flex-shrink-0 text-[11px] font-medium text-amber-700 hover:text-amber-900 transition-colors">
+          {allSelected ? 'Clear all' : 'Select all'}
+        </button>
       </div>
+
+      {/* Bulk action bar — only while something is selected */}
+      {selectedVisible.length > 0 && (
+        <div className="flex items-center gap-2 mb-2.5 bg-white/70 border border-amber-200 rounded-lg px-3 py-2">
+          <span className="text-xs font-medium text-amber-900 flex-1">{selectedVisible.length} selected</span>
+          <button onClick={() => setSelected(new Set())}
+            className="text-xs font-medium text-slate-500 hover:text-slate-800 px-2 py-1">Cancel</button>
+          <button onClick={() => setConfirm(selectedVisible)}
+            className="flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-white hover:bg-red-500 border border-red-200 rounded-lg px-2.5 py-1.5 transition-colors">
+            <Trash2 size={13} /> Dismiss
+          </button>
+        </div>
+      )}
+
       <div className="space-y-1.5">
         {unscheduled.map(job => {
           const cust = getCustomer(job.customerId);
           const raw = jobDetail(job);
           const detail = raw && raw !== cust?.name ? raw : ''; // hide when it just repeats the name
+          const isSel = selected.has(job.id);
           return (
-            <div key={job.id} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-amber-100">
+            <div key={job.id}
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 border transition-colors ${isSel ? 'bg-amber-100/70 border-amber-300' : 'bg-white border-amber-100'}`}>
+              <input type="checkbox" checked={isSel} onChange={() => toggle(job.id)}
+                className="flex-shrink-0 w-4 h-4 rounded border-amber-300 text-amber-500 focus:ring-amber-400 cursor-pointer"
+                aria-label={`Select ${cust?.name || job.jobNumber}`} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-xs text-amber-900">
                   <span className="font-semibold flex-shrink-0">{job.jobNumber}</span>
@@ -688,10 +741,43 @@ function NeedsInstaller({ navigate, onSchedule }) {
                 className="flex-shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-400 rounded-lg px-2.5 py-1.5 transition-colors">
                 Schedule
               </button>
+              <button onClick={() => setConfirm([job.id])} title="Dismiss from this list"
+                className="flex-shrink-0 text-slate-300 hover:text-red-500 p-1.5 transition-colors">
+                <X size={15} />
+              </button>
             </div>
           );
         })}
       </div>
+
+      {/* ── Dismiss confirmation ── */}
+      {confirm && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={18} className="text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">
+                  {confirmCount > 1 ? `Dismiss ${confirmCount} jobs?` : 'Dismiss this job?'}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {confirmCount > 1
+                    ? <>These <strong>{confirmCount}</strong> jobs will be removed from the scheduling reminder. Their status isn't changed — booking an install later still works normally.</>
+                    : <><strong>{confirmName}</strong> will be removed from the scheduling reminder. Its status isn't changed — you can still book an install later.</>}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirm(null)} className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium py-2.5 rounded-xl">Cancel</button>
+              <button onClick={runDismiss} className="flex-1 bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold py-2.5 rounded-xl">
+                {confirmCount > 1 ? `Dismiss ${confirmCount}` : 'Dismiss'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

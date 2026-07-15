@@ -632,6 +632,25 @@ export const saveJob = (job) => {
   db.saveJob(jobs[jobs.findIndex(j => j.id === job.id)]);
 };
 
+// Hide one or more jobs from the "needing installation scheduling" reminder
+// without touching their status. Booking an install still clears them the
+// normal way; this is for jobs that legitimately don't need a booking here.
+export const dismissJobScheduling = (jobIds) => {
+  const ids = Array.isArray(jobIds) ? jobIds : [jobIds];
+  const jobs = getJobs();
+  const now = new Date().toISOString();
+  let changed = false;
+  ids.forEach((id) => {
+    const idx = jobs.findIndex(j => j.id === id);
+    if (idx >= 0) {
+      jobs[idx] = { ...jobs[idx], schedulingDismissedAt: now, updatedAt: now };
+      db.saveJob(jobs[idx]);
+      changed = true;
+    }
+  });
+  if (changed) set('lusso_jobs', jobs);
+};
+
 export const createJob = (data) => {
   const id = uuidv4();
   const job = {

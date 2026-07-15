@@ -293,6 +293,7 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
   const installEvents = getCalendarEvents().filter(e => e.eventType === 'install' && !e.deletedAt);
   const needsScheduling = jobs.filter(j =>
     ['Received', 'Approved', 'Ordered'].includes(j.status) &&
+    !j.schedulingDismissedAt &&
     !installReqs.some(r => r.jobId === j.id && r.status !== 'Declined' && r.status !== 'Cancelled') &&
     !installEvents.some(e => e.jobId === j.id)
   ).length;
