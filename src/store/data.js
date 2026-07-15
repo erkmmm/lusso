@@ -635,20 +635,38 @@ export const saveJob = (job) => {
 // Hide one or more jobs from the "needing installation scheduling" reminder
 // without touching their status. Booking an install still clears them the
 // normal way; this is for jobs that legitimately don't need a booking here.
+//
+// Dismissals live in their OWN table (scheduling_dismissals), NOT as a field on
+// the job — so dismissing never rewrites/syncs the jobs list and can't churn or
+// transiently truncate it. Worst case if this table fails to load is a job
+// reappearing in the reminder (safe), never a job vanishing.
+export const getSchedulingDismissals = () => get('lusso_scheduling_dismissals') || [];
+export const getDismissedSchedulingIds = () => new Set(getSchedulingDismissals().map(d => d.id));
+
 export const dismissJobScheduling = (jobIds) => {
   const ids = Array.isArray(jobIds) ? jobIds : [jobIds];
-  const jobs = getJobs();
   const now = new Date().toISOString();
+  const list = getSchedulingDismissals();
+  const have = new Set(list.map(d => d.id));
   let changed = false;
-  ids.forEach((id) => {
-    const idx = jobs.findIndex(j => j.id === id);
-    if (idx >= 0) {
-      jobs[idx] = { ...jobs[idx], schedulingDismissedAt: now, updatedAt: now };
-      db.saveJob(jobs[idx]);
-      changed = true;
-    }
+  ids.forEach((jobId) => {
+    if (!jobId || have.has(jobId)) return;
+    const rec = { id: jobId, jobId, createdAt: now, updatedAt: now };
+    list.push(rec);
+    have.add(jobId);
+    db.saveSchedulingDismissal(rec);
+    changed = true;
   });
-  if (changed) set('lusso_jobs', jobs);
+  if (changed) set('lusso_scheduling_dismissals', list);
+};
+
+// Undo a dismissal — bring the job back into the scheduling reminder.
+export const restoreJobScheduling = (jobId) => {
+  const list = getSchedulingDismissals();
+  const next = list.filter(d => d.id !== jobId);
+  if (next.length === list.length) return;
+  set('lusso_scheduling_dismissals', next);
+  db.removeSchedulingDismissal(jobId);
 };
 
 export const createJob = (data) => {

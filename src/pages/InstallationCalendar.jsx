@@ -15,7 +15,7 @@ import {
   getInstallRequests, getInstallers, getJobs, getCustomers,
   getInstaller, getJob, getCustomer, INSTALL_REQUEST_STATUS_COLORS,
   getCalendarEvents, getCalendarEvent, saveCalendarEvent, deleteCalendarEvent,
-  deleteJob, dismissJobScheduling,
+  deleteJob, dismissJobScheduling, getDismissedSchedulingIds,
 } from '../store/data';
 import CalendarEventModal, { EVENT_TYPES, EVENT_TYPE_MAP } from '../components/CalendarEventModal';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -660,8 +660,9 @@ function NeedsInstaller({ navigate, onSchedule }) {
   // A job counts as scheduled once it has an install request OR an install entry
   // booked on the calendar (so booking via the quick popup clears it from here).
   const installEvents = getCalendarEvents().filter(e => e.eventType === 'install' && !e.deletedAt);
+  const dismissedIds = getDismissedSchedulingIds();
   const unscheduled = jobs.filter(j =>
-    !j.schedulingDismissedAt &&
+    !dismissedIds.has(j.id) &&
     !requests.some(r => r.jobId === j.id && r.status !== 'Declined' && r.status !== 'Cancelled') &&
     !installEvents.some(e => e.jobId === j.id)
   );

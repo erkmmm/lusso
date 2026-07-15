@@ -67,6 +67,7 @@ const KEYS = {
   takeoffs:             'lusso_takeoffs',
   reviewRequests:       'lusso_review_requests',
   measureSheetOptions:  'lusso_measure_sheet_options',
+  schedulingDismissals: 'lusso_scheduling_dismissals',
 };
 
 // ── Per-table column exclusions ──────────────────────────────────────
@@ -204,6 +205,7 @@ const TABLES = [
   { table: 'takeoffs',               key: KEYS.takeoffs },
   { table: 'review_requests',        key: KEYS.reviewRequests },
   { table: 'measure_sheet_options',  key: KEYS.measureSheetOptions },
+  { table: 'scheduling_dismissals',  key: KEYS.schedulingDismissals },
   // NOTE: 'activity' is intentionally NOT here — it's append-only and synced
   // via a union (see hydrateFromSupabase) so existing local history is never
   // dropped by the "Supabase is authoritative" rule.
@@ -575,7 +577,7 @@ async function remove(table, id) {
 const SYNC_ORDER = [
   'customers', 'staff', 'installers', 'product_types', 'priced_items', 'suppliers',
   'jobs', 'measure_sheets', 'quotes', 'installations', 'tasks', 'takeoffs',
-  'review_requests', 'notifications', 'calendar_events',
+  'review_requests', 'notifications', 'calendar_events', 'scheduling_dismissals',
 ];
 export async function flushPending() {
   if (!supabase) return;
@@ -666,6 +668,11 @@ export const db = {
   // Measure-sheet custom dropdown options
   saveMeasureSheetOption:   (r) => upsert('measure_sheet_options', r),
   deleteMeasureSheetOption: (id) => remove('measure_sheet_options', id),
+
+  // Scheduling-reminder dismissals (kept out of the jobs table so dismissing
+  // can never churn or truncate the jobs list)
+  saveSchedulingDismissal:   (r) => upsert('scheduling_dismissals', r),
+  removeSchedulingDismissal: (id) => remove('scheduling_dismissals', id),
 
   // Quotes
   saveQuote:          (r) => upsert('quotes', r),

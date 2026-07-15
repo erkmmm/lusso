@@ -18,6 +18,7 @@ import {
   getJobsFiltered, getCustomersFiltered, getActivity,
   getQuotesFiltered, computeQuoteTotals, calcItemPricing,
   getInstallRequests, getCalendarEvents, JOB_STATUSES, isStalledJob,
+  getDismissedSchedulingIds,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
@@ -291,9 +292,10 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
   // calendar's "needing installation scheduling" list.
   const installReqs   = getInstallRequests();
   const installEvents = getCalendarEvents().filter(e => e.eventType === 'install' && !e.deletedAt);
+  const schedDismissed = getDismissedSchedulingIds();
   const needsScheduling = jobs.filter(j =>
     ['Received', 'Approved', 'Ordered'].includes(j.status) &&
-    !j.schedulingDismissedAt &&
+    !schedDismissed.has(j.id) &&
     !installReqs.some(r => r.jobId === j.id && r.status !== 'Declined' && r.status !== 'Cancelled') &&
     !installEvents.some(e => e.jobId === j.id)
   ).length;
