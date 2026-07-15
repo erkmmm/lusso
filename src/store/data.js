@@ -1277,6 +1277,7 @@ export const sendInstallRequest = (reqId, user = 'System') => {
   const now = new Date().toISOString();
   list[idx] = { ...list[idx], status: 'Sent', sentAt: now, updatedAt: now };
   set('lusso_install_requests', list);
+  db.saveInstallRequest(list[idx]); // was local-only — sync the Sent status/sentAt
   addActivity({ jobId: list[idx].jobId, type: 'install_request_sent', message: `Installation request sent to ${getInstaller(list[idx].installerId)?.name || 'installer'}`, user });
   return list[idx];
 };
@@ -2009,6 +2010,7 @@ export const updateQuoteXeroInvoice = (quoteId, {
     updatedAt: now,
   };
   set('lusso_quotes', all);
+  db.saveQuote(all[idx]); // was local-only — persist the Xero invoice linkage
   window.dispatchEvent(new CustomEvent('lusso:data-changed'));
 };
 

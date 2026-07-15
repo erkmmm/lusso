@@ -11,6 +11,7 @@ import {
   getCustomers, getJobs, getQuotes, getInstallRequests,
 } from '../store/data';
 import { getEmployeeCountSync } from '../store/profiles';
+import { toast } from './ToastContainer';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfile } from '../contexts/UserProfileContext';
 import { LogOut } from 'lucide-react';
@@ -146,6 +147,20 @@ export default function Layout({ children }) {
     };
     window.addEventListener('lusso:data-changed', refresh);
     return () => window.removeEventListener('lusso:data-changed', refresh);
+  }, []);
+
+  // Never let a full-storage save fail silently — warn the user prominently so
+  // they can free space / go online (the record is still pushed to the cloud).
+  useEffect(() => {
+    let last = 0;
+    const onFull = () => {
+      const now = Date.now();
+      if (now - last < 60000) return; // don't spam
+      last = now;
+      toast('Device storage is full — saved to the cloud but not this device. Free up space or sync soon.', 'error', { duration: 10000 });
+    };
+    window.addEventListener('lusso:storage-full', onFull);
+    return () => window.removeEventListener('lusso:storage-full', onFull);
   }, []);
 
   // Close popups on outside click

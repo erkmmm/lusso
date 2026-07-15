@@ -171,6 +171,16 @@ const TABLE_CONFLICT_COL = {
   quotes: 'quote_number',
 };
 
+// A write must never hang forever (a half-open socket on site never settles).
+// Turn a hang into a deterministic rejection so the write-ahead pending marking
+// covers it and flushPending retries later. supabase-js sets no timeout itself.
+const WRITE_TIMEOUT_MS = 15_000;
+const withTimeout = (promise, ms = WRITE_TIMEOUT_MS) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('supabase write timed out')), ms)),
+  ]);
+
 // ── Table manifest (shared by hydrate + push) ────────────────────────
 const TABLES = [
   { table: 'customers',              key: KEYS.customers },
@@ -286,28 +296,37 @@ export async function hydrateFromSupabase() {
         fetchedData = d1;
       }
       const rows = fromDbAll(fetchedData || []);
-      // Supabase is the source of truth.
-      // Always write the Supabase result to localStorage, even if empty —
-      // an empty response means everything was deleted and should stay gone.
       const local = LS.get(key) || [];
-      const localById = new Map(local.map(r => [r.id, r]));
 
-      // For records in both: keep whichever has the newer updatedAt.
-      // This protects unsaved local edits made moments before hydration.
+      // SAFETY GUARD: a 0-row but "successful" response must NEVER wipe a
+      // populated local table. Empty almost always means a transient RLS/session
+      // hiccup (e.g. the account momentarily not seen as active) or a flaky
+      // empty page — not "every record was deleted". Keep local untouched; a
+      // later healthy hydrate reconciles. (This is what wiped everything during
+      // the earlier outage.) Genuine "delete them all" is vanishingly rare and
+      // can be redone with an explicit resync.
+      if (rows.length === 0 && local.length > 0) return;
+
+      const localById = new Map(local.map(r => [r.id, r]));
+      const pend = pendingIds(table);
+
+      // For records in both: keep whichever has the newer updatedAt — EXCEPT a
+      // record still in the pending outbox, whose local copy hasn't been
+      // confirmed to the server yet; always keep local so a queued edit isn't
+      // overwritten by the stale server row (which flushPending would then push
+      // back, losing the edit).
       const merged = rows.map(sbRow => {
         const localRow = localById.get(sbRow.id);
         if (!localRow) return sbRow;
+        if (pend.has(sbRow.id)) return localRow;
         const sbMs = new Date(sbRow.updatedAt || 0).getTime();
         const locMs = new Date(localRow.updatedAt || 0).getTime();
         return locMs > sbMs ? localRow : sbRow;
       });
 
-      // Supabase is authoritative EXCEPT for records still in the pending-sync
-      // outbox — those were created/edited locally and haven't reached the
-      // server yet, so keep them (they'd otherwise vanish before syncing). Any
-      // other local-only record was deleted elsewhere and is correctly dropped.
+      // Also keep pending records that don't exist on the server yet (new,
+      // not-yet-synced). Any OTHER local-only record was deleted elsewhere.
       const mergedIds = new Set(merged.map(r => r.id));
-      const pend = pendingIds(table);
       if (pend.size) {
         for (const localRow of local) {
           if (pend.has(localRow.id) && !mergedIds.has(localRow.id)) merged.push(localRow);
@@ -462,28 +481,28 @@ export async function syncNow(entries, { sequential = false } = {}) {
   const errors = [];
   const write = async ({ table, record }) => {
     if (!record?.id) return;
+    markPending(table, record.id); // write-ahead: queued until a confirmed success
     const raw = toDb(record);
     const excludeSet = new Set(EXCLUDE_COLUMNS[table] || []);
     let row = Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
     for (let attempt = 0; attempt < 10; attempt++) {
       let error;
       try {
-        ({ error } = await supabase.from(table).upsert(row, { onConflict: 'id' }));
+        ({ error } = await withTimeout(supabase.from(table).upsert(row, { onConflict: TABLE_CONFLICT_COL[table] || 'id' })));
       } catch (e) {
-        console.warn(`[db] syncNow ${table} network error:`, e?.message || e);
-        markPending(table, record.id);
+        console.warn(`[db] syncNow ${table} network error:`, e?.message || e); // stays queued
         errors.push(`${table}: ${e?.message || e}`);
         return;
       }
-      if (!error) { clearPending(table, record.id); return; }
+      if (!error) { clearPending(table, record.id); return; } // confirmed
       const colMatch = error.message.match(/Could not find the '([^']+)' column/);
       if (colMatch) {
         const badCol = colMatch[1];
+        console.error(`[db] syncNow ${table}: DB has no '${badCol}' column — stripping. If this holds real data, it is a schema mismatch to fix in EXCLUDE_COLUMNS/toDb.`);
         const { [badCol]: _dropped, ...rest } = row;
         row = rest;
       } else {
-        console.warn(`[db] syncNow ${table}:`, error.message);
-        markPending(table, record.id); // queue for retry so on-site work isn't lost
+        console.warn(`[db] syncNow ${table}:`, error.message); // stays queued for retry
         errors.push(`${table}: ${error.message}`);
         return;
       }
@@ -500,39 +519,38 @@ export async function syncNow(entries, { sequential = false } = {}) {
 // ── Generic upsert / delete ──────────────────────────────────────────
 async function upsert(table, record) {
   if (!supabase || !record?.id) return;
+  // Write-ahead: queue the record BEFORE attempting the write, and clear it only
+  // on a confirmed success. This way a request that hangs (poor signal), a tab
+  // that closes mid-write, or a crash all leave the record queued for retry —
+  // never local-only-and-unmarked (which hydration could wipe).
+  markPending(table, record.id);
   const raw = toDb(record);
   const excludeSet = new Set(EXCLUDE_COLUMNS[table] || []);
   let row = Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
 
-  // Self-healing: if Supabase rejects an unknown column (e.g. an app-only
-  // field not yet in EXCLUDE_COLUMNS, or a column that was never added to the
-  // DB), strip it and retry up to 10 times so soft-deletes and other writes
-  // never fail silently.
+  // Self-healing: if Supabase rejects an unknown column (an app-only field not
+  // in EXCLUDE_COLUMNS, or a column never added to the DB), strip it and retry.
   for (let attempt = 0; attempt < 10; attempt++) {
     let error;
     try {
-      ({ error } = await supabase.from(table).upsert(row, { onConflict: 'id' }));
+      ({ error } = await withTimeout(supabase.from(table).upsert(row, { onConflict: TABLE_CONFLICT_COL[table] || 'id' })));
     } catch (e) {
-      // Network/offline throw — keep the record queued and retry later.
-      console.warn(`[db] upsert ${table} network error:`, e?.message || e);
-      markPending(table, record.id);
+      console.warn(`[db] upsert ${table} network error:`, e?.message || e); // stays queued
       return;
     }
-    if (!error) { clearPending(table, record.id); return; }
+    if (!error) { clearPending(table, record.id); return; } // confirmed — safe to clear
     const colMatch = error.message.match(/Could not find the '([^']+)' column/);
     if (colMatch) {
       const badCol = colMatch[1];
-      console.warn(`[db] upsert ${table}: auto-stripping unknown column '${badCol}' — add to EXCLUDE_COLUMNS`);
+      console.error(`[db] upsert ${table}: DB has no '${badCol}' column — stripping. If this holds real data, it is a schema mismatch to fix in EXCLUDE_COLUMNS/toDb.`);
       const { [badCol]: _dropped, ...rest } = row;
       row = rest;
     } else {
-      // A real failure (network, RLS, etc.) — queue it so it isn't lost and
-      // so hydration won't wipe the local-only record before it syncs.
-      console.warn(`[db] upsert ${table}:`, error.message);
-      markPending(table, record.id);
+      console.warn(`[db] upsert ${table}:`, error.message); // stays queued for retry
       return;
     }
   }
+  // Exhausted the strip retries — leave it queued for a later flush.
 }
 
 async function remove(table, id) {

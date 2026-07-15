@@ -20,7 +20,7 @@ import {
   getPoPresets, savePoPreset, deletePoPreset,
   MS_OPTION_FIELDS, getMsCustomOptions, addMsOption, deleteMsOption,
 } from '../store/data';
-import { pushAllToSupabase, hydrateFromSupabase } from '../store/db';
+import { pushAllToSupabase, hydrateFromSupabase, flushPending } from '../store/db';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
 import {
@@ -154,20 +154,15 @@ export default function Settings() {
 
   const handleResetSync = async () => {
     setSyncStatus('pulling');
-    // Clear all data keys so hydration starts from a clean slate
-    const DATA_KEYS = [
-      'lusso_customers','lusso_jobs','lusso_measure_sheets','lusso_quotes',
-      'lusso_installers','lusso_install_requests','lusso_staff','lusso_notifications',
-      'lusso_product_types','lusso_priced_items','lusso_priced_item_batches',
-      'lusso_import_batches','lusso_calendar_events','lusso_user_profiles',
-      'lusso_employees','lusso_tasks',
-    ];
-    DATA_KEYS.forEach(k => localStorage.removeItem(k));
+    // Safe reconcile: push anything unsynced FIRST so it isn't lost, then
+    // re-pull. We no longer delete local keys up front — hydration reconciles
+    // (and its empty-response guard means a transient empty pull can't wipe you).
+    try { await flushPending(); } catch { /* best-effort */ }
     await hydrateFromSupabase();
     window.dispatchEvent(new CustomEvent('lusso:data-changed'));
-    setSyncStatus({ ok: true, msg: 'Reset complete — all data reloaded from cloud.' });
+    setSyncStatus({ ok: true, msg: 'Sync complete — reconciled with the cloud.' });
     setTimeout(() => setSyncStatus(null), 4000);
-    toast('Sync complete — all data reloaded from cloud.');
+    toast('Sync complete — reconciled with the cloud.');
   };
 
   const NAV = [
