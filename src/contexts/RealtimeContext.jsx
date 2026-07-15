@@ -18,14 +18,21 @@
 import { createContext, useContext, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { fromDb } from '../store/db';
+import { lsGet, lsSet } from '../store/storage';
 import { useAuth } from './AuthContext';
 
 const RealtimeContext = createContext({});
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
+// MUST use the shared codec (lsGet/lsSet), not raw JSON. Large tables (jobs,
+// customers, quotes, priced_items) are LZ-compressed in localStorage, so a raw
+// JSON.parse throws → returns [] → applyChange would then write back just the
+// single incoming record, wiping every other row until the next poll restored
+// them. Using the codec reads the full decompressed array and re-compresses on
+// write (and mirrors to the durable IndexedDB backup).
 const LS = {
-  get: (key) => { try { return JSON.parse(localStorage.getItem(key)) ?? []; } catch { return []; } },
-  set: (key, val) => localStorage.setItem(key, JSON.stringify(val)),
+  get: (key) => lsGet(key) ?? [],
+  set: (key, val) => lsSet(key, val),
 };
 
 // ── DB table → localStorage key map ──────────────────────────────────────────
@@ -55,6 +62,12 @@ function applyChange(table, payload) {
   if (!key) return;
 
   const records = LS.get(key) || [];
+
+  // Safety: an UPDATE/DELETE against an empty local table is almost always a
+  // failed read (not a genuinely empty table). Applying it would write back a
+  // single-record (or empty) array and drop everything else. Skip — the next
+  // hydrate reconciles. (INSERT into an empty table is legitimately fine.)
+  if (records.length === 0 && payload.eventType !== 'INSERT') return;
 
   if (payload.eventType === 'INSERT') {
     const incoming = fromDb(payload.new);
