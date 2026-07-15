@@ -279,7 +279,7 @@ export default function Settings() {
                 <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
                   <Sun size={14} className="text-amber-500" /> Colour theme
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Pick the accent palette. Works in light and dark mode.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Pick the accent palette. Apex, Taupe & Green follow light/dark; Cyberpunk, Matrix & Mono are always dark.</p>
               </div>
               <div className="p-4 grid grid-cols-2 gap-3">
                 {COLOR_OPTIONS.map(({ value, label, desc, swatch }) => {
