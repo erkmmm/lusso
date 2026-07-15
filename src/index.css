@@ -44,6 +44,9 @@ html, body {
 .anim-bg body { background-color: transparent !important; }
 .anim-bg .app-shell { background-color: transparent !important; }
 .anim-bg .app-main  { background-color: transparent !important; }
+/* Side menu keeps the same gradient but behind a dark scrim, so it reads as a
+   darker, contrasting panel over the animation rather than a flat block. */
+.anim-bg .app-sidebar { background-color: rgba(6, 6, 10, 0.66) !important; }
 
 @layer base {
   /* ════ TAUPE — light (default) ════ */
