@@ -6,7 +6,13 @@ const STORAGE_KEY = 'lusso_theme';
 const COLOR_KEY = 'lusso_color_theme';
 
 // Colour themes — class applied to <html> (taupe has no class).
-const COLOR_THEMES = ['taupe', 'green', 'apex'];
+const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono'];
+
+// These themes are neon-on-black by nature — they always render dark, overriding
+// the light/dark setting (the app's dark-mode surface machinery is what makes
+// them look right).
+const FORCE_DARK_THEMES = new Set(['cyberpunk', 'matrix', 'mono']);
+export const themeForcesDark = (colorTheme) => FORCE_DARK_THEMES.has(colorTheme);
 
 // One-time switch to the Apex (demo-matched) theme; after this runs the user
 // can still pick any theme in Settings and it sticks.
@@ -49,12 +55,13 @@ function resolve(theme) {
   return 'light';
 }
 
-function applyClass(theme) {
-  if (resolve(theme) === 'dark') {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
+function isDark(theme, colorTheme) {
+  if (FORCE_DARK_THEMES.has(colorTheme)) return true;
+  return resolve(theme) === 'dark';
+}
+
+function applyClass(theme, colorTheme) {
+  document.documentElement.classList.toggle('dark', isDark(theme, colorTheme));
 }
 
 export function ThemeProvider({ children }) {
@@ -67,7 +74,6 @@ export function ThemeProvider({ children }) {
   const setTheme = useCallback((t) => {
     setThemeState(t);
     localStorage.setItem(STORAGE_KEY, t);
-    applyClass(t);
   }, []);
 
   const setColorTheme = useCallback((c) => {
@@ -76,38 +82,39 @@ export function ThemeProvider({ children }) {
     applyColorClass(c);
   }, []);
 
-  // Apply whenever theme changes (covers mount + explicit switches)
-  useEffect(() => { applyClass(theme); }, [theme]);
+  // Apply the .dark class whenever either axis changes (covers mount + switches,
+  // and re-applies when a force-dark colour theme is chosen/left)
+  useEffect(() => { applyClass(theme, colorTheme); }, [theme, colorTheme]);
 
-  // Apply colour theme on mount + change
+  // Apply colour theme class on mount + change
   useEffect(() => { applyColorClass(colorTheme); }, [colorTheme]);
 
   // System: react to OS preference changes in real time
   useEffect(() => {
     if (theme !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => applyClass('system');
+    const handler = () => applyClass('system', colorTheme);
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
-  }, [theme]);
+  }, [theme, colorTheme]);
 
   // Schedule: re-check every minute
   useEffect(() => {
     if (theme !== 'schedule') return;
-    const id = setInterval(() => applyClass('schedule'), 60_000);
+    const id = setInterval(() => applyClass('schedule', colorTheme), 60_000);
     return () => clearInterval(id);
-  }, [theme]);
+  }, [theme, colorTheme]);
 
   // Re-apply when tab becomes visible again (catches OS changes while backgrounded)
   useEffect(() => {
     if (theme !== 'system' && theme !== 'schedule') return;
-    const handler = () => { if (!document.hidden) applyClass(theme); };
+    const handler = () => { if (!document.hidden) applyClass(theme, colorTheme); };
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
-  }, [theme]);
+  }, [theme, colorTheme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolved: resolve(theme), colorTheme, setColorTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, resolved: isDark(theme, colorTheme) ? 'dark' : 'light', colorTheme, setColorTheme }}>
       {children}
     </ThemeContext.Provider>
   );

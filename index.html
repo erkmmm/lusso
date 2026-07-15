@@ -14,12 +14,15 @@
         try {
           var t = localStorage.getItem('lusso_theme') || 'light';
           var h = new Date().getHours();
+          var c = localStorage.getItem('lusso_color_theme');
+          // These themes are inherently dark (neon on black) — always dark.
+          var forceDark = c === 'cyberpunk' || c === 'matrix' || c === 'mono';
           var dark =
+            forceDark ||
             t === 'dark' ||
             (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ||
             (t === 'schedule' && (h >= 19 || h < 7));
           if (dark) document.documentElement.classList.add('dark');
-          var c = localStorage.getItem('lusso_color_theme');
           if (c && c !== 'taupe') document.documentElement.classList.add('theme-' + c);
         } catch (e) { /* first visit / private mode — default light */ }
       })();

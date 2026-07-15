@@ -105,9 +105,12 @@ export default function Settings() {
   const { theme, setTheme, colorTheme, setColorTheme } = useTheme();
 
   const COLOR_OPTIONS = [
-    { value: 'apex',  label: 'Apex',   desc: 'Emerald & charcoal — demo style.', swatch: '#009368' },
-    { value: 'taupe', label: 'Taupe',  desc: 'Warm taupe & cream.',   swatch: '#644a40' },
-    { value: 'green', label: 'Green',  desc: 'Forest green & cream.',  swatch: '#2e7d32' },
+    { value: 'apex',      label: 'Apex',      desc: 'Emerald & charcoal — demo style.', swatch: '#009368' },
+    { value: 'taupe',     label: 'Taupe',     desc: 'Warm taupe & cream.',   swatch: '#644a40' },
+    { value: 'green',     label: 'Green',     desc: 'Forest green & cream.',  swatch: '#2e7d32' },
+    { value: 'cyberpunk', label: 'Cyberpunk', desc: 'Neon magenta on indigo — always dark.', swatch: '#ff00c8' },
+    { value: 'matrix',    label: 'Matrix',    desc: 'Phosphor green on black — always dark.', swatch: '#00ff41' },
+    { value: 'mono',      label: 'Mono',      desc: 'Monochrome grayscale — always dark.',    swatch: '#a1a1aa' },
   ];
 
   const THEME_OPTIONS = [

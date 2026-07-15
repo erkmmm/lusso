@@ -334,6 +334,206 @@ html, body {
     --lusso-text-primary: oklch(92.2% 0.005 230);
   }
 
+  /* ════ CYBERPUNK — neon magenta on deep indigo ════
+     Inherently dark (ThemeContext forces .dark when selected). Tokens are set on
+     both selectors so the palette is correct even for the frame before .dark. */
+  .theme-cyberpunk,
+  .theme-cyberpunk.dark {
+    --brand-50:  #ffe6f7;
+    --brand-100: #ffbfea;
+    --brand-200: #ff87d9;
+    --brand-300: #ff4ec8;
+    --brand-400: #ff1ec6;
+    --brand-500: #d6009f;
+    --brand-600: #b30084;
+    --brand-700: #8c0068;
+    --brand-800: #66004b;
+    --brand-900: #440032;
+    --brand-950: #26001d;
+    --brand-bright:     #ff2fd0;
+    --brand-bright-rgb: 255 47 208;
+
+    --sb-bg:     #0a0a16;
+    --sb-hover:  #17173a;
+    --sb-active: #23234f;
+    --sb-border: #2e2e5e;
+    --sb-text:   #c4c8e0;
+    --sb-ring:   #ff00c8;
+    --ring-color: #ff00c8;
+
+    --surf-page:     #0c0c1d;
+    --surf-page-rgb: 12 12 29;
+    --surf-card:     #1a1a38;
+    --surf-muted:    #151530;
+    --surf-hover:    #23234a;
+    --bord-strong:   #3a3a6e;
+    --bord-default:  #2e2e5e;
+    --bord-subtle:   #26264d;
+    --bord-faint:    #1e1e3f;
+    --txt-primary:   #eceff4;
+    --txt-secondary: #c9cced;
+    --txt-muted:     #9a9fc4;
+    --txt-faint:     #7c81a8;
+    --txt-faintest:  #5b6088;
+    --input-dark:    #2e2e5e;
+
+    --card:                  #1a1a38;
+    --card-foreground:       #eceff4;
+    --popover:               #1a1a38;
+    --popover-foreground:    #eceff4;
+    --primary:               #ff00c8;
+    --primary-foreground:    #ffffff;
+    --secondary:             #23234a;
+    --secondary-foreground:  #eceff4;
+    --muted:                 #151530;
+    --muted-foreground:      #9a9fc4;
+    --accent:                #00ffcc;
+    --accent-foreground:     #0c0c1d;
+    --destructive:           #ff3d00;
+    --destructive-foreground:#ffffff;
+    --border:                #2e2e5e;
+    --input:                 #2e2e5e;
+    --ring:                  #ff00c8;
+    --background:            #0c0c1d;
+    --foreground:            #eceff4;
+
+    --lusso-background:   #0c0c1d;
+    --lusso-surface:      #1a1a38;
+    --lusso-text-primary: #eceff4;
+  }
+
+  /* ════ MATRIX — phosphor green on black ════ (always dark) */
+  .theme-matrix,
+  .theme-matrix.dark {
+    --brand-50:  #e6ffe9;
+    --brand-100: #b8ffc4;
+    --brand-200: #7cff95;
+    --brand-300: #34f562;
+    --brand-400: #12d048;
+    --brand-500: #0a8a2e;
+    --brand-600: #077a28;
+    --brand-700: #066322;
+    --brand-800: #054d1b;
+    --brand-900: #043714;
+    --brand-950: #02240d;
+    --brand-bright:     #00ff41;
+    --brand-bright-rgb: 0 255 65;
+
+    --sb-bg:     #000000;
+    --sb-hover:  #001a00;
+    --sb-active: #003b00;
+    --sb-border: #003b00;
+    --sb-text:   #00ff41;
+    --sb-ring:   #00ff41;
+    --ring-color: #00ff41;
+
+    --surf-page:     #000000;
+    --surf-page-rgb: 0 0 0;
+    --surf-card:     #050505;
+    --surf-muted:    #001a00;
+    --surf-hover:    #002600;
+    --bord-strong:   #00661b;
+    --bord-default:  #004a13;
+    --bord-subtle:   #003b00;
+    --bord-faint:    #002200;
+    --txt-primary:   #00ff41;
+    --txt-secondary: #14e04b;
+    --txt-muted:     #00b32c;
+    --txt-faint:     #008f11;
+    --txt-faintest:  #00660c;
+    --input-dark:    #003b00;
+
+    --card:                  #050505;
+    --card-foreground:       #00ff41;
+    --popover:               #000000;
+    --popover-foreground:    #00ff41;
+    --primary:               #00ff41;
+    --primary-foreground:    #000000;
+    --secondary:             #003b00;
+    --secondary-foreground:  #00ff41;
+    --muted:                 #001a00;
+    --muted-foreground:      #008f11;
+    --accent:                #003b00;
+    --accent-foreground:     #00ff41;
+    --destructive:           #ff2222;
+    --destructive-foreground:#ffffff;
+    --border:                #003b00;
+    --input:                 #001100;
+    --ring:                  #00ff41;
+    --background:            #000000;
+    --foreground:            #00ff41;
+
+    --lusso-background:   #000000;
+    --lusso-surface:      #050505;
+    --lusso-text-primary: #00ff41;
+  }
+
+  /* ════ MONO — monochrome grayscale terminal ════ (always dark) */
+  .theme-mono,
+  .theme-mono.dark {
+    --brand-50:  #fafafa;
+    --brand-100: #f4f4f5;
+    --brand-200: #e4e4e7;
+    --brand-300: #d4d4d8;
+    --brand-400: #a1a1aa;
+    --brand-500: #71717a;
+    --brand-600: #52525b;
+    --brand-700: #3f3f46;
+    --brand-800: #27272a;
+    --brand-900: #18181b;
+    --brand-950: #101013;
+    --brand-bright:     #e4e4e7;
+    --brand-bright-rgb: 228 228 231;
+
+    --sb-bg:     #09090b;
+    --sb-hover:  #18181b;
+    --sb-active: #27272a;
+    --sb-border: #27272a;
+    --sb-text:   #d4d4d8;
+    --sb-ring:   #a1a1aa;
+    --ring-color: #a1a1aa;
+
+    --surf-page:     #09090b;
+    --surf-page-rgb: 9 9 11;
+    --surf-card:     #18181b;
+    --surf-muted:    #1c1c1f;
+    --surf-hover:    #212124;
+    --bord-strong:   #3f3f46;
+    --bord-default:  #303034;
+    --bord-subtle:   #27272a;
+    --bord-faint:    #1e1e21;
+    --txt-primary:   #fafafa;
+    --txt-secondary: #d4d4d8;
+    --txt-muted:     #a1a1aa;
+    --txt-faint:     #71717a;
+    --txt-faintest:  #52525b;
+    --input-dark:    #303034;
+
+    --card:                  #18181b;
+    --card-foreground:       #fafafa;
+    --popover:               #18181b;
+    --popover-foreground:    #fafafa;
+    --primary:               #e4e4e7;
+    --primary-foreground:    #18181b;
+    --secondary:             #27272a;
+    --secondary-foreground:  #fafafa;
+    --muted:                 #1c1c1f;
+    --muted-foreground:      #a1a1aa;
+    --accent:                #27272a;
+    --accent-foreground:     #fafafa;
+    --destructive:           #e5484d;
+    --destructive-foreground:#ffffff;
+    --border:                #27272a;
+    --input:                 #303034;
+    --ring:                  #a1a1aa;
+    --background:            #09090b;
+    --foreground:            #fafafa;
+
+    --lusso-background:   #09090b;
+    --lusso-surface:      #18181b;
+    --lusso-text-primary: #fafafa;
+  }
+
   * {
     box-sizing: border-box;
     margin: 0;
