@@ -683,7 +683,7 @@ export default function NewMeasureSheet() {
   const highDuplicate = duplicates.some(d => d.confidence === 'high');
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-24">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-40 lg:pb-24">
 
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -1118,6 +1118,8 @@ export default function NewMeasureSheet() {
                           value={item.productNameSnapshot}
                           productTypes={productTypes}
                           error={!!errors[`item_${idx}_productType`]}
+                          typesFirst
+                          placeholder="Select product type…"
                           {...makeProductSelectHandlers(setLineItem, idx, productTypes)}
                         />
                       </div>

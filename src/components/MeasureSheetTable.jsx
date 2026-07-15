@@ -87,6 +87,8 @@ export default function MeasureSheetTable({ lineItems, setLineItem, removeLineIt
                       value={item.productNameSnapshot}
                       productTypes={productTypes}
                       error={prodErr}
+                      typesFirst
+                      placeholder="Select product type…"
                       {...makeProductSelectHandlers(setLineItem, idx, productTypes)}
                     />
                   </div>

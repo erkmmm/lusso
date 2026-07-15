@@ -1229,7 +1229,17 @@ export const makeProductSelectHandlers = (setLineItem, idx, productTypes) => ({
       setLineItem(idx, 'productTypeId', '');
       return;
     }
-    const pt = productTypes.find(p => p.name.toLowerCase() === (pricedItem.category || '').toLowerCase());
+    // Resolve a product type so the specs still filter: match the item's
+    // category first, then a type whose name appears in the item name (longest
+    // wins, so "Dual Roller Blind" beats "Roller Blind"). Price-library items
+    // are often categorised "Sales", so the name fallback matters.
+    const cat = (pricedItem.category || '').toLowerCase();
+    const name = (pricedItem.itemName || '').toLowerCase();
+    const pt =
+      productTypes.find(p => p.name.toLowerCase() === cat) ||
+      productTypes
+        .filter(p => name.includes(p.name.toLowerCase()))
+        .sort((a, b) => b.name.length - a.name.length)[0];
     setLineItem(idx, 'pricedItemId', pricedItem.id);
     setLineItem(idx, 'productNameSnapshot', pricedItem.itemName);
     setLineItem(idx, 'productTypeId', pt?.id || '');
