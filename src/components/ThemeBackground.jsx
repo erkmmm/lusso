@@ -22,6 +22,7 @@ const PALETTES = {
   matrix:         { dark: ['#000000', '#001a00', '#003b00', '#00ff41'] },
   mono:           { dark: ['#09090b', '#18181b', '#27272a', '#a1a1aa'] },
   'neon-magenta': { dark: ['#000000', '#161616', '#3a1030', '#ff2e9f'] },
+  twitter:        { dark: ['#000000', '#0a1620', '#0f2b40', '#1d9bf2'], light: ['#f5f9fc', '#dbeafe', '#a8d3f5', '#1d9bf2'] },
 };
 
 function usePrefersReducedMotion() {

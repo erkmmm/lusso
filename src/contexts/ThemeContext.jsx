@@ -8,7 +8,7 @@ const ANIM_BG_KEY = 'lusso_anim_bg';
 const ANIM_BG_STYLE_KEY = 'lusso_anim_bg_style'; // 'mesh' | 'plasma'
 
 // Colour themes — class applied to <html> (taupe has no class).
-const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta'];
+const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta', 'twitter'];
 
 // These themes are neon-on-black by nature — they always render dark, overriding
 // the light/dark setting (the app's dark-mode surface machinery is what makes
