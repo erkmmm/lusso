@@ -102,7 +102,7 @@ export default function Settings() {
   // sorted is maintained by getProductTypes (sorts by sortOrder)
   const sorted = productTypes; // already sorted
 
-  const { theme, setTheme, colorTheme, setColorTheme, animBg, setAnimBg } = useTheme();
+  const { theme, setTheme, colorTheme, setColorTheme, animBg, setAnimBg, bgStyle, setBgStyle } = useTheme();
 
   const COLOR_OPTIONS = [
     { value: 'apex',      label: 'Apex',      desc: 'Emerald & charcoal — demo style.', swatch: '#009368' },
@@ -323,6 +323,28 @@ export default function Settings() {
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${animBg ? 'translate-x-5' : ''}`} />
                 </button>
               </div>
+              {animBg && (
+                <div className="px-5 pb-4 pt-1 border-t border-slate-100">
+                  <p className="text-xs font-medium text-slate-500 mb-2 mt-3">Style</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: 'mesh',   label: 'Mesh gradient', desc: 'Soft drifting colour fields.' },
+                      { value: 'plasma', label: 'Plasma',        desc: 'Fluid, marbled swirl.' },
+                    ].map(({ value, label, desc }) => {
+                      const active = bgStyle === value;
+                      return (
+                        <button key={value} onClick={() => setBgStyle(value)}
+                          className={`p-3 rounded-xl border-2 text-left transition-all ${
+                            active ? 'border-amber-500 bg-amber-50/40' : 'border-slate-200 hover:border-slate-300'
+                          }`}>
+                          <p className={`text-sm font-semibold ${active ? 'text-amber-700' : 'text-slate-700'}`}>{label}</p>
+                          <p className="text-xs text-slate-400 mt-0.5 leading-tight">{desc}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </Card>
 
             {/* Cloud sync status */}

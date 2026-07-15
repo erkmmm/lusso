@@ -5,6 +5,7 @@ const ThemeContext = createContext({});
 const STORAGE_KEY = 'lusso_theme';
 const COLOR_KEY = 'lusso_color_theme';
 const ANIM_BG_KEY = 'lusso_anim_bg';
+const ANIM_BG_STYLE_KEY = 'lusso_anim_bg_style'; // 'mesh' | 'plasma'
 
 // Colour themes — class applied to <html> (taupe has no class).
 const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta'];
@@ -75,6 +76,15 @@ export function ThemeProvider({ children }) {
     () => localStorage.getItem(ANIM_BG_KEY) === '1'
   );
 
+  const [bgStyle, setBgStyleState] = useState(
+    () => localStorage.getItem(ANIM_BG_STYLE_KEY) || 'mesh'
+  );
+
+  const setBgStyle = useCallback((s) => {
+    setBgStyleState(s);
+    localStorage.setItem(ANIM_BG_STYLE_KEY, s);
+  }, []);
+
   const setTheme = useCallback((t) => {
     setThemeState(t);
     localStorage.setItem(STORAGE_KEY, t);
@@ -127,7 +137,7 @@ export function ThemeProvider({ children }) {
   }, [theme, colorTheme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolved: isDark(theme, colorTheme) ? 'dark' : 'light', colorTheme, setColorTheme, animBg, setAnimBg }}>
+    <ThemeContext.Provider value={{ theme, setTheme, resolved: isDark(theme, colorTheme) ? 'dark' : 'light', colorTheme, setColorTheme, animBg, setAnimBg, bgStyle, setBgStyle }}>
       {children}
     </ThemeContext.Provider>
   );

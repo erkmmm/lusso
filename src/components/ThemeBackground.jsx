@@ -5,6 +5,9 @@ import { useTheme } from '../contexts/ThemeContext';
 const MeshGradient = lazy(() =>
   import('@paper-design/shaders-react').then((m) => ({ default: m.MeshGradient }))
 );
+const Warp = lazy(() =>
+  import('@paper-design/shaders-react').then((m) => ({ default: m.Warp }))
+);
 
 // A slow, low-key animated mesh-gradient behind every page. Opt-in (Settings →
 // General) and off by default — the primary context is mobile field use, where a
@@ -35,7 +38,7 @@ function usePrefersReducedMotion() {
 }
 
 export default function ThemeBackground() {
-  const { animBg, colorTheme, resolved } = useTheme();
+  const { animBg, bgStyle, colorTheme, resolved } = useTheme();
   const reduced = usePrefersReducedMotion();
 
   // Respect the user's motion preference — never override it.
@@ -43,16 +46,30 @@ export default function ThemeBackground() {
 
   const pal = PALETTES[colorTheme] || PALETTES.apex;
   const colors = resolved === 'dark' ? pal.dark : (pal.light || pal.dark);
+  const fill = { width: '100%', height: '100%' };
 
   return (
     <div aria-hidden="true" className="anim-bg-layer" style={{ position: 'fixed', inset: 0, zIndex: -1, pointerEvents: 'none', backgroundColor: colors[0] }}>
       <Suspense fallback={null}>
-        <MeshGradient
-          style={{ width: '100%', height: '100%' }}
-          colors={colors}
-          speed={0.3}
-          backgroundColor={colors[0]}
-        />
+        {bgStyle === 'plasma' ? (
+          <Warp
+            style={fill}
+            colors={colors}
+            speed={0.3}
+            proportion={0.45}
+            softness={1}
+            distortion={0.2}
+            swirl={0.7}
+            swirlIterations={8}
+          />
+        ) : (
+          <MeshGradient
+            style={fill}
+            colors={colors}
+            speed={0.3}
+            backgroundColor={colors[0]}
+          />
+        )}
       </Suspense>
     </div>
   );
