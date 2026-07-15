@@ -1,16 +1,34 @@
 import { Trash2 } from 'lucide-react';
-import { getMsOptions } from '../store/data';
+import { getMsOptions, MS_SPEC_FIELDS, getVisibleSpecKeys } from '../store/data';
 
 // Spreadsheet-style editor for measure-sheet line items. Edits the SAME sheet
 // state (via setLineItem/removeLineItem) as the card layout, so the two stay in
-// sync and validation still applies. Horizontally scrollable for narrow screens.
-// Carries the FULL set of spec fields so nothing is missing versus card view.
+// sync and validation still applies.
+//
+// Columns are PRUNED to only the specs the sheet's products actually use (union
+// of each item's product-type specs, plus any spec that already holds a value),
+// so a roller-blind-only sheet no longer carries curtain-only columns. That
+// keeps the table narrow enough to avoid the old fixed 1900px sideways scroll.
 
 const cellInput  = 'w-full bg-transparent px-2 py-1.5 text-sm text-slate-800 outline-none focus:bg-amber-50 rounded-sm';
 const cellSelect = `${cellInput} appearance-none cursor-pointer pr-1`;
 
+// Per-spec column min-widths (px) — mirrors the old fixed layout's sizing.
+const SPEC_MIN = {
+  control: 90, returnSide: 90, motorSide: 100, fixing: 100, heading: 130, hem: 100,
+  trackColour: 110, baseBarColour: 130, operationType: 150, baseBarType: 130, chainColour: 110,
+};
+
 function Cell({ children, w, min }) {
   return <td className="border-r border-slate-100 align-middle" style={{ width: w, minWidth: min }}>{children}</td>;
+}
+function HCell({ children, min, highlight }) {
+  return (
+    <th style={{ minWidth: min }}
+      className={`border-r border-slate-100 px-2 py-2 text-left text-xs font-semibold whitespace-nowrap ${
+        highlight ? 'text-amber-700 bg-amber-50' : 'text-slate-500 font-medium'
+      }`}>{children}</th>
+  );
 }
 function Sel({ value, onChange, options, err }) {
   return (
@@ -22,24 +40,33 @@ function Sel({ value, onChange, options, err }) {
   );
 }
 
-const HEADERS = [
-  '#', 'Location', 'Product', 'Width', 'Drop', 'Qty', 'Fabric',
-  'Control', 'Return', 'Motor Side', 'Fixing', 'Heading', 'Hem',
-  'Track Colour', 'Bottom Rail Colour', 'Operation Type', 'Bottom Rail Type',
-  'Chain Colour', 'Lining', 'Lining Fabric', 'Notes', '',
-];
-
 export default function MeasureSheetTable({ lineItems, setLineItem, removeLineItem, productTypes, errors = {} }) {
+  const ptFor = (item) => productTypes.find(p => p.id === item.productTypeId) || null;
+
+  // Union of visible spec keys across all rows → the spec columns to render.
+  const shown = new Set();
+  lineItems.forEach(item => getVisibleSpecKeys(item, ptFor(item)).forEach(k => shown.add(k)));
+  const specCols = MS_SPEC_FIELDS.filter(f => shown.has(f.key)); // canonical order
+  const liningShown = shown.has('lining');
+  const dropdownCols = specCols.filter(f => f.key !== 'lining');
+
   return (
     <div className="overflow-x-auto border border-slate-200 rounded-xl">
-      <table className="border-collapse" style={{ minWidth: 1900, width: '100%' }}>
+      <table className="border-collapse w-full">
         <thead>
           <tr className="bg-slate-50 border-b border-slate-200">
-            {HEADERS.map((h, i) => (
-              <th key={i} className={`border-r border-slate-100 px-2 py-2 text-left text-xs font-semibold whitespace-nowrap ${
-                h === 'Width' || h === 'Drop' ? 'text-amber-700 bg-amber-50' : 'text-slate-500 font-medium'
-              }`}>{h}</th>
-            ))}
+            <HCell min={34}>#</HCell>
+            <HCell min={150}>Location</HCell>
+            <HCell min={130}>Product</HCell>
+            <HCell min={92} highlight>Width</HCell>
+            <HCell min={92} highlight>Drop</HCell>
+            <HCell min={56}>Qty</HCell>
+            <HCell min={140}>Fabric</HCell>
+            {dropdownCols.map(f => <HCell key={f.key} min={SPEC_MIN[f.key]}>{f.label}</HCell>)}
+            {liningShown && <HCell min={80}>Lining</HCell>}
+            {liningShown && <HCell min={140}>Lining Fabric</HCell>}
+            <HCell min={150}>Notes</HCell>
+            <th className="w-9" />
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -69,27 +96,28 @@ export default function MeasureSheetTable({ lineItems, setLineItem, removeLineIt
                 <Cell w={92} min={92}><input type="number" inputMode="numeric" min="0" value={item.dropMm ?? ''} onChange={e => setLineItem(idx, 'dropMm', e.target.value)} placeholder="mm" className={`${cellInput} text-right font-semibold text-slate-900 bg-amber-50/50 focus:bg-amber-100`} /></Cell>
                 <Cell w={56} min={56}><input type="number" inputMode="numeric" min="0" value={item.quantity ?? ''} onChange={e => setLineItem(idx, 'quantity', e.target.value)} className={`${cellInput} text-right`} /></Cell>
                 <Cell min={140}><input value={item.fabricColour || ''} onChange={e => setLineItem(idx, 'fabricColour', e.target.value)} placeholder="Fabric / colour" className={cellInput} /></Cell>
-                <Cell min={90}><Sel value={item.control} onChange={v => setLineItem(idx, 'control', v)} options={getMsOptions('control')} /></Cell>
-                <Cell min={90}><Sel value={item.returnSide} onChange={v => setLineItem(idx, 'returnSide', v)} options={getMsOptions('returnSide')} /></Cell>
-                <Cell min={100}><Sel value={item.motorSide} onChange={v => setLineItem(idx, 'motorSide', v)} options={getMsOptions('motorSide')} /></Cell>
-                <Cell min={100}><Sel value={item.fixing} onChange={v => setLineItem(idx, 'fixing', v)} options={getMsOptions('fixing')} /></Cell>
-                <Cell min={130}><Sel value={item.heading} onChange={v => setLineItem(idx, 'heading', v)} options={getMsOptions('heading')} /></Cell>
-                <Cell min={100}><Sel value={item.hem} onChange={v => setLineItem(idx, 'hem', v)} options={getMsOptions('hem')} /></Cell>
-                <Cell min={110}><Sel value={item.trackColour} onChange={v => setLineItem(idx, 'trackColour', v)} options={getMsOptions('trackColour')} /></Cell>
-                <Cell min={130}><Sel value={item.baseBarColour} onChange={v => setLineItem(idx, 'baseBarColour', v)} options={getMsOptions('baseBarColour')} /></Cell>
-                <Cell min={150}><Sel value={item.trackType} onChange={v => setLineItem(idx, 'trackType', v)} options={getMsOptions('operationType')} /></Cell>
-                <Cell min={130}><Sel value={item.baseBarType} onChange={v => setLineItem(idx, 'baseBarType', v)} options={getMsOptions('baseBarType')} /></Cell>
-                <Cell min={110}><Sel value={item.chainColour} onChange={v => setLineItem(idx, 'chainColour', v)} options={getMsOptions('chainColour')} /></Cell>
-                <Cell min={80}>
-                  <select value={item.attachedLining ? 'Yes' : 'No'} onChange={e => setLineItem(idx, 'attachedLining', e.target.value === 'Yes')}
-                    className={cellSelect}>
-                    <option value="No">No</option>
-                    <option value="Yes">Yes</option>
-                  </select>
-                </Cell>
-                <Cell min={140}><input value={item.liningFabricColour || ''} disabled={!item.attachedLining}
-                  onChange={e => setLineItem(idx, 'liningFabricColour', e.target.value)}
-                  placeholder={item.attachedLining ? 'Lining fabric' : '—'} className={`${cellInput} disabled:opacity-40`} /></Cell>
+
+                {dropdownCols.map(f => (
+                  <Cell key={f.key} min={SPEC_MIN[f.key]}>
+                    <Sel value={item[f.itemField]} onChange={v => setLineItem(idx, f.itemField, v)} options={getMsOptions(f.optionKey)} />
+                  </Cell>
+                ))}
+
+                {liningShown && (
+                  <Cell min={80}>
+                    <select value={item.attachedLining ? 'Yes' : 'No'} onChange={e => setLineItem(idx, 'attachedLining', e.target.value === 'Yes')}
+                      className={cellSelect}>
+                      <option value="No">No</option>
+                      <option value="Yes">Yes</option>
+                    </select>
+                  </Cell>
+                )}
+                {liningShown && (
+                  <Cell min={140}><input value={item.liningFabricColour || ''} disabled={!item.attachedLining}
+                    onChange={e => setLineItem(idx, 'liningFabricColour', e.target.value)}
+                    placeholder={item.attachedLining ? 'Lining fabric' : '—'} className={`${cellInput} disabled:opacity-40`} /></Cell>
+                )}
+
                 <Cell min={150}><input value={item.notes || ''} onChange={e => setLineItem(idx, 'notes', e.target.value)} placeholder="Notes" className={cellInput} /></Cell>
                 <td className="w-9 text-center">
                   <button type="button" onClick={() => removeLineItem(idx)} disabled={lineItems.length <= 1}

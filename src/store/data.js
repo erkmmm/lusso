@@ -1141,6 +1141,83 @@ export const deleteMsOption = (id) => {
   db.deleteMeasureSheetOption(id);
 };
 
+// ─── Per-product-type spec schema ───────────────────────────────────────────────
+// Every window-furnishing product only needs SOME of the spec fields (a Roller
+// Blind has no heading/lining; a Curtain has no bottom rail). Each product type
+// carries a `specs` array of the spec keys it uses; when unset we fall back to a
+// sensible default per type, and to "show everything" for an unknown/new type so
+// a spec is never accidentally hidden.
+//
+// itemField = the property stored on the line item (note: Operation Type reads
+// from `trackType` but pulls its dropdown from the `operationType` option list).
+export const MS_SPEC_FIELDS = [
+  { key: 'control',       itemField: 'control',        optionKey: 'control',       label: 'Control' },
+  { key: 'returnSide',    itemField: 'returnSide',     optionKey: 'returnSide',     label: 'Return' },
+  { key: 'motorSide',     itemField: 'motorSide',      optionKey: 'motorSide',      label: 'Motor Side' },
+  { key: 'fixing',        itemField: 'fixing',         optionKey: 'fixing',         label: 'Fixing' },
+  { key: 'heading',       itemField: 'heading',        optionKey: 'heading',        label: 'Heading' },
+  { key: 'hem',           itemField: 'hem',            optionKey: 'hem',            label: 'Hem' },
+  { key: 'trackColour',   itemField: 'trackColour',    optionKey: 'trackColour',    label: 'Track Colour' },
+  { key: 'baseBarColour', itemField: 'baseBarColour',  optionKey: 'baseBarColour',  label: 'Bottom Rail Colour' },
+  { key: 'operationType', itemField: 'trackType',      optionKey: 'operationType',  label: 'Operation Type' },
+  { key: 'baseBarType',   itemField: 'baseBarType',    optionKey: 'baseBarType',    label: 'Bottom Rail Type' },
+  { key: 'chainColour',   itemField: 'chainColour',    optionKey: 'chainColour',    label: 'Chain Colour' },
+  { key: 'lining',        itemField: 'attachedLining', optionKey: null,             label: 'Lining' },
+];
+export const MS_SPEC_KEYS = MS_SPEC_FIELDS.map(f => f.key);
+const MS_SPEC_BY_KEY = Object.fromEntries(MS_SPEC_FIELDS.map(f => [f.key, f]));
+
+// Sensible defaults, keyed by product-type slug. Used until a type is explicitly
+// configured in Settings. Editable there — these are just the starting point.
+const DEFAULT_TYPE_SPECS = {
+  'curtain':              ['heading', 'control', 'returnSide', 'motorSide', 'fixing', 'trackColour', 'hem', 'operationType', 'lining'],
+  'roller-blind':         ['control', 'motorSide', 'fixing', 'chainColour', 'baseBarColour', 'baseBarType', 'operationType'],
+  'dual-roller-blind':    ['control', 'motorSide', 'fixing', 'chainColour', 'baseBarColour', 'baseBarType', 'operationType'],
+  'roman-blind':          ['control', 'motorSide', 'fixing', 'chainColour', 'hem', 'lining'],
+  'venetian-blind':       ['control', 'fixing', 'chainColour'],
+  'shutter':              ['control', 'fixing'],
+  'pleated-blind':        ['control', 'fixing', 'chainColour', 'baseBarColour'],
+  'external-blind':       ['control', 'motorSide', 'fixing', 'operationType', 'baseBarColour'],
+  'internal-glidescreen': ['control', 'fixing'],
+  'pelmet':               ['fixing', 'heading'],
+  'cellular-blind':       ['control', 'fixing', 'chainColour', 'baseBarColour'],
+  'awning':               ['control', 'motorSide', 'fixing', 'operationType'],
+};
+
+const typeSlug = (pt) =>
+  pt?.slug || String(pt?.name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+/** The spec keys a product type is configured to use (explicit → default → all). */
+export const getTypeSpecKeys = (productType) => {
+  if (!productType) return MS_SPEC_KEYS;                       // no type chosen → show everything
+  if (Array.isArray(productType.specs)) {                       // explicit config wins (canonical order)
+    return MS_SPEC_KEYS.filter(k => productType.specs.includes(k));
+  }
+  const def = DEFAULT_TYPE_SPECS[typeSlug(productType)];
+  return def ? MS_SPEC_KEYS.filter(k => def.includes(k)) : MS_SPEC_KEYS; // unknown type → show everything
+};
+
+/** True if a line item already holds a value for a given spec key. */
+export const specHasValue = (item, key) => {
+  if (!item) return false;
+  if (key === 'lining') return !!item.attachedLining || !!String(item.liningFabricColour || '').trim();
+  const f = MS_SPEC_BY_KEY[key];
+  const v = f && item[f.itemField];
+  return v !== undefined && v !== null && String(v).trim() !== '';
+};
+
+/**
+ * The spec keys to actually render for a line item: its product type's specs
+ * PLUS any spec that already holds a value. The second part guarantees that
+ * changing the product type (or opening a legacy sheet) can never hide data the
+ * user already entered — it stays visible and editable.
+ */
+export const getVisibleSpecKeys = (item, productType) => {
+  const show = new Set(getTypeSpecKeys(productType));
+  MS_SPEC_KEYS.forEach(k => { if (specHasValue(item, k)) show.add(k); });
+  return MS_SPEC_KEYS.filter(k => show.has(k));
+};
+
 export const MOUNT_TYPES = ['Ceiling Fix', 'Face Fix', 'Recess Fit', 'Outside Mount', 'Inside Mount'];
 export const CONTROL_SIDES = ['Left', 'Right', 'Centre', 'Motorised', 'N/A'];
 export const URGENCY_LEVELS = ['Low', 'Normal', 'High', 'Urgent'];

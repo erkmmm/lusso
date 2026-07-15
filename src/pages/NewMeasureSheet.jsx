@@ -14,6 +14,7 @@ import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
   getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
   getMsOptions, URGENCY_LEVELS, JOB_TYPES,
+  MS_SPEC_FIELDS, getVisibleSpecKeys,
 } from '../store/data';
 import { syncNow } from '../store/db';
 import Card from '../components/Card';
@@ -266,6 +267,47 @@ function SpecSelect({ label, value, onChange, options }) {
   );
 }
 
+// Renders one spec dropdown by its schema key (skips the special 'lining' key,
+// which is rendered by LiningBlock). Keeps the item field ↔ option list wiring
+// in one place (e.g. Operation Type stores to `trackType`).
+function SpecField({ specKey, item, idx, setLineItem }) {
+  const f = MS_SPEC_FIELDS.find(s => s.key === specKey);
+  if (!f || f.key === 'lining') return null;
+  return (
+    <SpecSelect label={f.label} value={item[f.itemField]}
+      onChange={v => setLineItem(idx, f.itemField, v)}
+      options={getMsOptions(f.optionKey)} />
+  );
+}
+
+function LiningBlock({ item, idx, setLineItem }) {
+  return (
+    <>
+      <div className="sm:col-span-3">
+        <label className="block text-xs font-medium text-slate-500 mb-1.5">Attached Lining</label>
+        <div className="flex gap-2">
+          {[true, false].map(val => (
+            <button key={String(val)} type="button" onClick={() => setLineItem(idx, 'attachedLining', val)}
+              className={`flex-1 max-w-[120px] text-xs font-medium py-1.5 rounded-lg border transition-colors ${
+                item.attachedLining === val ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}>
+              {val ? 'Enabled' : 'Disabled'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {item.attachedLining && (
+        <div className="sm:col-span-3">
+          <label className="block text-xs font-medium text-slate-500 mb-1">Lining Fabric / Colour</label>
+          <input value={item.liningFabricColour}
+            onChange={e => setLineItem(idx, 'liningFabricColour', e.target.value)}
+            placeholder="e.g. Blockout White" className={inp()} />
+        </div>
+      )}
+    </>
+  );
+}
+
 function Section({ title, icon, open, onToggle, children }) {
   return (
     <Card>
@@ -421,6 +463,15 @@ export default function NewMeasureSheet() {
   const setField     = (field, value) => setSheet(s => ({ ...s, [field]: value }));
   const toggleSection = (key) => setOpenSections(s => ({ ...s, [key]: !s[key] }));
   const toggleItemExpand = (iid) => setExpandedItems(prev => {
+    const next = new Set(prev);
+    next.has(iid) ? next.delete(iid) : next.add(iid);
+    return next;
+  });
+
+  // Per-item "Other specifications" reveal (the specs a product type doesn't
+  // normally use — always reachable so nothing is ever truly hidden).
+  const [otherSpecsOpen, setOtherSpecsOpen] = useState(() => new Set());
+  const toggleOtherSpecs = (iid) => setOtherSpecsOpen(prev => {
     const next = new Set(prev);
     next.has(iid) ? next.delete(iid) : next.add(iid);
     return next;
@@ -1041,6 +1092,12 @@ export default function NewMeasureSheet() {
 
             {itemLayout === 'cards' && sheet.lineItems.map((item, idx) => {
               const isExpanded = expandedItems.has(item.id);
+              const productType = productTypes.find(p => p.id === item.productTypeId) || null;
+              const visibleSpecs = getVisibleSpecKeys(item, productType);
+              const dropdownSpecs = visibleSpecs.filter(k => k !== 'lining');
+              const liningVisible = visibleSpecs.includes('lining');
+              const hiddenSpecs   = MS_SPEC_FIELDS.filter(f => !visibleSpecs.includes(f.key));
+              const otherOpen     = otherSpecsOpen.has(item.id);
               return (
                 <div key={item.id} className="border border-slate-200 rounded-xl overflow-hidden">
                   {/* Item header */}
@@ -1140,45 +1197,44 @@ export default function NewMeasureSheet() {
                     </button>
                   </div>
 
-                  {/* Expanded specs */}
+                  {/* Expanded specs — only the specs this product type uses.
+                      Any spec that already holds a value stays visible too, so
+                      changing the product type never hides entered data. */}
                   {isExpanded && (
-                    <div className="border-t border-slate-100 px-4 py-3 bg-slate-50/40 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <SpecSelect label="Control"              value={item.control}           onChange={v => setLineItem(idx,'control',v)}           options={getMsOptions('control')} />
-                      <SpecSelect label="Return"               value={item.returnSide}        onChange={v => setLineItem(idx,'returnSide',v)}        options={getMsOptions('returnSide')} />
-                      <SpecSelect label="Motor Side"           value={item.motorSide}         onChange={v => setLineItem(idx,'motorSide',v)}         options={getMsOptions('motorSide')} />
-                      <SpecSelect label="Fixing"               value={item.fixing}            onChange={v => setLineItem(idx,'fixing',v)}            options={getMsOptions('fixing')} />
-                      <SpecSelect label="Heading"              value={item.heading}           onChange={v => setLineItem(idx,'heading',v)}           options={getMsOptions('heading')} />
-                      <SpecSelect label="Hem"                  value={item.hem}               onChange={v => setLineItem(idx,'hem',v)}               options={getMsOptions('hem')} />
-                      <SpecSelect label="Track Colour"     value={item.trackColour}   onChange={v => setLineItem(idx,'trackColour',v)}   options={getMsOptions('trackColour')} />
-                      <SpecSelect label="Bottom Rail Colour"  value={item.baseBarColour} onChange={v => setLineItem(idx,'baseBarColour',v)} options={getMsOptions('baseBarColour')} />
-                      <SpecSelect label="Operation Type"   value={item.trackType}     onChange={v => setLineItem(idx,'trackType',v)}     options={getMsOptions('operationType')} />
-                      <SpecSelect label="Bottom Rail Type"    value={item.baseBarType}   onChange={v => setLineItem(idx,'baseBarType',v)}   options={getMsOptions('baseBarType')} />
-                      <SpecSelect label="Chain Colour"     value={item.chainColour}   onChange={v => setLineItem(idx,'chainColour',v)}   options={getMsOptions('chainColour')} />
-
-                      <div className="sm:col-span-3">
-                        <label className="block text-xs font-medium text-slate-500 mb-1.5">Attached Lining</label>
-                        <div className="flex gap-2">
-                          {[true, false].map(val => (
-                            <button key={String(val)} type="button" onClick={() => setLineItem(idx,'attachedLining',val)}
-                              className={`flex-1 max-w-[120px] text-xs font-medium py-1.5 rounded-lg border transition-colors ${
-                                item.attachedLining === val ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                              }`}>
-                              {val ? 'Enabled' : 'Disabled'}
-                            </button>
+                    <div className="border-t border-slate-100 px-4 py-3 bg-slate-50/40 space-y-3">
+                      {(dropdownSpecs.length > 0 || liningVisible) ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {dropdownSpecs.map(k => (
+                            <SpecField key={k} specKey={k} item={item} idx={idx} setLineItem={setLineItem} />
                           ))}
+                          {liningVisible && <LiningBlock item={item} idx={idx} setLineItem={setLineItem} />}
                         </div>
-                      </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">
+                          {productType ? `${productType.name} has no specs configured — add some in Settings › Product Types, or use “Other specifications” below.` : 'Pick a product to see its specs.'}
+                        </p>
+                      )}
 
-                      {item.attachedLining && (
-                        <div className="sm:col-span-3">
-                          <label className="block text-xs font-medium text-slate-500 mb-1">Lining Fabric / Colour</label>
-                          <input value={item.liningFabricColour}
-                            onChange={e => setLineItem(idx,'liningFabricColour',e.target.value)}
-                            placeholder="e.g. Blockout White" className={inp()} />
+                      {/* Escape hatch: reach any spec this product type doesn't normally use */}
+                      {hiddenSpecs.length > 0 && (
+                        <div className="pt-1">
+                          <button type="button" onClick={() => toggleOtherSpecs(item.id)}
+                            className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors">
+                            {otherOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                            {otherOpen ? 'Hide other specifications' : `Other specifications (${hiddenSpecs.length})`}
+                          </button>
+                          {otherOpen && (
+                            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {hiddenSpecs.filter(f => f.key !== 'lining').map(f => (
+                                <SpecField key={f.key} specKey={f.key} item={item} idx={idx} setLineItem={setLineItem} />
+                              ))}
+                              {hiddenSpecs.some(f => f.key === 'lining') && <LiningBlock item={item} idx={idx} setLineItem={setLineItem} />}
+                            </div>
+                          )}
                         </div>
                       )}
 
-                      <div className="sm:col-span-3">
+                      <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Notes</label>
                         <textarea value={item.notes}
                           onChange={e => setLineItem(idx,'notes',e.target.value)}

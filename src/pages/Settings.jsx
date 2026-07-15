@@ -15,6 +15,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useProfile } from '../contexts/UserProfileContext';
 import {
   getProductTypes, saveProductType, addProductType, reorderProductType,
+  MS_SPEC_FIELDS, getTypeSpecKeys,
   getImportBatches, getPricedItemBatches,
   getMessagePresets, saveMessagePresets, DEFAULT_MESSAGE_PRESETS,
   getPoPresets, savePoPreset, deletePoPreset,
@@ -88,6 +89,19 @@ export default function Settings() {
 
   const handleMove = (id, dir) => {
     reorderProductType(id, dir);
+    refresh();
+  };
+
+  // Which product type's spec editor is open, and its toggles.
+  const [specEditId, setSpecEditId] = useState(null);
+  const handleToggleSpec = (pt, key) => {
+    const current = getTypeSpecKeys(pt);
+    const next = current.includes(key) ? current.filter(k => k !== key) : [...current, key];
+    saveProductType({ ...pt, specs: next });
+    refresh();
+  };
+  const handleResetSpecs = (pt) => {
+    saveProductType({ ...pt, specs: null }); // null → falls back to the built-in default set
     refresh();
   };
 
@@ -438,40 +452,79 @@ export default function Settings() {
                 </div>
               )}
               <div className="divide-y divide-slate-50">
-                {sorted.map((pt, idx) => (
-                  <div key={pt.id} className={`flex items-center gap-3 px-5 py-3 ${!pt.isActive ? 'bg-slate-50/60' : ''}`}>
-                    <div className="flex flex-col gap-0.5 flex-shrink-0">
-                      <button onClick={() => handleMove(pt.id, 'up')} disabled={idx === 0} className="text-slate-300 hover:text-slate-500 disabled:opacity-20 transition-colors"><ChevronUp size={14} /></button>
-                      <button onClick={() => handleMove(pt.id, 'down')} disabled={idx === sorted.length - 1} className="text-slate-300 hover:text-slate-500 disabled:opacity-20 transition-colors"><ChevronDown size={14} /></button>
-                    </div>
-                    <span className="w-6 text-center text-xs text-slate-300 flex-shrink-0">{pt.sortOrder}</span>
-                    {editingId === pt.id ? (
-                      <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleSaveEdit(pt); if (e.key === 'Escape') setEditingId(null); }}
-                        className="flex-1 border border-amber-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
-                    ) : (
-                      <span className={`flex-1 text-sm ${pt.isActive ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{pt.name}</span>
-                    )}
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${pt.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {pt.isActive ? 'Active' : 'Disabled'}
-                    </span>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                {sorted.map((pt, idx) => {
+                  const specKeys = getTypeSpecKeys(pt);
+                  const isCustom = Array.isArray(pt.specs);
+                  const specOpen = specEditId === pt.id;
+                  return (
+                  <div key={pt.id} className={!pt.isActive ? 'bg-slate-50/60' : ''}>
+                    <div className="flex items-center gap-3 px-5 py-3">
+                      <div className="flex flex-col gap-0.5 flex-shrink-0">
+                        <button onClick={() => handleMove(pt.id, 'up')} disabled={idx === 0} className="text-slate-300 hover:text-slate-500 disabled:opacity-20 transition-colors"><ChevronUp size={14} /></button>
+                        <button onClick={() => handleMove(pt.id, 'down')} disabled={idx === sorted.length - 1} className="text-slate-300 hover:text-slate-500 disabled:opacity-20 transition-colors"><ChevronDown size={14} /></button>
+                      </div>
+                      <span className="w-6 text-center text-xs text-slate-300 flex-shrink-0">{pt.sortOrder}</span>
                       {editingId === pt.id ? (
-                        <>
-                          <button onClick={() => handleSaveEdit(pt)} className="text-green-500 hover:text-green-700 p-1 rounded"><Save size={14} /></button>
-                          <button onClick={() => setEditingId(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded"><X size={14} /></button>
-                        </>
+                        <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleSaveEdit(pt); if (e.key === 'Escape') setEditingId(null); }}
+                          className="flex-1 border border-amber-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
                       ) : (
-                        <>
-                          <button onClick={() => { setEditingId(pt.id); setEditName(pt.name); }} className="text-slate-400 hover:text-slate-600 p-1 rounded" title="Rename"><Edit3 size={14} /></button>
-                          <button onClick={() => handleToggleActive(pt)} className={`p-1 rounded transition-colors ${pt.isActive ? 'text-green-500 hover:text-red-400' : 'text-slate-300 hover:text-green-500'}`} title={pt.isActive ? 'Disable' : 'Enable'}>
-                            {pt.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                        <div className="flex-1 min-w-0">
+                          <span className={`text-sm ${pt.isActive ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{pt.name}</span>
+                          <button onClick={() => setSpecEditId(specOpen ? null : pt.id)}
+                            className="block text-xs text-slate-400 hover:text-amber-600 transition-colors mt-0.5">
+                            {specKeys.length} spec{specKeys.length !== 1 ? 's' : ''}{isCustom ? ' · custom' : ''} · {specOpen ? 'close' : 'edit'}
                           </button>
-                        </>
+                        </div>
                       )}
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${pt.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {pt.isActive ? 'Active' : 'Disabled'}
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {editingId === pt.id ? (
+                          <>
+                            <button onClick={() => handleSaveEdit(pt)} className="text-green-500 hover:text-green-700 p-1 rounded"><Save size={14} /></button>
+                            <button onClick={() => setEditingId(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded"><X size={14} /></button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => { setEditingId(pt.id); setEditName(pt.name); }} className="text-slate-400 hover:text-slate-600 p-1 rounded" title="Rename"><Edit3 size={14} /></button>
+                            <button onClick={() => handleToggleActive(pt)} className={`p-1 rounded transition-colors ${pt.isActive ? 'text-green-500 hover:text-red-400' : 'text-slate-300 hover:text-green-500'}`} title={pt.isActive ? 'Disable' : 'Enable'}>
+                              {pt.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
+                    {specOpen && (
+                      <div className="px-5 pb-4 pl-16">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-medium text-slate-500">Specs shown for <span className="text-slate-700">{pt.name}</span> on measure sheets</p>
+                            {isCustom && (
+                              <button onClick={() => handleResetSpecs(pt)} className="text-xs text-slate-400 hover:text-amber-600 transition-colors">Reset to default</button>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {MS_SPEC_FIELDS.map(f => {
+                              const on = specKeys.includes(f.key);
+                              return (
+                                <button key={f.key} onClick={() => handleToggleSpec(pt, f.key)}
+                                  className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                                    on ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-500 border-slate-200 hover:border-amber-300'
+                                  }`}>
+                                  {f.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-2">Width, drop, quantity, fabric and notes always show. A spec that already holds a value stays visible even if switched off here.</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="px-5 py-3 border-t border-slate-100">
                 <p className="text-xs text-slate-400">Disabled types no longer appear in new measure sheets but are preserved on existing records.</p>

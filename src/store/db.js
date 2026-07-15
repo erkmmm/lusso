@@ -117,7 +117,9 @@ const EXCLUDE_COLUMNS = {
   ],
   notifications: ['install_request_id'],
   product_types: [
-    'is_active', 'sort_order', 'slug',
+    // DB columns: id, name, sort_order, is_active, specs, created_at, deleted_at.
+    // No updated_at column — exclude so every save doesn't error+retry.
+    'slug', 'updated_at',
   ],
   // priced_items: batchUpsertPricedItems uses its own explicit mapper (toPricedItemDbRow)
   // so toDb() + EXCLUDE_COLUMNS is NOT used for this table during import.
