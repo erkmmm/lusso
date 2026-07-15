@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, Users,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
@@ -12,6 +12,7 @@ import {
 } from '../store/data';
 import { getEmployeeCountSync } from '../store/profiles';
 import { toast } from './ToastContainer';
+import RouteErrorBoundary from './ErrorBoundary';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfile } from '../contexts/UserProfileContext';
 import { LogOut } from 'lucide-react';
@@ -105,7 +106,7 @@ function CountBadge({ n, active }) {
   );
 }
 
-export default function Layout({ children }) {
+export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen]     = useState(false);
   const [sideNewOpen, setSideNewOpen]   = useState(false); // sidebar "New" dropdown
@@ -407,7 +408,9 @@ export default function Layout({ children }) {
 
         {/* Page content — extra bottom padding on mobile for bottom nav */}
         <main ref={mainRef} className="flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
-          {children}
+          <RouteErrorBoundary>
+            <Outlet />
+          </RouteErrorBoundary>
         </main>
       </div>
 

@@ -279,10 +279,11 @@ function AppRoutes() {
         <Route path="/install-response/:token"  element={<InstallResponse />} />
         <Route path="/quotes/:id/preview"        element={<CustomerQuotePage />} />
 
-        {/* Main app with layout */}
-        <Route path="/*" element={
-          <Layout>
-            <Routes>
+        {/* Main app with layout — a layout route rendering <Outlet/>, NOT a
+            descendant <Routes> under a splat. The old splat+descendant pattern
+            failed to re-match the root "/" route when navigating to it from
+            another page (the previous page stayed mounted until a refresh). */}
+        <Route element={<Layout />}>
               <Route path="/"                           element={<Dashboard />} />
               <Route path="/jobs"                       element={<Jobs />} />
               <Route path="/jobs/new"                   element={<NewJob />} />
@@ -317,9 +318,7 @@ function AppRoutes() {
               <Route path="/inbox"                      element={<Inbox />} />
               <Route path="/reviews"                    element={<Reviews />} />
               <Route path="*"                           element={<Dashboard />} />
-            </Routes>
-          </Layout>
-        } />
+        </Route>
       </Routes>
   );
 }
