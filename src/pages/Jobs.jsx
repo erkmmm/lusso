@@ -1,11 +1,12 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, Plus, Briefcase, SlidersHorizontal, X,
-  Trash2, CheckSquare, Square, AlertTriangle,
+  Trash2, CheckSquare, Square, AlertTriangle, ChevronDown, Check,
 } from 'lucide-react';
-import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob, getQuotes, computeQuoteTotals } from '../store/data';
+import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, STATUS_COLORS, updateJobStatus, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob, getQuotes, computeQuoteTotals } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -16,6 +17,90 @@ import { format, parseISO } from 'date-fns';
 const fmt$ = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
 // Safe short date — tolerates missing / odd timestamps from sync.
 const fmtDate = (d) => { if (!d) return null; const dt = new Date(d); return Number.isNaN(dt.getTime()) ? null : format(dt, 'd MMM yyyy'); };
+
+// ── Inline status changer ───────────────────────────────────────────────────
+// The status pill on each project row is clickable: it opens a menu to set a new
+// status without leaving the list. The menu is portalled + fixed-positioned so
+// it's never clipped by a row and flips up near the bottom of the screen. When
+// the list is in multi-select mode it falls back to a plain (non-interactive)
+// badge so the click only toggles selection.
+function StatusMenu({ job, user, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos]   = useState(null);
+  const btnRef  = useRef(null);
+  const menuRef = useRef(null);
+
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const width  = 210;
+    const left   = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    const below  = window.innerHeight - r.bottom;
+    const openUp = below < 320 && r.top > below;
+    setPos({
+      left, width,
+      top:    openUp ? undefined : r.bottom + 6,
+      bottom: openUp ? window.innerHeight - r.top + 6 : undefined,
+      maxHeight: (openUp ? r.top : below) - 16,
+    });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const on = () => place();
+    const outside = (e) => {
+      if (btnRef.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    window.addEventListener('scroll', on, true);
+    window.addEventListener('resize', on);
+    document.addEventListener('mousedown', outside);
+    return () => {
+      window.removeEventListener('scroll', on, true);
+      window.removeEventListener('resize', on);
+      document.removeEventListener('mousedown', outside);
+    };
+  }, [open]);
+
+  if (disabled) return <StatusBadge status={job.status} size="sm" />;
+
+  const color = STATUS_COLORS[job.status] || 'bg-slate-100 text-slate-600';
+  const pick = (e, s) => {
+    e.stopPropagation();
+    if (s !== job.status) {
+      updateJobStatus(job.id, s, user || 'System');
+      window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+    }
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <button ref={btnRef} type="button" title="Change status"
+        onClick={e => { e.stopPropagation(); e.preventDefault(); setOpen(o => !o); }}
+        className={`inline-flex items-center gap-1 rounded-full text-xs font-medium whitespace-nowrap px-2 py-0.5 ring-1 ring-inset ring-transparent hover:ring-black/10 transition-shadow ${color}`}>
+        {job.status}
+        <ChevronDown size={11} className="opacity-50 -mr-0.5" />
+      </button>
+      {open && pos && createPortal(
+        <div ref={menuRef}
+          style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, maxHeight: pos.maxHeight, zIndex: 60 }}
+          className="bg-white rounded-xl border border-slate-200 shadow-xl overflow-y-auto py-1">
+          <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Set status</p>
+          {JOB_STATUSES.map(s => (
+            <button key={s} type="button" onClick={e => pick(e, s)}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50 text-left transition-colors">
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[s] || 'bg-slate-100 text-slate-600'}`}>{s}</span>
+              {s === job.status && <Check size={13} className="ml-auto text-amber-500 flex-shrink-0" />}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ message, onDone }) {
@@ -387,10 +472,13 @@ export default function Jobs() {
                     : <span className="w-4 block" />}
                 </button>
 
-                {/* Main content */}
-                <button
+                {/* Main content — a clickable div (not a <button>) so the
+                    interactive status pill can nest inside it validly. */}
+                <div
+                  role="button" tabIndex={0}
                   onClick={() => selectMode ? toggleSelect(job.id, { stopPropagation: () => {} }) : navigate(`/jobs/${job.id}`)}
-                  className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3 py-4 pr-2 text-left min-w-0"
+                  onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !selectMode) { e.preventDefault(); navigate(`/jobs/${job.id}`); } }}
+                  className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3 py-4 pr-2 text-left min-w-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 rounded-xl"
                 >
                   {/* Avatar */}
                   <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
@@ -402,7 +490,7 @@ export default function Jobs() {
                     <div className="flex flex-wrap items-center gap-2 mb-0.5">
                       <span className="font-semibold text-slate-900 text-sm">{customer?.name}</span>
                       <span className="text-slate-400 text-xs">{job.jobNumber}</span>
-                      <StatusBadge status={job.status} size="sm" />
+                      <StatusMenu job={job} user={displayName} disabled={selectMode} />
                       {(job.urgency === 'High' || job.urgency === 'Urgent') && <UrgencyBadge urgency={job.urgency} />}
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
@@ -426,7 +514,7 @@ export default function Jobs() {
                         : <p className="text-xs text-slate-300">No quote yet</p>}
                     </div>
                   )}
-                </button>
+                </div>
 
                 {/* Per-row delete */}
                 {selectMode && (
