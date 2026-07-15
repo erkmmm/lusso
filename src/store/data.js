@@ -739,7 +739,7 @@ export const createJob = (data) => {
     customerId: data.customerId,
     jobNumber: nextJobNumber(),
     title: data.title || '',
-    status: 'New Enquiry',
+    status: data.status || 'New Enquiry',
     jobType: data.jobType || '',
     assignedStaff: data.assignedStaff || '',
     urgency: data.urgency || 'Normal',
@@ -787,7 +787,12 @@ export const updateJobStatus = (jobId, newStatus, user = 'System') => {
   const jobs = getJobs();
   const idx = jobs.findIndex(j => j.id === jobId);
   if (idx < 0) return;
-  jobs[idx] = { ...jobs[idx], status: newStatus, updatedAt: new Date().toISOString() };
+  const now = new Date().toISOString();
+  // Stamp when the work was finished (once) so downstream (e.g. the review-ask
+  // window) keys off completion, not an unrelated later edit's updatedAt.
+  const completedAt = (['Completed', 'Installed'].includes(newStatus) && !jobs[idx].completedAt)
+    ? now : jobs[idx].completedAt;
+  jobs[idx] = { ...jobs[idx], status: newStatus, completedAt, updatedAt: now };
   set('lusso_jobs', jobs);
   db.saveJob(jobs[idx]);
   addActivity({ jobId, type: 'status_change', message: `Status changed to ${newStatus}`, user });
@@ -816,7 +821,7 @@ export const getCustomersFiltered     = (isAM, name) => getCustomers().filter(c 
 export const getQuotesFiltered        = (isAM, name) => (getQuotes() || []).filter(q => !q.deletedAt && (isAM || q.salesperson === name));
 export const getMeasureSheetsFiltered = (isAM, name) => getMeasureSheets().filter(ms => isAM || ms.measurer === name);
 
-export const getMeasureSheet = (id) => (get('lusso_measure_sheets') || []).find(ms => ms.id === id);
+export const getMeasureSheet = (id) => (get('lusso_measure_sheets') || []).find(ms => ms.id === id && !ms.deletedAt);
 
 export const getMeasureSheetByJob        = (jobId) => getMeasureSheets().find(ms => ms.jobId === jobId);
 export const getMeasureSheetsByJob       = (jobId) => getMeasureSheets().filter(ms => ms.jobId === jobId);
@@ -829,6 +834,11 @@ export const deleteMeasureSheet = (id, deletedBy = 'Admin') => {
   const now = new Date().toISOString();
   all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_measure_sheets', all);
+  // Unlink any quotes that pointed at this sheet, so they don't dangle.
+  const quotes = get('lusso_quotes') || [];
+  let unlinked = false;
+  quotes.forEach(q => { if (q.measureSheetId === id) { q.measureSheetId = null; q.updatedAt = now; unlinked = true; db.saveQuote(q); } });
+  if (unlinked) set('lusso_quotes', quotes);
   // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
   db.deleteMeasureSheet(id);
 };
@@ -1499,19 +1509,25 @@ export const deleteInstallRequest = (id, deletedBy = 'Admin') => {
   db.saveInstallRequest(all[idx]); // sync the soft-delete (deleted_at) — not a job delete
 };
 
+// A response link stays valid for this long after the request is created.
+export const INSTALL_TOKEN_TTL_DAYS = 21;
+
 export const createInstallRequest = (data) => {
   const id = uuidv4();
+  const now = new Date();
   const req = {
     id,
     ...data,
     status: 'Draft',
-    secureAcceptToken: `tok-accept-${id}`,
-    secureDeclineToken: `tok-decline-${id}`,
+    // Unguessable, action-prefixed tokens — NOT derivable from the request id.
+    secureAcceptToken: `acc-${uuidv4()}`,
+    secureDeclineToken: `dec-${uuidv4()}`,
+    tokenExpiresAt: new Date(now.getTime() + INSTALL_TOKEN_TTL_DAYS * 86400000).toISOString(),
     sentAt: null,
     respondedAt: null,
     responseComment: '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
   };
   saveInstallRequest(req);
   addActivity({ jobId: data.jobId, type: 'install_request_created', message: 'Installation request created', user: data.createdBy || 'System' });
@@ -1530,15 +1546,22 @@ export const sendInstallRequest = (reqId, user = 'System') => {
   return list[idx];
 };
 
-export const respondToInstallRequest = (token, action, comment = '') => {
-  // action: 'accept' | 'decline'
+export const respondToInstallRequest = (token, _action, comment = '') => {
   const list = getInstallRequests();
   const idx = list.findIndex(r => r.secureAcceptToken === token || r.secureDeclineToken === token);
   if (idx < 0) return null;
   const req = list[idx];
   if (req.status === 'Accepted' || req.status === 'Declined') return req; // already responded
 
-  const isAccept = action === 'accept';
+  // Expiry: a stale link must not work forever (the email advertises a deadline).
+  if (req.tokenExpiresAt && new Date() > new Date(req.tokenExpiresAt)) {
+    return { ...req, expired: true };
+  }
+
+  // The ACTION is bound to the token that was used — the accept link accepts,
+  // the decline link declines. We never trust a caller-supplied action, so the
+  // two links can't be used interchangeably.
+  const isAccept = req.secureAcceptToken === token;
   const now = new Date().toISOString();
   const newStatus = isAccept ? 'Accepted' : 'Declined';
 
@@ -1549,7 +1572,9 @@ export const respondToInstallRequest = (token, action, comment = '') => {
 
   // Update job status if accepted
   if (isAccept) {
-    updateJobStatus(req.jobId, 'Installation Booked', 'Installer Portal');
+    // Forward-only: an installer accepting an old link must not drag a job that
+    // has already moved on (Installed/Completed) back to "Installation Booked".
+    advanceJobStatus(req.jobId, 'Installation Booked', 'Installer Portal');
   }
 
   // Add activity
@@ -1592,7 +1617,8 @@ export const addNotification = ({ jobId, installRequestId, type, title, message 
     isRead: false,
     createdAt: new Date().toISOString(),
   });
-  set('lusso_notifications', list);
+  // Cap the local store so it can't grow unbounded (only the newest are ever shown).
+  set('lusso_notifications', list.slice(0, 200));
   db.saveNotification(list[0]);
 };
 
@@ -2591,22 +2617,19 @@ export const runQuotientQuoteImport = async (plan, onProgress = () => {}) => {
     return { ...q, totalSell: subtotal, gstAmount: gst, grandTotal: total, totalCost };
   });
 
-  // Local writes are atomic: on quota failure both keys roll back to their
-  // prior values and nothing syncs to the cloud.
   const prevCustomers = getCustomers();
   const prevQuotes    = getQuotes();
   const customers = [...prevCustomers, ...plan.newCustomers.map(c => ({
     ...c, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   }))];
   const quotes = [...prevQuotes, ...enriched];
-  try {
-    set('lusso_customers', customers);
-    set('lusso_quotes', quotes);
-  } catch (e) {
-    try { set('lusso_customers', prevCustomers); set('lusso_quotes', prevQuotes); } catch { /* best effort */ }
-    saveImportBatch({ ...batch, status: 'Failed', errorCount: plan.quotes.length, completedAt: new Date().toISOString() });
-    throw new Error(`Device storage is full — import aborted before syncing (${e.message}). Try importing fewer files at once.`, { cause: e });
-  }
+  // Write-through. localStorage is best-effort (lsSet never throws): the data is
+  // also mirrored to the durable IndexedDB backup and synced to the cloud below,
+  // so a full device doesn't lose the import — the global "storage full" toast
+  // warns the user. (The old quota "rollback" here was dead code, and aborting
+  // would have stranded data already written to IndexedDB + the cloud.)
+  set('lusso_customers', customers);
+  set('lusso_quotes', quotes);
 
   // Cloud sync (chunked). Customers first so quote FKs resolve.
   onProgress('customers', 0, plan.newCustomers.length);

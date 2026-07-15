@@ -437,6 +437,7 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer }) {
     try {
       const to = channel === 'sms' ? conv.customerPhone : conv.customerEmail;
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Your session has expired — please refresh and sign in again.');
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-communication`,
         {

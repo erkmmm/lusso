@@ -113,7 +113,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
   };
 
   const applyQuick = (tpl) => {
-    const resolved = tpl.replace('{name}', customerName?.split(' ')[0] ?? 'there');
+    const resolved = tpl.replaceAll('{name}', customerName?.split(' ')[0] ?? 'there');
     setBody(resolved);
     setShowQuick(false);
     inputRef.current?.focus();
@@ -247,7 +247,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
             {QUICK_SMS.map((tpl, i) => (
               <button key={i} onClick={() => applyQuick(tpl)}
                 className="w-full text-left text-xs text-slate-600 bg-white border border-slate-200 hover:border-violet-300 hover:text-violet-700 px-3 py-2 rounded-lg transition-colors">
-                {tpl.replace('{name}', customerName?.split(' ')[0] ?? 'there')}
+                {tpl.replaceAll('{name}', customerName?.split(' ')[0] ?? 'there')}
               </button>
             ))}
           </div>

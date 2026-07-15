@@ -30,12 +30,15 @@ export default function Reviews() {
 
   // Jobs finished in the last 60 days with a contactable customer and no ask yet.
   const eligible = useMemo(() => jobs
-    .filter(j => ['Completed', 'Installed'].includes(j.status) && j.updatedAt
-      && differenceInDays(new Date(), parseISO(j.updatedAt)) <= 60
+    // Key the 60-day window off the completion date (falls back to updatedAt for
+    // older jobs), so an unrelated edit doesn't re-open the review ask.
+    .map(j => ({ job: j, finishedAt: j.completedAt || j.updatedAt }))
+    .filter(({ job: j, finishedAt }) => ['Completed', 'Installed'].includes(j.status) && finishedAt
+      && differenceInDays(new Date(), parseISO(finishedAt)) <= 60
       && !byJob.has(j.id))
-    .map(j => ({ job: j, customer: customers.find(c => c.id === j.customerId) }))
+    .map(({ job: j }) => ({ job: j, customer: customers.find(c => c.id === j.customerId) }))
     .filter(e => e.customer && phoneOf(e.customer))
-    .sort((a, b) => new Date(b.job.updatedAt) - new Date(a.job.updatedAt)),
+    .sort((a, b) => new Date(b.job.completedAt || b.job.updatedAt) - new Date(a.job.completedAt || a.job.updatedAt)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [jobs, customers, requests]);
 

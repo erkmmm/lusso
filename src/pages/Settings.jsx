@@ -413,7 +413,7 @@ export default function Settings() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-800">Reset &amp; Resync from Cloud</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Clears this device's local data and reloads everything fresh from Supabase.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Pushes anything unsaved, then re-syncs from the cloud and reconciles — your local data is kept, not wiped.</p>
                   </div>
                   <button onClick={handleResetSync} disabled={syncStatus === 'pulling' || syncStatus === 'pushing'}
                     className="flex items-center gap-1.5 text-xs font-semibold bg-blue-500 hover:bg-blue-400 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition-colors flex-shrink-0">

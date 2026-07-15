@@ -673,7 +673,7 @@ function TopSalesReps({ reps, lM, lI, lW }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-800 truncate">{r.name}</p>
-              <p className="text-xs text-slate-400">{lI(r.won)} won{r.winRate !== null ? ` · ${lW(r.winRate).toFixed(0)}% win rate` : ''}</p>
+              <p className="text-xs text-slate-400">{lI(r.won)} won{r.winRate !== null ? <> · <Fig>{lW(r.winRate).toFixed(0)}%</Fig> win rate</> : ''}</p>
             </div>
             <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(r.revenue))}</Fig></span>
           </div>

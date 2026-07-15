@@ -56,8 +56,10 @@ async function post(path, body) {
             : `Email service error ${res.status}: ${text.slice(0, 200)}`
         );
       }
-      // 2xx but non-JSON — treat as success with no data
-      return { success: true };
+      // 2xx but non-JSON — the mail service didn't actually confirm the send
+      // (e.g. a proxy/HTML 200). Report it as UNCONFIRMED so callers that key a
+      // state change on delivery (e.g. moving a job to "Ordered") don't do so.
+      return { success: true, unconfirmed: true };
     }
   }
 

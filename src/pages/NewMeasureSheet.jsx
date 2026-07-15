@@ -1155,7 +1155,7 @@ export default function NewMeasureSheet() {
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Qty</label>
                         <input type="number" inputMode="numeric" min="1" value={item.quantity}
-                          onChange={e => setLineItem(idx, 'quantity', Number(e.target.value))} className={inp()} />
+                          onChange={e => setLineItem(idx, 'quantity', e.target.value)} className={inp()} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Fabric / Colour</label>

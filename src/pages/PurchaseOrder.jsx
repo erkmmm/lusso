@@ -29,8 +29,12 @@ function bytesToBase64(bytes) {
 }
 
 // ── Field helpers ─────────────────────────────────────────────────────────────
-const isCurtain = (item) =>
-  (item.productNameSnapshot || item.productType || '').toLowerCase().includes('curt');
+const isCurtain = (item) => {
+  const s = (item.productNameSnapshot || item.productType || '').toLowerCase();
+  // Curtain-family products for the workroom PO. Broadened beyond "curt" so
+  // sheers/drapery (which never contain "curt") aren't silently excluded.
+  return s.includes('curt') || s.includes('sheer') || s.includes('drape');
+};
 
 const lining = (item) =>
   item.attachedLining ? (item.liningFabricColour || 'Yes') : 'Disabled';
@@ -379,7 +383,7 @@ export default function PurchaseOrder() {
     setSending(true);
     try {
       const contentBase64 = await buildPdfBase64();
-      await sendPurchaseOrder({
+      const result = await sendPurchaseOrder({
         to,
         subject: `Curtain Purchase Order${jobNumber ? ` – ${jobNumber}` : customerName ? ` – ${customerName}` : ''}`,
         message: (message || '').trim() || defaultMessage,
@@ -387,19 +391,23 @@ export default function PurchaseOrder() {
         contentBase64,
       });
       localStorage.setItem(RECIPIENT_KEY, to);
-      // Stage 2: log a note on the linked job recording the send, and move
-      // the job forward — a sent PO means the order is placed.
-      if (sheet.jobId) {
-        addActivity({
-          jobId: sheet.jobId,
-          type: 'po_sent',
-          message: `Curtain PO sent to ${to}`,
-          user: displayName || 'System',
-        });
-        advanceJobStatus(sheet.jobId, 'Ordered', displayName || 'System');
+      // Only treat the order as placed on a CONFIRMED send. An unconfirmed 2xx
+      // (ambiguous response) must not silently advance the job to "Ordered".
+      if (result?.unconfirmed) {
+        toast(`Sent to ${to}, but delivery wasn't confirmed — the job status was left unchanged.`, 'error');
+      } else {
+        if (sheet.jobId) {
+          addActivity({
+            jobId: sheet.jobId,
+            type: 'po_sent',
+            message: `Curtain PO sent to ${to}`,
+            user: displayName || 'System',
+          });
+          advanceJobStatus(sheet.jobId, 'Ordered', displayName || 'System');
+        }
+        markOrdered();
+        toast(`Purchase order sent to ${to}.`);
       }
-      markOrdered();
-      toast(`Purchase order sent to ${to}.`);
     } catch (err) {
       toast(err.message || 'Could not send the purchase order.', 'error');
     } finally {

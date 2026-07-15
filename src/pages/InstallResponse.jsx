@@ -13,16 +13,18 @@ const PICKUP_NEEDS_LOCATIONS = (type) =>
 export default function InstallResponse() {
   const { token } = useParams();
 
-  // Determine action from token prefix
-  const isAcceptToken  = token?.startsWith('tok-accept-');
-  const isDeclineToken = token?.startsWith('tok-decline-');
+  // The action is fixed by WHICH link (token) was used — accept vs decline —
+  // not chosen on the page. (Legacy tok-accept-/tok-decline- links still work.)
+  const isAcceptToken  = token?.startsWith('acc-') || token?.startsWith('tok-accept-');
+  const isDeclineToken = token?.startsWith('dec-') || token?.startsWith('tok-decline-');
+  const selectedAction = isAcceptToken ? 'accept' : isDeclineToken ? 'decline' : null;
 
   const [request, setRequest]   = useState(() => getInstallRequestByToken(token));
   const [comment, setComment]   = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone]         = useState(false);
+  const [expired, setExpired]   = useState(false);
   const [action, setAction]     = useState(null); // 'accept' | 'decline'
-  const [selectedAction, setSelectedAction] = useState(isAcceptToken ? 'accept' : isDeclineToken ? 'decline' : null);
 
   const installer = request ? getInstaller(request.installerId) : null;
   const job       = request ? getJob(request.jobId) : null;
@@ -36,6 +38,7 @@ export default function InstallResponse() {
     setSubmitting(true);
     setTimeout(() => {
       const updated = respondToInstallRequest(token, selectedAction, comment);
+      if (updated?.expired) { setExpired(true); setSubmitting(false); return; }
       setRequest(updated);
       setAction(selectedAction);
       setDone(true);
@@ -51,6 +54,19 @@ export default function InstallResponse() {
           <XCircle size={48} className="text-red-400 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">Link Not Found</h2>
           <p className="text-slate-500 text-sm">This link is invalid or has already been used.</p>
+        </div>
+      </ResponseShell>
+    );
+  }
+
+  // Link expired
+  if (expired) {
+    return (
+      <ResponseShell>
+        <div className="text-center py-12">
+          <XCircle size={48} className="text-amber-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Link Expired</h2>
+          <p className="text-slate-500 text-sm">This response link has expired. Please contact Lusso to confirm the installation.</p>
         </div>
       </ResponseShell>
     );
@@ -266,29 +282,20 @@ export default function InstallResponse() {
         {/* Response selection */}
         <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
           <h3 className="text-sm font-semibold text-slate-700">Your Response</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setSelectedAction('accept')}
-              className={`py-4 rounded-xl border-2 font-semibold text-sm transition-all flex flex-col items-center gap-2 ${
-                selectedAction === 'accept'
-                  ? 'border-green-500 bg-green-50 text-green-700'
-                  : 'border-slate-200 text-slate-600 hover:border-green-300 hover:bg-green-50/50'
-              }`}
-            >
-              <CheckCircle2 size={24} className={selectedAction === 'accept' ? 'text-green-500' : 'text-slate-400'} />
-              Accept Job
-            </button>
-            <button
-              onClick={() => setSelectedAction('decline')}
-              className={`py-4 rounded-xl border-2 font-semibold text-sm transition-all flex flex-col items-center gap-2 ${
-                selectedAction === 'decline'
-                  ? 'border-red-400 bg-red-50 text-red-600'
-                  : 'border-slate-200 text-slate-600 hover:border-red-300 hover:bg-red-50/50'
-              }`}
-            >
-              <XCircle size={24} className={selectedAction === 'decline' ? 'text-red-400' : 'text-slate-400'} />
-              Decline Job
-            </button>
+          {/* The action is set by the link you followed. Use the other link in
+              your email to choose the opposite. */}
+          <div className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3.5 ${
+            selectedAction === 'accept' ? 'border-green-500 bg-green-50' : 'border-red-400 bg-red-50'
+          }`}>
+            {selectedAction === 'accept'
+              ? <CheckCircle2 size={24} className="text-green-500 flex-shrink-0" />
+              : <XCircle size={24} className="text-red-400 flex-shrink-0" />}
+            <div>
+              <p className={`text-sm font-semibold ${selectedAction === 'accept' ? 'text-green-700' : 'text-red-600'}`}>
+                {selectedAction === 'accept' ? 'Accepting this installation' : 'Declining this installation'}
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">Wrong one? Use the other link in your email.</p>
+            </div>
           </div>
 
           {/* Optional comment */}

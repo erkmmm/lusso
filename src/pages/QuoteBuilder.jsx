@@ -1535,9 +1535,12 @@ export default function QuoteBuilder() {
           <Card className="p-5 sticky top-6">
             <h2 className="font-semibold text-slate-800 text-sm mb-4">Quote Summary</h2>
 
-            {/* Item type breakdown */}
+            {/* Item type breakdown — only the types that count toward the total
+                below (Required + Part), so the figures reconcile. Optional /
+                Multiple-Choice add-ons aren't in the total and are shown in the
+                line-item list instead. */}
             <div className="space-y-1.5 mb-4">
-              {['Required', 'Optional', 'Multiple Choice'].map(type => {
+              {['Required', 'Part'].map(type => {
                 const count = form.lineItems.filter(li => li.type === type).length;
                 if (count === 0) return null;
                 const typeTotal = form.lineItems

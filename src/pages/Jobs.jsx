@@ -181,9 +181,14 @@ export default function Jobs() {
   // Project value = its accepted quote total (or the latest quote's total).
   // Precomputed once per data change so sort-by-value and the card don't cost
   // an O(jobs × quotes) scan per row.
+  // Recompute when quotes actually change, not just their count: a price edit
+  // bumps the quote's updatedAt, so a signature of (count + newest updatedAt)
+  // catches edits while staying cheap enough to skip on every keystroke.
+  const quotes = getQuotes();
+  const quotesSig = quotes.length + '|' + quotes.reduce((m, q) => ((q.updatedAt || '') > m ? q.updatedAt : m), '');
   const valueByJob = useMemo(() => {
     const byJob = new Map();
-    getQuotes().forEach(q => {
+    quotes.forEach(q => {
       if (!q.jobId || q.deletedAt) return;
       const list = byJob.get(q.jobId);
       if (list) list.push(q); else byJob.set(q.jobId, [q]);
@@ -198,9 +203,8 @@ export default function Jobs() {
       val.set(jobId, total);
     });
     return val;
-    // jobs is a fresh array each render; keying on its length keeps this cheap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobs.length, customers.length]);
+  }, [quotesSig, jobs.length, customers.length]);
 
   const filtered = useMemo(() => {
     // Map lookup — customers.find per job is O(n²) with the imported history.

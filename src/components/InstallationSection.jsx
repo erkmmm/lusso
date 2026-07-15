@@ -53,7 +53,7 @@ export default function InstallationSection({ jobId, customer }) {
   const job        = getJob(jobId);
   const measureSheet = getMeasureSheetByJob(jobId);
 
-  const autoProductSummary = measureSheet
+  const autoProductSummary = measureSheet?.lineItems
     ? measureSheet.lineItems.map(li => {
         const name = li.productNameSnapshot || li.productType || 'Product';
         const w = li.widthMm || li.width;
@@ -64,7 +64,7 @@ export default function InstallationSection({ jobId, customer }) {
       }).join(' ')
     : '';
 
-  const autoServiceRequired = measureSheet
+  const autoServiceRequired = measureSheet?.lineItems
     ? [...new Set(measureSheet.lineItems.map(li => li.productNameSnapshot || li.productType))].filter(Boolean).map(name => {
         const count = measureSheet.lineItems
           .filter(li => (li.productNameSnapshot || li.productType) === name)

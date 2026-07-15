@@ -54,7 +54,7 @@ export default function CustomerProfile() {
       <Card className="p-5">
         <div className="flex items-start gap-4">
           <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center flex-shrink-0 text-blue-700 font-bold text-2xl">
-            {customer.name.charAt(0)}
+            {customer.name?.charAt(0) || '?'}
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="text-xl font-bold text-slate-900">{customer.name}</h1>

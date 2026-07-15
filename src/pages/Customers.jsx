@@ -133,7 +133,7 @@ export default function Customers() {
     setNewCustomer(EMPTY_CUSTOMER());
     setAddErrors({});
     forceUpdate(n => n + 1);
-    setToast(`${newCustomer.name} added.`);
+    window.dispatchEvent(new CustomEvent('lusso:toast', { detail: { message: `${newCustomer.name} added.`, type: 'success' } }));
   };
 
   const toggleSelect = (id, e) => {
@@ -303,7 +303,7 @@ export default function Customers() {
                 >
                   <div className="flex items-center gap-3 mb-3">
                     <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0 text-blue-700 font-bold text-base">
-                      {customer.name.charAt(0)}
+                      {customer.name?.charAt(0) || '?'}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold text-slate-900 text-sm truncate">{customer.name}</div>
