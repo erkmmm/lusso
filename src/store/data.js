@@ -1129,7 +1129,14 @@ export const getMsCustomOptions = () => get('lusso_measure_sheet_options') || []
 
 // Merged options for a dropdown field: built-in defaults first, then custom
 // additions (case-insensitive de-dupe against defaults + each other).
-export const getMsOptions = (fieldKey) => {
+//
+// A product type may override a field's options entirely (e.g. a Roller Blind's
+// Operation Types differ from a Curtain's) — stored on the type as
+// `options[fieldKey]`. When an override is present it wins; otherwise fall back
+// to the global default + custom list.
+export const getMsOptions = (fieldKey, productType = null) => {
+  const override = productType && productType.options && productType.options[fieldKey];
+  if (Array.isArray(override)) return override;
   const defaults = MS_DEFAULTS[fieldKey] || [];
   const seen = new Set(defaults.map(v => String(v).toLowerCase()));
   const custom = [];
@@ -1139,6 +1146,10 @@ export const getMsOptions = (fieldKey) => {
   });
   return [...defaults, ...custom];
 };
+
+/** True when a product type has an explicit option override for a field. */
+export const hasTypeOptionOverride = (productType, fieldKey) =>
+  Array.isArray(productType?.options?.[fieldKey]);
 
 export const addMsOption = (fieldKey, value) => {
   const v = String(value || '').trim();

@@ -270,13 +270,13 @@ function SpecSelect({ label, value, onChange, options }) {
 // Renders one spec dropdown by its schema key (skips the special 'lining' key,
 // which is rendered by LiningBlock). Keeps the item field ↔ option list wiring
 // in one place (e.g. Operation Type stores to `trackType`).
-function SpecField({ specKey, item, idx, setLineItem }) {
+function SpecField({ specKey, item, idx, setLineItem, productType }) {
   const f = MS_SPEC_FIELDS.find(s => s.key === specKey);
   if (!f || f.key === 'lining') return null;
   return (
     <SpecSelect label={f.label} value={item[f.itemField]}
       onChange={v => setLineItem(idx, f.itemField, v)}
-      options={getMsOptions(f.optionKey)} />
+      options={getMsOptions(f.optionKey, productType)} />
   );
 }
 
@@ -1182,7 +1182,7 @@ export default function NewMeasureSheet() {
                       {(dropdownSpecs.length > 0 || liningVisible) ? (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           {dropdownSpecs.map(k => (
-                            <SpecField key={k} specKey={k} item={item} idx={idx} setLineItem={setLineItem} />
+                            <SpecField key={k} specKey={k} item={item} idx={idx} setLineItem={setLineItem} productType={productType} />
                           ))}
                           {liningVisible && <LiningBlock item={item} idx={idx} setLineItem={setLineItem} />}
                         </div>
@@ -1203,7 +1203,7 @@ export default function NewMeasureSheet() {
                           {otherOpen && (
                             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
                               {hiddenSpecs.filter(f => f.key !== 'lining').map(f => (
-                                <SpecField key={f.key} specKey={f.key} item={item} idx={idx} setLineItem={setLineItem} />
+                                <SpecField key={f.key} specKey={f.key} item={item} idx={idx} setLineItem={setLineItem} productType={productType} />
                               ))}
                               {hiddenSpecs.some(f => f.key === 'lining') && <LiningBlock item={item} idx={idx} setLineItem={setLineItem} />}
                             </div>

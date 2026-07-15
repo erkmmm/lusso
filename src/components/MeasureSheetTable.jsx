@@ -100,7 +100,7 @@ export default function MeasureSheetTable({ lineItems, setLineItem, removeLineIt
 
                 {dropdownCols.map(f => (
                   <Cell key={f.key} min={SPEC_MIN[f.key]}>
-                    <Sel value={item[f.itemField]} onChange={v => setLineItem(idx, f.itemField, v)} options={getMsOptions(f.optionKey)} />
+                    <Sel value={item[f.itemField]} onChange={v => setLineItem(idx, f.itemField, v)} options={getMsOptions(f.optionKey, ptFor(item))} />
                   </Cell>
                 ))}
 

@@ -15,7 +15,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useProfile } from '../contexts/UserProfileContext';
 import {
   getProductTypes, saveProductType, addProductType, reorderProductType,
-  MS_SPEC_FIELDS, getTypeSpecKeys,
+  MS_SPEC_FIELDS, getTypeSpecKeys, getMsOptions,
   getImportBatches, getPricedItemBatches,
   getMessagePresets, saveMessagePresets, DEFAULT_MESSAGE_PRESETS,
   getPoPresets, savePoPreset, deletePoPreset,
@@ -519,6 +519,7 @@ export default function Settings() {
                             })}
                           </div>
                           <p className="text-[11px] text-slate-400 mt-2">Width, drop, quantity, fabric and notes always show. A spec that already holds a value stays visible even if switched off here.</p>
+                          <TypeOptionEditor pt={pt} onChange={refresh} />
                         </div>
                       </div>
                     )}
@@ -835,6 +836,78 @@ function SettingRow({ label, value }) {
     <div>
       <dt className="text-xs text-slate-400">{label}</dt>
       <dd className="font-medium text-slate-700">{value ?? '—'}</dd>
+    </div>
+  );
+}
+
+// ─── Per-product-type dropdown options ────────────────────────────────────────
+// Lets each product type override a spec field's option list (e.g. a Roller
+// Blind's Operation Types differ from a Curtain's). Shown inside the type's spec
+// panel; only the dropdown specs the type actually uses are listed.
+function TypeOptionEditor({ pt, onChange }) {
+  const [openField, setOpenField] = useState(null);
+  const [draft, setDraft] = useState('');
+
+  const specKeys = getTypeSpecKeys(pt);
+  const fields = MS_SPEC_FIELDS.filter(f => f.optionKey && specKeys.includes(f.key));
+  if (fields.length === 0) return null;
+
+  const save = (optionKey, list) => {
+    const options = { ...(pt.options || {}) };
+    if (list == null) delete options[optionKey]; // reset → fall back to the global default
+    else options[optionKey] = list;
+    saveProductType({ ...pt, options });
+    onChange();
+  };
+  const addOpt = (f) => {
+    const v = draft.trim();
+    if (!v) return;
+    const cur = getMsOptions(f.optionKey, pt);
+    if (!cur.some(o => String(o).toLowerCase() === v.toLowerCase())) save(f.optionKey, [...cur, v]);
+    setDraft('');
+  };
+  const removeOpt = (f, val) => save(f.optionKey, getMsOptions(f.optionKey, pt).filter(o => o !== val));
+
+  return (
+    <div className="mt-3 border-t border-slate-200 pt-3">
+      <p className="text-xs font-medium text-slate-500 mb-2">Dropdown options for {pt.name}</p>
+      <div className="space-y-1.5">
+        {fields.map(f => {
+          const opts = getMsOptions(f.optionKey, pt);
+          const isCustom = Array.isArray(pt.options?.[f.optionKey]);
+          const open = openField === f.optionKey;
+          return (
+            <div key={f.key} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+              <button type="button" onClick={() => { setOpenField(open ? null : f.optionKey); setDraft(''); }}
+                className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-50">
+                <span className="text-xs font-medium text-slate-600">{f.label}</span>
+                <span className="text-[11px] text-slate-400">{opts.length} option{opts.length !== 1 ? 's' : ''}{isCustom ? ' · custom' : ''}</span>
+              </button>
+              {open && (
+                <div className="px-3 pb-3 pt-1 bg-slate-50/50">
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {opts.map(o => (
+                      <span key={o} className="inline-flex items-center gap-1 text-xs bg-white border border-slate-200 text-slate-600 rounded-full pl-2.5 pr-1 py-1">
+                        {o}
+                        <button type="button" onClick={() => removeOpt(f, o)} className="text-slate-300 hover:text-red-500"><X size={11} /></button>
+                      </span>
+                    ))}
+                    {opts.length === 0 && <span className="text-xs text-slate-400 italic">No options — add one below.</span>}
+                  </div>
+                  <div className="flex gap-1.5 items-center">
+                    <input value={draft} onChange={e => setDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addOpt(f); } }}
+                      placeholder={`Add ${f.label.toLowerCase()} option…`}
+                      className="flex-1 border border-slate-200 rounded-lg text-xs px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                    <button type="button" onClick={() => addOpt(f)} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-400">Add</button>
+                    {isCustom && <button type="button" onClick={() => save(f.optionKey, null)} className="text-xs text-slate-400 hover:text-amber-600 px-1 whitespace-nowrap">Reset</button>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
