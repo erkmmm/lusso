@@ -4,6 +4,7 @@ const ThemeContext = createContext({});
 
 const STORAGE_KEY = 'lusso_theme';
 const COLOR_KEY = 'lusso_color_theme';
+const ANIM_BG_KEY = 'lusso_anim_bg';
 
 // Colour themes — class applied to <html> (taupe has no class).
 const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta'];
@@ -12,7 +13,6 @@ const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', '
 // the light/dark setting (the app's dark-mode surface machinery is what makes
 // them look right).
 const FORCE_DARK_THEMES = new Set(['cyberpunk', 'matrix', 'mono', 'neon-magenta']);
-export const themeForcesDark = (colorTheme) => FORCE_DARK_THEMES.has(colorTheme);
 
 // One-time switch to the Apex (demo-matched) theme; after this runs the user
 // can still pick any theme in Settings and it sticks.
@@ -71,6 +71,10 @@ export function ThemeProvider({ children }) {
 
   const [colorTheme, setColorThemeState] = useState(initialColorTheme);
 
+  const [animBg, setAnimBgState] = useState(
+    () => localStorage.getItem(ANIM_BG_KEY) === '1'
+  );
+
   const setTheme = useCallback((t) => {
     setThemeState(t);
     localStorage.setItem(STORAGE_KEY, t);
@@ -82,12 +86,21 @@ export function ThemeProvider({ children }) {
     applyColorClass(c);
   }, []);
 
+  const setAnimBg = useCallback((on) => {
+    setAnimBgState(on);
+    localStorage.setItem(ANIM_BG_KEY, on ? '1' : '0');
+    document.documentElement.classList.toggle('anim-bg', on);
+  }, []);
+
   // Apply the .dark class whenever either axis changes (covers mount + switches,
   // and re-applies when a force-dark colour theme is chosen/left)
   useEffect(() => { applyClass(theme, colorTheme); }, [theme, colorTheme]);
 
   // Apply colour theme class on mount + change
   useEffect(() => { applyColorClass(colorTheme); }, [colorTheme]);
+
+  // Apply the animated-background flag class on mount + change
+  useEffect(() => { document.documentElement.classList.toggle('anim-bg', animBg); }, [animBg]);
 
   // System: react to OS preference changes in real time
   useEffect(() => {
@@ -114,7 +127,7 @@ export function ThemeProvider({ children }) {
   }, [theme, colorTheme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolved: isDark(theme, colorTheme) ? 'dark' : 'light', colorTheme, setColorTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, resolved: isDark(theme, colorTheme) ? 'dark' : 'light', colorTheme, setColorTheme, animBg, setAnimBg }}>
       {children}
     </ThemeContext.Provider>
   );

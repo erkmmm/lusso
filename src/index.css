@@ -37,6 +37,14 @@ html, body {
   max-width: 100%;
 }
 
+/* ── Animated background (opt-in) ────────────────────────────────────────────
+   When enabled, the fixed <ThemeBackground> canvas sits at z-index:-1; the app
+   shell, page background and scroll area go transparent so it shows through the
+   gutters and behind cards. Cards, header and sidebar stay opaque and readable. */
+.anim-bg body { background-color: transparent !important; }
+.anim-bg .app-shell { background-color: transparent !important; }
+.anim-bg .app-main  { background-color: transparent !important; }
+
 @layer base {
   /* ════ TAUPE — light (default) ════ */
   :root {

@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@paper-design/shaders-react": "^0.0.77",
     "@supabase/supabase-js": "^2.105.3",
     "date-fns": "^4.1.0",
     "jspdf": "^4.2.1",

@@ -102,7 +102,7 @@ export default function Settings() {
   // sorted is maintained by getProductTypes (sorts by sortOrder)
   const sorted = productTypes; // already sorted
 
-  const { theme, setTheme, colorTheme, setColorTheme } = useTheme();
+  const { theme, setTheme, colorTheme, setColorTheme, animBg, setAnimBg } = useTheme();
 
   const COLOR_OPTIONS = [
     { value: 'apex',      label: 'Apex',      desc: 'Emerald & charcoal — demo style.', swatch: '#009368' },
@@ -300,6 +300,28 @@ export default function Settings() {
                     </button>
                   );
                 })}
+              </div>
+            </Card>
+
+            {/* Animated background */}
+            <Card>
+              <div className="px-5 py-4 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                    <Sun size={14} className="text-amber-500" /> Animated background
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    A slow, subtle moving gradient behind every page, tinted to your colour theme. Off by default; respects reduced-motion.
+                  </p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={animBg}
+                  onClick={() => setAnimBg(!animBg)}
+                  className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors ${animBg ? 'bg-amber-500' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${animBg ? 'translate-x-5' : ''}`} />
+                </button>
               </div>
             </Card>
 

@@ -196,7 +196,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="app-shell flex h-screen overflow-hidden bg-slate-50">
 
       {/* ── Mobile sidebar overlay ─────────────────────────────────────────── */}
       {sidebarOpen && (
@@ -407,7 +407,7 @@ export default function Layout() {
         </header>
 
         {/* Page content — extra bottom padding on mobile for bottom nav */}
-        <main ref={mainRef} className="flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
+        <main ref={mainRef} className="app-main flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
           <RouteErrorBoundary>
             <Outlet />
           </RouteErrorBoundary>

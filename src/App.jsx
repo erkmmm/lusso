@@ -15,6 +15,7 @@ import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Layout from './components/Layout';
+import ThemeBackground from './components/ThemeBackground';
 import Dashboard from './pages/Dashboard';
 import Jobs from './pages/Jobs';
 import JobProfile from './pages/JobProfile';
@@ -384,6 +385,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
+        <ThemeBackground />
         <AuthProvider>
           <UserProfileProvider>
             <RealtimeProvider>

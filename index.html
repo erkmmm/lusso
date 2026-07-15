@@ -24,6 +24,7 @@
             (t === 'schedule' && (h >= 19 || h < 7));
           if (dark) document.documentElement.classList.add('dark');
           if (c && c !== 'taupe') document.documentElement.classList.add('theme-' + c);
+          if (localStorage.getItem('lusso_anim_bg') === '1') document.documentElement.classList.add('anim-bg');
         } catch (e) { /* first visit / private mode — default light */ }
       })();
     </script>
