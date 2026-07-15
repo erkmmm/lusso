@@ -6,12 +6,12 @@ const STORAGE_KEY = 'lusso_theme';
 const COLOR_KEY = 'lusso_color_theme';
 
 // Colour themes — class applied to <html> (taupe has no class).
-const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono'];
+const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta'];
 
 // These themes are neon-on-black by nature — they always render dark, overriding
 // the light/dark setting (the app's dark-mode surface machinery is what makes
 // them look right).
-const FORCE_DARK_THEMES = new Set(['cyberpunk', 'matrix', 'mono']);
+const FORCE_DARK_THEMES = new Set(['cyberpunk', 'matrix', 'mono', 'neon-magenta']);
 export const themeForcesDark = (colorTheme) => FORCE_DARK_THEMES.has(colorTheme);
 
 // One-time switch to the Apex (demo-matched) theme; after this runs the user

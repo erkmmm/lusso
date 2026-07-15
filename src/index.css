@@ -534,6 +534,72 @@ html, body {
     --lusso-text-primary: #fafafa;
   }
 
+  /* ════ NEON MAGENTA — hot magenta on pure black + grayscale ════ (always dark) */
+  .theme-neon-magenta,
+  .theme-neon-magenta.dark {
+    --brand-50:  oklch(0.95 0.04 341);
+    --brand-100: oklch(0.90 0.08 341);
+    --brand-200: oklch(0.84 0.15 341);
+    --brand-300: oklch(0.78 0.22 341);
+    --brand-400: oklch(0.71 0.28 341);
+    --brand-500: oklch(0.62 0.27 341);
+    --brand-600: oklch(0.55 0.24 341);
+    --brand-700: oklch(0.47 0.20 341);
+    --brand-800: oklch(0.39 0.16 342);
+    --brand-900: oklch(0.32 0.12 343);
+    --brand-950: oklch(0.24 0.08 344);
+    --brand-bright:     oklch(0.72 0.29 341);
+    --brand-bright-rgb: 255 64 170;
+
+    --sb-bg:     #000000;
+    --sb-hover:  #161616;
+    --sb-active: #242424;
+    --sb-border: #2c2c2c;
+    --sb-text:   #e0e0e0;
+    --sb-ring:   oklch(0.673 0.29 341.408);
+    --ring-color: oklch(0.673 0.29 341.408);
+
+    --surf-page:     #000000;
+    --surf-page-rgb: 0 0 0;
+    --surf-card:     #161616;
+    --surf-muted:    #1f1f1f;
+    --surf-hover:    #242424;
+    --bord-strong:   #3a3a3a;
+    --bord-default:  #2c2c2c;
+    --bord-subtle:   #242424;
+    --bord-faint:    #1a1a1a;
+    --txt-primary:   #ffffff;
+    --txt-secondary: #d6d6d6;
+    --txt-muted:     #a3a3a3;
+    --txt-faint:     #7a7a7a;
+    --txt-faintest:  #565656;
+    --input-dark:    #2c2c2c;
+
+    --card:                  #161616;
+    --card-foreground:       #ffffff;
+    --popover:               #161616;
+    --popover-foreground:    #ffffff;
+    --primary:               oklch(0.673 0.29 341.408);
+    --primary-foreground:    #000000;
+    --secondary:             #2b2b2b;
+    --secondary-foreground:  #ffffff;
+    --muted:                 #1f1f1f;
+    --muted-foreground:      #a3a3a3;
+    --accent:                oklch(0.673 0.29 341.408);
+    --accent-foreground:     #000000;
+    --destructive:           oklch(0.654 0.235 34.037);
+    --destructive-foreground:#ffffff;
+    --border:                #2c2c2c;
+    --input:                 #262626;
+    --ring:                  oklch(0.673 0.29 341.408);
+    --background:            #000000;
+    --foreground:            #ffffff;
+
+    --lusso-background:   #000000;
+    --lusso-surface:      #161616;
+    --lusso-text-primary: #ffffff;
+  }
+
   * {
     box-sizing: border-box;
     margin: 0;

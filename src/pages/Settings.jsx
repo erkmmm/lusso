@@ -111,6 +111,7 @@ export default function Settings() {
     { value: 'cyberpunk', label: 'Cyberpunk', desc: 'Neon magenta on indigo — always dark.', swatch: '#ff00c8' },
     { value: 'matrix',    label: 'Matrix',    desc: 'Phosphor green on black — always dark.', swatch: '#00ff41' },
     { value: 'mono',      label: 'Mono',      desc: 'Monochrome grayscale — always dark.',    swatch: '#a1a1aa' },
+    { value: 'neon-magenta', label: 'Neon Magenta', desc: 'Hot magenta on pure black — always dark.', swatch: '#ff2e9f' },
   ];
 
   const THEME_OPTIONS = [
