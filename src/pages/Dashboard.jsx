@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
-  getQuotesFiltered, computeQuoteTotals, calcItemPricing,
+  getQuotesFiltered, computeQuoteTotals, linePricing,
   getInstallRequests, getCalendarEvents, JOB_STATUSES, isStalledJob,
   getDismissedSchedulingIds,
 } from '../store/data';
@@ -153,7 +153,7 @@ function activeLineItems(q) {
 // Per-line revenue — new pricing model when present, legacy fallback otherwise.
 function lineItemRevenue(li) {
   if (li.unitCostPrice !== undefined) {
-    const { lineTotal } = calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity);
+    const { lineTotal } = linePricing(li);
     return lineTotal;
   }
   return ((Number(li.unitPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
@@ -1017,12 +1017,16 @@ export default function Dashboard() {
     const m = {};
     accepted.forEach(q => {
       // Inc-GST, mirroring quoteTotal() — so the category totals reconcile
-      // exactly with the Total Revenue KPI for the same period.
-      const gstMul = q.includesGST === false ? 1 : 1 + (Number(q.gstRate) || 10) / 100;
+      // exactly with the Total Revenue KPI for the same period. GST is applied
+      // per line: only when the quote includes GST AND the line is taxable
+      // (a GST-Free line contributes ex-GST, matching computeQuoteTotals).
+      const quoteHasGst = q.includesGST !== false;
+      const rate = (Number(q.gstRate) || 10) / 100;
       activeLineItems(q).forEach(li => {
         const name = categorizeProduct(li.productNameSnapshot || li.productType || '', li.description || '');
         if (!m[name]) m[name] = { name, units: 0, revenue: 0, items: {} };
         const qty = Number(li.quantity) || 1;
+        const gstMul = (quoteHasGst && li.taxable !== false) ? 1 + rate : 1;
         const rev = lineItemRevenue(li) * gstMul;
         m[name].units   += qty;
         m[name].revenue += rev;

@@ -4,7 +4,7 @@ import { format, parseISO, isPast } from 'date-fns';
 import { CheckCircle2, XCircle, MapPin, Phone, Mail, AlertCircle, ShieldCheck, Printer } from 'lucide-react';
 import {
   getQuote, getCustomer, getQuoteSettings,
-  computeQuoteTotals, calcItemPricing, markQuoteViewed, acceptQuote, declineQuote,
+  computeQuoteTotals, linePricing, markQuoteViewed, acceptQuote, declineQuote,
 } from '../store/data';
 import { supabase } from '../lib/supabase';
 import { useQuoteTracking } from '../hooks/useQuoteTracking';
@@ -105,7 +105,7 @@ function PrintDocument({ quote, customer, settings, totals }) {
                 {loc}
               </div>
               {locItems.map((item, idx) => {
-                const { finalSell, lineTotal } = calcItemPricing(item.unitCostPrice, item.labourCost, item.marginPercent, item.manualSellPrice, item.quantity);
+                const { finalSell, lineTotal } = linePricing(item);
                 const isLast = idx === locItems.length - 1;
                 return (
                   <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '1fr 60pt 70pt 70pt', gap: '8px', padding: '8px 12px', borderBottom: isLast ? '1px solid #c8d8e8' : '1px solid #eef2f7', alignItems: 'start', breakInside: 'avoid' }}>
@@ -320,8 +320,9 @@ export default function CustomerQuotePage() {
     if (!acceptForm.agreed || !acceptForm.name.trim()) return;
     // Write to Supabase via tracking function (creates notification + updates status)
     await trackAccept(acceptForm.name, acceptForm.email);
-    // Also update localStorage so internal app sees it immediately
-    acceptQuote(quote.id, { name: acceptForm.name, email: acceptForm.email });
+    // Also update localStorage so internal app sees it immediately — pass the
+    // customer's chosen optional/upgrade items so the accepted total includes them.
+    acceptQuote(quote.id, { name: acceptForm.name, email: acceptForm.email }, selectedOptionals);
     setDone('accepted');
     setShowAcceptModal(false);
   };
@@ -503,7 +504,7 @@ export default function CustomerQuotePage() {
                   <p className="text-[10px] font-bold text-sky-600 uppercase tracking-widest">{loc}</p>
                 </div>
                 {items.map(item => {
-                  const { finalSell, lineTotal } = calcItemPricing(item.unitCostPrice, item.labourCost, item.marginPercent, item.manualSellPrice, item.quantity);
+                  const { finalSell, lineTotal } = linePricing(item);
                   return (
                     <div key={item.id} className="border-b border-slate-100 last:border-b-0">
                       {/* Desktop row */}
@@ -569,7 +570,7 @@ export default function CustomerQuotePage() {
             </div>
             <div className="divide-y divide-slate-100">
               {optionalItems.map(item => {
-                const { finalSell, lineTotal } = calcItemPricing(item.unitCostPrice, item.labourCost, item.marginPercent, item.manualSellPrice, item.quantity);
+                const { finalSell, lineTotal } = linePricing(item);
                 const selected = selectedOptionals.includes(item.id);
                 return (
                   <label key={item.id}
@@ -601,7 +602,7 @@ export default function CustomerQuotePage() {
             </div>
             <div className="divide-y divide-slate-100">
               {items.map(item => {
-                const { lineTotal } = calcItemPricing(item.unitCostPrice, item.labourCost, item.marginPercent, item.manualSellPrice, item.quantity);
+                const { lineTotal } = linePricing(item);
                 const isSelected = selectedOptionals.includes(item.id);
                 const handleChoice = () => {
                   const otherIds = items.filter(i => i.id !== item.id).map(i => i.id);

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import {
   getQuote, getCustomer, getJob,
-  QUOTE_STATUS_COLORS, computeQuoteTotals, calcItemPricing,
+  QUOTE_STATUS_COLORS, computeQuoteTotals, linePricing,
   sendQuote, duplicateQuote, acceptQuote, declineQuote,
   addQuoteComment, updateQuoteXeroInvoice, getMessagePresets,
 } from '../store/data';
@@ -437,9 +437,7 @@ export default function QuoteView() {
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{loc}</p>
                       </div>
                       {items.map(item => {
-                        const { finalSell, lineTotal, totalCost, grossProfit, gpPercent } = calcItemPricing(
-                          item.unitCostPrice, item.labourCost, item.marginPercent, item.manualSellPrice, item.quantity
-                        );
+                        const { finalSell, lineTotal, totalCost, grossProfit, gpPercent } = linePricing(item);
                         const isExp = expandedItems.has(item.id);
                         return (
                           <div key={item.id} className="px-5 py-4">

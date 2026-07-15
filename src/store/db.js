@@ -23,11 +23,18 @@ const toSnake = (s) => s
   .toLowerCase();
 const toCamel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
+// Irregular field pairs the generic converter can't round-trip. A trailing
+// all-caps acronym loses its case on the way back (includesGST → includes_gst →
+// includesGst), so map those explicitly in BOTH directions. Add any future
+// acronym-tailed field here.
+const FIELD_TO_DB   = { includesGST: 'includes_gst' };
+const FIELD_FROM_DB = Object.fromEntries(Object.entries(FIELD_TO_DB).map(([camel, snake]) => [snake, camel]));
+
 function toDb(obj) {
   if (!obj || typeof obj !== 'object') return obj;
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    out[toSnake(k)] = v;
+    out[FIELD_TO_DB[k] || toSnake(k)] = v;
   }
   return out;
 }
@@ -36,7 +43,7 @@ export function fromDb(obj) {
   if (!obj || typeof obj !== 'object') return obj;
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    out[toCamel(k)] = v;
+    out[FIELD_FROM_DB[k] || toCamel(k)] = v;
   }
   return out;
 }
@@ -245,7 +252,7 @@ function clearPending(table, id) {
     savePending(p);
   }
 }
-const pendingIds = (table) => new Set(Object.keys(getPending()[table] || {}));
+export const pendingIds = (table) => new Set(Object.keys(getPending()[table] || {}));
 
 // ── Pagination helper ─────────────────────────────────────────────────────────
 /**
@@ -316,6 +323,17 @@ export async function hydrateFromSupabase() {
       // the earlier outage.) Genuine "delete them all" is vanishingly rare and
       // can be redone with an explicit resync.
       if (rows.length === 0 && local.length > 0) return;
+
+      // SAFETY GUARD 2: a suspiciously SMALL response for a large local table is
+      // almost always a partial/truncated fetch (e.g. the DB returned a short
+      // result under disk-IO-throttling load), NOT a genuine mass-delete.
+      // Overwriting the full local list with it is what truncated a 2000-row
+      // Projects list to 2. Keep local; a later healthy hydrate / explicit resync
+      // reconciles a real bulk delete (rare).
+      if (local.length > 20 && rows.length < local.length * 0.5) {
+        console.warn(`[db] hydrate ${table}: got ${rows.length} rows vs ${local.length} local — treating as a partial fetch, keeping local`);
+        return;
+      }
 
       const localById = new Map(local.map(r => [r.id, r]));
       const pend = pendingIds(table);

@@ -454,11 +454,66 @@ export const initStore = () => {
 
   // Schema v2: new margin-based pricing fields.
   if (localStorage.getItem('lusso_schema_version') !== '2') {
-    localStorage.removeItem('lusso_quotes');
+    // Preserve any quotes still queued to sync — the schema bump must NEVER
+    // delete records that haven't reached the cloud yet (they'd be lost, since
+    // hydrate can't re-pull what was never pushed). Synced quotes are safe to
+    // drop; hydrate re-fetches them fresh.
+    try {
+      const pend = get('lusso_pending_sync') || {};
+      const pendingQuoteIds = new Set(Object.keys(pend.quotes || {}));
+      if (pendingQuoteIds.size) {
+        const keep = (get('lusso_quotes') || []).filter(q => pendingQuoteIds.has(q.id));
+        if (keep.length) set('lusso_quotes', keep); else localStorage.removeItem('lusso_quotes');
+      } else {
+        localStorage.removeItem('lusso_quotes');
+      }
+    } catch { localStorage.removeItem('lusso_quotes'); }
     localStorage.removeItem('lusso_saved_items');
     localStorage.removeItem('lusso_quote_counter');
     localStorage.removeItem('lusso_quote_settings');
     localStorage.setItem('lusso_schema_version', '2');
+  }
+
+  // One-time repair: a camel/snake round-trip bug stored the quote GST flag as
+  // `includesGst` (lowercase tail) on any synced quote, so `includesGST` read
+  // undefined — hiding the GST breakdown line and (for GST-free quotes) letting
+  // GST be re-applied. Normalise existing local quotes to the correct key.
+  if (localStorage.getItem('lusso_quote_gst_casing_fixed') !== '1') {
+    try {
+      const qs = get('lusso_quotes') || [];
+      let changed = false;
+      qs.forEach(q => {
+        if (q && q.includesGST === undefined && q.includesGst !== undefined) {
+          q.includesGST = q.includesGst;
+          delete q.includesGst;
+          changed = true;
+        }
+      });
+      if (changed) set('lusso_quotes', qs);
+      localStorage.setItem('lusso_quote_gst_casing_fixed', '1');
+    } catch { /* best-effort */ }
+  }
+
+  // One-time repair: imports used to write track/rail colour to the legacy
+  // `trackBaseBarColour` field, which the measure-sheet editor doesn't read — so
+  // the value was invisible and uneditable (though it still printed). Surface it
+  // by moving it to the canonical `trackColour` where that's empty.
+  if (localStorage.getItem('lusso_ms_track_colour_fixed') !== '1') {
+    try {
+      const sheets = get('lusso_measure_sheets') || [];
+      let changed = false;
+      sheets.forEach(s => {
+        (s.lineItems || []).forEach(li => {
+          if (li && li.trackBaseBarColour && !li.trackColour) {
+            li.trackColour = li.trackBaseBarColour;
+            li.trackBaseBarColour = '';
+            changed = true;
+          }
+        });
+      });
+      if (changed) set('lusso_measure_sheets', sheets);
+      localStorage.setItem('lusso_ms_track_colour_fixed', '1');
+    } catch { /* best-effort */ }
   }
 
   initIfEmpty('lusso_quotes',          cloud ? empty : SEED_QUOTES);
@@ -514,14 +569,22 @@ export const getCustomer = (id) => (get('lusso_customers') || []).find(c => c.id
 
 export const findOrCreateCustomer = (data) => {
   const customers = getCustomers();
+  // Match ONLY on strong identity (email or phone). Address alone is NOT an
+  // identity — many people share an address (apartments, new owners), and
+  // matching on it silently overwrote a different customer's name/phone/email.
   const existing = customers.find(c =>
     (data.email && c.email && c.email.toLowerCase() === data.email.toLowerCase()) ||
-    (data.phone && c.phone && c.phone.replace(/\s/g, '') === data.phone.replace(/\s/g, '')) ||
-    (data.address && c.address && c.address.toLowerCase() === data.address.toLowerCase())
+    (data.phone && c.phone && c.phone.replace(/\s/g, '') === data.phone.replace(/\s/g, ''))
   );
   if (existing) {
-    // Update if new info
-    const updated = { ...existing, ...data, id: existing.id, updatedAt: new Date().toISOString() };
+    // Same person → update, but NON-destructively: only apply new non-empty
+    // values so a blank field in `data` never wipes existing details.
+    const updated = { ...existing };
+    for (const [k, v] of Object.entries(data)) {
+      if (v !== '' && v !== null && v !== undefined) updated[k] = v;
+    }
+    updated.id = existing.id;
+    updated.updatedAt = new Date().toISOString();
     saveCustomer(updated);
     return updated;
   }
@@ -835,14 +898,22 @@ const TAKEOFF_TAG_COLUMN = { Width: 'widthMm', Drop: 'dropMm', Height: 'dropMm' 
 export const applyTakeoffToMeasureSheet = (takeoff) => {
   if (!takeoff?.jobId) return;
 
-  // Build label → { widthMm, dropMm } from mappable measurements.
+  // Build label → { widthMm, dropMm }. A window's Width + Drop pair into one
+  // line via their shared label. But NEVER silently overwrite: if a value would
+  // land on a column that's already filled (two Widths, or a Drop AND a Height —
+  // both map to dropMm), start a new numbered group so distinct windows stay
+  // separate and the collision surfaces as its own line. Unlabelled measurements
+  // are surfaced under an "Unlabelled N" placeholder instead of being dropped.
   const groups = new Map();
+  let unlabelled = 0;
   for (const m of takeoff.measurements || []) {
     const col = TAKEOFF_TAG_COLUMN[m.tag];
-    const label = (m.label || '').trim();
-    if (!col || !label || m.lengthMm == null) continue;
-    if (!groups.has(label)) groups.set(label, { widthMm: '', dropMm: '' });
-    groups.get(label)[col] = Math.round(m.lengthMm);
+    if (!col || m.lengthMm == null) continue;
+    const base = (m.label || '').trim() || `Unlabelled ${++unlabelled}`;
+    let key = base, n = 1;
+    while (groups.has(key) && groups.get(key)[col] !== '') { n += 1; key = `${base} (${n})`; }
+    if (!groups.has(key)) groups.set(key, { widthMm: '', dropMm: '' });
+    groups.get(key)[col] = Math.round(m.lengthMm);
   }
 
   let sheet = getMeasureSheetByJob(takeoff.jobId);
@@ -884,7 +955,7 @@ export const applyTakeoffToMeasureSheet = (takeoff) => {
         quantity: 1, widthMm: vals.widthMm, dropMm: vals.dropMm,
         fabricColour: '', control: '', returnSide: '', motorSide: '', fixing: '',
         heading: '', attachedLining: false, liningFabricColour: '', hem: '',
-        trackBaseBarColour: '', baseBarType: '', chainColour: '',
+        trackColour: '', baseBarColour: '', baseBarType: '', chainColour: '',
         notes: 'From plan takeoff',
         source: 'takeoff', takeoffGroup: label,
         sortOrder: ++order,
@@ -1415,6 +1486,19 @@ export const saveInstallRequest = (req) => {
   db.saveInstallRequest(req);
 };
 
+// Remove a SINGLE booking/install request (soft-delete + sync), leaving the job
+// and everything else on it untouched. Used by the calendar's per-pill delete,
+// which previously deleted the whole job by mistake.
+export const deleteInstallRequest = (id, deletedBy = 'Admin') => {
+  const all = get('lusso_install_requests') || [];
+  const idx = all.findIndex(r => r.id === id);
+  if (idx < 0) return;
+  const now = new Date().toISOString();
+  all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
+  set('lusso_install_requests', all);
+  db.saveInstallRequest(all[idx]); // sync the soft-delete (deleted_at) — not a job delete
+};
+
 export const createInstallRequest = (data) => {
   const id = uuidv4();
   const req = {
@@ -1600,18 +1684,37 @@ export const DEPOSIT_TYPES    = ['None', 'Fixed Amount', 'Percentage'];
  * If manualSellPrice is set (non-empty), it overrides the calculated sell price.
  * Returns per-unit figures plus lineTotal (finalSell × quantity).
  */
-export const calcItemPricing = (unitCostPrice, labourCost, marginPercent, manualSellPrice, quantity = 1) => {
+export const calcItemPricing = (unitCostPrice, labourCost, marginPercent, manualSellPrice, quantity = 1, pricePerSqm = null, areaSqm = 0) => {
   const cost      = Number(unitCostPrice) || 0;
   const labour    = Number(labourCost)    || 0;
   const margin    = Number(marginPercent) || 0;
   const totalCost = cost + labour;
-  const calcSell  = margin < 100 ? totalCost / (1 - margin / 100) : totalCost;
+  const marginSell = margin < 100 ? totalCost / (1 - margin / 100) : totalCost;
+  // Size-based ($/m²) pricing: when a per-sqm rate and an area are present, the
+  // automatic sell price is rate × area (a size-priced item must never fall
+  // through to $0). A manual override still wins over both.
+  const rate    = Number(pricePerSqm) || 0;
+  const area    = Number(areaSqm)     || 0;
+  const sqmSell = (rate > 0 && area > 0) ? rate * area : null;
+  const calcSell  = sqmSell != null ? sqmSell : marginSell;
   const hasManual = manualSellPrice !== '' && manualSellPrice !== null && manualSellPrice !== undefined;
   const finalSell = hasManual ? Number(manualSellPrice) : calcSell;
   const grossProfit = finalSell - totalCost;
   const gpPercent   = finalSell > 0 ? (grossProfit / finalSell * 100) : 0;
   const lineTotal   = finalSell * (Number(quantity) || 1);
   return { totalCost, calcSell, finalSell, grossProfit, gpPercent, lineTotal };
+};
+
+/**
+ * Price a whole line item, deriving the $/m² area from its width × drop.
+ * Use this everywhere a line item is priced so per-sqm items are consistent
+ * across the builder, quote view, public page, dashboard and totals.
+ */
+export const linePricing = (li = {}) => {
+  const w = Number(li.widthMm) || 0;
+  const d = Number(li.dropMm)  || 0;
+  const areaSqm = (w > 0 && d > 0) ? (w * d / 1_000_000) : 0;
+  return calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity, li.pricePerSqm, areaSqm);
 };
 
 export const computeQuoteTotals = (lineItems = [], depositType = 'None', depositValue = 0, gstRate = 10, includesGST = true, selectedIds = []) => {
@@ -1621,23 +1724,29 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
     (li.type === 'Optional' && selectedIds.includes(li.id)) ||
     (li.type === 'Multiple Choice' && selectedIds.includes(li.id))
   );
-  let subtotal = 0;   // sell total, ex-GST
+  let subtotal = 0;        // sell total, ex-GST
+  let taxableSubtotal = 0; // portion that attracts GST (per-item taxable flag)
   let cost     = 0;   // our cost (materials + labour) for items where it's known
   let costKnown = active.length > 0; // false if any active item has no cost basis (e.g. imported quotes)
   active.forEach(li => {
+    let lineSell;
     // New pricing model (has unitCostPrice field) — we know the cost basis.
     if (li.unitCostPrice !== undefined) {
-      const { lineTotal, totalCost } = calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity);
-      subtotal += lineTotal;
+      const { lineTotal, totalCost } = linePricing(li);
+      lineSell = lineTotal;
       cost     += totalCost * (Number(li.quantity) || 1);
     } else {
       // Legacy / imported (old unitPrice + labourCost model) — no cost basis,
       // so margin can't be computed for this quote.
-      subtotal += ((Number(li.unitPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
+      lineSell = ((Number(li.unitPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
       costKnown = false;
     }
+    subtotal += lineSell;
+    // GST applies per line: a line flagged GST Free (taxable === false) is
+    // excluded from the taxable base. Missing flag ⇒ taxable (back-compat).
+    if (li.taxable !== false) taxableSubtotal += lineSell;
   });
-  const gst      = includesGST ? subtotal * (gstRate / 100) : 0;
+  const gst      = includesGST ? taxableSubtotal * (gstRate / 100) : 0;
   const total    = subtotal + gst;
   const deposit  = depositType === 'Percentage' ? total * (depositValue / 100)
                  : depositType === 'Fixed Amount' ? Number(depositValue)
@@ -2052,19 +2161,33 @@ export const markQuoteViewed = (quoteId) => {
   return list[idx];
 };
 
-export const acceptQuote = (quoteId, acceptanceInfo = {}) => {
+export const acceptQuote = (quoteId, acceptanceInfo = {}, selectedLineItemIds = null) => {
   const list = getQuotes();
   const idx  = list.findIndex(q => q.id === quoteId);
   if (idx < 0) return null;
   const now = new Date().toISOString();
   const info = { ...acceptanceInfo, acceptedAt: now };
-  list[idx] = { ...list[idx], status: 'Accepted', acceptedAt: now, acceptedBy: info, updatedAt: now };
+  const updated = { ...list[idx], status: 'Accepted', acceptedAt: now, acceptedBy: info, updatedAt: now };
+  // Persist the customer's chosen optional/upgrade items so the accepted quote's
+  // grandTotal and every downstream figure include the add-ons they agreed to
+  // buy (and the business can see which were chosen).
+  if (Array.isArray(selectedLineItemIds)) {
+    updated.selectedLineItemIds = selectedLineItemIds;
+    const { subtotal, gst, total } = computeQuoteTotals(
+      updated.lineItems || [], updated.depositType, updated.depositValue,
+      updated.gstRate, updated.includesGST, selectedLineItemIds
+    );
+    updated.totalSell  = Math.round(subtotal * 100) / 100;
+    updated.gstAmount  = Math.round(gst      * 100) / 100;
+    updated.grandTotal = Math.round(total    * 100) / 100;
+  }
   const entry = { id: uuidv4(), type: 'accepted', note: `Quote accepted by ${info.name || 'customer'}`, user: info.name || 'Customer', createdAt: now };
-  list[idx].activity = [entry, ...(list[idx].activity || [])];
+  updated.activity = [entry, ...(updated.activity || [])];
+  list[idx] = updated;
   set('lusso_quotes', list);
-  db.saveQuote(list[idx]);
-  advanceJobStatus(list[idx].jobId, 'Approved', info.name || 'Customer');
-  return list[idx];
+  db.saveQuote(updated);
+  advanceJobStatus(updated.jobId, 'Approved', info.name || 'Customer');
+  return updated;
 };
 
 export const declineQuote = (quoteId, reason = '') => {

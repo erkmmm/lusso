@@ -77,7 +77,8 @@ const LUSSO_FIELDS = [
   { key: 'heading',             label: 'Heading / Roll' },
   { key: 'liningFabricColour',  label: 'Lining' },
   { key: 'hem',                 label: 'Hem' },
-  { key: 'trackBaseBarColour',  label: 'Track / Bottom Rail Colour' },
+  { key: 'trackColour',         label: 'Track Colour' },
+  { key: 'baseBarColour',       label: 'Bottom Rail Colour' },
   { key: 'chainColour',         label: 'Chain Colour' },
   { key: 'notes',               label: 'Notes' },
   { key: '__skip',              label: '— Skip this column —' },
@@ -98,7 +99,10 @@ const HEADER_RULES = [
   { patterns: ['fixing', 'fix'],                                           field: 'fixing' },
   { patterns: ['heading', 'head', 'roll'],                                 field: 'heading' },
   { patterns: ['hem'],                                                     field: 'hem' },
-  { patterns: ['track', 'base bar', 'bar col'],                            field: 'trackBaseBarColour' },
+  // Bottom-rail rules FIRST so a "Bottom Rail Colour" header isn't grabbed by
+  // the looser 'track' rule below.
+  { patterns: ['bottom rail', 'base bar', 'bottom bar', 'bar col', 'rail col'], field: 'baseBarColour' },
+  { patterns: ['track'],                                                   field: 'trackColour' },
   { patterns: ['chain'],                                                   field: 'chainColour' },
   { patterns: ['note', 'comment', 'special'],                              field: 'notes' },
 ];
@@ -177,7 +181,7 @@ function parseRows(rawRows, headerRowIdx, mapping, productTypes = []) {
       location: '', productNameSnapshot: '', quantity: 1,
       widthMm: '', dropMm: '', fabricColour: '', control: '',
       returnSide: '', fixing: '', heading: '', hem: '',
-      trackBaseBarColour: '', chainColour: '', notes: '',
+      trackColour: '', baseBarColour: '', chainColour: '', notes: '',
       productTypeId: '', motorSide: '', attachedLining: false,
       liningFabricColour: '', trackType: '', baseBarType: '', sortOrder: i,
       _sourceRow: i + 1,

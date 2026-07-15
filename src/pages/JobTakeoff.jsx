@@ -304,7 +304,14 @@ export default function JobTakeoff() {
       pageNumber, pxPerMm, knownLengthMm: mm, unit: 'mm',
       calLine: { x1: calInput.a.x, y1: calInput.a.y, x2: calInput.b.x, y2: calInput.b.y },
     });
-    persist({ ...takeoff, pages });
+    // Re-calibrating changes only the scale — the stored pixel endpoints are
+    // still valid — so recompute the length of every measurement on this page.
+    const measurements = (takeoff.measurements || []).map(m =>
+      m.pageNumber === pageNumber
+        ? { ...m, lengthMm: dist({ x: m.x1, y: m.y1 }, { x: m.x2, y: m.y2 }) / pxPerMm }
+        : m
+    );
+    persist({ ...takeoff, pages, measurements });
     setCalInput(null);
     setCalMm('');
     setMode('measure');
@@ -331,7 +338,10 @@ export default function JobTakeoff() {
   }
 
   // ── Upload a new plan ────────────────────────────────────────────────────
-  async function handleUpload(file) {
+  // `fresh` (a replace) starts a clean plan: the previous scale + measurements
+  // are tied to the OLD PDF's coordinate space, so carrying them over would put
+  // overlays in the wrong place and compute wrong lengths.
+  async function handleUpload(file, { fresh = false } = {}) {
     if (!file) return;
     if (file.type !== 'application/pdf') { toast('Please choose a PDF file.'); return; }
     setUploading(true);
@@ -347,12 +357,14 @@ export default function JobTakeoff() {
         filePath,
         fileName: file.name,
         pageCount: doc.numPages,
-        // Re-uploading keeps prior measurements/scale only if it's the same takeoff id.
-        pages: takeoff?.pages || [],
-        measurements: takeoff?.measurements || [],
+        pages:        fresh ? [] : (takeoff?.pages || []),
+        measurements: fresh ? [] : (takeoff?.measurements || []),
         createdAt: takeoff?.createdAt || new Date().toISOString(),
       };
       saveTakeoff(record);
+      // On a fresh replace, reconcile the measure sheet so takeoff rows from the
+      // old plan are cleaned up (empty measurements ⇒ prior takeoff rows removed).
+      if (fresh) applyTakeoffToMeasureSheet(record);
       setTakeoff(record);
       setPdf(doc);
       setPageNumber(1);
@@ -366,7 +378,14 @@ export default function JobTakeoff() {
     }
   }
 
-  function handleReplace(file) { handleUpload(file); }
+  function handleReplace(file) {
+    if (!file) return;
+    const hasWork = (takeoff?.measurements?.length || 0) > 0 || (takeoff?.pages?.length || 0) > 0;
+    if (hasWork && !window.confirm(
+      'Replace the plan?\n\nThe current scale and measurements are tied to the old PDF and will be cleared.'
+    )) return;
+    handleUpload(file, { fresh: true });
+  }
 
   function handleDeleteTakeoff() {
     if (!takeoff) return;

@@ -16,7 +16,7 @@ import {
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
-  computeQuoteTotals, calcItemPricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
+  computeQuoteTotals, linePricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
   createQuote, saveQuote, sendQuote, addQuoteActivity,
   getMeasureSheetByJob, addActivity, getMessagePresets,
 } from '../store/data';
@@ -234,7 +234,7 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
 
   const set = (field, value) => onChange(idx, field, value);
 
-  const pricing = calcItemPricing(item.unitCostPrice, item.labourCost, item.marginPercent, item.manualSellPrice, item.quantity);
+  const pricing = linePricing(item);
   const { finalSell, lineTotal, grossProfit, gpPercent, totalCost, calcSell } = pricing;
 
   const TYPE_COLORS = {
@@ -1543,7 +1543,7 @@ export default function QuoteBuilder() {
                 const typeTotal = form.lineItems
                   .filter(li => li.type === type)
                   .reduce((s, li) => {
-                    const { lineTotal } = calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity);
+                    const { lineTotal } = linePricing(li);
                     return s + lineTotal;
                   }, 0);
                 return (

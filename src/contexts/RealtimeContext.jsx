@@ -17,7 +17,7 @@
 
 import { createContext, useContext, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { fromDb } from '../store/db';
+import { fromDb, pendingIds } from '../store/db';
 import { lsGet, lsSet } from '../store/storage';
 import { useAuth } from './AuthContext';
 
@@ -87,6 +87,11 @@ function applyChange(table, payload) {
       LS.set(key, records.filter(r => r.id !== incoming.id));
       return;
     }
+
+    // Don't clobber a locally-queued (offline) edit: it hasn't reached the
+    // server yet, so this incoming row is stale for that record. Keep local;
+    // flushPending will push our copy up. (Mirrors the hydrate merge guard.)
+    if (pendingIds(table).has(incoming.id)) return;
 
     const idx = records.findIndex(r => r.id === incoming.id);
     if (idx >= 0) {
