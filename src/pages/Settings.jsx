@@ -2,7 +2,7 @@ import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Settings2, Plus, ChevronUp, ChevronDown, Edit3, Save, X,
+  Settings2, Plus, ChevronUp, ChevronDown, Edit3, Save, X, Check,
   ToggleLeft, ToggleRight, Tag, Upload, Users, Library, History,
   ArrowRight, FileText, Cloud, CloudUpload, RefreshCw, CheckCircle2,
   AlertTriangle, Sun, Moon, Monitor, Clock, Wifi, WifiOff,
@@ -73,14 +73,10 @@ export default function Settings() {
     refresh();
   };
 
-  const handleSaveEdit = (pt) => {
-    const name = editName.trim();
-    if (!name) return;
-    saveProductType({ ...pt, name });
-    setEditingId(null);
-    refresh();
-    toast('Product type saved.');
-  };
+  // One unified editor per type (name + specs + options). editingId tracks it.
+  const openEdit  = (pt) => { setEditingId(pt.id); setEditName(pt.name); };
+  const saveName  = (pt) => { const n = editName.trim(); if (n && n !== pt.name) saveProductType({ ...pt, name: n }); };
+  const closeEdit = (pt) => { saveName(pt); setEditingId(null); refresh(); };
 
   const handleToggleActive = (pt) => {
     saveProductType({ ...pt, isActive: !pt.isActive });
@@ -92,8 +88,6 @@ export default function Settings() {
     refresh();
   };
 
-  // Which product type's spec editor is open, and its toggles.
-  const [specEditId, setSpecEditId] = useState(null);
   const handleToggleSpec = (pt, key) => {
     const current = getTypeSpecKeys(pt);
     const next = current.includes(key) ? current.filter(k => k !== key) : [...current, key];
@@ -454,54 +448,51 @@ export default function Settings() {
               <div className="divide-y divide-slate-50">
                 {sorted.map((pt, idx) => {
                   const specKeys = getTypeSpecKeys(pt);
-                  const isCustom = Array.isArray(pt.specs);
-                  const specOpen = specEditId === pt.id;
+                  const isCustomSpecs = Array.isArray(pt.specs);
+                  const isEditing = editingId === pt.id;
                   return (
-                  <div key={pt.id} className={!pt.isActive ? 'bg-slate-50/60' : ''}>
+                  <div key={pt.id} className={isEditing ? 'bg-amber-50/40' : (!pt.isActive ? 'bg-slate-50/60' : '')}>
                     <div className="flex items-center gap-3 px-5 py-3">
                       <div className="flex flex-col gap-0.5 flex-shrink-0">
                         <button onClick={() => handleMove(pt.id, 'up')} disabled={idx === 0} className="text-slate-300 hover:text-slate-500 disabled:opacity-20 transition-colors"><ChevronUp size={14} /></button>
                         <button onClick={() => handleMove(pt.id, 'down')} disabled={idx === sorted.length - 1} className="text-slate-300 hover:text-slate-500 disabled:opacity-20 transition-colors"><ChevronDown size={14} /></button>
                       </div>
-                      <span className="w-6 text-center text-xs text-slate-300 flex-shrink-0">{pt.sortOrder}</span>
-                      {editingId === pt.id ? (
-                        <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') handleSaveEdit(pt); if (e.key === 'Escape') setEditingId(null); }}
-                          className="flex-1 border border-amber-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
-                      ) : (
-                        <div className="flex-1 min-w-0">
-                          <span className={`text-sm ${pt.isActive ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{pt.name}</span>
-                          <button onClick={() => setSpecEditId(specOpen ? null : pt.id)}
-                            className="block text-xs text-slate-400 hover:text-amber-600 transition-colors mt-0.5">
-                            {specKeys.length} spec{specKeys.length !== 1 ? 's' : ''}{isCustom ? ' · custom' : ''} · {specOpen ? 'close' : 'edit'}
-                          </button>
-                        </div>
-                      )}
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${pt.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {pt.isActive ? 'Active' : 'Disabled'}
-                      </span>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        {editingId === pt.id ? (
-                          <>
-                            <button onClick={() => handleSaveEdit(pt)} className="text-green-500 hover:text-green-700 p-1 rounded"><Save size={14} /></button>
-                            <button onClick={() => setEditingId(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded"><X size={14} /></button>
-                          </>
-                        ) : (
-                          <>
-                            <button onClick={() => { setEditingId(pt.id); setEditName(pt.name); }} className="text-slate-400 hover:text-slate-600 p-1 rounded" title="Rename"><Edit3 size={14} /></button>
-                            <button onClick={() => handleToggleActive(pt)} className={`p-1 rounded transition-colors ${pt.isActive ? 'text-green-500 hover:text-red-400' : 'text-slate-300 hover:text-green-500'}`} title={pt.isActive ? 'Disable' : 'Enable'}>
-                              {pt.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                            </button>
-                          </>
-                        )}
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-sm font-medium ${pt.isActive ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{pt.name}</span>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {specKeys.length} spec{specKeys.length !== 1 ? 's' : ''} on the measure sheet
+                        </p>
                       </div>
+                      {/* Enable / disable — a status toggle, distinct from editing */}
+                      <button onClick={() => handleToggleActive(pt)} title={pt.isActive ? 'Disable' : 'Enable'}
+                        className={`flex-shrink-0 p-1 rounded transition-colors ${pt.isActive ? 'text-green-500 hover:text-red-400' : 'text-slate-300 hover:text-green-500'}`}>
+                        {pt.isActive ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                      </button>
+                      {/* ONE edit button — opens name + specs + options together */}
+                      <button onClick={() => isEditing ? closeEdit(pt) : openEdit(pt)}
+                        className={`flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                          isEditing ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-400' : 'border-slate-200 text-slate-600 hover:border-amber-400 hover:text-amber-600'
+                        }`}>
+                        {isEditing ? <><Check size={14} /> Done</> : <><Edit3 size={14} /> Edit</>}
+                      </button>
                     </div>
-                    {specOpen && (
-                      <div className="px-5 pb-4 pl-16">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+
+                    {isEditing && (
+                      <div className="px-5 pb-4 pl-16 space-y-3">
+                        {/* Rename */}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">Product type name</label>
+                          <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
+                            onBlur={() => saveName(pt)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); closeEdit(pt); } }}
+                            className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+                        </div>
+
+                        {/* Specs shown + per-spec dropdown options */}
+                        <div className="rounded-xl border border-slate-200 bg-white p-3">
                           <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs font-medium text-slate-500">Specs shown for <span className="text-slate-700">{pt.name}</span> on measure sheets</p>
-                            {isCustom && (
+                            <p className="text-xs font-medium text-slate-500">Specs shown on the measure sheet</p>
+                            {isCustomSpecs && (
                               <button onClick={() => handleResetSpecs(pt)} className="text-xs text-slate-400 hover:text-amber-600 transition-colors">Reset to default</button>
                             )}
                           </div>
@@ -518,9 +509,11 @@ export default function Settings() {
                               );
                             })}
                           </div>
-                          <p className="text-[11px] text-slate-400 mt-2">Width, drop, quantity, fabric and notes always show. A spec that already holds a value stays visible even if switched off here.</p>
+                          <p className="text-[11px] text-slate-400 mt-2">Width, drop, quantity, fabric and notes always show. A spec that already holds a value stays visible even if switched off.</p>
                           <TypeOptionEditor pt={pt} onChange={refresh} />
                         </div>
+
+                        <p className="text-[11px] text-slate-400">Changes save automatically and sync to everyone on your team.</p>
                       </div>
                     )}
                   </div>

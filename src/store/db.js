@@ -118,9 +118,12 @@ const EXCLUDE_COLUMNS = {
   ],
   notifications: ['install_request_id'],
   product_types: [
-    // DB columns: id, name, sort_order, is_active, specs, created_at, deleted_at.
-    // No updated_at column — exclude so every save doesn't error+retry.
-    'slug', 'updated_at',
+    // DB columns: id, name, sort_order, is_active, specs, options, updated_at,
+    // created_at, deleted_at. `slug` is app-only (no column). updated_at now
+    // exists and IS written, so cross-device edits reconcile by newer-wins
+    // (without it the server row looked like epoch 0 and local always won, so
+    // one device's product-type edits never reached another).
+    'slug',
   ],
   // priced_items: batchUpsertPricedItems uses its own explicit mapper (toPricedItemDbRow)
   // so toDb() + EXCLUDE_COLUMNS is NOT used for this table during import.
