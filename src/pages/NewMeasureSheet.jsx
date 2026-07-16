@@ -880,7 +880,7 @@ export default function NewMeasureSheet() {
                 )}
 
                 {/* New customer form */}
-                <div className="grid sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField label="Customer Name *" error={errors.customerName}>
                     <input value={sheet.customerName} onChange={e => setField('customerName', e.target.value)}
                       placeholder="Full name" className={inputCls(errors.customerName)} />
@@ -939,7 +939,7 @@ export default function NewMeasureSheet() {
             </span>
           </div>
           {/* Measure-specific fields only */}
-          <div className="p-5 grid sm:grid-cols-2 gap-4">
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label="Measure Date">
               <input type="date" value={sheet.measureDate} onChange={e => setField('measureDate', e.target.value)} className={inputCls()} />
             </FormField>
@@ -962,7 +962,7 @@ export default function NewMeasureSheet() {
       ) : (
         /* Standalone / global create — show full job details form */
         <Section title="Job Details" icon={<Briefcase size={15} />} open={openSections.job} onToggle={() => toggleSection('job')}>
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label="Job Type">
               <select value={sheet.jobType} onChange={e => setField('jobType', e.target.value)} className={inputCls()}>
                 <option value="">Select job type…</option>

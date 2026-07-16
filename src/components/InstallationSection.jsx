@@ -184,7 +184,7 @@ export default function InstallationSection({ jobId, customer }) {
       {creating && (
         <div className="border-b border-slate-100 p-5 bg-slate-50">
           <p className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2"><HardHat size={14} /> New Installation Request</p>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Installer *">
               <select value={form.installerId} onChange={e => setField('installerId', e.target.value)} className={inp()}>
                 <option value="">Select installer…</option>
@@ -258,7 +258,7 @@ export default function InstallationSection({ jobId, customer }) {
                         <Trash2 size={13} />
                       </button>
                     </div>
-                    <div className="grid sm:grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <PickupField label="Location / Supplier Name" value={loc.locationName}
                         onChange={v => updatePickupLocation(loc.id, 'locationName', v)} />
                       <PickupField label="Address" value={loc.address}
@@ -298,7 +298,7 @@ export default function InstallationSection({ jobId, customer }) {
             )}
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-3 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
             <FormField label="Assigned Salesperson">
               <input value={form.assignedSalesperson} onChange={e => setField('assignedSalesperson', e.target.value)} className={inp()} />
             </FormField>
@@ -377,7 +377,7 @@ export default function InstallationSection({ jobId, customer }) {
                 {/* Expanded details */}
                 {isExpanded && (
                   <div className="px-5 pb-5 bg-slate-50/50 border-t border-slate-100">
-                    <div className="grid sm:grid-cols-2 gap-4 py-4 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4 text-sm">
                       <Detail label="Installer" value={`${installer?.name} — ${installer?.businessName}`} />
                       <Detail label="Date" value={req.proposedDate ? format(parseISO(req.proposedDate), 'EEEE, d MMMM yyyy') : '—'} />
                       <Detail label="Arrival Time" value={req.arrivalTime || '—'} />

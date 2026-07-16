@@ -221,7 +221,7 @@ export default function EmployeeProfile() {
       </div>
 
       {/* Detail cards */}
-      <div className="grid sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
 
         {/* Role & Position */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
@@ -298,12 +298,12 @@ export default function EmployeeProfile() {
             </h2>
           </div>
           {editing ? (
-            <div className="px-5 py-4 grid sm:grid-cols-2 gap-3">
+            <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <EditInput label="Name"  value={form.emergencyContactName}  onChange={setF('emergencyContactName')} />
               <EditInput label="Phone" value={form.emergencyContactPhone} onChange={setF('emergencyContactPhone')} type="tel" />
             </div>
           ) : (
-            <div className="px-5 py-2 grid sm:grid-cols-2">
+            <div className="px-5 py-2 grid grid-cols-1 sm:grid-cols-2">
               <InfoRow label="Name"  value={emp.emergencyContactName} />
               <InfoRow label="Phone" value={emp.emergencyContactPhone} icon={Phone} />
             </div>

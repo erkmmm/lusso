@@ -750,7 +750,7 @@ function XeroSection() {
                   </button>
                 </label>
 
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">Default Invoice Status</label>
                     <select
@@ -805,7 +805,7 @@ function XeroSection() {
                 </button>
               </div>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-2 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                 <SettingRow label="Auto-create invoice" value={settings.autoCreateInvoice ? 'Enabled' : 'Disabled'} />
                 <SettingRow label="Default status"      value={settings.defaultInvoiceStatus} />
                 <SettingRow label="Account code"        value={settings.defaultAccountCode} />

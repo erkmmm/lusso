@@ -553,7 +553,7 @@ export default function PurchaseOrder() {
                 {motorised && (
                   <div className="mt-4">
                     <p className="text-xs font-medium text-slate-600 mb-2">Motor side (per curtain)</p>
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {curtains.map((it, i) => (
                         <div key={it.id || i} className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2">
                           <span className="text-sm text-slate-700 truncate">{i + 1}. {it.location || '—'}</span>
@@ -692,7 +692,7 @@ export default function PurchaseOrder() {
 
               {/* Per-order accessories + notes — populated entries only */}
               {(hasAccessories || extraNotes.trim()) && (
-                <div className="grid sm:grid-cols-2 gap-4 mt-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 text-xs">
                   {hasAccessories && (
                     <div>
                       <div className="font-semibold text-slate-700 mb-1">Order accessories</div>
@@ -722,7 +722,7 @@ export default function PurchaseOrder() {
             </div>
             <div className="p-5 space-y-4">
               {/* Date required + date ordered */}
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="text-sm">
                   <span className="block text-xs text-slate-500 mb-1">Date required</span>
                   {dateRequired === 'ASAP' ? (

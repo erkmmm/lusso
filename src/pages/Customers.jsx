@@ -254,7 +254,7 @@ export default function Customers() {
           <EmptyState icon={Users} title="No customers found" description="Try a different search term." />
         </Card>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {visible.map(customer => {
             const stats = jobStats.get(customer.id) || { total: 0, active: 0, latest: null };
             const jobCount = stats.total, activeCount = stats.active, latestJob = stats.latest;
@@ -360,7 +360,7 @@ export default function Customers() {
               <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Name */}
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">Full Name *</label>

@@ -450,7 +450,7 @@ export default function MeasureSheetView() {
         </Card>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Line items — full width so every column is visible */}
         <Card className="lg:col-span-3 min-w-0 overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">

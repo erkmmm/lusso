@@ -205,7 +205,7 @@ export default function Installers() {
             <button onClick={() => setShowNew(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
           </div>
           <div className="p-5 space-y-4">
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 ['name','Full Name *','text'],
                 ['businessName','Business Name','text'],
@@ -244,7 +244,7 @@ export default function Installers() {
               </div>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">Availability Notes</label>
                 <textarea value={newForm.availabilityNotes} onChange={e => setNewForm(f => ({...f, availabilityNotes: e.target.value}))}
@@ -275,7 +275,7 @@ export default function Installers() {
       {filtered.length === 0 ? (
         <Card><EmptyState icon={HardHat} title="No installers found" description="Add your first installer to get started." /></Card>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(installer => {
             const jobs     = getInstallRequestsByInstaller(installer.id);
             const accepted = jobs.filter(j => j.status === 'Accepted').length;

@@ -513,7 +513,7 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
         )}
 
         {/* Notes */}
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Customer Notes</label>
             <textarea
@@ -1023,7 +1023,7 @@ export default function QuoteBuilder() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ── Main form (2/3) ─────────────────────────────────────────── */}
         <div className="lg:col-span-2 space-y-5">
 
@@ -1129,7 +1129,7 @@ export default function QuoteBuilder() {
               />
               {errors.title && <p className="text-xs text-red-500 -mt-2">{errors.title}</p>}
 
-              <div className="grid sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">Salesperson</label>
                   <select value={form.salesperson} onChange={e => set('salesperson', e.target.value)}
@@ -1461,7 +1461,7 @@ export default function QuoteBuilder() {
           {/* Section 5: Deposit & GST */}
           <Section title="Deposit & Pricing Settings" icon={DollarSign} defaultOpen={false}>
             <div className="pt-4 space-y-4">
-              <div className="grid sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">Deposit Type</label>
                   <select value={form.depositType} onChange={e => set('depositType', e.target.value)}

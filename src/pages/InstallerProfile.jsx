@@ -126,7 +126,7 @@ export default function InstallerProfile() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
           {/* Edit form */}
           {editing && (
@@ -135,7 +135,7 @@ export default function InstallerProfile() {
                 <h2 className="font-semibold text-slate-800 text-sm">Edit Installer Details</h2>
               </div>
               <div className="p-5 space-y-4">
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[['name','Name'],['businessName','Business Name'],['email','Email'],['phone','Phone'],['serviceAreas','Service Areas']].map(([key,label]) => (
                     <div key={key} className={key === 'serviceAreas' ? 'sm:col-span-2' : ''}>
                       <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
@@ -168,7 +168,7 @@ export default function InstallerProfile() {
                   </div>
                 </div>
 
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[['availabilityNotes','Availability Notes'],['internalNotes','Internal Notes']].map(([key,label]) => (
                     <div key={key}>
                       <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>

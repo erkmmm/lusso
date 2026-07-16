@@ -441,7 +441,7 @@ export default function CustomerQuotePage() {
           </div>
 
           {/* From / To grid */}
-          <div className="grid sm:grid-cols-2 gap-3 px-6 pb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-6 pb-4">
             {/* Business details */}
             <div className="bg-sky-50 border border-sky-100 rounded-xl p-4">
               <p className="text-[10px] font-bold text-sky-500 uppercase tracking-widest mb-2">From</p>

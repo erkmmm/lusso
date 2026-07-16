@@ -98,7 +98,7 @@ export default function CustomerProfile() {
         </div>
       </Card>
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
 
           {/* Edit form */}
@@ -108,7 +108,7 @@ export default function CustomerProfile() {
                 <h2 className="font-semibold text-slate-800 text-sm">Edit Customer Details</h2>
               </div>
               <div className="p-5 space-y-4">
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     { key: 'name',  label: 'Full Name' },
                     { key: 'phone', label: 'Phone' },

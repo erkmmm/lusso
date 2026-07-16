@@ -156,7 +156,7 @@ export default function ImportQuotes() {
             <div className="px-5 py-3 border-b border-slate-100">
               <h2 className="font-semibold text-slate-800 text-sm">Breakdown</h2>
             </div>
-            <div className="p-5 grid sm:grid-cols-2 gap-6">
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">By year</p>
                 <div className="flex flex-wrap gap-1.5">

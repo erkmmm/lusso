@@ -710,7 +710,7 @@ export default function PricedItems() {
 
           {/* Import method chooser — shown before any file is picked */}
           {step === 'upload' && (
-            <div className="grid sm:grid-cols-2 gap-4 mb-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
 
               {/* ── PDF import (AI) ── */}
               <div className="bg-white border-2 border-violet-200 rounded-2xl p-5">
