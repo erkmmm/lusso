@@ -1344,7 +1344,10 @@ function AIKnowledgeSection() {
   const [editingId, setEditingId]     = useState(null);
   const [editDesc, setEditDesc]       = useState('');
   const [session, setSession]         = useState(null);
+  const [dragOver, setDragOver]       = useState(false);
   const fileRef = useRef(null);
+
+  const ACCEPT_EXTS = ['txt', 'md', 'csv', 'json', 'html', 'xml', 'pdf'];
 
   useEffect(() => {
     if (!supabase) return;
@@ -1363,42 +1366,71 @@ function AIKnowledgeSection() {
     return '📎';
   };
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !session) return;
-    fileRef.current.value = '';
+  // Upload a single file (extract text → insert row). Throws on failure.
+  const uploadOne = async (file) => {
+    let text = '';
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'pdf') {
+      const { extractPdfText } = await import('../lib/pdfExtract');
+      text = await extractPdfText(file);
+      if (!text.trim()) throw new Error('Could not extract text from this PDF. It may be a scanned image — try a text-based PDF.');
+    } else {
+      try { text = await file.text(); } catch { text = `[Binary file: ${file.name}]`; }
+    }
+    if (!text.trim()) throw new Error('Could not read any text from this file.');
+    const { data, error: dbErr } = await supabase
+      .from('ai_global_knowledge')
+      .insert({
+        filename: file.name,
+        content: text.slice(0, 80000),
+        file_type: ext,
+        created_by: session.user.id,
+      })
+      .select('id, filename, file_type, description, created_at')
+      .single();
+    if (dbErr) throw new Error(dbErr.message);
+    setDocs(prev => [data, ...prev]);
+  };
+
+  // Handle one or more files (from the picker OR a drag-drop), sequentially.
+  const uploadFiles = async (fileList) => {
+    if (!session) return;
+    const files = [...(fileList || [])];
+    const accepted = files.filter(f => ACCEPT_EXTS.includes(f.name.split('.').pop().toLowerCase()));
+    const rejected = files.length - accepted.length;
+    if (!accepted.length) {
+      setUploadError('Unsupported file type. Use PDF, TXT, MD, CSV, JSON, HTML or XML.');
+      return;
+    }
     setUploading(true);
     setUploadError(null);
-    try {
-      let text = '';
-      const ext = file.name.split('.').pop().toLowerCase();
-      if (ext === 'pdf') {
-        const { extractPdfText } = await import('../lib/pdfExtract');
-        text = await extractPdfText(file);
-        if (!text.trim()) throw new Error('Could not extract text from this PDF. It may be a scanned image — try a text-based PDF.');
-      } else {
-        try { text = await file.text(); } catch { text = `[Binary file: ${file.name}]`; }
-      }
-      if (!text.trim()) throw new Error('Could not read any text from this file.');
-      const { data, error: dbErr } = await supabase
-        .from('ai_global_knowledge')
-        .insert({
-          filename: file.name,
-          content: text.slice(0, 80000),
-          file_type: ext,
-          created_by: session.user.id,
-        })
-        .select('id, filename, file_type, description, created_at')
-        .single();
-      if (dbErr) throw new Error(dbErr.message);
-      setDocs(prev => [data, ...prev]);
-      toast(`"${file.name}" added to knowledge base.`);
-    } catch (err) {
-      setUploadError(err.message);
-    } finally {
-      setUploading(false);
+    let ok = 0;
+    const errors = [];
+    for (const file of accepted) {
+      try { await uploadOne(file); ok++; }
+      catch (err) { errors.push(`"${file.name}": ${err.message}`); }
     }
+    setUploading(false);
+    if (errors.length) setUploadError(errors.join(' · '));
+    if (ok) toast(ok === 1 ? 'Added to knowledge base.' : `${ok} documents added to knowledge base.`);
+    if (rejected && !errors.length) setUploadError(`${rejected} file${rejected !== 1 ? 's' : ''} skipped (unsupported type).`);
   };
+
+  const handleFileChange = async (e) => {
+    const files = e.target.files;
+    if (files?.length) await uploadFiles(files);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (uploading) return;
+    const files = e.dataTransfer?.files;
+    if (files?.length) uploadFiles(files);
+  };
+  const handleDragOver = (e) => { e.preventDefault(); if (!dragOver) setDragOver(true); };
+  const handleDragLeave = (e) => { if (e.currentTarget.contains(e.relatedTarget)) return; setDragOver(false); };
 
   const handleDelete = async (id, filename) => {
     if (!window.confirm(`Remove "${filename}" from the knowledge base?`)) return;
@@ -1415,6 +1447,9 @@ function AIKnowledgeSection() {
   };
 
   return (
+    <div className="relative"
+      onDragEnter={handleDragOver} onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave} onDrop={handleDrop}>
     <Card>
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -1433,7 +1468,7 @@ function AIKnowledgeSection() {
           {uploading ? <Loader size={12} className="animate-spin" /> : <Upload size={12} />}
           {uploading ? 'Uploading…' : 'Upload'}
         </button>
-        <input ref={fileRef} type="file" className="hidden"
+        <input ref={fileRef} type="file" multiple className="hidden"
           accept=".txt,.md,.csv,.json,.html,.xml,.pdf"
           onChange={handleFileChange} />
       </div>
@@ -1447,13 +1482,13 @@ function AIKnowledgeSection() {
           <Loader size={16} className="animate-spin text-slate-400" />
         </div>
       ) : docs.length === 0 ? (
-        <div className="px-5 py-10 text-center">
-          <Bot size={28} className="mx-auto mb-3 text-slate-300" />
-          <p className="text-sm font-medium text-slate-600">No global documents yet</p>
-          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Upload your product catalogue, pricing sheet, or any reference material you want every job assistant to know about.</p>
-          <button onClick={() => fileRef.current?.click()}
-            className="mt-3 text-xs text-violet-600 hover:underline font-medium">
-            Upload your first document →
+        <div className="px-5 py-8">
+          <button type="button" onClick={() => fileRef.current?.click()}
+            className="w-full flex flex-col items-center text-center rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-300 hover:bg-violet-50/40 transition-colors py-8 px-4">
+            <Upload size={26} className="mb-3 text-slate-300" />
+            <p className="text-sm font-medium text-slate-600">Drag &amp; drop files here, or click to browse</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-xs">Your product catalogue, pricing sheet, or any reference material every job assistant should know about.</p>
+            <p className="text-[11px] text-slate-300 mt-2">PDF, TXT, MD, CSV, JSON, HTML, XML</p>
           </button>
         </div>
       ) : (
@@ -1501,5 +1536,15 @@ function AIKnowledgeSection() {
         </div>
       )}
     </Card>
+
+    {/* Drag-over overlay — covers the whole card while a file is being dragged in */}
+    {dragOver && (
+      <div className="absolute inset-0 z-10 rounded-xl border-2 border-dashed border-violet-400 bg-violet-50/90 backdrop-blur-[1px] flex flex-col items-center justify-center pointer-events-none">
+        <Upload size={30} className="text-violet-500 mb-2" />
+        <p className="text-sm font-semibold text-violet-700">Drop to add to the knowledge base</p>
+        <p className="text-xs text-violet-500 mt-0.5">PDF, TXT, MD, CSV, JSON, HTML, XML</p>
+      </div>
+    )}
+    </div>
   );
 }

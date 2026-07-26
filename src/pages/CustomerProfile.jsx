@@ -59,7 +59,7 @@ export default function CustomerProfile() {
           <div className="flex-1 min-w-0">
             <h1 className="text-xl font-bold text-slate-900">{customer.name}</h1>
             <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-2 text-sm text-slate-500">
-              {customer.phone && <span className="flex items-center gap-1.5"><Phone size={13} />{customer.phone}</span>}
+              {customer.phone && <a href={`tel:${customer.phone.replace(/[^\d+]/g, '')}`} className="flex items-center gap-1.5 hover:text-violet-600 transition-colors"><Phone size={13} />{customer.phone}</a>}
               {customer.email && <span className="flex items-center gap-1.5"><Mail size={13} />{customer.email}</span>}
               {customer.address && <span className="flex items-center gap-1.5"><MapPin size={13} />{customer.address}</span>}
             </div>
