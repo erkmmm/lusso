@@ -40,6 +40,17 @@ const STATUS_MAP = {
   'sent':                'Sent',
 };
 
+// Each imported quote also gets a job (project) so it appears on the Projects
+// list — the app links every quote to a job, and the list is job-based. This
+// maps the quote's lifecycle to a sensible job status. Kept in sync with the
+// one-time backfill of historical imports.
+const QUOTE_TO_JOB_STATUS = {
+  Accepted:  'Approved',
+  Completed: 'Completed',
+  Declined:  'Cancelled',
+};
+const quoteToJobStatus = (s) => QUOTE_TO_JOB_STATUS[s] || 'Quoted';
+
 function toIso(s) {
   if (!s) return null;
   const d = new Date(s.replace(' ', 'T'));
@@ -80,6 +91,7 @@ export function buildQuotientImportPlan(summaryRows, itemRows, existing) {
   const newCustomers = [];           // customers to create
   const newCustByKey = new Map();    // key -> planned customer id
   const quotes = [];
+  const jobs = [];                   // one project per quote (Projects list is job-based)
   let skippedExisting = 0, matchedCustomers = 0;
   const years = {};
 
@@ -156,14 +168,32 @@ export function buildQuotientImportPlan(summaryRows, itemRows, existing) {
     const year = (sentAt || '').slice(0, 4) || 'unknown';
     years[year] = (years[year] || 0) + 1;
 
+    const title      = (s['Quote title'] || '').trim() || `Quotient quote ${num}`;
+    const salesperson = (s['From name'] || '').trim();
+    const createdAt  = sentAt || lastChange || new Date(0).toISOString();
+    const updatedAt  = lastChange || sentAt || new Date(0).toISOString();
+
+    // One project (job) per quote so it appears on the job-based Projects list.
+    const jobId = `qnt-job-${num}`;
+    jobs.push({
+      id: jobId,
+      jobNumber: quoteNumber,
+      title,
+      status: quoteToJobStatus(status),
+      customerId,
+      assignedStaff: salesperson,
+      createdAt,
+      updatedAt,
+    });
+
     quotes.push({
       id: `qnt-${num}`,
       quoteNumber,
-      title: (s['Quote title'] || '').trim() || `Quotient quote ${num}`,
+      title,
       status,
       customerId,
-      jobId: null,
-      salesperson: (s['From name'] || '').trim(),
+      jobId,
+      salesperson,
       expiryDate: (s['Expiry date'] || '').slice(0, 10) || null,
       depositType: 'None',
       depositValue: 0,
@@ -176,8 +206,8 @@ export function buildQuotientImportPlan(summaryRows, itemRows, existing) {
       selectedLineItemIds: selectedIds,
       source: 'Quotient Import',
       importNote: rawStatus !== status ? `Quotient status was "${rawStatus}".` : '',
-      createdAt: sentAt || lastChange || new Date(0).toISOString(),
-      updatedAt: lastChange || sentAt || new Date(0).toISOString(),
+      createdAt,
+      updatedAt,
     });
   }
 
@@ -190,6 +220,7 @@ export function buildQuotientImportPlan(summaryRows, itemRows, existing) {
   return {
     newCustomers,
     quotes,
+    jobs,
     warnings,
     stats: {
       totalInFiles: byNumber.size,

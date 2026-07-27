@@ -706,6 +706,7 @@ export const db = {
   // in a handful of requests instead of one request per row.
   bulkSaveCustomers:  (rows, onProgress) => bulkUpsert('customers', rows, onProgress),
   bulkSaveQuotes:     (rows, onProgress) => bulkUpsert('quotes', rows, onProgress),
+  bulkSaveJobs:       (rows, onProgress) => bulkUpsert('jobs', rows, onProgress),
 
   // Installers
   saveInstaller:      (r) => upsert('installers', r),

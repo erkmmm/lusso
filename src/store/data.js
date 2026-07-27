@@ -2619,28 +2619,37 @@ export const runQuotientQuoteImport = async (plan, onProgress = () => {}) => {
 
   const prevCustomers = getCustomers();
   const prevQuotes    = getQuotes();
+  const prevJobs      = getJobs();
   const customers = [...prevCustomers, ...plan.newCustomers.map(c => ({
     ...c, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   }))];
   const quotes = [...prevQuotes, ...enriched];
+  // One project (job) per imported quote so it shows on the Projects list.
+  // Skip any job id already present (re-run safety) so we never duplicate.
+  const prevJobIds = new Set(prevJobs.map(j => j.id));
+  const newJobs = (plan.jobs || []).filter(j => !prevJobIds.has(j.id));
+  const jobs = [...prevJobs, ...newJobs];
   // Write-through. localStorage is best-effort (lsSet never throws): the data is
   // also mirrored to the durable IndexedDB backup and synced to the cloud below,
   // so a full device doesn't lose the import — the global "storage full" toast
   // warns the user. (The old quota "rollback" here was dead code, and aborting
   // would have stranded data already written to IndexedDB + the cloud.)
   set('lusso_customers', customers);
+  set('lusso_jobs', jobs);
   set('lusso_quotes', quotes);
 
-  // Cloud sync (chunked). Customers first so quote FKs resolve.
+  // Cloud sync (chunked). Customers first, then jobs, so quote FKs resolve.
   onProgress('customers', 0, plan.newCustomers.length);
   const cRes = await db.bulkSaveCustomers(
     customers.filter(c => plan.newCustomers.some(n => n.id === c.id)),
     (done, tot) => onProgress('customers', done, tot)
   );
+  onProgress('jobs', 0, newJobs.length);
+  const jRes = await db.bulkSaveJobs(newJobs, (done, tot) => onProgress('jobs', done, tot));
   onProgress('quotes', 0, enriched.length);
   const qRes = await db.bulkSaveQuotes(enriched, (done, tot) => onProgress('quotes', done, tot));
 
-  const errors = (cRes?.failed || 0) + (qRes?.failed || 0);
+  const errors = (cRes?.failed || 0) + (jRes?.failed || 0) + (qRes?.failed || 0);
   saveImportBatch({
     ...batch,
     status: 'Completed',
