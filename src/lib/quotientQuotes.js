@@ -41,15 +41,21 @@ const STATUS_MAP = {
 };
 
 // Each imported quote also gets a job (project) so it appears on the Projects
-// list — the app links every quote to a job, and the list is job-based. This
-// maps the quote's lifecycle to a sensible job status. Kept in sync with the
-// one-time backfill of historical imports.
-const QUOTE_TO_JOB_STATUS = {
-  Accepted:  'Approved',
-  Completed: 'Completed',
-  Declined:  'Cancelled',
-};
-const quoteToJobStatus = (s) => QUOTE_TO_JOB_STATUS[s] || 'Quoted';
+// list — the app links every quote to a job, and the list is job-based.
+//
+// Historical imports must NOT flood the Dashboard's "Needs Attention" (which
+// flags any non-terminal job idle 14+ days). So we close out anything that's
+// resolved or old: won → Completed; declined/expired → Cancelled; a still-open
+// quote stays active ('Quoted') only if it's recent, otherwise it's a closed
+// historical record. Kept in sync with the one-time backfill of past imports.
+const RECENT_JOB_MS = 120 * 24 * 60 * 60 * 1000; // 120 days
+function quoteToJobStatus(status, createdAtIso) {
+  if (status === 'Accepted') return 'Completed';
+  if (status === 'Declined' || status === 'Expired') return 'Cancelled';
+  const t = createdAtIso ? new Date(createdAtIso).getTime() : NaN;
+  const recent = Number.isFinite(t) && (Date.now() - t) <= RECENT_JOB_MS;
+  return recent ? 'Quoted' : 'Cancelled';
+}
 
 function toIso(s) {
   if (!s) return null;
@@ -179,7 +185,7 @@ export function buildQuotientImportPlan(summaryRows, itemRows, existing) {
       id: jobId,
       jobNumber: quoteNumber,
       title,
-      status: quoteToJobStatus(status),
+      status: quoteToJobStatus(status, createdAt),
       customerId,
       assignedStaff: salesperson,
       createdAt,
