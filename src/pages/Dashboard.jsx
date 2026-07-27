@@ -133,6 +133,15 @@ function inRange(dateStr, range) {
   } catch { return false; }
 }
 
+// When a quote's outcome actually HAPPENED — used to place wins/losses in the
+// right period. NEVER use updatedAt for this: it changes on every sync, edit or
+// import, so a re-synced or bulk-imported historical quote would misdate its
+// win/loss into the current period (this is what skewed win rate after the
+// Quotient backfill). Fall back to the quote's own historical dates instead.
+const wonAt        = (q) => q.acceptedAt || q.sentAt || q.createdAt;
+const lostDeclinedAt = (q) => q.declinedAt || q.sentAt || q.createdAt;
+const lostExpiredAt  = (q) => q.expiryDate || q.sentAt || q.createdAt;
+
 function quoteTotal(q) {
   const { total } = computeQuoteTotals(
     q.lineItems || [], q.depositType, q.depositValue,
@@ -931,15 +940,15 @@ export default function Dashboard() {
     });
     return months.map(m => {
       const range = { start: m.start, end: m.end };
-      const acc = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
+      const acc = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), range));
       const created = quotes.filter(q => inRange(q.createdAt, range));
       // Same resolution-based win rate as the KPI: outcomes that happened
       // this month (Expired = loss; open quotes excluded).
       const wins = quotes.filter(q =>
-        (q.status === 'Accepted' || q.status === 'Completed') && inRange(q.acceptedAt || q.updatedAt, range)).length;
+        (q.status === 'Accepted' || q.status === 'Completed') && inRange(wonAt(q), range)).length;
       const losses = quotes.filter(q =>
-        (q.status === 'Declined' && inRange(q.declinedAt || q.updatedAt, range)) ||
-        (q.status === 'Expired'  && inRange(q.updatedAt, range))).length;
+        (q.status === 'Declined' && inRange(lostDeclinedAt(q), range)) ||
+        (q.status === 'Expired'  && inRange(lostExpiredAt(q), range))).length;
       // Gross margin % for the month (only lines with a known cost).
       let sellKnown = 0, gpKnown = 0;
       acc.forEach(q => activeLineItems(q).forEach(li => {
@@ -973,8 +982,8 @@ export default function Dashboard() {
     });
     const pipelineValue  = pipelineQuotes.reduce((s, q) => s + quoteTotal(q), 0);
 
-    const accepted     = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
-    const acceptedPrev = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, prev));
+    const accepted     = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), range));
+    const acceptedPrev = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), prev));
     const acceptedValue     = accepted.reduce((s, q) => s + quoteTotal(q), 0);
     const acceptedValuePrev = acceptedPrev.reduce((s, q) => s + quoteTotal(q), 0);
     const acceptedAvg       = accepted.length > 0 ? acceptedValue / accepted.length : 0;
@@ -986,10 +995,10 @@ export default function Dashboard() {
     // reads 100% on short recent windows because losses lag wins.
     const resolutionsIn = (r) => {
       const wins = quotes.filter(q =>
-        (q.status === 'Accepted' || q.status === 'Completed') && inRange(q.acceptedAt || q.updatedAt, r));
+        (q.status === 'Accepted' || q.status === 'Completed') && inRange(wonAt(q), r));
       const losses = quotes.filter(q =>
-        (q.status === 'Declined' && inRange(q.declinedAt || q.updatedAt, r)) ||
-        (q.status === 'Expired'  && inRange(q.updatedAt, r)));
+        (q.status === 'Declined' && inRange(lostDeclinedAt(q), r)) ||
+        (q.status === 'Expired'  && inRange(lostExpiredAt(q), r)));
       return { wins: wins.length, losses: losses.length };
     };
     const res     = resolutionsIn(range);
@@ -1013,7 +1022,7 @@ export default function Dashboard() {
   // name would make every line its own "product".
   const products = useMemo(() => {
     const range = getDateRange(globalRange);
-    const accepted = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
+    const accepted = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), range));
     const m = {};
     accepted.forEach(q => {
       // Inc-GST, mirroring quoteTotal() — so the category totals reconcile
@@ -1068,9 +1077,9 @@ export default function Dashboard() {
       const name = (q.salesperson || '').trim();
       if (!name) return;
       if (!m[name]) m[name] = { name, won: 0, lost: 0, revenue: 0 };
-      if (q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range)) {
+      if (q.status === 'Accepted' && inRange(wonAt(q), range)) {
         m[name].won += 1; m[name].revenue += quoteTotal(q);
-      } else if ((q.status === 'Declined' || q.status === 'Expired') && inRange(q.updatedAt, range)) {
+      } else if ((q.status === 'Declined' || q.status === 'Expired') && inRange(q.status === 'Declined' ? lostDeclinedAt(q) : lostExpiredAt(q), range)) {
         // Expired counts as a loss — same win-rate definition as the KPI.
         m[name].lost += 1;
       }
@@ -1085,7 +1094,7 @@ export default function Dashboard() {
   // ── Insight metrics: margin, decision time, sent→won, repeat business ───────
   const insights = useMemo(() => {
     const range = getDateRange(globalRange);
-    const accepted = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
+    const accepted = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), range));
 
     // Gross margin (ex-GST — GST isn't profit). Only lines with a known cost
     // count, and we report how much of the revenue that covers.
@@ -1128,14 +1137,14 @@ export default function Dashboard() {
     const firstWin = new Map();
     quotes.forEach(q => {
       if (q.status !== 'Accepted' && q.status !== 'Completed') return;
-      const t = new Date(q.acceptedAt || q.updatedAt).getTime();
+      const t = new Date(wonAt(q)).getTime();
       if (!Number.isFinite(t)) return;
       if (!firstWin.has(q.customerId) || t < firstWin.get(q.customerId)) firstWin.set(q.customerId, t);
     });
     let repeatRev = 0, totalRev = 0;
     const repeatCusts = new Set();
     accepted.forEach(q => {
-      const t = new Date(q.acceptedAt || q.updatedAt).getTime();
+      const t = new Date(wonAt(q)).getTime();
       const v = quoteTotal(q);
       totalRev += v;
       if (firstWin.get(q.customerId) < t) { repeatRev += v; repeatCusts.add(q.customerId); }
@@ -1156,7 +1165,7 @@ export default function Dashboard() {
     const years = new Set();
     quotes.forEach(q => {
       if (q.status !== 'Accepted') return;
-      const d = q.acceptedAt || q.updatedAt;
+      const d = wonAt(q);
       if (!d) return;
       const dt = new Date(d);
       if (Number.isNaN(dt.getTime())) return;
@@ -1187,7 +1196,7 @@ export default function Dashboard() {
   const monthProgress = useMemo(() => {
     const now = new Date();
     const range = { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
-    const acc = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, range));
+    const acc = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), range));
     return {
       revenue:      acc.reduce((s, q) => s + quoteTotal(q), 0),
       quotesWon:    acc.length,
@@ -1202,7 +1211,7 @@ export default function Dashboard() {
     const rows = [];
     for (let y = cur - 4; y <= cur; y++) {
       const fy  = getAusFY(y);
-      const fyQ = quotes.filter(q => q.status === 'Accepted' && inRange(q.acceptedAt || q.updatedAt, fy));
+      const fyQ = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), fy));
       rows.push({ label: `FY${String(y - 1).slice(-2)}/${String(y).slice(-2)}`, value: fyQ.reduce((s, q) => s + quoteTotal(q), 0), count: fyQ.length });
     }
     return rows;
