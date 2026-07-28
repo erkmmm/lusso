@@ -102,10 +102,13 @@ export default function Quotes() {
       q.grandTotal ?? computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, q.selectedLineItemIds || []).total,
     ]));
     const nameOf = (q) => custName.get(q.customerId) || '';
-    const newest = (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt);
+    const madeAt = (q) => new Date(q.createdAt || q.updatedAt || 0).getTime();
+    const editAt = (q) => new Date(q.updatedAt || q.createdAt || 0).getTime();
+    const newest = (a, b) => madeAt(b) - madeAt(a); // by date created ("Made")
     const SORTS = {
       newest,
-      oldest:      (a, b) => new Date(a.updatedAt) - new Date(b.updatedAt),
+      oldest:      (a, b) => madeAt(a) - madeAt(b),
+      edited:      (a, b) => editAt(b) - editAt(a), // most recently edited first
       valueDesc:   (a, b) => totalOf.get(b.id) - totalOf.get(a.id),
       valueAsc:    (a, b) => totalOf.get(a.id) - totalOf.get(b.id),
       salesperson: (a, b) => (a.salesperson || 'zzz').localeCompare(b.salesperson || 'zzz') || newest(a, b),
@@ -272,6 +275,7 @@ export default function Quotes() {
         >
           <option value="newest">Newest first</option>
           <option value="oldest">Oldest first</option>
+          <option value="edited">Last edited</option>
           <option value="valueDesc">Value: high to low</option>
           <option value="valueAsc">Value: low to high</option>
           <option value="salesperson">Salesperson A–Z</option>

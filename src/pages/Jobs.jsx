@@ -210,10 +210,13 @@ export default function Jobs() {
     // Map lookup — customers.find per job is O(n²) with the imported history.
     const custById = new Map(customers.map(c => [c.id, c]));
     const nameOf = (j) => custById.get(j.customerId)?.name || '';
-    const newest = (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt);
+    const madeAt  = (j) => new Date(j.createdAt || j.updatedAt || 0).getTime();
+    const editAt  = (j) => new Date(j.updatedAt || j.createdAt || 0).getTime();
+    const newest  = (a, b) => madeAt(b) - madeAt(a); // by date created ("Made")
     const SORTS = {
       newest,
-      oldest:      (a, b) => new Date(a.updatedAt) - new Date(b.updatedAt),
+      oldest:      (a, b) => madeAt(a) - madeAt(b),
+      edited:      (a, b) => editAt(b) - editAt(a), // most recently edited first
       valueDesc:   (a, b) => (valueByJob.get(b.id) || 0) - (valueByJob.get(a.id) || 0),
       valueAsc:    (a, b) => (valueByJob.get(a.id) || 0) - (valueByJob.get(b.id) || 0),
       customer:    (a, b) => nameOf(a).localeCompare(nameOf(b)) || newest(a, b),
@@ -340,6 +343,7 @@ export default function Jobs() {
         >
           <option value="newest">Newest first</option>
           <option value="oldest">Oldest first</option>
+          <option value="edited">Last edited</option>
           <option value="valueDesc">Value: high to low</option>
           <option value="valueAsc">Value: low to high</option>
           <option value="salesperson">Salesperson A–Z</option>
