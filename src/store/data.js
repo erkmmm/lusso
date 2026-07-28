@@ -861,6 +861,36 @@ export const saveMeasureSheet = (sheet) => {
   advanceJobStatus(sheet.jobId, 'Measured', sheet.measurer || 'System');
 };
 
+// Clone a measure sheet into a fresh, unlinked Draft — same customer, specs and
+// line items, but a new id, new line-item ids, today's measure date, and NO job
+// link (so it doesn't advance the original's job or collide with it).
+export const duplicateMeasureSheet = (id, overrides = {}) => {
+  const original = getMeasureSheet(id);
+  if (!original) return null;
+  const now = new Date().toISOString();
+  const dupe = {
+    ...original,
+    id: uuidv4(),
+    status: 'Draft',
+    jobId: null,
+    measureDate: now.slice(0, 10),
+    lineItems: (original.lineItems || []).map(li => ({ ...li, id: uuidv4() })),
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    deletedBy: null,
+    // A copy is not an import and isn't tied to the original's quotes.
+    importedFromExcel: undefined,
+    originalFileName: undefined,
+    importedAt: undefined,
+    importNotes: undefined,
+    importStatus: undefined,
+    ...overrides,
+  };
+  saveMeasureSheet(dupe);
+  return dupe;
+};
+
 // ─── Takeoffs (PDF plan markups) ────────────────────────────────────────────────
 // One active takeoff per job to start. The PDF binary lives in Supabase Storage;
 // the record here holds the file path, per-page scale, and all measurements.

@@ -2,8 +2,9 @@ import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X } from 'lucide-react';
-import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, createJobFromMeasureSheet } from '../store/data';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy } from 'lucide-react';
+import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, duplicateMeasureSheet, createJobFromMeasureSheet } from '../store/data';
+import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 
@@ -310,6 +311,13 @@ export default function MeasureSheetView() {
     navigate('/measure-sheets');
   };
 
+  const handleDuplicate = () => {
+    const dupe = duplicateMeasureSheet(id);
+    if (!dupe) return;
+    toast('Measure sheet duplicated — opening the copy to edit.');
+    navigate(`/measure-sheets/${dupe.id}/edit`);
+  };
+
   if (!sheet) {
     return (
       <div className="p-6 text-center">
@@ -371,6 +379,10 @@ export default function MeasureSheetView() {
             <button onClick={handlePrint}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors no-print">
               <Printer size={13} /> Print
+            </button>
+            <button onClick={handleDuplicate}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors no-print">
+              <Copy size={13} /> Duplicate
             </button>
             <button onClick={() => setShowDelete(true)}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors no-print">

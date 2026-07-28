@@ -1,12 +1,13 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle, Upload } from 'lucide-react';
+import { ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle, Upload, Copy } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import {
   getMeasureSheets, getMeasureSheetsFiltered, getCustomers, getJobs, getQuotes,
-  deleteMeasureSheet, bulkDeleteMeasureSheets,
+  deleteMeasureSheet, bulkDeleteMeasureSheets, duplicateMeasureSheet,
 } from '../store/data';
+import { toast } from '../components/ToastContainer';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
@@ -286,6 +287,23 @@ export default function MeasureSheets() {
                   </div>
                   <span className="text-slate-300 group-hover:text-amber-500 transition-colors hidden sm:block">→</span>
                 </button>
+
+                {/* Per-row duplicate — hover-revealed, hidden in select mode */}
+                {!selectMode && (
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      const dupe = duplicateMeasureSheet(sheet.id);
+                      if (!dupe) return;
+                      toast('Measure sheet duplicated — opening the copy to edit.');
+                      navigate(`/measure-sheets/${dupe.id}/edit`);
+                    }}
+                    className="pr-4 py-4 flex-shrink-0 text-slate-300 hover:text-amber-500 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    title="Duplicate measure sheet"
+                  >
+                    <Copy size={15} />
+                  </button>
+                )}
 
                 {/* Per-row delete — only in select mode */}
                 {selectMode && (
