@@ -861,9 +861,9 @@ export const saveMeasureSheet = (sheet) => {
   advanceJobStatus(sheet.jobId, 'Measured', sheet.measurer || 'System');
 };
 
-// Clone a measure sheet into a fresh, unlinked Draft — same customer, specs and
-// line items, but a new id, new line-item ids, today's measure date, and NO job
-// link (so it doesn't advance the original's job or collide with it).
+// Clone a measure sheet into a fresh Draft — same customer, job link, specs and
+// line items, but a new id, new line-item ids and today's measure date. The copy
+// stays attached to the SAME job as the original (jobId/customerId carried over).
 export const duplicateMeasureSheet = (id, overrides = {}) => {
   const original = getMeasureSheet(id);
   if (!original) return null;
@@ -872,7 +872,8 @@ export const duplicateMeasureSheet = (id, overrides = {}) => {
     ...original,
     id: uuidv4(),
     status: 'Draft',
-    jobId: null,
+    // Keep the original's jobId/customerId (carried via the spread above) so the
+    // copy shows up under the same job.
     measureDate: now.slice(0, 10),
     lineItems: (original.lineItems || []).map(li => ({ ...li, id: uuidv4() })),
     createdAt: now,
