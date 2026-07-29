@@ -145,7 +145,8 @@ const lostExpiredAt  = (q) => q.expiryDate || q.sentAt || q.createdAt;
 function quoteTotal(q) {
   const { total } = computeQuoteTotals(
     q.lineItems || [], q.depositType, q.depositValue,
-    q.gstRate, q.includesGST, q.selectedLineItemIds || []
+    q.gstRate, q.includesGST, q.selectedLineItemIds || [],
+    q.discountType, q.discountValue
   );
   return total;
 }

@@ -198,7 +198,7 @@ export default function Jobs() {
       const accepted = list.find(q => q.status === 'Accepted');
       const chosen = accepted || list.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
       const total = chosen
-        ? (chosen.grandTotal ?? computeQuoteTotals(chosen.lineItems, chosen.depositType, chosen.depositValue, chosen.gstRate, chosen.includesGST).total)
+        ? (chosen.grandTotal ?? computeQuoteTotals(chosen.lineItems, chosen.depositType, chosen.depositValue, chosen.gstRate, chosen.includesGST, chosen.selectedLineItemIds || [], chosen.discountType, chosen.discountValue).total)
         : 0;
       val.set(jobId, total);
     });
