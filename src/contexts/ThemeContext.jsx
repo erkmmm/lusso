@@ -8,23 +8,24 @@ const ANIM_BG_KEY = 'lusso_anim_bg';
 const ANIM_BG_STYLE_KEY = 'lusso_anim_bg_style'; // 'mesh' | 'plasma'
 
 // Colour themes — class applied to <html> (taupe has no class).
-const COLOR_THEMES = ['taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta', 'twitter'];
+const COLOR_THEMES = ['lusso', 'taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta', 'twitter'];
 
 // These themes are neon-on-black by nature — they always render dark, overriding
 // the light/dark setting (the app's dark-mode surface machinery is what makes
 // them look right).
 const FORCE_DARK_THEMES = new Set(['cyberpunk', 'matrix', 'mono', 'neon-magenta']);
 
-// One-time switch to the Apex (demo-matched) theme; after this runs the user
-// can still pick any theme in Settings and it sticks.
-const APEX_MIGRATION_KEY = 'lusso_theme_apex_migrated';
+// One-time switch to the Lusso brand-kit theme; after this runs the user can
+// still pick any theme in Settings and it sticks. (Supersedes the earlier Apex
+// migration — everyone is moved to Lusso once, then their choice is respected.)
+const LUSSO_MIGRATION_KEY = 'lusso_theme_lusso_migrated';
 function initialColorTheme() {
-  if (!localStorage.getItem(APEX_MIGRATION_KEY)) {
-    localStorage.setItem(APEX_MIGRATION_KEY, '1');
-    localStorage.setItem(COLOR_KEY, 'apex');
-    return 'apex';
+  if (!localStorage.getItem(LUSSO_MIGRATION_KEY)) {
+    localStorage.setItem(LUSSO_MIGRATION_KEY, '1');
+    localStorage.setItem(COLOR_KEY, 'lusso');
+    return 'lusso';
   }
-  return localStorage.getItem(COLOR_KEY) || 'apex';
+  return localStorage.getItem(COLOR_KEY) || 'lusso';
 }
 
 function applyColorClass(colorTheme) {

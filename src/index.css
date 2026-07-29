@@ -60,7 +60,25 @@ html, body {
 .anim-bg:not(.dark) .fixed.inset-0 .bg-white { background-color: #ffffff !important; }
 
 @layer base {
-  /* ════ TAUPE — light (default) ════ */
+  /* ════ LUSSO BRAND KIT — canonical palette (single source of truth) ════
+     Fixed tokens lifted verbatim from the customer quote page. Defined on
+     :root and NEVER overridden by a theme or .dark class, so the quote page
+     (which reads these) renders identically on every route and mode, and the
+     app's Lusso theme maps its ramp + semantic tokens onto the same values —
+     the two can't drift apart. */
+  :root {
+    --lusso-paper:            #F7F7F6;  /* page background            */
+    --lusso-paper-pure:       #FFFFFF;  /* card / surface             */
+    --lusso-mist:             #DEDFDC;  /* borders / hairlines        */
+    --lusso-stone:            #8C8E8B;  /* muted text                 */
+    --lusso-graphite:         #3A3B3C;  /* body text                  */
+    --lusso-ink:              #101113;  /* headings, dark surfaces    */
+    --lusso-bronze:           #6E5A43;  /* sparing accent             */
+    --lusso-on-inverse-muted: #A7A9A6;  /* muted text on ink          */
+    --lusso-border-inverse:   #2A2B2D;  /* hairline on ink            */
+  }
+
+  /* ════ TAUPE — light ════ */
   :root {
     --brand-50:  #F4EEE9;
     --brand-100: #E8DACE;
@@ -248,6 +266,113 @@ html, body {
     --lusso-background:   #1c2a1f;
     --lusso-surface:      #2d3a2e;
     --lusso-text-primary: #f0ebe5;
+  }
+
+  /* ════ LUSSO — light (default) ════
+     The brand kit as an app theme. Neutrals = Paper/Mist/Stone/Graphite/Ink,
+     accent ramp = Bronze (sparing), sidebar = Ink. Everything maps onto the
+     shared --lusso-* vars above so it stays locked to the quote page. Follows
+     light/dark. Cool modern-luxe, calm, restrained. */
+  .theme-lusso {
+    /* Brand ramp → Bronze. Drives every amber/teal/violet accent, the active
+       nav, badges, links, focus rings and primary buttons. */
+    --brand-50:  #F5F2EE;
+    --brand-100: #E9E1D8;
+    --brand-200: #D6C9B9;
+    --brand-300: #BCA791;
+    --brand-400: #846A50;   /* button hover — keeps white text ~4:1 */
+    --brand-500: #6E5A43;   /* Bronze — canonical accent            */
+    --brand-600: #5E4C39;
+    --brand-700: #4C3D2E;
+    --brand-800: #3B2F24;
+    --brand-900: #2C231A;
+    --brand-950: #191410;
+    --brand-bright:     #6E5A43;
+    --brand-bright-rgb: 110 90 67;
+
+    /* Sidebar — Ink, matching the quote page's dark header. */
+    --sb-bg:     #101113;   /* Ink                          */
+    --sb-hover:  #1E1F1C;
+    --sb-active: #3B2F24;   /* deep bronze — active nav tint */
+    --sb-border: #24251F;
+    --sb-text:   #A7A9A6;   /* on-inverse muted             */
+    --sb-ring:   #BCA791;   /* light bronze for focus on ink */
+
+    --ring-color: #6E5A43;
+
+    /* Semantic tokens (light) — Paper / Ink / Mist / Stone. */
+    --card:                  var(--lusso-paper-pure);
+    --card-foreground:       var(--lusso-ink);
+    --popover:               var(--lusso-paper-pure);
+    --popover-foreground:    var(--lusso-ink);
+    --primary:               var(--lusso-bronze);
+    --primary-foreground:    var(--lusso-paper);
+    --secondary:             #E9E1D8;
+    --secondary-foreground:  #4C3D2E;
+    --muted:                 #EFEFEE;
+    --muted-foreground:      var(--lusso-stone);
+    --accent:                #EAE7E2;
+    --accent-foreground:     var(--lusso-ink);
+    --destructive:           #C0492B;
+    --destructive-foreground:#ffffff;
+    --border:                var(--lusso-mist);
+    --input:                 var(--lusso-mist);
+    --ring:                  var(--lusso-bronze);
+    --background:            var(--lusso-paper);
+    --foreground:            var(--lusso-ink);
+    --radius:                0.5rem;
+
+    --lusso-background:   var(--lusso-paper);
+    --lusso-surface:      var(--lusso-paper-pure);
+    --lusso-text-primary: var(--lusso-ink);
+  }
+
+  /* ════ LUSSO — dark ════ (higher specificity wins over .dark)
+     Cool near-ink surfaces with a warm light-bronze accent — the "accepted"
+     ink panel from the quote page, extended to a full dark UI. */
+  .theme-lusso.dark {
+    --brand-bright:     #C6AC8A;   /* light bronze — accent text on ink */
+    --brand-bright-rgb: 198 172 138;
+
+    --surf-page:     #0E0F10;
+    --surf-page-rgb: 14 15 16;
+    --surf-card:     #17181A;
+    --surf-muted:    #1F2022;
+    --surf-hover:    #1D1C19;
+    --bord-strong:   #34352F;
+    --bord-default:  #2A2B2D;   /* border-inverse */
+    --bord-subtle:   #232426;
+    --bord-faint:    #1C1D1F;
+    --txt-primary:   #F1F1EF;
+    --txt-secondary: #CFD0CC;
+    --txt-muted:     #A7A9A6;   /* on-inverse muted */
+    --txt-faint:     #86877F;
+    --txt-faintest:  #63645E;
+    --input-dark:    #34352F;
+
+    --card:                  #17181A;
+    --card-foreground:       #F1F1EF;
+    --popover:               #17181A;
+    --popover-foreground:    #F1F1EF;
+    --primary:               #C6AC8A;
+    --primary-foreground:    #101113;
+    --secondary:             #2A2B26;
+    --secondary-foreground:  #E4DCCF;
+    --muted:                 #1F2022;
+    --muted-foreground:      #A7A9A6;
+    --accent:                #26251F;
+    --accent-foreground:     #F1F1EF;
+    --destructive:           #E5674A;
+    --destructive-foreground:#ffffff;
+    --border:                #2A2B2D;
+    --input:                 #34352F;
+    --ring:                  #C6AC8A;
+    --background:            #0E0F10;
+    --foreground:            #F1F1EF;
+
+    --lusso-background:   #0E0F10;
+    --lusso-surface:      #17181A;
+    --lusso-text-primary: #F1F1EF;
   }
 
   /* ════ APEX — light ════
@@ -730,7 +855,7 @@ html, body {
   }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
     background-color: var(--lusso-background);
     color: var(--lusso-text-primary);
     -webkit-font-smoothing: antialiased;
@@ -830,6 +955,36 @@ textarea:focus:not(:focus-visible) {
 .bg-violet-50\/30 { background-color: rgb(var(--brand-bright-rgb) / 0.10); }
 .border-violet-500 { border-color: var(--brand-500); }
 .border-l-violet-500 { border-left-color: var(--brand-500); }
+
+/* ── Lusso light-mode neutral remap ───────────────────────────────────────
+   The app paints surfaces/text/borders with hardcoded Tailwind `slate`/`white`
+   utilities. Dark mode already remaps them (below); light mode leaves them raw
+   Tailwind slate (cool blue-grey). This maps them onto the Lusso warm-neutral
+   palette so the default theme matches the quote page exactly. Scoped to
+   `.theme-lusso:not(.dark)` so every OTHER theme keeps its slate neutrals in
+   light mode, and Lusso's own dark mode falls through to the .dark block. */
+.theme-lusso:not(.dark) .bg-slate-50   { background-color: var(--lusso-paper); }
+.theme-lusso:not(.dark) .bg-slate-100  { background-color: #ECECEA; }
+.theme-lusso:not(.dark) .bg-slate-50\/80 { background-color: rgb(247 247 246 / 0.8); }
+.theme-lusso:not(.dark) .bg-slate-50\/60 { background-color: rgb(247 247 246 / 0.6); }
+.theme-lusso:not(.dark) .bg-slate-50\/50 { background-color: rgb(247 247 246 / 0.5); }
+
+.theme-lusso:not(.dark) .text-slate-900 { color: var(--lusso-ink); }
+.theme-lusso:not(.dark) .text-slate-800 { color: var(--lusso-ink); }
+.theme-lusso:not(.dark) .text-slate-700 { color: var(--lusso-graphite); }
+.theme-lusso:not(.dark) .text-slate-600 { color: var(--lusso-graphite); }
+.theme-lusso:not(.dark) .text-slate-500 { color: var(--lusso-stone); }
+.theme-lusso:not(.dark) .text-slate-400 { color: #A6A8A5; }
+
+.theme-lusso:not(.dark) .border-slate-200 { border-color: var(--lusso-mist); }
+.theme-lusso:not(.dark) .border-slate-100 { border-color: #E9EAE7; }
+
+.theme-lusso:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--lusso-mist); }
+.theme-lusso:not(.dark) .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #E9EAE7; }
+.theme-lusso:not(.dark) .divide-slate-50  > :not([hidden]) ~ :not([hidden]) { border-color: #EFEFED; }
+
+.theme-lusso:not(.dark) .hover\:bg-slate-50:hover  { background-color: #F1F1EF; }
+.theme-lusso:not(.dark) .hover\:bg-slate-100:hover { background-color: #EAEAE8; }
 
 /* ── Reduced motion ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

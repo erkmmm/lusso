@@ -1771,17 +1771,41 @@ export const linePricing = (li = {}) => {
   const w = Number(li.widthMm) || 0;
   const d = Number(li.dropMm)  || 0;
   const areaSqm = (w > 0 && d > 0) ? (w * d / 1_000_000) : 0;
-  return calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity, li.pricePerSqm, areaSqm);
+  const priced = calcItemPricing(li.unitCostPrice, li.labourCost, li.marginPercent, li.manualSellPrice, li.quantity, li.pricePerSqm, areaSqm);
+  // Optional per-line discount (backward-compatible): a percentage or a fixed
+  // dollar amount off the unit sell price. Absent ⇒ pricing is unchanged, so
+  // legacy/imported quotes (which bake discounts into the price) are untouched.
+  const discPct = Number(li.discountPercent) || 0;
+  const discAmt = Number(li.discountAmount)  || 0;
+  const perUnitDiscount = discPct > 0 ? priced.finalSell * (discPct / 100)
+                        : discAmt > 0 ? Math.min(discAmt, priced.finalSell)
+                        : 0;
+  if (perUnitDiscount <= 0) {
+    return { ...priced, preDiscountSell: priced.finalSell, discountPerUnit: 0, discountTotal: 0 };
+  }
+  const qty            = Number(li.quantity) || 1;
+  const netSell        = priced.finalSell - perUnitDiscount;
+  const netGrossProfit = netSell - priced.totalCost;
+  return {
+    ...priced,
+    preDiscountSell: priced.finalSell,
+    finalSell:       netSell,
+    discountPerUnit: perUnitDiscount,
+    discountTotal:   perUnitDiscount * qty,
+    grossProfit:     netGrossProfit,
+    gpPercent:       netSell > 0 ? (netGrossProfit / netSell * 100) : 0,
+    lineTotal:       netSell * qty,
+  };
 };
 
-export const computeQuoteTotals = (lineItems = [], depositType = 'None', depositValue = 0, gstRate = 10, includesGST = true, selectedIds = []) => {
+export const computeQuoteTotals = (lineItems = [], depositType = 'None', depositValue = 0, gstRate = 10, includesGST = true, selectedIds = [], discountType = 'None', discountValue = 0) => {
   const active = lineItems.filter(li =>
     li.type === 'Required' ||
     li.type === 'Part' ||
     (li.type === 'Optional' && selectedIds.includes(li.id)) ||
     (li.type === 'Multiple Choice' && selectedIds.includes(li.id))
   );
-  let subtotal = 0;        // sell total, ex-GST
+  let grossSubtotal = 0;   // sell total ex-GST, before quote-level discount
   let taxableSubtotal = 0; // portion that attracts GST (per-item taxable flag)
   let cost     = 0;   // our cost (materials + labour) for items where it's known
   let costKnown = active.length > 0; // false if any active item has no cost basis (e.g. imported quotes)
@@ -1789,7 +1813,7 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
     let lineSell;
     // New pricing model (has unitCostPrice field) — we know the cost basis.
     if (li.unitCostPrice !== undefined) {
-      const { lineTotal, totalCost } = linePricing(li);
+      const { lineTotal, totalCost } = linePricing(li); // lineTotal is net of any per-line discount
       lineSell = lineTotal;
       cost     += totalCost * (Number(li.quantity) || 1);
     } else {
@@ -1798,12 +1822,21 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
       lineSell = ((Number(li.unitPrice) || 0) + (Number(li.labourCost) || 0)) * (Number(li.quantity) || 1);
       costKnown = false;
     }
-    subtotal += lineSell;
+    grossSubtotal += lineSell;
     // GST applies per line: a line flagged GST Free (taxable === false) is
     // excluded from the taxable base. Missing flag ⇒ taxable (back-compat).
     if (li.taxable !== false) taxableSubtotal += lineSell;
   });
-  const gst      = includesGST ? taxableSubtotal * (gstRate / 100) : 0;
+  // Quote-level discount (backward-compatible: 'None' ⇒ no change). Applied to
+  // the ex-GST subtotal; the taxable base is reduced proportionally so GST is
+  // charged on the discounted amount.
+  const quoteDiscount = discountType === 'Percentage'   ? grossSubtotal * ((Number(discountValue) || 0) / 100)
+                      : discountType === 'Fixed Amount' ? Math.min(Number(discountValue) || 0, grossSubtotal)
+                      : 0;
+  const discountFactor = grossSubtotal > 0 ? (1 - quoteDiscount / grossSubtotal) : 1;
+  const subtotal        = grossSubtotal - quoteDiscount;
+  const netTaxableBase  = taxableSubtotal * discountFactor;
+  const gst      = includesGST ? netTaxableBase * (gstRate / 100) : 0;
   const total    = subtotal + gst;
   const deposit  = depositType === 'Percentage' ? total * (depositValue / 100)
                  : depositType === 'Fixed Amount' ? Number(depositValue)
@@ -1811,7 +1844,7 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
   // Margin = gross profit ex-GST. null when the cost basis is unknown (imported).
   const margin        = costKnown ? subtotal - cost : null;
   const marginPercent = (costKnown && subtotal > 0) ? (margin / subtotal * 100) : null;
-  return { subtotal, gst, total, deposit, cost, margin, marginPercent, costKnown };
+  return { subtotal, grossSubtotal, discount: quoteDiscount, gst, total, deposit, cost, margin, marginPercent, costKnown };
 };
 
 const SEED_QUOTES = [
@@ -2063,6 +2096,13 @@ const DEFAULT_QUOTE_SETTINGS = {
   businessName: 'Lusso Blinds & Curtains',
   businessEmail: 'info@lusso.com.au',
   businessPhone: '03 9000 1234',
+  // FROM-panel details on the customer-facing quote. These render for every
+  // viewer (incl. customers on a device with no localStorage), so they live in
+  // the defaults as editable placeholders — replace with the real details in
+  // Settings → Quote defaults.
+  businessAddress: 'PO Box 000, Melbourne VIC 3000',
+  businessWebsite: 'www.lusso.com.au',
+  businessABN: '00 000 000 000',
   defaultExpiryDays: 30,
   defaultDepositType: 'Percentage',
   defaultDepositValue: 50,
@@ -2070,6 +2110,28 @@ const DEFAULT_QUOTE_SETTINGS = {
   includesGST: true,
   defaultTerms: 'A 50% deposit is required upon acceptance. Balance due on completion. Lead time is approximately 4–6 weeks from order. All products are custom-made and non-refundable.',
   defaultIntro: 'Thank you for the opportunity to quote on your window furnishings. Please find our detailed proposal below.',
+  // Shown in the "To place your order" block on the customer quote.
+  orderTerms: 'To accept this quote, click "Accept quotation" below or contact us by phone or email. A 50% deposit is required to confirm your order and book your installation.',
+  // Optional link to a full Terms & Conditions document (PDF/web). Blank hides the link.
+  termsAttachmentUrl: '',
+  termsAttachmentLabel: 'Download full Terms & Conditions',
+  // Payment options shown on the customer quote. Placeholder values — set the
+  // real BSB / account details in Settings.
+  paymentDetails: {
+    bsb: '000-000',
+    accountNumber: '0000 0000',
+    accountName: 'Lusso Blinds & Curtains Pty Ltd',
+    creditCardNote: 'We also accept Visa and Mastercard over the phone.',
+    amexSurchargePercent: 1.5,
+  },
+  // Customer testimonials shown on the quote. Populate with real reviews.
+  testimonials: [
+    { name: 'Sarah M.', location: 'Brighton', rating: 5, quote: 'Beautiful workmanship and the team was a pleasure to deal with from quote to install.' },
+    { name: 'James & Priya', location: 'Toorak', rating: 5, quote: 'The curtains completely transformed our living room. Faultless service.' },
+  ],
+  googleReviewUrl: 'https://search.google.com/local/writereview?placeid=ChIJscqHCScFkWsRDQvVRjxuzao',
+  googleRating: 4.9,
+  googleReviewCount: 120,
   quoteNumberPrefix: 'QT-',
   currency: 'AUD',
   showSizesToClient: false,
@@ -2091,7 +2153,8 @@ export const saveQuote = (quote) => {
   // Compute and persist totals so DB columns (grand_total, gst_amount, etc.) are always populated.
   const { subtotal, gst, total } = computeQuoteTotals(
     quote.lineItems || [], quote.depositType, quote.depositValue,
-    quote.gstRate, quote.includesGST, quote.selectedLineItemIds || []
+    quote.gstRate, quote.includesGST, quote.selectedLineItemIds || [],
+    quote.discountType, quote.discountValue
   );
   const costTotal = (quote.lineItems || []).reduce((s, li) => {
     if (li.unitCostPrice !== undefined) {
@@ -2232,7 +2295,8 @@ export const acceptQuote = (quoteId, acceptanceInfo = {}, selectedLineItemIds = 
     updated.selectedLineItemIds = selectedLineItemIds;
     const { subtotal, gst, total } = computeQuoteTotals(
       updated.lineItems || [], updated.depositType, updated.depositValue,
-      updated.gstRate, updated.includesGST, selectedLineItemIds
+      updated.gstRate, updated.includesGST, selectedLineItemIds,
+      updated.discountType, updated.discountValue
     );
     updated.totalSell  = Math.round(subtotal * 100) / 100;
     updated.gstAmount  = Math.round(gst      * 100) / 100;

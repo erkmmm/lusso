@@ -20,6 +20,7 @@ import {
   getMessagePresets, saveMessagePresets, DEFAULT_MESSAGE_PRESETS,
   getPoPresets, savePoPreset, deletePoPreset,
   MS_OPTION_FIELDS, getMsCustomOptions, addMsOption, deleteMsOption,
+  getQuoteSettings, saveQuoteSettings,
 } from '../store/data';
 import { pushAllToSupabase, hydrateFromSupabase, flushPending } from '../store/db';
 import Card from '../components/Card';
@@ -105,6 +106,7 @@ export default function Settings() {
   const { theme, setTheme, colorTheme, setColorTheme, animBg, setAnimBg, bgStyle, setBgStyle } = useTheme();
 
   const COLOR_OPTIONS = [
+    { value: 'lusso',     label: 'Lusso',     desc: 'Brand kit — bronze on paper.', swatch: '#6E5A43' },
     { value: 'apex',      label: 'Apex',      desc: 'Emerald & charcoal — demo style.', swatch: '#009368' },
     { value: 'taupe',     label: 'Taupe',     desc: 'Warm taupe & cream.',   swatch: '#644a40' },
     { value: 'green',     label: 'Green',     desc: 'Forest green & cream.',  swatch: '#2e7d32' },
@@ -180,6 +182,7 @@ export default function Settings() {
 
   const NAV = [
     { id: 'general',      label: 'General',       icon: Settings2,   desc: 'Appearance & sync' },
+    { id: 'quote',        label: 'Quote & Brand',  icon: FileText,    desc: 'Customer quote details' },
     { id: 'messages',     label: 'Messages',       icon: MessageSquare, desc: 'Presets & templates' },
     { id: 'integrations', label: 'Integrations',   icon: Zap,         desc: 'Xero & more' },
     { id: 'products',     label: 'Products',       icon: Tag,         desc: 'Types & pricing' },
@@ -281,7 +284,7 @@ export default function Settings() {
                 <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
                   <Sun size={14} className="text-amber-500" /> Colour theme
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Pick the accent palette. Apex, Taupe & Green follow light/dark; Cyberpunk, Matrix & Mono are always dark.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Pick the accent palette. Lusso, Apex, Taupe & Green follow light/dark; Cyberpunk, Matrix & Mono are always dark.</p>
               </div>
               <div className="p-4 grid grid-cols-2 gap-3">
                 {COLOR_OPTIONS.map(({ value, label, desc, swatch }) => {
@@ -429,6 +432,9 @@ export default function Settings() {
               </Card>
             )}
           </>)}
+
+          {/* ── QUOTE & BRAND ── */}
+          {section === 'quote' && <QuoteDefaultsSection />}
 
           {/* ── MESSAGES ── */}
           {section === 'messages' && (<>
@@ -879,6 +885,165 @@ function SettingRow({ label, value }) {
       <dt className="text-xs text-slate-400">{label}</dt>
       <dd className="font-medium text-slate-700">{value ?? '—'}</dd>
     </div>
+  );
+}
+
+// ─── Customer-facing quote defaults (business details, payment, testimonials) ──
+// These populate the public quote page ([customer]/quotes/:id/preview). Values
+// live in quote settings and fall back to DEFAULT_QUOTE_SETTINGS, so a customer
+// on any device sees them even without local data.
+function QuoteDefaultsSection() {
+  const [s, setS] = useState(() => {
+    const q = getQuoteSettings();
+    return { ...q, paymentDetails: { ...(q.paymentDetails || {}) }, testimonials: [...(q.testimonials || [])] };
+  });
+  const [saved, setSaved] = useState(false);
+
+  const set = (k, v) => { setS(prev => ({ ...prev, [k]: v })); setSaved(false); };
+  const setPay = (k, v) => { setS(prev => ({ ...prev, paymentDetails: { ...prev.paymentDetails, [k]: v } })); setSaved(false); };
+  const setTesti = (i, k, v) => setS(prev => {
+    const t = [...prev.testimonials]; t[i] = { ...t[i], [k]: v }; return { ...prev, testimonials: t };
+  });
+  const addTesti = () => setS(prev => ({ ...prev, testimonials: [...prev.testimonials, { name: '', location: '', rating: 5, quote: '' }] }));
+  const removeTesti = (i) => setS(prev => ({ ...prev, testimonials: prev.testimonials.filter((_, idx) => idx !== i) }));
+
+  const save = () => {
+    saveQuoteSettings({
+      ...s,
+      paymentDetails: { ...s.paymentDetails, amexSurchargePercent: Number(s.paymentDetails.amexSurchargePercent) || 0 },
+      googleRating: Number(s.googleRating) || undefined,
+      googleReviewCount: Number(s.googleReviewCount) || undefined,
+    });
+    setSaved(true);
+    toast('Quote defaults saved');
+  };
+
+  const field = (label, k, placeholder) => (
+    <div>
+      <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
+      <input value={s[k] ?? ''} onChange={e => set(k, e.target.value)} placeholder={placeholder}
+        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+    </div>
+  );
+
+  return (
+    <>
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Building2 size={15} className="text-amber-500" /> Business details</h2>
+          <button onClick={save} className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg transition-colors">
+            {saved ? <><Check size={13} /> Saved</> : <><Save size={13} /> Save</>}
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-slate-400">These appear in the FROM panel and footer of the customer-facing quote. Replace the placeholder values below with your real business details.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {field('Business name', 'businessName', 'Lusso Blinds & Curtains')}
+            {field('ABN', 'businessABN', '00 000 000 000')}
+            {field('Phone', 'businessPhone', '03 9000 1234')}
+            {field('Email', 'businessEmail', 'info@lusso.com.au')}
+            {field('Website', 'businessWebsite', 'www.lusso.com.au')}
+            {field('Postal address', 'businessAddress', 'PO Box 000, Melbourne VIC 3000')}
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100"><h2 className="font-semibold text-slate-800 text-sm">Order & payment</h2></div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">"To place your order" text</label>
+            <textarea value={s.orderTerms ?? ''} onChange={e => set('orderTerms', e.target.value)} rows={3}
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Account name</label>
+              <input value={s.paymentDetails.accountName ?? ''} onChange={e => setPay('accountName', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">BSB</label>
+              <input value={s.paymentDetails.bsb ?? ''} onChange={e => setPay('bsb', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Account number</label>
+              <input value={s.paymentDetails.accountNumber ?? ''} onChange={e => setPay('accountNumber', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Credit-card note</label>
+              <input value={s.paymentDetails.creditCardNote ?? ''} onChange={e => setPay('creditCardNote', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Amex surcharge %</label>
+              <input type="number" value={s.paymentDetails.amexSurchargePercent ?? ''} onChange={e => setPay('amexSurchargePercent', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">T&C attachment URL (optional)</label>
+              <input value={s.termsAttachmentUrl ?? ''} onChange={e => set('termsAttachmentUrl', e.target.value)} placeholder="https://…"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Attachment link label</label>
+              <input value={s.termsAttachmentLabel ?? ''} onChange={e => set('termsAttachmentLabel', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="font-semibold text-slate-800 text-sm">Reviews & testimonials</h2>
+          <button onClick={addTesti} className="flex items-center gap-1 text-xs font-medium text-amber-600 hover:text-amber-700"><Plus size={13} /> Add</button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Google rating</label>
+              <input type="number" step="0.1" value={s.googleRating ?? ''} onChange={e => set('googleRating', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Review count</label>
+              <input type="number" value={s.googleReviewCount ?? ''} onChange={e => set('googleReviewCount', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Google review URL</label>
+              <input value={s.googleReviewUrl ?? ''} onChange={e => set('googleReviewUrl', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+          </div>
+          {(s.testimonials || []).map((t, i) => (
+            <div key={i} className="rounded-xl border border-slate-200 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <input value={t.name ?? ''} onChange={e => setTesti(i, 'name', e.target.value)} placeholder="Customer name"
+                  className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                <input value={t.location ?? ''} onChange={e => setTesti(i, 'location', e.target.value)} placeholder="Suburb"
+                  className="w-28 px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                <input type="number" min="1" max="5" value={t.rating ?? 5} onChange={e => setTesti(i, 'rating', Number(e.target.value))}
+                  className="w-16 px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                <button onClick={() => removeTesti(i)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={15} /></button>
+              </div>
+              <textarea value={t.quote ?? ''} onChange={e => setTesti(i, 'quote', e.target.value)} placeholder="Their review…" rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none" />
+            </div>
+          ))}
+          <button onClick={save} className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg transition-colors">
+            {saved ? <><Check size={13} /> Saved</> : <><Save size={13} /> Save quote defaults</>}
+          </button>
+        </div>
+      </Card>
+    </>
   );
 }
 

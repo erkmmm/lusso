@@ -52,6 +52,7 @@ const EMPTY_PART_ITEM = (preset = {}) => ({
   baseBarType: '', chainColour: '',
   unitCostPrice: '', labourCost: '', marginPercent: 40,
   manualSellPrice: preset.price || '',
+  discountPercent: '', discountAmount: '',
   supplier: 'Acmeda',
   taxable: true,
   customerNotes: '', internalNotes: '',
@@ -87,6 +88,8 @@ const EMPTY_LINE_ITEM = () => ({
   labourCost: '',
   marginPercent: 40,
   manualSellPrice: '',
+  discountPercent: '',
+  discountAmount: '',
   pricePerSqm: null,
   supplier: '',
   taxable: true,
@@ -235,7 +238,7 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
   const set = (field, value) => onChange(idx, field, value);
 
   const pricing = linePricing(item);
-  const { finalSell, lineTotal, grossProfit, gpPercent, totalCost, calcSell } = pricing;
+  const { finalSell, lineTotal, grossProfit, gpPercent, totalCost, calcSell, preDiscountSell, discountTotal } = pricing;
 
   const TYPE_COLORS = {
     Required:         'bg-slate-100 text-slate-700 border-slate-200',
@@ -478,6 +481,17 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
                 <label className="block text-xs font-medium text-slate-500 mb-1">Line Total</label>
                 <p className="text-sm font-bold text-amber-700 py-1.5">{fmt(lineTotal)}</p>
               </div>
+            </div>
+            {/* Per-line discount row (optional) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <FieldInput label="Discount %" value={item.discountPercent} onChange={v => { set('discountPercent', v); if (v) set('discountAmount', ''); }} type="number" placeholder="0" />
+              <FieldInput label="or Discount $ (each)" value={item.discountAmount} onChange={v => { set('discountAmount', v); if (v) set('discountPercent', ''); }} type="number" placeholder="0.00" prefix="$" />
+              {discountTotal > 0 && (
+                <div className="col-span-2 flex items-center gap-2 text-xs text-amber-700 pt-6">
+                  <span className="line-through text-slate-400">{fmt(preDiscountSell)}</span>
+                  <span className="font-semibold">− {fmt(discountTotal)} off this line</span>
+                </div>
+              )}
             </div>
             {/* $/m² calculator — shown when item has a per-sqm rate and dimensions are set */}
             {item.pricePerSqm && item.widthMm && item.dropMm && (() => {
@@ -937,7 +951,8 @@ export default function QuoteBuilder() {
   };
 
   const totals = computeQuoteTotals(
-    form.lineItems, form.depositType, form.depositValue, form.gstRate, form.includesGST
+    form.lineItems, form.depositType, form.depositValue, form.gstRate, form.includesGST,
+    form.selectedLineItemIds || [], form.discountType, form.discountValue
   );
 
   const filteredCustomers = customers.filter(c =>
@@ -1497,6 +1512,29 @@ export default function QuoteBuilder() {
                   </div>
                 </div>
               </div>
+              {/* Quote-level discount */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Overall Discount</label>
+                  <select value={form.discountType || 'None'} onChange={e => set('discountType', e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
+                    {['None', 'Percentage', 'Fixed Amount'].map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                {form.discountType && form.discountType !== 'None' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                      {form.discountType === 'Percentage' ? 'Discount %' : 'Discount Amount ($)'}
+                    </label>
+                    <input
+                      type="number"
+                      value={form.discountValue || ''}
+                      onChange={e => set('discountValue', Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                )}
+              </div>
               {/* Size visibility */}
               <div className="pt-2 border-t border-slate-100">
                 <label className="flex items-start gap-3 cursor-pointer">
@@ -1559,6 +1597,18 @@ export default function QuoteBuilder() {
             </div>
 
             <div className="border-t border-slate-100 pt-3 space-y-2">
+              {totals.discount > 0 && (
+                <div className="flex justify-between text-sm text-slate-500">
+                  <span>Subtotal</span>
+                  <span>{fmt(totals.grossSubtotal)}</span>
+                </div>
+              )}
+              {totals.discount > 0 && (
+                <div className="flex justify-between text-sm text-amber-700">
+                  <span>Discount {form.discountType === 'Percentage' ? `(${form.discountValue}%)` : ''}</span>
+                  <span>− {fmt(totals.discount)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm text-slate-600">
                 <span>Subtotal (excl. GST)</span>
                 <span>{fmt(totals.subtotal)}</span>

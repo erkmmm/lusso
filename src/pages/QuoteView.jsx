@@ -46,7 +46,7 @@ export default function QuoteView() {
 
   // ── MUST be before any conditional return — React hooks must always run ───────
   useDataRefresh();
-  const refresh = () => window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+  const refresh = useCallback(() => window.dispatchEvent(new CustomEvent('lusso:data-changed')), []);
 
   const quote = getQuote(id); // read directly so re-renders always get fresh data
   const [tab, setTab]             = useState('Details');
@@ -105,28 +105,13 @@ export default function QuoteView() {
     };
   }, [id]);
 
-  if (!quote) {
-    return (
-      <div className="p-6 text-center">
-        <p className="text-slate-500">Quote not found.</p>
-      </div>
-    );
-  }
-
-  // ── Derived tracking values ───────────────────────────────────────────────
-  const tracking = liveData || {};
-  const isLiveNow = tracking.customer_last_seen_at &&
-    differenceInSeconds(new Date(), new Date(tracking.customer_last_seen_at)) < LIVE_THRESHOLD_S;
-
-  const customer   = getCustomer(quote.customerId);
-  const job        = quote.jobId ? getJob(quote.jobId) : null;
-  const totals     = computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST);
-  const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
-  const isOverdue  = quote.expiryDate && isPast(new Date(quote.expiryDate)) && !['Accepted','Declined','Completed','Expired'].includes(quote.status);
-
+  // ── Action state — MUST stay above the early return so hook order is stable ──
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
+  const [xeroWorking, setXeroWorking] = useState(false);
+  const [xeroError, setXeroError]     = useState(null);
   const handleSend = useCallback(async () => {
+    const customer = getCustomer(quote?.customerId); // read lazily — quote is guaranteed on click
     if (!customer?.email) {
       setSendError('This customer has no email address on file. Please add an email to the customer record first.');
       return;
@@ -145,7 +130,27 @@ export default function QuoteView() {
     } finally {
       setSending(false);
     }
-  }, [quote, customer, refresh]);
+  }, [quote, refresh]);
+
+  if (!quote) {
+    return (
+      <div className="p-6 text-center">
+        <p className="text-slate-500">Quote not found.</p>
+      </div>
+    );
+  }
+
+  // ── Derived tracking values ───────────────────────────────────────────────
+  const tracking = liveData || {};
+  const isLiveNow = tracking.customer_last_seen_at &&
+    differenceInSeconds(new Date(), new Date(tracking.customer_last_seen_at)) < LIVE_THRESHOLD_S;
+
+  const customer   = getCustomer(quote.customerId);
+  const job        = quote.jobId ? getJob(quote.jobId) : null;
+  const totals     = computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, quote.selectedLineItemIds || [], quote.discountType, quote.discountValue);
+  const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
+  const isOverdue  = quote.expiryDate && isPast(new Date(quote.expiryDate)) && !['Accepted','Declined','Completed','Expired'].includes(quote.status);
+
   const handleDuplicate = () => {
     const dupe = duplicateQuote(quote.id);
     navigate(`/quotes/${dupe.id}/edit`);
@@ -173,9 +178,6 @@ export default function QuoteView() {
   });
 
   // ── Xero invoice ─────────────────────────────────────────────────────────────
-  const [xeroWorking, setXeroWorking] = useState(false);
-  const [xeroError, setXeroError]     = useState(null);
-
   const handleCreateXeroInvoice = async () => {
     if (!window.confirm('Create a Xero invoice for this quote?')) return;
     setXeroWorking(true);

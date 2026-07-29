@@ -14,7 +14,9 @@
         try {
           var t = localStorage.getItem('lusso_theme') || 'light';
           var h = new Date().getHours();
-          var c = localStorage.getItem('lusso_color_theme');
+          // Default to the Lusso brand theme before first paint (matches
+          // ThemeContext's default) so a first-load user gets no theme flash.
+          var c = localStorage.getItem('lusso_color_theme') || 'lusso';
           // These themes are inherently dark (neon on black) — always dark.
           var forceDark = c === 'cyberpunk' || c === 'matrix' || c === 'mono' || c === 'neon-magenta';
           var dark =
@@ -33,7 +35,7 @@
     <link rel="manifest" href="/manifest.json" />
 
     <!-- Theme colour (browser chrome / status bar) -->
-    <meta name="theme-color" content="#174D4D" />
+    <meta name="theme-color" content="#101113" />
 
     <!-- iOS home screen icon + standalone mode -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -48,6 +50,8 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.bunny.net" />
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap" rel="stylesheet" />
+    <!-- Manrope — Lusso brand typeface (app-wide + customer quote page) -->
+    <link href="https://fonts.bunny.net/css?family=manrope:300,400,500,600,700,800&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
