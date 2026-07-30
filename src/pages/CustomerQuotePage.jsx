@@ -241,15 +241,19 @@ export default function CustomerQuotePage() {
           cursor: fixed ? 'default' : (locked ? 'default' : 'pointer'),
           transition: `border-color 200ms ${T.ease}, box-shadow 200ms ${T.ease}`,
         }}>
-        <div style={{
-          flex: '0 0 auto', width: 24, height: 24, marginTop: 1, borderRadius: round,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', transition: `all 200ms ${T.ease}`,
-          background: on ? T.ink : T.paperPure, border: `1px solid ${on ? T.ink : T.stone}`,
-        }}>
-          {choice && on
-            ? <span style={{ width: 8, height: 8, borderRadius: 999, background: T.paper, display: 'block' }} />
-            : (on ? <span style={{ fontSize: 12, lineHeight: 1, color: T.paper }}>✓</span> : null)}
-        </div>
+        {/* Selection control — only for togglable items. Non-optional (included)
+            lines have nothing to toggle, so no checkbox/tick is shown. */}
+        {!fixed && (
+          <div style={{
+            flex: '0 0 auto', width: 24, height: 24, marginTop: 1, borderRadius: round,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', transition: `all 200ms ${T.ease}`,
+            background: on ? T.ink : T.paperPure, border: `1px solid ${on ? T.ink : T.stone}`,
+          }}>
+            {choice && on
+              ? <span style={{ width: 8, height: 8, borderRadius: 999, background: T.paper, display: 'block' }} />
+              : (on ? <span style={{ fontSize: 12, lineHeight: 1, color: T.paper }}>✓</span> : null)}
+          </div>
+        )}
         <div style={{ flex: '1 1 200px', minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4, fontWeight: 500, color: on || fixed ? T.ink : T.graphite, textWrap: 'pretty' }}>{item.productNameSnapshot || 'Window treatment'}</p>
           {desc && <p style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.7, color: T.stone, textWrap: 'pretty' }}>{desc}</p>}
