@@ -1301,6 +1301,81 @@ export const deleteMsOption = (id) => {
   db.deleteMeasureSheetOption(id);
 };
 
+// ─── BUZ export: fabric range → BUZ inventory code map ──────────────────────────
+// The BUZ roller-blind import needs an exact INVENTORY CODE per blind (e.g.
+// "ROLLSERBOO1"), which Lusso can't derive from its free-text fabric field. The
+// user maintains this fabric-range → code table in Settings. Stored in
+// localStorage only (not synced to Supabase — no db table), matching how other
+// pure-local settings are kept.
+export const getBuzFabricCodes = () => get('lusso_buz_fabric_codes') || [];
+
+export const saveBuzFabricCode = ({ id, range, code }) => {
+  const r = String(range || '').trim();
+  const c = String(code || '').trim();
+  if (!r || !c) return null;
+  const all = get('lusso_buz_fabric_codes') || [];
+  if (id) {
+    const next = all.map(e => (e.id === id ? { ...e, range: r, code: c } : e));
+    set('lusso_buz_fabric_codes', next);
+    return next.find(e => e.id === id) || null;
+  }
+  const row = { id: uuidv4(), range: r, code: c, createdAt: new Date().toISOString() };
+  all.push(row);
+  set('lusso_buz_fabric_codes', all);
+  return row;
+};
+
+export const deleteBuzFabricCode = (id) => {
+  const all = get('lusso_buz_fabric_codes') || [];
+  const next = all.filter(e => e.id !== id);
+  if (next.length !== all.length) set('lusso_buz_fabric_codes', next);
+};
+
+/**
+ * Resolve a fabric colour/name to its BUZ inventory code. Matches a mapping
+ * entry whose `range` equals or is contained in the fabric text
+ * (case-insensitive); the longest matching range wins so a specific range beats
+ * a broad one. Returns '' when nothing matches.
+ */
+export const lookupBuzInventoryCode = (fabricColour) => {
+  const hay = String(fabricColour || '').toLowerCase().trim();
+  if (!hay) return '';
+  let best = null;
+  for (const e of get('lusso_buz_fabric_codes') || []) {
+    const key = String(e.range || '').toLowerCase().trim();
+    if (!key) continue;
+    if (hay === key || hay.includes(key)) {
+      if (!best || key.length > best.len) best = { code: e.code, len: key.length };
+    }
+  }
+  return best ? best.code : '';
+};
+
+// ─── BUZ export: Lusso value → BUZ value translation overrides ───────────────────
+// Some BUZ dropdown columns (CONTROLTYPE, ROLLDIR, BOTTOMTRIM) use different
+// wording than Lusso's own options. buzExport.js ships sensible defaults; these
+// let the user override/extend them per Lusso option in Settings. Stored as
+// { field: { lussoValueLower: buzValue } }, keyed by lower-cased Lusso value so
+// lookups are case-insensitive. localStorage only, like the fabric-code table.
+export const getBuzValueMaps = () => get('lusso_buz_value_maps') || {};
+
+/** The override map for one field ({ lussoValueLower: buzValue }); {} if none. */
+export const getBuzValueMap = (field) => (get('lusso_buz_value_maps') || {})[field] || {};
+
+/**
+ * Set (or clear) one Lusso→BUZ override. An empty `toValue` removes the override
+ * so the built-in default applies again.
+ */
+export const setBuzValueMapEntry = (field, fromValue, toValue) => {
+  const from = String(fromValue || '').trim().toLowerCase();
+  if (!field || !from) return;
+  const all = get('lusso_buz_value_maps') || {};
+  const fieldMap = { ...(all[field] || {}) };
+  const to = String(toValue || '').trim();
+  if (to) fieldMap[from] = to; else delete fieldMap[from];
+  set('lusso_buz_value_maps', { ...all, [field]: fieldMap });
+};
+
 // ─── Per-product-type spec schema ───────────────────────────────────────────────
 // Every window-furnishing product only needs SOME of the spec fields (a Roller
 // Blind has no heading/lining; a Curtain has no bottom rail). Each product type

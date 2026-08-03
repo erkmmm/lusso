@@ -7,7 +7,7 @@ import {
   ArrowRight, FileText, Cloud, CloudUpload, RefreshCw, CheckCircle2,
   AlertTriangle, Sun, Moon, Monitor, Clock, Wifi, WifiOff,
   Link2, Link2Off, ExternalLink, Building2, Loader, Bot, Trash2,
-  MessageSquare, Database, Zap, ClipboardList,
+  MessageSquare, Database, Zap, ClipboardList, FileDown,
 } from 'lucide-react';
 import { useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -21,7 +21,10 @@ import {
   getPoPresets, savePoPreset, deletePoPreset,
   MS_OPTION_FIELDS, getMsCustomOptions, addMsOption, deleteMsOption,
   getQuoteSettings, saveQuoteSettings,
+  getBuzFabricCodes, saveBuzFabricCode, deleteBuzFabricCode,
+  getBuzValueMap, setBuzValueMapEntry,
 } from '../store/data';
+import { BUZ_MAP_FIELDS } from '../lib/buzExport';
 import { pushAllToSupabase, hydrateFromSupabase, flushPending } from '../store/db';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
@@ -187,6 +190,7 @@ export default function Settings() {
     { id: 'integrations', label: 'Integrations',   icon: Zap,         desc: 'Xero & more' },
     { id: 'products',     label: 'Products',       icon: Tag,         desc: 'Types & pricing' },
     { id: 'measure',      label: 'Measure Sheet',  icon: ClipboardList, desc: 'Dropdown options' },
+    { id: 'buz',          label: 'BUZ Export',     icon: FileDown,    desc: 'Fabric → inventory codes' },
     { id: 'data',         label: 'Data & AI',      icon: Database,    desc: 'Knowledge & imports' },
   ];
 
@@ -583,6 +587,8 @@ export default function Settings() {
 
           {/* ── MEASURE SHEET ── */}
           {section === 'measure' && <MeasureSheetOptionsSection />}
+
+          {section === 'buz' && <BuzExportSection />}
 
           {/* ── DATA & AI ── */}
           {section === 'data' && (<>
@@ -1176,6 +1182,153 @@ function MeasureSheetOptionsSection() {
             </div>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+function BuzExportSection() {
+  useDataRefresh();
+  const codes = getBuzFabricCodes();
+  const [range, setRange]   = useState('');
+  const [code, setCode]     = useState('');
+  const [editId, setEditId] = useState(null);
+  const [editRange, setEditRange] = useState('');
+  const [editCode, setEditCode]   = useState('');
+
+  const add = () => {
+    const row = saveBuzFabricCode({ range, code });
+    if (!row) { toast('Enter both a fabric range and a BUZ code.', 'info'); return; }
+    setRange(''); setCode('');
+    toast('Fabric code added.');
+  };
+
+  const startEdit = (e) => { setEditId(e.id); setEditRange(e.range); setEditCode(e.code); };
+  const saveEdit = () => {
+    const row = saveBuzFabricCode({ id: editId, range: editRange, code: editCode });
+    if (!row) { toast('Enter both a fabric range and a BUZ code.', 'info'); return; }
+    setEditId(null);
+    toast('Fabric code updated.');
+  };
+
+  return (
+    <div className="space-y-6">
+    <Card className="p-5">
+      <div className="mb-4">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <FileDown size={15} className="text-amber-500" /> BUZ Export — Fabric Codes
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          When you export a roller-blind measure sheet to BUZ, each blind needs a BUZ <span className="font-medium">INVENTORY CODE</span>.
+          Map your fabric ranges to their BUZ codes here. A blind's fabric is matched by name (the longest matching range wins);
+          any fabric with no match is left blank in the file for you to complete. Stored on this device only.
+        </p>
+      </div>
+
+      {/* Add row */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <input value={range} onChange={e => setRange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="Fabric range (e.g. Serene Blockout)"
+          className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+        <input value={code} onChange={e => setCode(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="BUZ code (e.g. ROLLSERBOO1)"
+          className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
+        <button type="button" onClick={add}
+          className="flex items-center justify-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white flex-shrink-0">
+          <Plus size={14} /> Add
+        </button>
+      </div>
+
+      {/* Existing mappings */}
+      {codes.length === 0 ? (
+        <p className="text-xs text-slate-400">No fabric codes yet. Add your first mapping above.</p>
+      ) : (
+        <div className="border border-slate-200 rounded-xl divide-y divide-slate-100">
+          {codes.map(e => (
+            <div key={e.id} className="flex items-center gap-2 px-3 py-2">
+              {editId === e.id ? (
+                <>
+                  <input value={editRange} onChange={ev => setEditRange(ev.target.value)}
+                    className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                  <input value={editCode} onChange={ev => setEditCode(ev.target.value)}
+                    className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                  <button type="button" onClick={saveEdit} title="Save" className="text-green-600 hover:text-green-700 p-1"><Check size={15} /></button>
+                  <button type="button" onClick={() => setEditId(null)} title="Cancel" className="text-slate-400 hover:text-slate-600 p-1"><X size={15} /></button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 min-w-0 text-sm text-slate-700 truncate">{e.range}</span>
+                  <span className="flex-1 min-w-0 text-sm font-mono text-amber-700 truncate">{e.code}</span>
+                  <button type="button" onClick={() => startEdit(e)} title="Edit" className="text-slate-400 hover:text-slate-600 p-1"><Edit3 size={14} /></button>
+                  <button type="button" onClick={() => { deleteBuzFabricCode(e.id); toast('Fabric code removed.', 'info'); }}
+                    title="Remove" className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+    <BuzValueMapCard />
+    </div>
+  );
+}
+
+// Per-option Lusso→BUZ value translations (CONTROLTYPE / ROLLDIR / BOTTOMTRIM).
+// Each row maps one Lusso dropdown value to the exact BUZ wording; blank falls
+// back to the built-in default (shown as the placeholder), or passes through.
+function BuzValueMapCard() {
+  useDataRefresh();
+  const [drafts, setDrafts] = useState(() => {
+    const d = {};
+    BUZ_MAP_FIELDS.forEach(f => {
+      const stored = getBuzValueMap(f.key);
+      f.sourceOptions.forEach(opt => { d[`${f.key}|${opt}`] = stored[opt.toLowerCase()] || ''; });
+    });
+    return d;
+  });
+
+  const onChange = (field, opt, val) => {
+    setDrafts(d => ({ ...d, [`${field}|${opt}`]: val }));
+    setBuzValueMapEntry(field, opt, val);
+  };
+
+  return (
+    <Card className="p-5">
+      <div className="mb-4">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <FileDown size={15} className="text-amber-500" /> BUZ Export — Value Translations
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Map each Lusso option to the exact BUZ dropdown wording for these columns. Leave a row blank to use the
+          built-in default (shown as the faint placeholder) or, where there's no default, to pass the Lusso value
+          through unchanged. Changes apply to the next export.
+        </p>
+      </div>
+      <div className="space-y-5">
+        {BUZ_MAP_FIELDS.map(f => (
+          <div key={f.key} className="border border-slate-200 rounded-xl p-4">
+            <p className="text-sm font-medium text-slate-700">
+              {f.column} <span className="text-slate-400 font-normal">· from {f.sourceLabel}</span>
+            </p>
+            <div className="mt-2 divide-y divide-slate-100">
+              {f.sourceOptions.map(opt => {
+                const def = f.defaults[opt.toLowerCase()] || '';
+                return (
+                  <div key={opt} className="flex items-center gap-3 py-1.5">
+                    <span className="w-36 sm:w-44 flex-shrink-0 text-sm text-slate-600 truncate" title={opt}>{opt}</span>
+                    <span className="text-slate-300 flex-shrink-0">→</span>
+                    <input value={drafts[`${f.key}|${opt}`] ?? ''} onChange={e => onChange(f.key, opt, e.target.value)}
+                      placeholder={def || 'passes through unchanged'}
+                      className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-slate-300" />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </Card>
   );
