@@ -228,11 +228,15 @@ export default function PurchaseOrder() {
     );
   }
 
-  // Drop the trailing Motor side column when this order isn't motorised.
-  const headers = motorised ? PO_HEADERS : PO_HEADERS.filter(h => h !== 'Motor side (L/R)');
+  // Show the Motor side column when the order is flagged motorised OR any
+  // curtain actually has a motor side filled in — a populated column must
+  // never be dropped from the PO output.
+  const hasMotorData = curtains.some(it => String(motorFor(it) || '').trim() !== '');
+  const showMotor = motorised || hasMotorData;
+  const headers = showMotor ? PO_HEADERS : PO_HEADERS.filter(h => h !== 'Motor side (L/R)');
   const rows = curtains.map((it, i) => {
     const cells = rowCells(it, i, motorFor(it));
-    return motorised ? cells : cells.slice(0, -1);
+    return showMotor ? cells : cells.slice(0, -1);
   });
 
   // Only entries with at least one filled field reach the PO.
