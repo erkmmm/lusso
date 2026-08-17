@@ -2258,8 +2258,28 @@ export const sendQuote = (quoteId, user = 'System') => {
   const list = getQuotes();
   const idx  = list.findIndex(q => q.id === quoteId);
   if (idx < 0) return;
+  const q = list[idx];
   const now = new Date().toISOString();
-  list[idx] = { ...list[idx], status: 'Sent', sentAt: now, updatedAt: now };
+  const firstSend = !q.sentAt;
+  // Anchor the expiry countdown to the send date (not the draft's created date),
+  // preserving the configured validity window. Only on the first send, so
+  // resending a reminder doesn't reset or extend the customer's deadline.
+  const sentAt = q.sentAt || now;
+  let expiryDate = q.expiryDate;
+  if (firstSend) {
+    const DAY = 86400000;
+    const created = q.createdAt ? new Date(q.createdAt).getTime() : NaN;
+    const prevExp = q.expiryDate ? new Date(q.expiryDate).getTime() : NaN;
+    let validityDays = getQuoteSettings().defaultExpiryDays || 30;
+    if (Number.isFinite(created) && Number.isFinite(prevExp)) {
+      const d = Math.round((prevExp - created) / DAY);
+      if (d > 0) validityDays = d; // keep any custom window the draft had
+    }
+    const exp = new Date(sentAt);
+    exp.setDate(exp.getDate() + validityDays);
+    expiryDate = exp.toISOString().split('T')[0];
+  }
+  list[idx] = { ...q, status: 'Sent', sentAt, expiryDate, updatedAt: now };
   const entry = { id: uuidv4(), type: 'sent', note: 'Quote sent to customer', user, createdAt: now };
   list[idx].activity = [entry, ...(list[idx].activity || [])];
   set('lusso_quotes', list);
