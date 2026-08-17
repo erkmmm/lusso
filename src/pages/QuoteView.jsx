@@ -7,12 +7,13 @@ import {
   Edit3, Copy, Send, Eye, CheckCircle2, XCircle,
   User, MapPin, FileText, Clock, MessageSquare, Lock,
   ChevronDown, ChevronUp, Briefcase, Phone, Mail, AlertCircle,
-  Activity, Wifi, X, ExternalLink, RefreshCw, Loader,
+  Activity, Wifi, WifiOff, X, ExternalLink, RefreshCw, Loader,
 } from 'lucide-react';
 import {
   getQuote, getCustomer, getJob,
   QUOTE_STATUS_COLORS, computeQuoteTotals, linePricing,
   sendQuote, duplicateQuote, acceptQuote, declineQuote,
+  reactivateQuote, takeQuoteOffline,
   addQuoteComment, updateQuoteXeroInvoice, getMessagePresets,
 } from '../store/data';
 import Card from '../components/Card';
@@ -33,6 +34,8 @@ const ACTIVITY_META = {
   accepted:          { emoji: '✅', label: 'Accepted' },
   declined:          { emoji: '❌', label: 'Declined' },
   expired:           { emoji: '⏰', label: 'Expired' },
+  reactivated:       { emoji: '🔄', label: 'Reactivated' },
+  offline:           { emoji: '📴', label: 'Taken offline' },
   commented:         { emoji: '💬', label: 'Comment' },
   followed_up:       { emoji: '📞', label: 'Follow-up' },
   deposit_requested: { emoji: '💰', label: 'Deposit' },
@@ -165,6 +168,17 @@ export default function QuoteView() {
       declineQuote(quote.id, ''); refresh();
     }
   };
+  const handleReactivate = () => {
+    const q = reactivateQuote(quote.id, null, 'Admin');
+    refresh();
+    if (q) toast(`Quote reactivated — valid again until ${format(new Date(q.expiryDate), 'd MMM yyyy')}.`);
+  };
+  const handleTakeOffline = () => {
+    if (!window.confirm('Take this quote offline? The customer link will stop working until you send it again. You can edit it freely while it’s offline.')) return;
+    takeQuoteOffline(quote.id, 'Admin');
+    refresh();
+    toast('Quote taken offline — edit it, then Send to re-issue with a fresh expiry.');
+  };
   const handleAddComment = () => {
     if (!commentText.trim()) return;
     addQuoteComment(quote.id, commentType, commentType === 'internal' ? 'Admin' : (customer?.name || 'Customer'), commentText.trim());
@@ -192,7 +206,15 @@ export default function QuoteView() {
         xeroInvoiceCreatedAt: new Date().toISOString(),
       });
       refresh();
-      toast(`Xero invoice ${result.xeroInvoiceNumber} created.`);
+      // The function reconciles the created invoice against the accepted quote
+      // total. A mismatch still creates the invoice, so it must be shown rather
+      // than swallowed by the success toast.
+      if (result.warning) {
+        setXeroError(result.warning);
+        toast(`Xero invoice ${result.xeroInvoiceNumber} created — check the total.`, 'error');
+      } else {
+        toast(`Xero invoice ${result.xeroInvoiceNumber} created.`);
+      }
     } catch (err) {
       setXeroError(err.message);
       toast(err.message, 'error');
@@ -284,6 +306,12 @@ export default function QuoteView() {
                   <Send size={13} /> {sending ? 'Sending…' : 'Send Quote'}
                 </button>
               )}
+              {(isOverdue || quote.status === 'Expired') && (
+                <button onClick={handleReactivate}
+                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors">
+                  <RefreshCw size={13} /> Reactivate
+                </button>
+              )}
               <button onClick={() => navigate(`/quotes/${quote.id}/edit`)}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                 <Edit3 size={13} /> Edit
@@ -292,6 +320,12 @@ export default function QuoteView() {
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                 <Eye size={13} /> Preview
               </button>
+              {['Sent', 'Viewed', 'Waiting'].includes(quote.status) && (
+                <button onClick={handleTakeOffline}
+                  className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
+                  <WifiOff size={13} /> Take offline
+                </button>
+              )}
               <button onClick={handleDuplicate}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                 <Copy size={13} /> Duplicate
@@ -365,9 +399,6 @@ export default function QuoteView() {
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
-                {xeroError && (
-                  <p className="text-xs text-red-500 max-w-[200px] truncate" title={xeroError}>{xeroError}</p>
-                )}
                 {quote.xeroInvoiceId ? (
                   <>
                     {quote.xeroInvoiceUrl && (
@@ -400,6 +431,15 @@ export default function QuoteView() {
                 )}
               </div>
             </div>
+
+            {/* Errors and total-mismatch warnings are shown in full — truncating
+                them hid the one thing worth reading. */}
+            {xeroError && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 border border-red-100 px-3 py-2">
+                <AlertCircle size={13} className="text-red-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-red-600 leading-relaxed">{xeroError}</p>
+              </div>
+            )}
           </div>
         )}
       </Card>

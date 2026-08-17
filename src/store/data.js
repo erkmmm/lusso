@@ -2344,6 +2344,45 @@ export const declineQuote = (quoteId, reason = '') => {
   return list[idx];
 };
 
+// Reactivate an expired (or overdue) quote — give it a fresh expiry window from
+// today and return it to the live pipeline so the customer can view/accept it
+// again. Never-sent quotes stay Draft; already-sent ones go back to Sent/Viewed.
+export const reactivateQuote = (quoteId, days = null, user = 'System') => {
+  const list = getQuotes();
+  const idx  = list.findIndex(q => q.id === quoteId);
+  if (idx < 0) return null;
+  const q = list[idx];
+  const now = new Date().toISOString();
+  const validityDays = days || getQuoteSettings().defaultExpiryDays || 30;
+  const exp = new Date(now);
+  exp.setDate(exp.getDate() + validityDays);
+  const expiryDate = exp.toISOString().split('T')[0];
+  const status = q.sentAt ? (q.viewedAt ? 'Viewed' : 'Sent') : 'Draft';
+  list[idx] = { ...q, status, expiryDate, updatedAt: now };
+  const entry = { id: uuidv4(), type: 'reactivated', note: `Quote reactivated — valid again until ${expiryDate}`, user, createdAt: now };
+  list[idx].activity = [entry, ...(list[idx].activity || [])];
+  set('lusso_quotes', list);
+  db.saveQuote(list[idx]);
+  advanceJobStatus(list[idx].jobId, 'Quoted', user);
+  return list[idx];
+};
+
+// Take a live quote offline so it can be edited privately — reverts it to a
+// Draft (the public link stops serving it) and resets the send cycle, so the
+// next Send re-issues it fresh with a new expiry window starting from that send.
+export const takeQuoteOffline = (quoteId, user = 'System') => {
+  const list = getQuotes();
+  const idx  = list.findIndex(q => q.id === quoteId);
+  if (idx < 0) return null;
+  const now = new Date().toISOString();
+  list[idx] = { ...list[idx], status: 'Draft', sentAt: null, viewedAt: null, updatedAt: now };
+  const entry = { id: uuidv4(), type: 'offline', note: 'Quote taken offline for editing', user, createdAt: now };
+  list[idx].activity = [entry, ...(list[idx].activity || [])];
+  set('lusso_quotes', list);
+  db.saveQuote(list[idx]);
+  return list[idx];
+};
+
 export const duplicateQuote = (quoteId, overrides = {}) => {
   const original = getQuote(quoteId);
   if (!original) return null;
