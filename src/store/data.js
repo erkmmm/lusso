@@ -2190,20 +2190,21 @@ const DEFAULT_QUOTE_SETTINGS = {
   // Optional link to a full Terms & Conditions document (PDF/web). Blank hides the link.
   termsAttachmentUrl: '',
   termsAttachmentLabel: 'Download full Terms & Conditions',
-  // Payment options shown on the customer quote. Placeholder values — set the
-  // real BSB / account details in Settings.
+  // Payment options shown on the customer quote. These are the live account
+  // details — they must match the ones on the Xero invoice, or a customer who
+  // pays off the quote pays into a different account than the invoice states.
   paymentDetails: {
-    bsb: '000-000',
-    accountNumber: '0000 0000',
-    accountName: 'Lusso Blinds & Curtains Pty Ltd',
+    bsb: '014 527',
+    accountNumber: '498 279 909',
+    accountName: 'Lusso Fashion for Windows',
     creditCardNote: 'We also accept Visa and Mastercard over the phone.',
-    amexSurchargePercent: 1.5,
+    amexSurchargePercent: 2.5,
   },
-  // Customer testimonials shown on the quote. Populate with real reviews.
-  testimonials: [
-    { name: 'Sarah M.', location: 'Brighton', rating: 5, quote: 'Beautiful workmanship and the team was a pleasure to deal with from quote to install.' },
-    { name: 'James & Priya', location: 'Toorak', rating: 5, quote: 'The curtains completely transformed our living room. Faultless service.' },
-  ],
+  // Real customer testimonials only — add them in Settings → Quote defaults.
+  // Deliberately empty: invented reviews on a customer-facing quote are a
+  // misrepresentation, so the section simply doesn't render until it has real
+  // ones.
+  testimonials: [],
   googleReviewUrl: 'https://search.google.com/local/writereview?placeid=ChIJscqHCScFkWsRDQvVRjxuzao',
   googleRating: 4.9,
   googleReviewCount: 120,
@@ -2598,7 +2599,34 @@ export const deleteQuoteTemplate = (id) => set('lusso_quote_templates', getQuote
 // ─── Quote Settings ───────────────────────────────────────────────────────────
 
 export const getQuoteSettings = () => get('lusso_quote_settings') || DEFAULT_QUOTE_SETTINGS;
-export const saveQuoteSettings = (s) => set('lusso_quote_settings', { ...getQuoteSettings(), ...s });
+
+export const saveQuoteSettings = (s) => {
+  const merged = { ...getQuoteSettings(), ...s };
+  set('lusso_quote_settings', merged);
+  // Mirror to Supabase so the public customer quote page — which runs on the
+  // customer's own device, with no localStorage — shows the real business and
+  // payment details instead of falling back to the defaults.
+  db.saveBusinessSettings?.(merged);
+  return merged;
+};
+
+/**
+ * Quote settings for the public customer quote page, read from Supabase.
+ * Falls back to the local copy (and then the defaults) so the page still
+ * renders if the fetch fails.
+ */
+export const fetchPublicQuoteSettings = async () => {
+  const remote = await db.getBusinessSettings?.();
+  const local  = getQuoteSettings();
+  if (!remote) return local;
+  return {
+    ...local,
+    ...remote,
+    // Nested objects must merge, not replace, or a partially-filled remote row
+    // would blank out payment details the local copy still has.
+    paymentDetails: { ...(local.paymentDetails || {}), ...(remote.paymentDetails || {}) },
+  };
+};
 
 // ─── Message Presets ──────────────────────────────────────────────────────────
 

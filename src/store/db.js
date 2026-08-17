@@ -699,6 +699,10 @@ export const db = {
   saveQuote:          (r) => upsert('quotes', r),
   deleteQuote:        (id) => remove('quotes', id),
 
+  // Shared business/quote settings (see getBusinessSettings below)
+  getBusinessSettings:  ()  => getBusinessSettings(),
+  saveBusinessSettings: (s) => saveBusinessSettings(s),
+
   // Review requests (Google review asks)
   saveReviewRequest:  (r) => upsert('review_requests', r),
 
@@ -901,4 +905,31 @@ export async function batchUpsertPricedItems(items) {
 
   if (inserted) console.info(`[db] batchUpsertPricedItems: ✓ ${inserted} rows saved to Supabase`);
   return { inserted, errors };
+}
+
+// ─── Business / quote settings ────────────────────────────────────────────────
+// One shared row (id = 1) holding the business and payment details shown on the
+// public customer quote page. It exists because those settings otherwise live
+// only in each staff member's localStorage, which a customer's browser doesn't
+// have — so the quote page showed placeholder BSB/ABN details on a cold load.
+
+/** Read the shared settings. Returns null when offline or not yet configured. */
+export async function getBusinessSettings() {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('business_settings').select('settings').eq('id', 1).maybeSingle();
+  if (error) {
+    console.warn('[db] getBusinessSettings:', error.message);
+    return null;
+  }
+  return data?.settings ?? null;
+}
+
+/** Mirror the local settings to the shared row. Fire-and-forget. */
+export async function saveBusinessSettings(settings) {
+  if (!supabase || !settings) return;
+  const { error } = await supabase
+    .from('business_settings')
+    .upsert({ id: 1, settings, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  if (error) console.warn('[db] saveBusinessSettings:', error.message);
 }

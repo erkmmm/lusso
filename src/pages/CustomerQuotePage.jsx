@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { format, parseISO, isPast } from 'date-fns';
 import {
-  getQuote, getCustomer, getQuoteSettings,
+  getQuote, getCustomer, getQuoteSettings, fetchPublicQuoteSettings,
   computeQuoteTotals, linePricing, markQuoteViewed, acceptQuote, declineQuote,
 } from '../store/data';
 import { supabase } from '../lib/supabase';
@@ -79,7 +79,18 @@ export default function CustomerQuotePage() {
   const { id }         = useParams();
   const [searchParams] = useSearchParams();
   const isStaffPreview = searchParams.get('preview') === '1';
-  const settings = getQuoteSettings();
+
+  // Business/payment details come from the shared Supabase row, not just
+  // localStorage: a customer opens this page on their own device, where the
+  // local copy doesn't exist and the defaults would show placeholder details.
+  const [settings, setSettings] = useState(getQuoteSettings);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPublicQuoteSettings()
+      .then(s => { if (!cancelled && s) setSettings(s); })
+      .catch(() => { /* keep the local fallback */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const [quote, setQuote] = useState(() => {
     const q = getQuote(id);
@@ -196,7 +207,11 @@ export default function CustomerQuotePage() {
     // Staff preview (?preview=1) must never record tracking or mutate status —
     // show the confirmation locally only.
     if (!isStaffPreview) {
-      await trackAccept(customer?.name || '', customer?.email || '');
+      // The RPC is authoritative — it saves the selections, recomputes the
+      // totals and advances the job server-side. acceptQuote() only updates a
+      // localStorage copy, so it does nothing on a customer's device and is
+      // kept purely to keep a staff member's own browser in step.
+      await trackAccept(customer?.name || '', customer?.email || '', selectedOptionals);
       acceptQuote(quote.id, { name: customer?.name || 'Customer', email: customer?.email || '' }, selectedOptionals);
     }
     setLocalStatus('accepted'); setExpanded(false); scrollToTail();
