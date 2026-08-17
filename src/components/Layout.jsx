@@ -94,6 +94,29 @@ function computeCounts() {
   };
 }
 
+// ── Build marker ──────────────────────────────────────────────────────────────
+// Which build is this browser actually running? The values are inlined at build
+// time (vite.config.js `define`), so this reports the running bundle rather than
+// whatever version.json the server happens to serve — meaning a stale cached
+// bundle shows up as an old marker instead of being masked by a fresh fetch.
+// A trailing "+" on the SHA means the build had uncommitted changes.
+function BuildMarker() {
+  const built = new Date(__BUILT_AT__);
+  const when = isNaN(built)
+    ? ''
+    : built.toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+  return (
+    <div
+      className="mt-3 pt-2.5 border-t border-sidebar-border/60 flex items-center gap-1.5 text-[10px] text-sidebar-text opacity-40 select-text"
+      title={`Build ${__BUILD_SHA__} — ${isNaN(built) ? __BUILT_AT__ : built.toISOString()}`}
+    >
+      <span className="font-mono">{__BUILD_SHA__}</span>
+      {when && <><span aria-hidden="true">·</span><span>{when}</span></>}
+    </div>
+  );
+}
+
 // ── Nav count badge ───────────────────────────────────────────────────────────
 function CountBadge({ n, active }) {
   if (!n || n === 0) return null;
@@ -330,6 +353,8 @@ export default function Layout() {
               <LogOut size={15} />
             </button>
           </div>
+
+          <BuildMarker />
         </div>
       </aside>
 
