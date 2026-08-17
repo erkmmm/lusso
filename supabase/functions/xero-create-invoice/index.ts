@@ -97,15 +97,25 @@ function linePricing(li: any) {
  */
 function buildDescription(li: any): string {
   const product = li.productNameSnapshot || 'Window Treatment'
-  const lines: string[] = [li.location ? `${li.location} - ${product}` : product]
 
+  // Imported (Quotient) quotes already bake the room into productNameSnapshot
+  // — "Master Bedroom - Lusso Reverse pleat sheer curtain" — so only prefix the
+  // location when it is a separate field and isn't already in the name.
+  const loc = (li.location || '').trim()
+  const head = loc && !product.startsWith(loc) ? `${loc} - ${product}` : product
+
+  // Deliberately NOT li.description: on imported quotes that field holds the
+  // internal Quotient code ("CURT Reverse", "REM 1", "SERV Scaffold Hire"),
+  // which must never reach a customer's invoice. Only customer-meaningful
+  // specs go on the second line, and it's omitted entirely when there are none.
   const detail = [
-    li.description || '',
     li.fabricColour ? `Fabric: ${li.fabricColour}` : '',
-  ].filter(Boolean).join(' ')
-  if (detail) lines.push(detail)
+    li.heading      || '',
+    li.control && li.control !== 'N/A' ? `${li.control} operation` : '',
+    li.fixing       ? `${li.fixing} fix` : '',
+  ].filter(Boolean).join(', ')
 
-  return lines.join('\n')
+  return detail ? `${head}\n${detail}` : head
 }
 
 async function getToken(admin: ReturnType<typeof createClient>) {
