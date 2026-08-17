@@ -49,6 +49,23 @@ export async function xeroSaveSettings(settings) {
 }
 
 /**
+ * Switches which authorised Xero organisation invoices are created in.
+ * One consent covers every org on the Xero account, so this is a local flip —
+ * no re-authorisation needed.
+ */
+export async function xeroActivateOrganisation(tenantId) {
+  const headers = await authHeaders();
+  const res = await fetch(FN('xero-connection'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ activateTenantId: tenantId }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || 'Could not switch organisation');
+  return data;
+}
+
+/**
  * Dismisses sync-log errors from the Integrations panel.
  * Pass an array of log ids, or 'all' to clear every outstanding error.
  * The rows are marked dismissed, not deleted — the sync history is kept.

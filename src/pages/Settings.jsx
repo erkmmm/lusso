@@ -31,6 +31,7 @@ import { toast } from '../components/ToastContainer';
 import {
   xeroGetConnection, xeroStartOAuth, xeroDisconnect,
   xeroSaveSettings, xeroInvoiceStatusBadge, xeroDismissErrors,
+  xeroActivateOrganisation,
 } from '../lib/xero';
 
 export default function Settings() {
@@ -619,6 +620,8 @@ function XeroSection() {
   const [localSettings, setLocalSettings]     = useState(DEFAULT_XERO_SETTINGS);
   const [errors, setErrors]     = useState([]);
   const [dismissing, setDismissing] = useState(false);
+  const [organisations, setOrganisations] = useState([]);
+  const [switchingOrg, setSwitchingOrg]   = useState(false);
 
   const load = async () => {
     try {
@@ -630,6 +633,7 @@ function XeroSection() {
         setLocalSettings(merged);
       }
       setErrors(data.recentErrors ?? []);
+      setOrganisations(data.organisations ?? []);
     } catch {
       setStatus({ connected: false });
     }
@@ -673,6 +677,22 @@ function XeroSection() {
       toast(err.message, 'error');
     } finally {
       setWorking(false);
+    }
+  };
+
+  // Switching organisation is a local flip — one Xero consent already covers
+  // every org on the account, so no re-authorisation is needed.
+  const handleSwitchOrg = async (tenantId) => {
+    if (switchingOrg || !tenantId) return;
+    setSwitchingOrg(true);
+    try {
+      const { organisationName } = await xeroActivateOrganisation(tenantId);
+      await load();
+      toast(`Now using ${organisationName}.`);
+    } catch (err) {
+      toast(err.message || 'Could not switch organisation.', 'error');
+    } finally {
+      setSwitchingOrg(false);
     }
   };
 
@@ -750,6 +770,35 @@ function XeroSection() {
               <Link2Off size={12} /> Disconnect
             </button>
           </div>
+
+          {/* Organisation picker — one Xero consent covers every org on the
+              account, so switching (e.g. to the Demo Company for testing) is a
+              dropdown rather than a fresh OAuth round-trip. */}
+          {organisations.length > 1 && (
+            <div className="px-5 py-4">
+              <label htmlFor="xero-org" className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                Active organisation
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  id="xero-org"
+                  value={status.integration?.tenantId ?? ''}
+                  onChange={e => handleSwitchOrg(e.target.value)}
+                  disabled={switchingOrg}
+                  className="flex-1 border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60"
+                >
+                  {organisations.map(o => (
+                    <option key={o.tenantId} value={o.tenantId}>{o.name}</option>
+                  ))}
+                </select>
+                {switchingOrg && <Loader size={14} className="animate-spin text-slate-400 flex-shrink-0" />}
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                Invoices are created in this organisation. Pick your Xero Demo Company to test
+                without touching your real accounts.
+              </p>
+            </div>
+          )}
 
           {/* Settings */}
           <div className="px-5 py-4">
