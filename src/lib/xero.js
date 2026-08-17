@@ -48,6 +48,24 @@ export async function xeroSaveSettings(settings) {
   return data.settings;
 }
 
+/**
+ * Dismisses sync-log errors from the Integrations panel.
+ * Pass an array of log ids, or 'all' to clear every outstanding error.
+ * The rows are marked dismissed, not deleted — the sync history is kept.
+ */
+export async function xeroDismissErrors(target) {
+  const headers = await authHeaders();
+  const body = target === 'all' ? { all: true } : { ids: target };
+  const res = await fetch(FN('xero-connection'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || 'Dismiss failed');
+  return data;
+}
+
 /** Disconnects Xero */
 export async function xeroDisconnect() {
   const headers = await authHeaders();

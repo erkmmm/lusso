@@ -30,7 +30,7 @@ import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
 import {
   xeroGetConnection, xeroStartOAuth, xeroDisconnect,
-  xeroSaveSettings, xeroInvoiceStatusBadge,
+  xeroSaveSettings, xeroInvoiceStatusBadge, xeroDismissErrors,
 } from '../lib/xero';
 
 export default function Settings() {
@@ -618,6 +618,7 @@ function XeroSection() {
   const [editingSettings, setEditingSettings] = useState(false);
   const [localSettings, setLocalSettings]     = useState(DEFAULT_XERO_SETTINGS);
   const [errors, setErrors]     = useState([]);
+  const [dismissing, setDismissing] = useState(false);
 
   const load = async () => {
     try {
@@ -672,6 +673,23 @@ function XeroSection() {
       toast(err.message, 'error');
     } finally {
       setWorking(false);
+    }
+  };
+
+  // Dismissing marks the log rows in Supabase, so cleared errors stay cleared
+  // across reloads. The list updates optimistically and rolls back on failure.
+  const handleDismissErrors = async (target) => {
+    if (dismissing) return;
+    const previous = errors;
+    setDismissing(true);
+    setErrors(target === 'all' ? [] : errors.filter(e => !target.includes(e.id)));
+    try {
+      await xeroDismissErrors(target);
+    } catch (err) {
+      setErrors(previous);
+      toast(err.message || 'Could not dismiss the error.', 'error');
+    } finally {
+      setDismissing(false);
     }
   };
 
@@ -830,16 +848,36 @@ function XeroSection() {
           {/* Recent errors */}
           {errors.length > 0 && (
             <div className="px-5 py-4">
-              <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Recent Errors</p>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">Recent Errors</p>
+                {errors.length > 1 && (
+                  <button
+                    onClick={() => handleDismissErrors('all')}
+                    disabled={dismissing}
+                    className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-50 hover:underline"
+                  >
+                    Dismiss all
+                  </button>
+                )}
+              </div>
               <div className="space-y-1.5">
                 {errors.map((e, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  <div key={e.id ?? i} className="flex items-start gap-2 text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                     <AlertTriangle size={11} className="text-red-500 flex-shrink-0 mt-0.5" />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-red-700 font-medium">{e.action}</p>
-                      <p className="text-red-600 truncate">{e.error_message}</p>
+                      <p className="text-red-600 break-words">{e.error_message}</p>
                       <p className="text-red-400">{fmtDate(e.created_at)}</p>
                     </div>
+                    <button
+                      onClick={() => handleDismissErrors([e.id])}
+                      disabled={dismissing || !e.id}
+                      title="Dismiss this error"
+                      aria-label={`Dismiss error: ${e.action}`}
+                      className="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded text-red-300 hover:text-red-600 hover:bg-red-100 disabled:opacity-40 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
                 ))}
               </div>
