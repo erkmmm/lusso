@@ -5,9 +5,16 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
+// Allow-Methods is required, not optional, for the methods this function uses.
+// GET/HEAD/POST are CORS-safelisted and pass preflight without it, but PATCH
+// and DELETE are not — omitting it made the browser reject the preflight, so
+// Disconnect and Save Settings both died with a bare "Failed to fetch" before
+// the request was ever sent.
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+  "Access-Control-Max-Age": "86400",
 }
 
 Deno.serve(async (req: Request) => {
