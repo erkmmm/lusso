@@ -11,6 +11,7 @@
  */
 
 import { requireActiveUser } from './_auth.js';
+import { renderEmail, renderText } from './_emailLayout.js';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -25,9 +26,6 @@ const json = (status, body) =>
   });
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const escapeHtml = (s = '') =>
-  String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: CORS });
@@ -60,11 +58,24 @@ export async function onRequestPost(context) {
   }
 
   const safeSubject = subject || 'Curtain Purchase Order';
-  const bodyText = message || 'Please find the attached curtain purchase order.';
-  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:14px;color:#1f2a2a;line-height:1.5">
-    <p>${escapeHtml(bodyText).replace(/\n/g, '<br>')}</p>
-    <p style="color:#8a9696;font-size:12px">Sent from Lusso Job Management.</p>
-  </body></html>`;
+  const bodyText    = message || 'Please find the attached curtain purchase order.';
+  const attachName  = filename || 'Curtain-PO.pdf';
+
+  const content = {
+    preheader: `${safeSubject} — PDF attached`,
+    eyebrow:   'Purchase order',
+    heading:   safeSubject,
+    body:      bodyText,
+    panel: {
+      title: 'Attached',
+      rows:  [{ label: 'File', value: attachName, strong: true }],
+    },
+    outro:   'The purchase order is attached to this email as a PDF.',
+    signOff: 'The Lusso Team',
+  };
+
+  const html = renderEmail(content);
+  const text = renderText(content);
 
   try {
     const resendRes = await fetch('https://api.resend.com/emails', {
@@ -74,12 +85,14 @@ export async function onRequestPost(context) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from:    FROM_ADDRESS,
-        to:      [String(to).trim()],
-        subject: safeSubject,
+        from:     FROM_ADDRESS,
+        to:       [String(to).trim()],
+        reply_to: context.env.EMAIL_REPLY_TO || undefined,
+        subject:  safeSubject,
         html,
+        text,
         attachments: [
-          { filename: filename || 'Curtain-PO.pdf', content: contentBase64 },
+          { filename: attachName, content: contentBase64 },
         ],
       }),
     });
