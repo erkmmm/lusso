@@ -89,21 +89,23 @@ function linePricing(li: any) {
   return { qty, grossUnit, perUnitDiscount, netUnit: grossUnit - perUnitDiscount, discPct }
 }
 
+/**
+ * Line description in the house style: "<Location> - <Product>" on the first
+ * line, then the product blurb and fabric underneath. Matches the invoices
+ * Lusso already sends (see INV-2359) rather than dumping every spec field
+ * pipe-separated — the measure sheet is where the full specs belong.
+ */
 function buildDescription(li: any): string {
   const product = li.productNameSnapshot || 'Window Treatment'
-  const detail: string[] = [
-    product,
-    li.fabricColour   || '',
-    li.heading        || '',
-    li.fixing         ? `${li.fixing} fix`       : '',
-    li.control && li.control !== 'N/A' ? `${li.control} control` : '',
-    li.chainColour    ? `${li.chainColour} chain` : '',
-  ].filter(Boolean)
-  const w = Number(li.widthMm) || 0
-  const d = Number(li.dropMm)  || 0
-  if (w > 0 && d > 0) detail.push(`${w} × ${d} mm`)
-  if (!li.location) return detail.join(' | ')
-  return `${li.location}\n${detail.join(' | ')}`
+  const lines: string[] = [li.location ? `${li.location} - ${product}` : product]
+
+  const detail = [
+    li.description || '',
+    li.fabricColour ? `Fabric: ${li.fabricColour}` : '',
+  ].filter(Boolean).join(' ')
+  if (detail) lines.push(detail)
+
+  return lines.join('\n')
 }
 
 async function getToken(admin: ReturnType<typeof createClient>) {
@@ -216,6 +218,15 @@ Deno.serve(async (req: Request) => {
     const freeType     = settings.defaultGstFreeTaxType || 'EXEMPTOUTPUT'
     const taxTypeFor   = (li: any) => (chargesGst && li.taxable !== false) ? taxableType : freeType
 
+    // Lusso's invoices quote GST-inclusive prices and show "INCLUDES GST 10%"
+    // rather than adding GST as a separate line (see INV-2359). The app stores
+    // ex-GST prices, so gross each taxable amount up on the way out: the unit
+    // price shown changes, the invoice total does not.
+    const gstRate   = Number(quote.gst_rate) || 10
+    const incFactor = 1 + gstRate / 100
+    const toInclusive = (amount: number, taxable: boolean) =>
+      (chargesGst && taxable) ? amount * incFactor : amount
+
     const accountCode = settings.defaultAccountCode ? String(settings.defaultAccountCode) : null
 
     // ── Build line items, carrying per-line discounts through to Xero ────────
@@ -224,13 +235,14 @@ Deno.serve(async (req: Request) => {
 
     const lineItems: any[] = invoiceItems.map((li: any) => {
       const { qty, grossUnit, perUnitDiscount, netUnit, discPct } = linePricing(li)
+      const taxable = li.taxable !== false
       grossSubtotal += netUnit * qty
-      if (chargesGst && li.taxable !== false) taxableSubtotal += netUnit * qty
+      if (chargesGst && taxable) taxableSubtotal += netUnit * qty
 
       const item: any = {
         Description: buildDescription(li),
         Quantity:    qty,
-        UnitAmount:  round(grossUnit),
+        UnitAmount:  round(toInclusive(grossUnit, taxable)),
         TaxType:     taxTypeFor(li),
       }
       // Show the discount on the invoice rather than silently netting it off.
@@ -262,7 +274,7 @@ Deno.serve(async (req: Request) => {
       const onFree       = quoteDiscount - onTaxable
 
       if (onTaxable > 0.005) {
-        const l: any = { Description: label, Quantity: 1, UnitAmount: -round(onTaxable, 2), TaxType: taxableType }
+        const l: any = { Description: label, Quantity: 1, UnitAmount: -round(toInclusive(onTaxable, true), 2), TaxType: taxableType }
         if (accountCode) l.AccountCode = accountCode
         lineItems.push(l)
       }
@@ -311,7 +323,17 @@ Deno.serve(async (req: Request) => {
     }
     lineItems.push({ Description: noteLines.join('\n') })
 
-    const reference = [quote.quote_number, job?.job_number].filter(Boolean).join(' | ')
+    // Opening description-only line naming the quote this invoice came from,
+    // the way Lusso's existing invoices lead (see INV-2359). Added last but
+    // placed first, so it sits above the items regardless of what came before.
+    const businessName = settings.businessName || "Lusso Fashion for Windows"
+    lineItems.unshift({
+      Description: `${businessName} Quotation For ${customer.name}\nQuote Number: ${quote.quote_number}`,
+    })
+
+    // Quote and job often carry the same number, which produced "QNT-8849 |
+    // QNT-8849" on the invoice. Dedupe rather than blindly joining.
+    const reference = [...new Set([quote.quote_number, job?.job_number].filter(Boolean))].join(' | ')
     const dueDays   = Number(settings.defaultPaymentTermsDays ?? 30)
     const dueDate   = new Date(Date.now() + dueDays * 86400000).toISOString().split("T")[0]
 
@@ -319,7 +341,7 @@ Deno.serve(async (req: Request) => {
       Invoices: [{
         Type:            "ACCREC",
         Contact:         { ContactID: xeroContactId },
-        LineAmountTypes: "Exclusive",
+        LineAmountTypes: "Inclusive",
         LineItems:       lineItems,
         Date:            new Date().toISOString().split("T")[0],
         DueDate:         dueDate,
@@ -329,7 +351,7 @@ Deno.serve(async (req: Request) => {
       }]
     }
 
-    const summary = `Exclusive, items=${lineItems.length}, expectedTotal=${expectedTotal}`
+    const summary = `Inclusive, items=${lineItems.length}, expectedTotal=${expectedTotal}`
 
     const ir = await fetch("https://api.xero.com/api.xro/2.0/Invoices", { method: "POST", headers: xh, body: JSON.stringify(invoicePayload) })
     const { data: id_, raw: iraw } = await safeJson(ir)
