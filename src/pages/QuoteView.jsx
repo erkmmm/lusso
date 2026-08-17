@@ -179,6 +179,13 @@ export default function QuoteView() {
     refresh();
     toast('Quote taken offline — edit it, then Send to re-issue with a fresh expiry.');
   };
+  const handleMakeLive = () => {
+    // Publish the quote (make the customer link work + start the expiry timer)
+    // WITHOUT emailing the customer — for when the link is shared manually.
+    const q = sendQuote(quote.id, 'Admin');
+    refresh();
+    if (q) toast(`Quote is live${q.expiryDate ? ` until ${format(new Date(q.expiryDate), 'd MMM yyyy')}` : ''} — no email sent.`);
+  };
   const handleAddComment = () => {
     if (!commentText.trim()) return;
     addQuoteComment(quote.id, commentType, commentType === 'internal' ? 'Admin' : (customer?.name || 'Customer'), commentText.trim());
@@ -304,6 +311,13 @@ export default function QuoteView() {
                 <button onClick={handleSend} disabled={sending}
                   className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors">
                   <Send size={13} /> {sending ? 'Sending…' : 'Send Quote'}
+                </button>
+              )}
+              {quote.status === 'Draft' && (
+                <button onClick={handleMakeLive} disabled={sending}
+                  title="Make the customer link live and start the expiry timer without emailing the customer"
+                  className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors">
+                  <Wifi size={13} /> Make live (no email)
                 </button>
               )}
               {(isOverdue || quote.status === 'Expired') && (
