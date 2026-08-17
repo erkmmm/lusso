@@ -116,6 +116,18 @@ export default function CustomerQuotePage() {
     );
   }
 
+  // Offline / not-yet-sent quotes must not be visible on the public link.
+  if (!isStaffPreview && (quote.status === 'Draft' || quote.status === 'Expired')) {
+    return (
+      <div style={{ minHeight: '100vh', background: T.paper, fontFamily: T.font, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ textAlign: 'center', maxWidth: 420 }}>
+          <p style={{ fontSize: 40, fontWeight: 300, color: T.mist, margin: 0 }}>Unavailable</p>
+          <p style={{ color: T.stone, marginTop: 8 }}>This quote isn’t currently available to view. Please contact us and we’ll send you an up-to-date version.</p>
+        </div>
+      </div>
+    );
+  }
+
   const customer  = getCustomer(quote.customerId);
   const isExpired = quote.expiryDate && isPast(new Date(quote.expiryDate));
   const accepted  = localStatus === 'accepted' || quote.status === 'Accepted';
