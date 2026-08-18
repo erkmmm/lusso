@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { renderEmail, renderText } from "./emailLayout.ts"
+import { ensureReplyToken } from "./replyToken.ts"
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -123,13 +124,24 @@ Deno.serve(async (req: Request) => {
         signOff:   senderName,
       }
 
+      // Stamp a per-conversation Reply-To so a plain "Reply" threads back onto
+      // this job. Gated on REPLY_DOMAIN: until reply.lusso.com.au actually
+      // resolves and Email Routing is live, an address there would bounce, so
+      // leaving the secret unset keeps the previous behaviour exactly.
+      const REPLY_DOMAIN = Deno.env.get("REPLY_DOMAIN") ?? ""
+      let replyTo = Deno.env.get("EMAIL_REPLY_TO") || undefined
+      if (REPLY_DOMAIN) {
+        const token = await ensureReplyToken(admin, jobId ?? null, customerId ?? null)
+        if (token) replyTo = `q-${token}@${REPLY_DOMAIN}`
+      }
+
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           from: EMAIL_FROM,
           to,
-          reply_to: Deno.env.get("EMAIL_REPLY_TO") || undefined,
+          reply_to: replyTo,
           subject: subject ?? "(No subject)",
           html: renderEmail(content),
           text: renderText(content),
