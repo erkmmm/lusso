@@ -2407,6 +2407,55 @@ export const acceptQuote = (quoteId, acceptanceInfo = {}, selectedLineItemIds = 
   return updated;
 };
 
+/**
+ * Reverse an acceptance — for a quote accepted by mistake, or where the
+ * customer pulled out before anything was invoiced.
+ *
+ * Refuses once a Xero invoice exists: unaccepting then would leave an invoice
+ * in Xero with no accepted quote behind it, which is the kind of silent
+ * mismatch that only surfaces at reconciliation. Void or delete the invoice in
+ * Xero first.
+ *
+ * Returns { ok: false, reason } rather than throwing, so the caller can explain
+ * precisely why nothing happened.
+ */
+export const unacceptQuote = (quoteId, user = 'System') => {
+  const list = getQuotes();
+  const idx  = list.findIndex(q => q.id === quoteId);
+  if (idx < 0) return { ok: false, reason: 'not_found' };
+
+  const q = list[idx];
+  if (q.status !== 'Accepted')  return { ok: false, reason: 'not_accepted' };
+  if (q.xeroInvoiceId)          return { ok: false, reason: 'has_invoice', invoiceNumber: q.xeroInvoiceNumber };
+
+  const now = new Date().toISOString();
+  // Same fallback as reactivateQuote: return the quote to wherever it was
+  // before acceptance, so the customer link starts serving again.
+  const status = q.sentAt ? (q.viewedAt ? 'Viewed' : 'Sent') : 'Draft';
+
+  // selectedLineItemIds and the totals derived from them are deliberately kept:
+  // they record what the customer actually chose, and re-accepting recomputes
+  // them anyway. Wiping them here would silently change the quote's value.
+  const updated = { ...q, status, acceptedAt: null, acceptedBy: null, updatedAt: now };
+  const entry = { id: uuidv4(), type: 'unaccepted', note: 'Acceptance reversed — quote is live again', user, createdAt: now };
+  updated.activity = [entry, ...(updated.activity || [])];
+  list[idx] = updated;
+  set('lusso_quotes', list);
+  db.saveQuote(updated);
+
+  // Acceptance pushed the job to Approved. Only pull it back if nothing has
+  // happened since — if the job has already moved on to Ordered or beyond,
+  // reversing it would rewrite real progress.
+  const job = updated.jobId ? getJob(updated.jobId) : null;
+  let jobReverted = false;
+  if (job?.status === 'Approved') {
+    updateJobStatus(updated.jobId, 'Quoted', user);
+    jobReverted = true;
+  }
+
+  return { ok: true, quote: updated, status, jobReverted, jobStatus: job?.status ?? null };
+};
+
 export const declineQuote = (quoteId, reason = '') => {
   const list = getQuotes();
   const idx  = list.findIndex(q => q.id === quoteId);

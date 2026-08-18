@@ -7,13 +7,13 @@ import {
   Edit3, Copy, Send, Eye, CheckCircle2, XCircle,
   User, MapPin, FileText, Clock, MessageSquare, Lock,
   ChevronDown, ChevronUp, Briefcase, Phone, Mail, AlertCircle,
-  Activity, Wifi, WifiOff, X, ExternalLink, RefreshCw, Loader,
+  Activity, Wifi, WifiOff, X, ExternalLink, RefreshCw, RotateCcw, Loader,
 } from 'lucide-react';
 import {
   getQuote, getCustomer, getJob,
   QUOTE_STATUS_COLORS, computeQuoteTotals, linePricing,
   sendQuote, duplicateQuote, acceptQuote, declineQuote,
-  reactivateQuote, takeQuoteOffline,
+  reactivateQuote, takeQuoteOffline, unacceptQuote,
   addQuoteComment, updateQuoteXeroInvoice, getMessagePresets,
 } from '../store/data';
 import Card from '../components/Card';
@@ -36,6 +36,7 @@ const ACTIVITY_META = {
   expired:           { emoji: '⏰', label: 'Expired' },
   reactivated:       { emoji: '🔄', label: 'Reactivated' },
   offline:           { emoji: '📴', label: 'Taken offline' },
+  unaccepted:        { emoji: '↩️', label: 'Acceptance reversed' },
   commented:         { emoji: '💬', label: 'Comment' },
   followed_up:       { emoji: '📞', label: 'Follow-up' },
   deposit_requested: { emoji: '💰', label: 'Deposit' },
@@ -179,6 +180,36 @@ export default function QuoteView() {
     refresh();
     toast('Quote taken offline — edit it, then Send to re-issue with a fresh expiry.');
   };
+  const handleUnaccept = () => {
+    // Explain the specific blocker rather than silently doing nothing — the
+    // Xero case in particular needs an action taken in Xero first.
+    if (quote.xeroInvoiceId) {
+      setXeroError(
+        `This quote has Xero invoice ${quote.xeroInvoiceNumber || ''} against it. ` +
+        `Void or delete that invoice in Xero first, otherwise you'd be left with an invoice ` +
+        `and no accepted quote behind it.`
+      );
+      return;
+    }
+    if (!window.confirm(
+      'Reverse this acceptance?\n\nThe quote goes back to being live for the customer, ' +
+      'and the job returns to Quoted if it hasn\'t moved on.'
+    )) return;
+
+    const res = unacceptQuote(quote.id, 'Admin');
+    if (!res?.ok) {
+      toast(res?.reason === 'has_invoice'
+        ? 'Cannot reverse — a Xero invoice exists for this quote.'
+        : 'Could not reverse the acceptance.', 'error');
+      return;
+    }
+    refresh();
+    toast(
+      `Acceptance reversed — quote is ${res.status}` +
+      (res.jobReverted ? ' and the job is back to Quoted.' : `. Job left at ${res.jobStatus || 'its current status'}.`)
+    );
+  };
+
   const handleMakeLive = () => {
     // Publish the quote (make the customer link work + start the expiry timer)
     // WITHOUT emailing the customer — for when the link is shared manually.
@@ -338,6 +369,13 @@ export default function QuoteView() {
                 <button onClick={handleTakeOffline}
                   className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                   <WifiOff size={13} /> Take offline
+                </button>
+              )}
+              {quote.status === 'Accepted' && (
+                <button onClick={handleUnaccept}
+                  title="Reverse the acceptance and make the quote live for the customer again"
+                  className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
+                  <RotateCcw size={13} /> Unaccept
                 </button>
               )}
               <button onClick={handleDuplicate}
