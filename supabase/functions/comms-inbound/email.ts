@@ -27,6 +27,7 @@ export async function parseInboundEmail(
 
   let jobId: string | null = null
   let customerId: string | null = null
+  let enquiryId: string | null = null
   let matchedBy = "none"
 
   // 1. The token in the recipient address. Authoritative when present.
@@ -34,13 +35,14 @@ export async function parseInboundEmail(
   if (token) {
     const { data } = await admin
       .from("reply_tokens")
-      .select("job_id, customer_id")
+      .select("job_id, customer_id, enquiry_id")
       .eq("token", token)
       .maybeSingle()
 
     if (data) {
       jobId = data.job_id
       customerId = data.customer_id
+      enquiryId = data.enquiry_id
       matchedBy = "token"
       await admin
         .from("reply_tokens")
@@ -90,6 +92,7 @@ export async function parseInboundEmail(
   const { error } = await admin.from("communications").insert({
     job_id: jobId,
     customer_id: customerId,
+    enquiry_id: enquiryId,
     channel: "email",
     direction: "inbound",
     subject: msg.subject ?? null,

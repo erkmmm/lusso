@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return json({ error: "Unauthorized" }, 401)
 
-    const { channel, jobId, customerId, to, subject, body } = await req.json()
+    const { channel, jobId, customerId, enquiryId, to, subject, body } = await req.json()
     if (!channel || !body || !to) return json({ error: "channel, to, and body required" }, 400)
 
     let externalId: string | null = null
@@ -131,7 +131,7 @@ Deno.serve(async (req: Request) => {
       const REPLY_DOMAIN = Deno.env.get("REPLY_DOMAIN") ?? ""
       let replyTo = Deno.env.get("EMAIL_REPLY_TO") || undefined
       if (REPLY_DOMAIN) {
-        const token = await ensureReplyToken(admin, jobId ?? null, customerId ?? null)
+        const token = await ensureReplyToken(admin, jobId ?? null, customerId ?? null, enquiryId ?? null)
         if (token) replyTo = `q-${token}@${REPLY_DOMAIN}`
       }
 
@@ -160,6 +160,7 @@ Deno.serve(async (req: Request) => {
     const { data: comm, error: dbErr } = await admin.from("communications").insert({
       job_id: jobId ?? null,
       customer_id: customerId ?? null,
+      enquiry_id: enquiryId ?? null,
       channel,
       direction: "outbound",
       subject: subject ?? null,

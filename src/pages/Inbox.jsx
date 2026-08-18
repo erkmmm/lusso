@@ -204,12 +204,45 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
   const [subject, setSubject] = useState('Your enquiry with Lusso');
   const [sending, setSending] = useState(false);
   const [error, setError]     = useState('');
-  const [sent, setSent]       = useState([]);
+  // The thread for this enquiry, read from `communications`. Was session-only
+  // state, so sent replies vanished on reload and a lead's reply never appeared
+  // at all. Now both directions persist and survive a refresh.
+  const [thread, setThread]   = useState([]);
+
+  const loadThread = useCallback(async () => {
+    if (!supabase || !e.id) return;
+    const { data } = await supabase
+      .from('communications')
+      .select('id, channel, direction, body, created_at')
+      .eq('enquiry_id', e.id)
+      .order('created_at', { ascending: true });
+    setThread(data ?? []);
+  }, [e.id]);
+
+  // Cancellable so a fast click through enquiries can't land an older
+  // response on top of a newer one, or set state after unmount.
+  useEffect(() => {
+    if (!supabase || !e.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('communications')
+        .select('id, channel, direction, body, created_at')
+        .eq('enquiry_id', e.id)
+        .order('created_at', { ascending: true });
+      if (!cancelled) setThread(data ?? []);
+    })();
+    return () => { cancelled = true; };
+  }, [e.id]);
 
   const canSend   = channel === 'text' ? !!e.phone : channel === 'email' ? !!e.email : !!e.phone;
   const firstName = (e.name || '').trim().split(/\s+/)[0] || 'lead';
 
   const sendReply = async () => {
+    // Re-entrancy guard. The button is disabled while sending, but React state
+    // is async — a fast double-click fires this twice before `sending` flips,
+    // and a lead gets the same email twice.
+    if (sending) return;
     if (!body.trim() || channel === 'call') return;
     const to = channel === 'text' ? e.phone : e.email;
     if (!to) { setError(`No ${channel === 'text' ? 'phone number' : 'email'} on file.`); return; }
@@ -221,6 +254,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
           channel: channel === 'text' ? 'sms' : 'email',
+          enquiryId: e.id,   // gives the reply token something to point at
           to,
           subject: channel === 'email' ? subject : undefined,
           body: body.trim(),
@@ -228,7 +262,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send');
-      setSent(prev => [...prev, { channel, body: body.trim(), at: new Date().toISOString() }]);
+      await loadThread();
       setBody('');
       if (status === 'new') onStatus(e, 'contacted');
       toast(`${channel === 'text' ? 'Text' : 'Email'} sent to ${firstName}.`);
@@ -317,19 +351,25 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
 
       {/* Reply composer + lifecycle actions */}
       <div className="flex-shrink-0 border-t border-slate-200 bg-white p-3 space-y-2.5">
-        {/* Replies sent this session */}
-        {sent.length > 0 && (
+        {/* Conversation so far — outbound and the lead's replies */}
+        {thread.length > 0 && (
           <div className="space-y-1.5 max-h-28 overflow-y-auto">
-            {sent.map((s, i) => (
-              <div key={i} className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-teal-600 text-white px-3.5 py-2">
-                  <p className="text-sm whitespace-pre-wrap break-words">{s.body}</p>
-                  <p className="text-[10px] text-teal-100 text-right mt-0.5">
-                    {s.channel === 'text' ? 'Text' : 'Email'} · {format(parseISO(s.at), 'h:mm a')}
-                  </p>
+            {thread.map(m => {
+              const out = m.direction === 'outbound';
+              return (
+                <div key={m.id} className={`flex ${out ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 ${
+                    out ? 'rounded-br-sm bg-teal-600 text-white'
+                        : 'rounded-bl-sm bg-white border border-slate-200 text-slate-800'
+                  }`}>
+                    <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>
+                    <p className={`text-[10px] mt-0.5 ${out ? 'text-teal-100 text-right' : 'text-slate-400'}`}>
+                      {m.channel === 'sms' ? 'Text' : 'Email'} · {format(parseISO(m.created_at), 'h:mm a')}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -432,6 +472,7 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer }) {
   const canSend = channel === 'sms' ? !!conv.customerPhone : !!conv.customerEmail;
 
   const handleSend = async () => {
+    if (sending) return;   // same double-click race as sendReply
     if (!reply.trim() || !canSend) return;
     setSending(true); setError('');
     try {
