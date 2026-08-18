@@ -60,8 +60,12 @@ export function useQuoteTracking(quoteId, isFirstOpen) {
     };
   }, [quoteId, isFirstOpen, call]);
 
-  const trackAccept = useCallback((name, email) =>
-    call('quote_accepted', { name, email }),
+  // The selected optional items travel with the accept event: the RPC is what
+  // actually persists them (and recomputes the totals and advances the job),
+  // because the customer's device has no localStorage copy of the quote for
+  // acceptQuote() to update.
+  const trackAccept = useCallback((name, email, selectedLineItemIds = []) =>
+    call('quote_accepted', { name, email, selectedLineItemIds }),
   [call]);
 
   const trackDecline = useCallback((reason) =>

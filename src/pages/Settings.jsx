@@ -7,7 +7,7 @@ import {
   ArrowRight, FileText, Cloud, CloudUpload, RefreshCw, CheckCircle2,
   AlertTriangle, Sun, Moon, Monitor, Clock, Wifi, WifiOff,
   Link2, Link2Off, ExternalLink, Building2, Loader, Bot, Trash2,
-  MessageSquare, Database, Zap, ClipboardList,
+  MessageSquare, Database, Zap, ClipboardList, FileDown,
 } from 'lucide-react';
 import { useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -21,13 +21,17 @@ import {
   getPoPresets, savePoPreset, deletePoPreset,
   MS_OPTION_FIELDS, getMsCustomOptions, addMsOption, deleteMsOption,
   getQuoteSettings, saveQuoteSettings,
+  getBuzFabricCodes, saveBuzFabricCode, deleteBuzFabricCode,
+  getBuzValueMap, setBuzValueMapEntry,
 } from '../store/data';
+import { BUZ_MAP_FIELDS } from '../lib/buzExport';
 import { pushAllToSupabase, hydrateFromSupabase, flushPending } from '../store/db';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
 import {
   xeroGetConnection, xeroStartOAuth, xeroDisconnect,
-  xeroSaveSettings, xeroInvoiceStatusBadge,
+  xeroSaveSettings, xeroInvoiceStatusBadge, xeroDismissErrors,
+  xeroActivateOrganisation, xeroGetBrandingThemes,
 } from '../lib/xero';
 
 export default function Settings() {
@@ -187,6 +191,7 @@ export default function Settings() {
     { id: 'integrations', label: 'Integrations',   icon: Zap,         desc: 'Xero & more' },
     { id: 'products',     label: 'Products',       icon: Tag,         desc: 'Types & pricing' },
     { id: 'measure',      label: 'Measure Sheet',  icon: ClipboardList, desc: 'Dropdown options' },
+    { id: 'buz',          label: 'BUZ Export',     icon: FileDown,    desc: 'Fabric → inventory codes' },
     { id: 'data',         label: 'Data & AI',      icon: Database,    desc: 'Knowledge & imports' },
   ];
 
@@ -584,6 +589,8 @@ export default function Settings() {
           {/* ── MEASURE SHEET ── */}
           {section === 'measure' && <MeasureSheetOptionsSection />}
 
+          {section === 'buz' && <BuzExportSection />}
+
           {/* ── DATA & AI ── */}
           {section === 'data' && (<>
             <ImportsSection navigate={navigate} />
@@ -599,6 +606,7 @@ export default function Settings() {
 // ─── Xero Integration Section ─────────────────────────────────────────────────
 const DEFAULT_XERO_SETTINGS = {
   autoCreateInvoice:       false,
+  brandingThemeId:         '',
   defaultInvoiceStatus:    'DRAFT',
   defaultAccountCode:      '200',
   defaultTaxType:          'OUTPUT',
@@ -612,6 +620,11 @@ function XeroSection() {
   const [editingSettings, setEditingSettings] = useState(false);
   const [localSettings, setLocalSettings]     = useState(DEFAULT_XERO_SETTINGS);
   const [errors, setErrors]     = useState([]);
+  const [dismissing, setDismissing] = useState(false);
+  const [organisations, setOrganisations] = useState([]);
+  const [switchingOrg, setSwitchingOrg]   = useState(false);
+  const [themes, setThemes]               = useState(null); // null = not loaded yet
+  const [themesError, setThemesError]     = useState(null);
 
   const load = async () => {
     try {
@@ -623,6 +636,7 @@ function XeroSection() {
         setLocalSettings(merged);
       }
       setErrors(data.recentErrors ?? []);
+      setOrganisations(data.organisations ?? []);
     } catch {
       setStatus({ connected: false });
     }
@@ -666,6 +680,52 @@ function XeroSection() {
       toast(err.message, 'error');
     } finally {
       setWorking(false);
+    }
+  };
+
+  // Switching organisation is a local flip — one Xero consent already covers
+  // every org on the account, so no re-authorisation is needed.
+  const handleSwitchOrg = async (tenantId) => {
+    if (switchingOrg || !tenantId) return;
+    setSwitchingOrg(true);
+    try {
+      const { organisationName } = await xeroActivateOrganisation(tenantId);
+      await load();
+      toast(`Now using ${organisationName}.`);
+    } catch (err) {
+      toast(err.message || 'Could not switch organisation.', 'error');
+    } finally {
+      setSwitchingOrg(false);
+    }
+  };
+
+  // Dismissing marks the log rows in Supabase, so cleared errors stay cleared
+  // across reloads. The list updates optimistically and rolls back on failure.
+  const handleDismissErrors = async (target) => {
+    if (dismissing) return;
+    const previous = errors;
+    setDismissing(true);
+    setErrors(target === 'all' ? [] : errors.filter(e => !target.includes(e.id)));
+    try {
+      await xeroDismissErrors(target);
+    } catch (err) {
+      setErrors(previous);
+      toast(err.message || 'Could not dismiss the error.', 'error');
+    } finally {
+      setDismissing(false);
+    }
+  };
+
+  // Loaded only when the editor is opened — it costs a live Xero API call, so
+  // there's no reason to spend one every time Settings renders.
+  const loadThemes = async () => {
+    if (themes !== null) return;
+    try {
+      setThemes(await xeroGetBrandingThemes());
+      setThemesError(null);
+    } catch (err) {
+      setThemes([]);
+      setThemesError(err.message || 'Could not load invoice templates.');
     }
   };
 
@@ -727,12 +787,41 @@ function XeroSection() {
             </button>
           </div>
 
+          {/* Organisation picker — one Xero consent covers every org on the
+              account, so switching (e.g. to the Demo Company for testing) is a
+              dropdown rather than a fresh OAuth round-trip. */}
+          {organisations.length > 1 && (
+            <div className="px-5 py-4">
+              <label htmlFor="xero-org" className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                Active organisation
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  id="xero-org"
+                  value={status.integration?.tenantId ?? ''}
+                  onChange={e => handleSwitchOrg(e.target.value)}
+                  disabled={switchingOrg}
+                  className="flex-1 border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60"
+                >
+                  {organisations.map(o => (
+                    <option key={o.tenantId} value={o.tenantId}>{o.name}</option>
+                  ))}
+                </select>
+                {switchingOrg && <Loader size={14} className="animate-spin text-slate-400 flex-shrink-0" />}
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                Invoices are created in this organisation. Pick your Xero Demo Company to test
+                without touching your real accounts.
+              </p>
+            </div>
+          )}
+
           {/* Settings */}
           <div className="px-5 py-4">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Invoice Settings</p>
               <button
-                onClick={() => { setEditingSettings(!editingSettings); setLocalSettings(settings); }}
+                onClick={() => { const opening = !editingSettings; setEditingSettings(opening); setLocalSettings(settings); if (opening) loadThemes(); }}
                 className="text-xs text-amber-600 hover:underline flex items-center gap-1"
               >
                 {editingSettings ? <><X size={11} /> Cancel</> : <><Edit3 size={11} /> Edit</>}
@@ -755,6 +844,25 @@ function XeroSection() {
                     {localSettings.autoCreateInvoice ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
                   </button>
                 </label>
+
+                <div>
+                  <label htmlFor="xero-theme" className="block text-xs font-medium text-slate-500 mb-1">Invoice template</label>
+                  <select
+                    id="xero-theme"
+                    value={localSettings.brandingThemeId || ''}
+                    onChange={e => setLocalSettings(s => ({ ...s, brandingThemeId: e.target.value }))}
+                    disabled={themes === null}
+                    className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white disabled:opacity-60"
+                  >
+                    <option value="">{themes === null ? 'Loading templates…' : "Xero's default template"}</option>
+                    {(themes ?? []).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Sets the PDF layout — including whether an amount appears at the top and where the
+                    due date sits. Edit the templates themselves in Xero under Settings &rarr; Invoice settings.
+                  </p>
+                  {themesError && <p className="text-xs text-red-500 mt-1">{themesError}</p>}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -817,6 +925,11 @@ function XeroSection() {
                 <SettingRow label="Account code"        value={settings.defaultAccountCode} />
                 <SettingRow label="Tax type"            value={settings.defaultTaxType} />
                 <SettingRow label="Payment terms"       value={`${settings.defaultPaymentTermsDays} days`} />
+                <SettingRow label="Invoice template"    value={
+                  settings.brandingThemeId
+                    ? ((themes ?? []).find(t => t.id === settings.brandingThemeId)?.name ?? 'Selected')
+                    : "Xero's default"
+                } />
               </div>
             )}
           </div>
@@ -824,16 +937,36 @@ function XeroSection() {
           {/* Recent errors */}
           {errors.length > 0 && (
             <div className="px-5 py-4">
-              <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Recent Errors</p>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">Recent Errors</p>
+                {errors.length > 1 && (
+                  <button
+                    onClick={() => handleDismissErrors('all')}
+                    disabled={dismissing}
+                    className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-50 hover:underline"
+                  >
+                    Dismiss all
+                  </button>
+                )}
+              </div>
               <div className="space-y-1.5">
                 {errors.map((e, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  <div key={e.id ?? i} className="flex items-start gap-2 text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                     <AlertTriangle size={11} className="text-red-500 flex-shrink-0 mt-0.5" />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-red-700 font-medium">{e.action}</p>
-                      <p className="text-red-600 truncate">{e.error_message}</p>
+                      <p className="text-red-600 break-words">{e.error_message}</p>
                       <p className="text-red-400">{fmtDate(e.created_at)}</p>
                     </div>
+                    <button
+                      onClick={() => handleDismissErrors([e.id])}
+                      disabled={dismissing || !e.id}
+                      title="Dismiss this error"
+                      aria-label={`Dismiss error: ${e.action}`}
+                      className="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded text-red-300 hover:text-red-600 hover:bg-red-100 disabled:opacity-40 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -1176,6 +1309,153 @@ function MeasureSheetOptionsSection() {
             </div>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+function BuzExportSection() {
+  useDataRefresh();
+  const codes = getBuzFabricCodes();
+  const [range, setRange]   = useState('');
+  const [code, setCode]     = useState('');
+  const [editId, setEditId] = useState(null);
+  const [editRange, setEditRange] = useState('');
+  const [editCode, setEditCode]   = useState('');
+
+  const add = () => {
+    const row = saveBuzFabricCode({ range, code });
+    if (!row) { toast('Enter both a fabric range and a BUZ code.', 'info'); return; }
+    setRange(''); setCode('');
+    toast('Fabric code added.');
+  };
+
+  const startEdit = (e) => { setEditId(e.id); setEditRange(e.range); setEditCode(e.code); };
+  const saveEdit = () => {
+    const row = saveBuzFabricCode({ id: editId, range: editRange, code: editCode });
+    if (!row) { toast('Enter both a fabric range and a BUZ code.', 'info'); return; }
+    setEditId(null);
+    toast('Fabric code updated.');
+  };
+
+  return (
+    <div className="space-y-6">
+    <Card className="p-5">
+      <div className="mb-4">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <FileDown size={15} className="text-amber-500" /> BUZ Export — Fabric Codes
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          When you export a roller-blind measure sheet to BUZ, each blind needs a BUZ <span className="font-medium">INVENTORY CODE</span>.
+          Map your fabric ranges to their BUZ codes here. A blind's fabric is matched by name (the longest matching range wins);
+          any fabric with no match is left blank in the file for you to complete. Stored on this device only.
+        </p>
+      </div>
+
+      {/* Add row */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <input value={range} onChange={e => setRange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="Fabric range (e.g. Serene Blockout)"
+          className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+        <input value={code} onChange={e => setCode(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="BUZ code (e.g. ROLLSERBOO1)"
+          className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
+        <button type="button" onClick={add}
+          className="flex items-center justify-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white flex-shrink-0">
+          <Plus size={14} /> Add
+        </button>
+      </div>
+
+      {/* Existing mappings */}
+      {codes.length === 0 ? (
+        <p className="text-xs text-slate-400">No fabric codes yet. Add your first mapping above.</p>
+      ) : (
+        <div className="border border-slate-200 rounded-xl divide-y divide-slate-100">
+          {codes.map(e => (
+            <div key={e.id} className="flex items-center gap-2 px-3 py-2">
+              {editId === e.id ? (
+                <>
+                  <input value={editRange} onChange={ev => setEditRange(ev.target.value)}
+                    className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                  <input value={editCode} onChange={ev => setEditCode(ev.target.value)}
+                    className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                  <button type="button" onClick={saveEdit} title="Save" className="text-green-600 hover:text-green-700 p-1"><Check size={15} /></button>
+                  <button type="button" onClick={() => setEditId(null)} title="Cancel" className="text-slate-400 hover:text-slate-600 p-1"><X size={15} /></button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 min-w-0 text-sm text-slate-700 truncate">{e.range}</span>
+                  <span className="flex-1 min-w-0 text-sm font-mono text-amber-700 truncate">{e.code}</span>
+                  <button type="button" onClick={() => startEdit(e)} title="Edit" className="text-slate-400 hover:text-slate-600 p-1"><Edit3 size={14} /></button>
+                  <button type="button" onClick={() => { deleteBuzFabricCode(e.id); toast('Fabric code removed.', 'info'); }}
+                    title="Remove" className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+    <BuzValueMapCard />
+    </div>
+  );
+}
+
+// Per-option Lusso→BUZ value translations (CONTROLTYPE / ROLLDIR / BOTTOMTRIM).
+// Each row maps one Lusso dropdown value to the exact BUZ wording; blank falls
+// back to the built-in default (shown as the placeholder), or passes through.
+function BuzValueMapCard() {
+  useDataRefresh();
+  const [drafts, setDrafts] = useState(() => {
+    const d = {};
+    BUZ_MAP_FIELDS.forEach(f => {
+      const stored = getBuzValueMap(f.key);
+      f.sourceOptions.forEach(opt => { d[`${f.key}|${opt}`] = stored[opt.toLowerCase()] || ''; });
+    });
+    return d;
+  });
+
+  const onChange = (field, opt, val) => {
+    setDrafts(d => ({ ...d, [`${field}|${opt}`]: val }));
+    setBuzValueMapEntry(field, opt, val);
+  };
+
+  return (
+    <Card className="p-5">
+      <div className="mb-4">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <FileDown size={15} className="text-amber-500" /> BUZ Export — Value Translations
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Map each Lusso option to the exact BUZ dropdown wording for these columns. Leave a row blank to use the
+          built-in default (shown as the faint placeholder) or, where there's no default, to pass the Lusso value
+          through unchanged. Changes apply to the next export.
+        </p>
+      </div>
+      <div className="space-y-5">
+        {BUZ_MAP_FIELDS.map(f => (
+          <div key={f.key} className="border border-slate-200 rounded-xl p-4">
+            <p className="text-sm font-medium text-slate-700">
+              {f.column} <span className="text-slate-400 font-normal">· from {f.sourceLabel}</span>
+            </p>
+            <div className="mt-2 divide-y divide-slate-100">
+              {f.sourceOptions.map(opt => {
+                const def = f.defaults[opt.toLowerCase()] || '';
+                return (
+                  <div key={opt} className="flex items-center gap-3 py-1.5">
+                    <span className="w-36 sm:w-44 flex-shrink-0 text-sm text-slate-600 truncate" title={opt}>{opt}</span>
+                    <span className="text-slate-300 flex-shrink-0">→</span>
+                    <input value={drafts[`${f.key}|${opt}`] ?? ''} onChange={e => onChange(f.key, opt, e.target.value)}
+                      placeholder={def || 'passes through unchanged'}
+                      className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-slate-300" />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </Card>
   );

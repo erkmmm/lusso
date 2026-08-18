@@ -48,6 +48,54 @@ export async function xeroSaveSettings(settings) {
   return data.settings;
 }
 
+/**
+ * Lists the organisation's Xero invoice templates (branding themes).
+ * The theme controls the PDF layout — including whether an "Amount due" panel
+ * appears at the top and where the due date sits — so it is chosen, not sent.
+ */
+export async function xeroGetBrandingThemes() {
+  const headers = await authHeaders();
+  const res = await fetch(`${FN('xero-connection')}?themes=1`, { headers });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || 'Could not load invoice templates');
+  return data.themes ?? [];
+}
+
+/**
+ * Switches which authorised Xero organisation invoices are created in.
+ * One consent covers every org on the Xero account, so this is a local flip —
+ * no re-authorisation needed.
+ */
+export async function xeroActivateOrganisation(tenantId) {
+  const headers = await authHeaders();
+  const res = await fetch(FN('xero-connection'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ activateTenantId: tenantId }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || 'Could not switch organisation');
+  return data;
+}
+
+/**
+ * Dismisses sync-log errors from the Integrations panel.
+ * Pass an array of log ids, or 'all' to clear every outstanding error.
+ * The rows are marked dismissed, not deleted — the sync history is kept.
+ */
+export async function xeroDismissErrors(target) {
+  const headers = await authHeaders();
+  const body = target === 'all' ? { all: true } : { ids: target };
+  const res = await fetch(FN('xero-connection'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || 'Dismiss failed');
+  return data;
+}
+
 /** Disconnects Xero */
 export async function xeroDisconnect() {
   const headers = await authHeaders();

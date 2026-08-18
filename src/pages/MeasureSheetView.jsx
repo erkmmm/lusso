@@ -2,8 +2,9 @@ import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy } from 'lucide-react';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown } from 'lucide-react';
 import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, duplicateMeasureSheet, createJobFromMeasureSheet } from '../store/data';
+import { exportMeasureSheetToBuz, isRollerBlindItem } from '../lib/buzExport';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -318,6 +319,24 @@ export default function MeasureSheetView() {
     navigate(`/measure-sheets/${dupe.id}/edit`);
   };
 
+  const handleBuzExport = () => {
+    try {
+      const { count, unmapped } = exportMeasureSheetToBuz(sheet, job);
+      if (unmapped.length) {
+        toast(
+          `Exported ${count} blind${count === 1 ? '' : 's'} to BUZ. ${unmapped.length} fabric${unmapped.length === 1 ? '' : 's'} had no inventory code (left blank): ${unmapped.join(', ')}. Add codes in Settings → BUZ Export.`,
+          'warning',
+        );
+      } else {
+        toast(`Exported ${count} roller blind${count === 1 ? '' : 's'} to BUZ.`);
+      }
+    } catch (err) {
+      toast(err.message || 'Could not export to BUZ.', 'error');
+    }
+  };
+
+  const hasRollerBlinds = (sheet?.lineItems || []).some(isRollerBlindItem);
+
   if (!sheet) {
     return (
       <div className="p-6 text-center">
@@ -374,6 +393,12 @@ export default function MeasureSheetView() {
               <button onClick={() => navigate(`/measure-sheets/${id}/purchase-order`)}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 no-print">
                 <ClipboardList size={13} /> Generate Purchase Order
+              </button>
+            )}
+            {hasRollerBlinds && (
+              <button onClick={handleBuzExport} title="Download roller blinds as a BUZ import file"
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 no-print">
+                <FileDown size={13} /> Export to BUZ
               </button>
             )}
             <button onClick={handlePrint}

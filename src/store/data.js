@@ -1301,6 +1301,81 @@ export const deleteMsOption = (id) => {
   db.deleteMeasureSheetOption(id);
 };
 
+// ─── BUZ export: fabric range → BUZ inventory code map ──────────────────────────
+// The BUZ roller-blind import needs an exact INVENTORY CODE per blind (e.g.
+// "ROLLSERBOO1"), which Lusso can't derive from its free-text fabric field. The
+// user maintains this fabric-range → code table in Settings. Stored in
+// localStorage only (not synced to Supabase — no db table), matching how other
+// pure-local settings are kept.
+export const getBuzFabricCodes = () => get('lusso_buz_fabric_codes') || [];
+
+export const saveBuzFabricCode = ({ id, range, code }) => {
+  const r = String(range || '').trim();
+  const c = String(code || '').trim();
+  if (!r || !c) return null;
+  const all = get('lusso_buz_fabric_codes') || [];
+  if (id) {
+    const next = all.map(e => (e.id === id ? { ...e, range: r, code: c } : e));
+    set('lusso_buz_fabric_codes', next);
+    return next.find(e => e.id === id) || null;
+  }
+  const row = { id: uuidv4(), range: r, code: c, createdAt: new Date().toISOString() };
+  all.push(row);
+  set('lusso_buz_fabric_codes', all);
+  return row;
+};
+
+export const deleteBuzFabricCode = (id) => {
+  const all = get('lusso_buz_fabric_codes') || [];
+  const next = all.filter(e => e.id !== id);
+  if (next.length !== all.length) set('lusso_buz_fabric_codes', next);
+};
+
+/**
+ * Resolve a fabric colour/name to its BUZ inventory code. Matches a mapping
+ * entry whose `range` equals or is contained in the fabric text
+ * (case-insensitive); the longest matching range wins so a specific range beats
+ * a broad one. Returns '' when nothing matches.
+ */
+export const lookupBuzInventoryCode = (fabricColour) => {
+  const hay = String(fabricColour || '').toLowerCase().trim();
+  if (!hay) return '';
+  let best = null;
+  for (const e of get('lusso_buz_fabric_codes') || []) {
+    const key = String(e.range || '').toLowerCase().trim();
+    if (!key) continue;
+    if (hay === key || hay.includes(key)) {
+      if (!best || key.length > best.len) best = { code: e.code, len: key.length };
+    }
+  }
+  return best ? best.code : '';
+};
+
+// ─── BUZ export: Lusso value → BUZ value translation overrides ───────────────────
+// Some BUZ dropdown columns (CONTROLTYPE, ROLLDIR, BOTTOMTRIM) use different
+// wording than Lusso's own options. buzExport.js ships sensible defaults; these
+// let the user override/extend them per Lusso option in Settings. Stored as
+// { field: { lussoValueLower: buzValue } }, keyed by lower-cased Lusso value so
+// lookups are case-insensitive. localStorage only, like the fabric-code table.
+export const getBuzValueMaps = () => get('lusso_buz_value_maps') || {};
+
+/** The override map for one field ({ lussoValueLower: buzValue }); {} if none. */
+export const getBuzValueMap = (field) => (get('lusso_buz_value_maps') || {})[field] || {};
+
+/**
+ * Set (or clear) one Lusso→BUZ override. An empty `toValue` removes the override
+ * so the built-in default applies again.
+ */
+export const setBuzValueMapEntry = (field, fromValue, toValue) => {
+  const from = String(fromValue || '').trim().toLowerCase();
+  if (!field || !from) return;
+  const all = get('lusso_buz_value_maps') || {};
+  const fieldMap = { ...(all[field] || {}) };
+  const to = String(toValue || '').trim();
+  if (to) fieldMap[from] = to; else delete fieldMap[from];
+  set('lusso_buz_value_maps', { ...all, [field]: fieldMap });
+};
+
 // ─── Per-product-type spec schema ───────────────────────────────────────────────
 // Every window-furnishing product only needs SOME of the spec fields (a Roller
 // Blind has no heading/lining; a Curtain has no bottom rail). Each product type
@@ -2115,20 +2190,21 @@ const DEFAULT_QUOTE_SETTINGS = {
   // Optional link to a full Terms & Conditions document (PDF/web). Blank hides the link.
   termsAttachmentUrl: '',
   termsAttachmentLabel: 'Download full Terms & Conditions',
-  // Payment options shown on the customer quote. Placeholder values — set the
-  // real BSB / account details in Settings.
+  // Payment options shown on the customer quote. These are the live account
+  // details — they must match the ones on the Xero invoice, or a customer who
+  // pays off the quote pays into a different account than the invoice states.
   paymentDetails: {
-    bsb: '000-000',
-    accountNumber: '0000 0000',
-    accountName: 'Lusso Blinds & Curtains Pty Ltd',
+    bsb: '014 527',
+    accountNumber: '498 279 909',
+    accountName: 'Lusso Fashion for Windows',
     creditCardNote: 'We also accept Visa and Mastercard over the phone.',
-    amexSurchargePercent: 1.5,
+    amexSurchargePercent: 2.5,
   },
-  // Customer testimonials shown on the quote. Populate with real reviews.
-  testimonials: [
-    { name: 'Sarah M.', location: 'Brighton', rating: 5, quote: 'Beautiful workmanship and the team was a pleasure to deal with from quote to install.' },
-    { name: 'James & Priya', location: 'Toorak', rating: 5, quote: 'The curtains completely transformed our living room. Faultless service.' },
-  ],
+  // Real customer testimonials only — add them in Settings → Quote defaults.
+  // Deliberately empty: invented reviews on a customer-facing quote are a
+  // misrepresentation, so the section simply doesn't render until it has real
+  // ones.
+  testimonials: [],
   googleReviewUrl: 'https://search.google.com/local/writereview?placeid=ChIJscqHCScFkWsRDQvVRjxuzao',
   googleRating: 4.9,
   googleReviewCount: 120,
@@ -2523,7 +2599,34 @@ export const deleteQuoteTemplate = (id) => set('lusso_quote_templates', getQuote
 // ─── Quote Settings ───────────────────────────────────────────────────────────
 
 export const getQuoteSettings = () => get('lusso_quote_settings') || DEFAULT_QUOTE_SETTINGS;
-export const saveQuoteSettings = (s) => set('lusso_quote_settings', { ...getQuoteSettings(), ...s });
+
+export const saveQuoteSettings = (s) => {
+  const merged = { ...getQuoteSettings(), ...s };
+  set('lusso_quote_settings', merged);
+  // Mirror to Supabase so the public customer quote page — which runs on the
+  // customer's own device, with no localStorage — shows the real business and
+  // payment details instead of falling back to the defaults.
+  db.saveBusinessSettings?.(merged);
+  return merged;
+};
+
+/**
+ * Quote settings for the public customer quote page, read from Supabase.
+ * Falls back to the local copy (and then the defaults) so the page still
+ * renders if the fetch fails.
+ */
+export const fetchPublicQuoteSettings = async () => {
+  const remote = await db.getBusinessSettings?.();
+  const local  = getQuoteSettings();
+  if (!remote) return local;
+  return {
+    ...local,
+    ...remote,
+    // Nested objects must merge, not replace, or a partially-filled remote row
+    // would blank out payment details the local copy still has.
+    paymentDetails: { ...(local.paymentDetails || {}), ...(remote.paymentDetails || {}) },
+  };
+};
 
 // ─── Message Presets ──────────────────────────────────────────────────────────
 
