@@ -18,6 +18,39 @@ const cors = {
   "Access-Control-Max-Age": "86400",
 }
 
+function toBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str)
+  let binary = ""
+  for (const b of bytes) binary += String.fromCharCode(b)
+  return btoa(binary)
+}
+
+// Same refresh dance as xero-create-invoice: Xero access tokens last 30 min, so
+// anything calling the API has to be able to renew before using them.
+async function getToken(admin: ReturnType<typeof createClient>) {
+  const { data: intg } = await admin.from("xero_integrations").select("*").eq("status","active").maybeSingle()
+  if (!intg) return null
+  if (new Date(intg.token_expires_at).getTime() - Date.now() > 5 * 60 * 1000)
+    return { accessToken: intg.access_token, tenantId: intg.tenant_id }
+  const creds = toBase64(`${Deno.env.get("XERO_CLIENT_ID")}:${Deno.env.get("XERO_CLIENT_SECRET")}`)
+  const res = await fetch("https://identity.xero.com/connect/token", {
+    method: "POST",
+    headers: { Authorization: `Basic ${creds}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: intg.refresh_token }),
+  })
+  if (!res.ok) {
+    await admin.from("xero_integrations").update({ status: "error" }).eq("id", intg.id)
+    return null
+  }
+  const t = await res.json()
+  await admin.from("xero_integrations").update({
+    access_token: t.access_token, refresh_token: t.refresh_token ?? intg.refresh_token,
+    token_expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", intg.id)
+  return { accessToken: t.access_token, tenantId: intg.tenant_id }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
 
@@ -44,6 +77,30 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Account Manager access required" }, 403)
 
     if (req.method === "GET") {
+      // ?themes=1 — the branding theme decides the invoice PDF layout (whether
+      // an "Amount due" panel sits at the top, where the due date goes). Fetched
+      // on demand rather than on every Settings load, to avoid an extra Xero
+      // API call and rate-limit spend each time the page opens.
+      if (new URL(req.url).searchParams.get("themes") === "1") {
+        const token = await getToken(admin)
+        if (!token) return json({ error: "Xero not connected" }, 400)
+        const tr = await fetch("https://api.xero.com/api.xro/2.0/BrandingThemes", {
+          headers: {
+            Authorization: `Bearer ${token.accessToken}`,
+            "Xero-tenant-id": token.tenantId,
+            Accept: "application/json",
+          },
+        })
+        if (!tr.ok) return json({ error: `Could not load invoice templates: ${tr.status}` }, 502)
+        const td = await tr.json()
+        return json({
+          themes: (td?.BrandingThemes ?? []).map((t: any) => ({
+            id: t.BrandingThemeID, name: t.Name, sortOrder: t.SortOrder ?? 0,
+          })),
+        })
+      }
+
+
       const { data: intg } = await admin
         .from("xero_integrations")
         .select("id,tenant_id,organisation_name,connected_at,last_synced_at,status,settings")

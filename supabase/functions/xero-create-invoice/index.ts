@@ -358,6 +358,11 @@ Deno.serve(async (req: Request) => {
         Status:          settings.defaultInvoiceStatus ?? "DRAFT",
         Reference:       reference,
         Url:             `${Deno.env.get("LUSSO_APP_URL") ?? ""}/quotes/${quote.id}`,
+        // Which template Xero renders the PDF with. The theme — not this
+        // payload — decides whether an "Amount due" panel sits at the top and
+        // where the due date appears, so pin it rather than inheriting whatever
+        // the organisation's default happens to be.
+        ...(settings.brandingThemeId ? { BrandingThemeID: settings.brandingThemeId } : {}),
       }]
     }
 

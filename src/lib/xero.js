@@ -49,6 +49,19 @@ export async function xeroSaveSettings(settings) {
 }
 
 /**
+ * Lists the organisation's Xero invoice templates (branding themes).
+ * The theme controls the PDF layout — including whether an "Amount due" panel
+ * appears at the top and where the due date sits — so it is chosen, not sent.
+ */
+export async function xeroGetBrandingThemes() {
+  const headers = await authHeaders();
+  const res = await fetch(`${FN('xero-connection')}?themes=1`, { headers });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || 'Could not load invoice templates');
+  return data.themes ?? [];
+}
+
+/**
  * Switches which authorised Xero organisation invoices are created in.
  * One consent covers every org on the Xero account, so this is a local flip —
  * no re-authorisation needed.

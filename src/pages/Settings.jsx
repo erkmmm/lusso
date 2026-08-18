@@ -31,7 +31,7 @@ import { toast } from '../components/ToastContainer';
 import {
   xeroGetConnection, xeroStartOAuth, xeroDisconnect,
   xeroSaveSettings, xeroInvoiceStatusBadge, xeroDismissErrors,
-  xeroActivateOrganisation,
+  xeroActivateOrganisation, xeroGetBrandingThemes,
 } from '../lib/xero';
 
 export default function Settings() {
@@ -606,6 +606,7 @@ export default function Settings() {
 // ─── Xero Integration Section ─────────────────────────────────────────────────
 const DEFAULT_XERO_SETTINGS = {
   autoCreateInvoice:       false,
+  brandingThemeId:         '',
   defaultInvoiceStatus:    'DRAFT',
   defaultAccountCode:      '200',
   defaultTaxType:          'OUTPUT',
@@ -622,6 +623,8 @@ function XeroSection() {
   const [dismissing, setDismissing] = useState(false);
   const [organisations, setOrganisations] = useState([]);
   const [switchingOrg, setSwitchingOrg]   = useState(false);
+  const [themes, setThemes]               = useState(null); // null = not loaded yet
+  const [themesError, setThemesError]     = useState(null);
 
   const load = async () => {
     try {
@@ -710,6 +713,19 @@ function XeroSection() {
       toast(err.message || 'Could not dismiss the error.', 'error');
     } finally {
       setDismissing(false);
+    }
+  };
+
+  // Loaded only when the editor is opened — it costs a live Xero API call, so
+  // there's no reason to spend one every time Settings renders.
+  const loadThemes = async () => {
+    if (themes !== null) return;
+    try {
+      setThemes(await xeroGetBrandingThemes());
+      setThemesError(null);
+    } catch (err) {
+      setThemes([]);
+      setThemesError(err.message || 'Could not load invoice templates.');
     }
   };
 
@@ -805,7 +821,7 @@ function XeroSection() {
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Invoice Settings</p>
               <button
-                onClick={() => { setEditingSettings(!editingSettings); setLocalSettings(settings); }}
+                onClick={() => { const opening = !editingSettings; setEditingSettings(opening); setLocalSettings(settings); if (opening) loadThemes(); }}
                 className="text-xs text-amber-600 hover:underline flex items-center gap-1"
               >
                 {editingSettings ? <><X size={11} /> Cancel</> : <><Edit3 size={11} /> Edit</>}
@@ -828,6 +844,25 @@ function XeroSection() {
                     {localSettings.autoCreateInvoice ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
                   </button>
                 </label>
+
+                <div>
+                  <label htmlFor="xero-theme" className="block text-xs font-medium text-slate-500 mb-1">Invoice template</label>
+                  <select
+                    id="xero-theme"
+                    value={localSettings.brandingThemeId || ''}
+                    onChange={e => setLocalSettings(s => ({ ...s, brandingThemeId: e.target.value }))}
+                    disabled={themes === null}
+                    className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white disabled:opacity-60"
+                  >
+                    <option value="">{themes === null ? 'Loading templates…' : "Xero's default template"}</option>
+                    {(themes ?? []).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Sets the PDF layout — including whether an amount appears at the top and where the
+                    due date sits. Edit the templates themselves in Xero under Settings &rarr; Invoice settings.
+                  </p>
+                  {themesError && <p className="text-xs text-red-500 mt-1">{themesError}</p>}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -890,6 +925,11 @@ function XeroSection() {
                 <SettingRow label="Account code"        value={settings.defaultAccountCode} />
                 <SettingRow label="Tax type"            value={settings.defaultTaxType} />
                 <SettingRow label="Payment terms"       value={`${settings.defaultPaymentTermsDays} days`} />
+                <SettingRow label="Invoice template"    value={
+                  settings.brandingThemeId
+                    ? ((themes ?? []).find(t => t.id === settings.brandingThemeId)?.name ?? 'Selected')
+                    : "Xero's default"
+                } />
               </div>
             )}
           </div>
