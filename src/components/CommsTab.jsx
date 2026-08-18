@@ -182,7 +182,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
 
   const tabClass = (ch) =>
     `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-      channel === ch ? 'bg-violet-500 text-white border-violet-500' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+      channel === ch ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
     }`;
 
   return (
@@ -238,7 +238,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
                 <div className="flex items-center gap-2">
                   {m.direction === 'inbound'
                     ? <PhoneIncoming size={14} className="text-emerald-500" />
-                    : <PhoneOutgoing size={14} className="text-violet-500" />}
+                    : <PhoneOutgoing size={14} className="text-amber-600" />}
                   <span className="text-sm font-medium text-slate-700">
                     {m.direction === 'inbound' ? 'Incoming call' : 'Outgoing call'}
                   </span>
@@ -268,7 +268,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
                 )}
                 <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
                   m.direction === 'outbound'
-                    ? 'bg-violet-500 text-white rounded-br-sm'
+                    ? 'bg-amber-500 text-white rounded-br-sm'
                     : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm'
                 }`}>
                   {m.body}
@@ -303,7 +303,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
             {customerPhone ? (
               <a
                 href={`tel:${customerPhone.replace(/[^\d+]/g, '')}`}
-                className="flex items-center justify-center gap-2 w-full bg-emerald-500 hover:bg-emerald-400 text-white font-medium text-sm rounded-xl px-4 py-2.5 transition-colors"
+                className="flex items-center justify-center gap-2 w-full bg-amber-500 hover:bg-amber-400 text-white font-medium text-sm rounded-xl px-4 py-2.5 transition-colors"
               >
                 <Phone size={15} /> Call {customerPhone}
               </a>
@@ -317,7 +317,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
               <select
                 value={callDir}
                 onChange={e => setCallDir(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+                className="text-sm border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
               >
                 <option value="outbound">Outgoing</option>
                 <option value="inbound">Incoming</option>
@@ -325,7 +325,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
               <select
                 value={callOutcome}
                 onChange={e => setCallOutcome(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+                className="text-sm border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
               >
                 {CALL_OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
@@ -338,19 +338,19 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
                 value={callMinutes}
                 onChange={e => setCallMinutes(e.target.value)}
                 placeholder="Mins"
-                className="w-20 text-sm border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                className="w-20 text-sm border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
               />
               <input
                 value={callNotes}
                 onChange={e => setCallNotes(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleLogCall(); } }}
                 placeholder="Call notes (optional)"
-                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
               />
               <button
                 onClick={handleLogCall}
                 disabled={logging || !session}
-                className="flex-shrink-0 bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+                className="flex-shrink-0 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
                 {logging ? <Loader size={15} className="animate-spin" /> : 'Log'}
               </button>
             </div>
@@ -364,7 +364,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
               value={subject}
               onChange={e => setSubject(e.target.value)}
               placeholder="Subject"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
             />
           </div>
         )}
@@ -381,13 +381,13 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
                 placeholder={channel === 'sms' ? 'Type an SMS… (Enter to send)' : 'Type your email…'}
                 rows={1}
                 disabled={sending || !session || !hasTo}
-                className="w-full resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400 min-h-[38px] max-h-32 disabled:opacity-60 pr-8"
+                className="w-full resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 min-h-[38px] max-h-32 disabled:opacity-60 pr-8"
                 style={{ lineHeight: '1.4' }}
                 onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px'; }}
               />
               {channel === 'sms' && (
                 <button onClick={() => setShowQuick(v => !v)}
-                  className="absolute right-2 bottom-2 text-slate-300 hover:text-violet-500 transition-colors"
+                  className="absolute right-2 bottom-2 text-slate-300 hover:text-amber-600 transition-colors"
                   title="Quick messages">
                   <ChevronDown size={14} />
                 </button>
@@ -396,7 +396,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
             <button
               onClick={handleSend}
               disabled={!body.trim() || sending || !session || !hasTo}
-              className="flex-shrink-0 w-9 h-9 bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white rounded-xl flex items-center justify-center transition-colors">
+              className="flex-shrink-0 w-9 h-9 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-white rounded-xl flex items-center justify-center transition-colors">
               {sending ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
           </div>
@@ -408,7 +408,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
             <p className="text-xs font-medium text-slate-500 mb-2">Quick messages</p>
             {QUICK_SMS.map((tpl, i) => (
               <button key={i} onClick={() => applyQuick(tpl)}
-                className="w-full text-left text-xs text-slate-600 bg-white border border-slate-200 hover:border-violet-300 hover:text-violet-700 px-3 py-2 rounded-lg transition-colors">
+                className="w-full text-left text-xs text-slate-600 bg-white border border-slate-200 hover:border-amber-300 hover:text-amber-700 px-3 py-2 rounded-lg transition-colors">
                 {tpl.replaceAll('{name}', customerName?.split(' ')[0] ?? 'there')}
               </button>
             ))}
