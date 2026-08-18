@@ -1,0 +1,58 @@
+; lusso.com.au — Cloudflare import zone file
+; Captured live 17 Aug 2026; reconciled against the live Cloudflare zone 18 Aug 2026.
+;
+; USE: Cloudflare dashboard > lusso.com.au > DNS > Records > Import and Export
+;      > Import DNS records > upload this file.
+;      Cloudflare is already authoritative — this file is now a record of the
+;      zone rather than a migration step. Re-importing it is idempotent.
+;
+; The send MX region is ap-northeast-1 (Tokyo) — read off the Resend domain
+; page 2026-08-18. It is not inferable: not us-east-1, not Sydney.
+; A wrong region fails verification silently.
+;
+; This file reflects the live zone as of 2026-08-18, including lyncdiscover,
+; which the original runbook table omitted. It does NOT include the dead
+; SendGrid/Wix records still present in Cloudflare (s1/s2._domainkey, sg,
+; sel1._domainkey) — those are cruft to prune, not records to recreate.
+;
+; AFTER IMPORTING, two manual checks:
+;   1. @, www and app must be DNS only (grey cloud). Proxying breaks Vercel
+;      and Pages TLS issuance.
+;   2. Confirm all 14 records landed — importers have been known to drop SRV.
+;
+; NOT in this file: the MX for reply.lusso.com.au. That record is created
+; automatically when you enable Cloudflare Email Routing in phase 04.
+
+$ORIGIN lusso.com.au.
+$TTL 300
+
+; --- Web ---------------------------------------------------------------
+; 300s TTL keeps a mistake cheap during cutover; raise to 3600 once stable.
+@                       IN  A       216.198.79.1
+www                     IN  CNAME   cname.vercel-dns.com.
+app                     IN  CNAME   lusso-7tj.pages.dev.
+
+; --- Microsoft 365 mail — the one that must not break -------------------
+@                       IN  MX  0   lusso-com-au.mail.protection.outlook.com.
+autodiscover            IN  CNAME   autodiscover.outlook.com.
+lyncdiscover            IN  CNAME   webdir.online.lync.com.
+_sipfederationtls._tcp  IN  SRV 100 1 5061 sipfed.online.lync.com.
+_sip._tls               IN  SRV 100 1 443  sipdir.online.lync.com.
+
+; --- Apex TXT -----------------------------------------------------------
+; Do not add include:amazonses.com here. Resend aligns via the DKIM key
+; below and bounces via the send subdomain. Keep -all strong.
+@                       IN  TXT     "v=spf1 include:spf.protection.outlook.com -all"
+@                       IN  TXT     "google-site-verification=SrSB97QrzeTlTc-BvkFFrxcRzyqDWcl2FQsBfiDvtvg"
+
+; --- Resend DKIM — already live, copy exactly ---------------------------
+resend._domainkey       IN  TXT     "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQChW53enjumBC1ZNaisvQRxL/5kBQwCfEnjmbOzwxW7CE+DZnIWkDRnvDWEa8s3rqFkZBq/Z3Oq6uy6fT52lwpH/MwXzZdPb/kbEuNv5K7OADIzQ/qW0W8R9SDDkd9mGfjcyMCG5nq9/1JYGyvtEOo84AWpg8WlwTFHGa1krdVt3wIDAQAB"
+
+; --- DMARC — was a CNAME to Wix, now owned by you -----------------------
+_dmarc                  IN  TXT     "v=DMARC1; p=none; rua=mailto:dmarc@lusso.com.au"
+
+; --- Resend send subdomain ----------------------------------------------
+; The TXT below is already live on Wix. The MX is the record Wix refused to
+; accept on a subdomain — it is the whole reason for this migration.
+send                    IN  TXT     "v=spf1 include:amazonses.com ~all"
+send                    IN  MX  10  feedback-smtp.ap-northeast-1.amazonses.com.
