@@ -29,6 +29,13 @@ export const BRAND = {
 
 const FONT = "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
+// Masthead logo. Hosted, not inlined: data: URIs are stripped by Outlook and
+// Gmail, and a CID attachment would have to be threaded through all five
+// senders. This exact URL is already proven — the staff email signatures use
+// it. Native asset is 196x70; shown at 140x50 so it stays crisp on retina.
+const LOGO_URL = 'https://app.lusso.com.au/email/lusso-logo.png'
+
+
 export const escapeHtml = (s = '') =>
   String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -194,7 +201,8 @@ export function renderEmail({
 
     <!-- Wordmark -->
     <tr><td style="padding:0 0 22px;">
-      <span style="font-family:${FONT};font-size:17px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:${BRAND.ink};">Lusso</span>
+      <img src="${LOGO_URL}" width="140" height="50" alt="Lusso"
+        style="display:block;border:0;outline:none;text-decoration:none;width:140px;height:50px;-ms-interpolation-mode:bicubic;font-family:${FONT};font-size:17px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:${BRAND.ink};">
     </td></tr>
 
     <!-- Card -->
