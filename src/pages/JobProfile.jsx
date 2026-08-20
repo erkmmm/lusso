@@ -109,13 +109,32 @@ export default function JobProfile() {
       <Card className="overflow-hidden">
         <div className="p-5">
           <div className="flex flex-col lg:flex-row lg:items-start gap-4">
-            {/* Avatar + name */}
-            <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-700 font-bold text-lg">
+            {/* Avatar + name — both open the customer, since the sidebar's
+                "View →" is a long scroll away on a phone */}
+            <button
+              type="button"
+              onClick={() => job.customerId && navigate(`/customers/${job.customerId}`)}
+              disabled={!job.customerId}
+              title="Open customer profile"
+              className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-700 font-bold text-lg hover:bg-amber-200 transition-colors disabled:hover:bg-amber-100"
+            >
               {customer?.name?.charAt(0) || 'J'}
-            </div>
+            </button>
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 mb-1">
-                <h1 className="text-lg font-bold text-slate-900 leading-tight">{customer?.name}</h1>
+                <button
+                  type="button"
+                  onClick={() => job.customerId && navigate(`/customers/${job.customerId}`)}
+                  disabled={!job.customerId}
+                  className="group flex items-center gap-1 min-w-0 text-left disabled:cursor-default"
+                >
+                  <h1 className="text-lg font-bold text-slate-900 leading-tight truncate group-hover:text-amber-600 transition-colors">
+                    {customer?.name || 'Unknown customer'}
+                  </h1>
+                  {job.customerId && (
+                    <ChevronRight size={16} className="flex-shrink-0 text-slate-300 group-hover:text-amber-500 transition-colors" />
+                  )}
+                </button>
                 <span className="text-slate-400 text-sm font-mono">{job.jobNumber}</span>
                 <StatusBadge status={job.status} />
                 <UrgencyBadge urgency={job.urgency || 'Normal'} />
