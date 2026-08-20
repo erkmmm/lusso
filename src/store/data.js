@@ -1698,16 +1698,10 @@ export const respondToInstallRequest = (token, _action, comment = '') => {
     user: installer?.name || 'Installer',
   });
 
-  // Add notification
-  const job = getJob(req.jobId);
-  const customer = job ? getCustomer(job.customerId) : null;
-  addNotification({
-    jobId: req.jobId,
-    installRequestId: req.id,
-    type: isAccept ? 'install_accepted' : 'install_declined',
-    title: isAccept ? 'Installation Accepted' : 'Installation Declined',
-    message: `${installer?.name || 'Installer'} ${isAccept ? 'accepted' : 'declined'} the installation for ${customer?.name || 'customer'} (${job?.jobNumber || ''}) on ${req.proposedDate}.${comment ? ' Comment: ' + comment : ''}`,
-  });
+  // The notification is raised by the `installations_notify` DB trigger, not
+  // here: this runs in the installer's own browser, which may not be allowed to
+  // write notifications at all, and doing it server-side also means it gets
+  // pushed to staff devices exactly once (see push_notifications.sql).
 
   return list[idx];
 };

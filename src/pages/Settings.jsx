@@ -7,7 +7,7 @@ import {
   ArrowRight, FileText, Cloud, CloudUpload, RefreshCw, CheckCircle2,
   AlertTriangle, Sun, Moon, Monitor, Clock, Wifi, WifiOff,
   Link2, Link2Off, ExternalLink, Building2, Loader, Bot, Trash2,
-  MessageSquare, Database, Zap, ClipboardList, FileDown,
+  MessageSquare, Database, Zap, ClipboardList, FileDown, Bell, BellOff, Smartphone,
 } from 'lucide-react';
 import { useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -25,6 +25,7 @@ import {
   getBuzValueMap, setBuzValueMapEntry,
 } from '../store/data';
 import { BUZ_MAP_FIELDS } from '../lib/buzExport';
+import { getPushStatus, enablePush, disablePush, sendTestPush, pushSupported, needsHomeScreenInstall } from '../lib/push';
 import { pushAllToSupabase, hydrateFromSupabase, flushPending } from '../store/db';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
@@ -252,6 +253,8 @@ export default function Settings() {
 
           {/* ── GENERAL ── */}
           {section === 'general' && (<>
+            <PushNotificationsSection />
+
             {/* Appearance */}
             <Card>
               <div className="px-5 py-4 border-b border-slate-100">
@@ -1991,5 +1994,138 @@ function AIKnowledgeSection() {
       </div>
     )}
     </div>
+  );
+}
+
+
+// ── Push notifications ────────────────────────────────────────────────────────
+// One switch per device: this browser subscribes with its own push endpoint, and
+// every row that lands in `notifications` (quote opened/accepted/declined,
+// installer responses, customer replies, tasks) is pushed to it by the
+// `push-send` edge function.
+function PushNotificationsSection() {
+  const [status, setStatus]   = useState({ supported: true, permission: 'default', subscribed: false });
+  const [devices, setDevices] = useState([]);
+  const [busy, setBusy]       = useState(false);
+
+  const refresh = async () => {
+    setStatus(await getPushStatus());
+    if (supabase) {
+      const { data } = await supabase
+        .from('push_subscriptions')
+        .select('id, label, user_agent, created_at, last_success_at')
+        .order('created_at', { ascending: false });
+      setDevices(data || []);
+    }
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (status.subscribed) {
+        await disablePush();
+        toast('Notifications turned off on this device.');
+      } else {
+        await enablePush();
+        toast('Notifications on — this device will now be alerted.');
+      }
+      await refresh();
+    } catch (e) {
+      toast(e.message || 'Could not change notification settings.', 'error', { duration: 8000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const test = async () => {
+    setBusy(true);
+    try {
+      const res = await sendTestPush();
+      toast(`Test sent to ${res.sent} device${res.sent === 1 ? '' : 's'} — check your lock screen.`);
+    } catch (e) {
+      toast(e.message || 'Test failed.', 'error', { duration: 8000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const forget = async (id) => {
+    await supabase.from('push_subscriptions').delete().eq('id', id);
+    await refresh();
+    toast('Device removed.');
+  };
+
+  const blocked   = status.permission === 'denied';
+  const needsHome = pushSupported() && needsHomeScreenInstall();
+
+  return (
+    <Card>
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Bell size={14} className="text-amber-500" /> Notifications
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Get a push on your phone or desktop when a quote is opened or accepted, an installer responds,
+          a customer replies, or a task falls due — even when Lusso is closed.
+        </p>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {!pushSupported() ? (
+          <p className="text-xs text-slate-500">This browser doesn’t support push notifications.</p>
+        ) : (<>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-700">
+                {status.subscribed ? 'On for this device' : 'Off for this device'}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {blocked
+                  ? 'Blocked in your browser settings — allow notifications for Lusso, then switch this on.'
+                  : needsHome
+                    ? 'On iPhone, add Lusso to your Home Screen first (Share → Add to Home Screen), then open it from there.'
+                    : 'Each device you use needs its own switch.'}
+              </p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={status.subscribed}
+              disabled={busy || blocked || (needsHome && !status.subscribed)}
+              onClick={toggle}
+              className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${status.subscribed ? 'bg-amber-500' : 'bg-slate-300'}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${status.subscribed ? 'left-[22px]' : 'left-0.5'}`} />
+            </button>
+          </div>
+
+          {status.subscribed && (
+            <button onClick={test} disabled={busy}
+              className="text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 disabled:opacity-40">
+              Send a test notification
+            </button>
+          )}
+
+          {devices.length > 0 && (
+            <div className="pt-2 border-t border-slate-100 space-y-1">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Subscribed devices</p>
+              {devices.map(d => (
+                <div key={d.id} className="flex items-center gap-2 text-xs text-slate-600 py-1">
+                  <Smartphone size={13} className="text-slate-400 flex-shrink-0" />
+                  <span className="truncate flex-1">{d.label || d.user_agent?.slice(0, 40) || 'Device'}</span>
+                  <span className="text-slate-400 flex-shrink-0">
+                    {d.last_success_at ? `last alert ${new Date(d.last_success_at).toLocaleDateString()}` : 'no alerts yet'}
+                  </span>
+                  <button onClick={() => forget(d.id)} className="p-1 text-slate-400 hover:text-red-500 flex-shrink-0" title="Remove">
+                    <BellOff size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>)}
+      </div>
+    </Card>
   );
 }
