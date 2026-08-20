@@ -159,12 +159,18 @@ export default function JobProfile() {
                 <ClipboardList size={14} /> <span className="hidden sm:inline">New Measure</span>
               </button>
               {/* Status control */}
+              {/* Reads "Status", not the current one — that's already on the badge
+                  beside the customer's name and under the progress rail. Keeping
+                  it a fixed narrow width stops the longest option ("Quote
+                  Required") from sizing the control and pushing ⋯ onto its own
+                  row on a phone. */}
               <select
-                value={job.status}
-                onChange={e => handleStatusChange(e.target.value)}
-                aria-label="Project status"
-                className="text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 max-w-[11rem]"
+                value=""
+                onChange={e => { if (e.target.value) handleStatusChange(e.target.value); }}
+                aria-label="Change project status"
+                className="w-[6.5rem] text-sm font-medium px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400"
               >
+                <option value="" disabled>Status</option>
                 {JOB_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               {/* Overflow menu — occasional + destructive actions */}
