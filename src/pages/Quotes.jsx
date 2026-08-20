@@ -10,7 +10,7 @@ import {
 import { format, parseISO, isPast, differenceInSeconds } from 'date-fns';
 import {
   getQuotes, getQuotesFiltered, getCustomers, QUOTE_STATUSES, QUOTE_STATUS_COLORS,
-  computeQuoteTotals, sendQuote, duplicateQuote, deleteQuote, bulkDeleteQuotes,
+  computeQuoteTotals, sendQuote, duplicateQuote, deleteQuote, bulkDeleteQuotes, searchMatch,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
@@ -93,7 +93,6 @@ export default function Quotes() {
   const refresh = () => setQuotes(getQuotesFiltered(isAM, displayName));
 
   const filtered = useMemo(() => {
-    const term = search.toLowerCase();
     // Precompute lookups once — with thousands of imported quotes, per-row
     // customers.find() or totals inside the comparator would be O(n²).
     const custName = new Map(customers.map(c => [c.id, c.name || '']));
@@ -115,7 +114,7 @@ export default function Quotes() {
       customer:    (a, b) => nameOf(a).localeCompare(nameOf(b)) || newest(a, b),
     };
     return quotes.filter(q => {
-      const matchSearch = !term || [q.quoteNumber, q.title, nameOf(q), q.siteAddress, q.salesperson].join(' ').toLowerCase().includes(term);
+      const matchSearch = searchMatch([q.quoteNumber, q.title, nameOf(q), q.siteAddress, q.salesperson], search);
       const matchStatus =
         statusFilter === 'All' ? true :
         statusFilter === 'Out' ? (q.status === 'Sent' || q.status === 'Viewed') :

@@ -6,7 +6,7 @@ import {
   Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus, Edit3,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { getCustomers, getCustomersFiltered, getJobs, getJobsByCustomer, saveCustomer, deleteCustomer, restoreCustomer, bulkDeleteCustomers } from '../store/data';
+import { getCustomers, getCustomersFiltered, getJobs, getJobsByCustomer, saveCustomer, deleteCustomer, restoreCustomer, bulkDeleteCustomers, searchMatch } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
@@ -91,10 +91,9 @@ export default function Customers() {
   const customers = getCustomersFiltered(isAM, displayName);
 
   const filtered = useMemo(() => {
-    const term = search.toLowerCase();
-    if (!term) return customers;
+    if (!search.trim()) return customers;
     return customers.filter(c =>
-      [c.name, c.phone, c.email, c.address].join(' ').toLowerCase().includes(term)
+      searchMatch([c.name, c.phone, c.email, c.address], search)
     );
   }, [customers, search]);
 

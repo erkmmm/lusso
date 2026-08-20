@@ -815,6 +815,24 @@ export const advanceJobStatus = (jobId, newStatus, user = 'System') => {
 
 export const getMeasureSheets = () => (get('lusso_measure_sheets') || []).filter(ms => !ms.deletedAt);
 
+// Prefix search: a term matches only when it starts a field, or starts a word
+// within a field (fields are split on spaces and common separators like - / .).
+// So searching "2690" matches a job number or phone segment that BEGINS with
+// 2690, not one that merely contains it partway through. Multiple space-
+// separated terms must all match (AND), each against some field/word.
+export const searchMatch = (fields, rawSearch) => {
+  const terms = String(rawSearch || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const tokens = [];
+  for (const f of fields) {
+    if (f == null || f === '') continue;
+    const s = String(f).toLowerCase();
+    tokens.push(s); // whole field (start-of-field match)
+    for (const w of s.split(/[\s\-/,.()#]+/)) if (w) tokens.push(w); // word starts
+  }
+  return terms.every(t => tokens.some(tok => tok.startsWith(t)));
+};
+
 // ── Role-filtered getters ──────────────────────────────────────────────────────
 export const getJobsFiltered          = (isAM, name) => getJobs().filter(j => isAM || j.assignedStaff === name);
 export const getCustomersFiltered     = (isAM, name) => getCustomers().filter(c => isAM || !c.assignedTo || c.assignedTo === name);

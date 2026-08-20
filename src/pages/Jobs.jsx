@@ -6,7 +6,7 @@ import {
   Search, Filter, Plus, Briefcase, SlidersHorizontal, X,
   Trash2, CheckSquare, Square, AlertTriangle, ChevronDown, Check,
 } from 'lucide-react';
-import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, STATUS_COLORS, updateJobStatus, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob, getQuotes, computeQuoteTotals } from '../store/data';
+import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, STATUS_COLORS, updateJobStatus, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob, getQuotes, computeQuoteTotals, searchMatch } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -224,14 +224,10 @@ export default function Jobs() {
     };
     return jobs.filter(job => {
       const customer = custById.get(job.customerId);
-      const term = search.toLowerCase();
-      if (term) {
-        const haystack = [
-          customer?.name, customer?.phone, customer?.address,
-          job.jobNumber, job.jobType, job.assignedStaff,
-        ].join(' ').toLowerCase();
-        if (!haystack.includes(term)) return false;
-      }
+      if (search.trim() && !searchMatch(
+        [customer?.name, customer?.phone, customer?.address, job.jobNumber, job.jobType, job.assignedStaff],
+        search,
+      )) return false;
       if (status && job.status !== status) return false;
       if (urgency) {
         if (urgency === 'High' && job.urgency !== 'High' && job.urgency !== 'Urgent') return false;
@@ -253,8 +249,11 @@ export default function Jobs() {
   }
   const visible = filtered.slice(0, visibleCount);
 
-  const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); setStalled(false); };
+  const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); setStalled(false); setSortBy('newest'); };
   const hasFilters = status || urgency || staff || search;
+  // Count of active list controls shown as a badge on the Sort & Filter button
+  // (search has its own field, so it's excluded from the in-panel count).
+  const activeFilterCount = [status, urgency, staff, stalled, sortBy !== 'newest'].filter(Boolean).length;
 
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()); };
 
@@ -335,37 +334,36 @@ export default function Jobs() {
             </button>
           )}
         </div>
-        <select
-          value={sortBy}
-          onChange={e => setSortBy(e.target.value)}
-          title="Sort projects"
-          className="flex-shrink-0 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 px-3 py-2.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400"
-        >
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="edited">Last edited</option>
-          <option value="valueDesc">Value: high to low</option>
-          <option value="valueAsc">Value: low to high</option>
-          <option value="salesperson">Salesperson A–Z</option>
-          <option value="customer">Customer A–Z</option>
-        </select>
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
-            hasFilters ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+          className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+            hasFilters || sortBy !== 'newest' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
           }`}
         >
           <SlidersHorizontal size={15} />
-          Filters
-          {hasFilters && <span className="bg-amber-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>}
+          Sort &amp; Filter
+          {activeFilterCount > 0 && <span className="bg-amber-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{activeFilterCount}</span>}
         </button>
       </div>
 
-      {/* Filter panel */}
+      {/* Sort & filter panel — every list control lives here */}
       {showFilters && (
         <Card className="p-4">
-          <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-            <div className="flex flex-col gap-1 min-w-[180px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sort by</label>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                className="border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="edited">Last edited</option>
+                <option value="valueDesc">Value: high to low</option>
+                <option value="valueAsc">Value: low to high</option>
+                <option value="salesperson">Salesperson A–Z</option>
+                <option value="customer">Customer A–Z</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Status</label>
               <select value={status} onChange={e => setStatus(e.target.value)}
                 className="border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
@@ -373,7 +371,7 @@ export default function Jobs() {
                 {JOB_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            <div className="flex flex-col gap-1 min-w-[160px]">
+            <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Priority</label>
               <select value={urgency} onChange={e => setUrgency(e.target.value)}
                 className="border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
@@ -383,7 +381,7 @@ export default function Jobs() {
                 <option value="Low">Low</option>
               </select>
             </div>
-            <div className="flex flex-col gap-1 min-w-[180px]">
+            <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Assigned Staff</label>
               <select value={staff} onChange={e => setStaff(e.target.value)}
                 className="border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
@@ -391,30 +389,21 @@ export default function Jobs() {
                 {staffList.map(s => <option key={s.id} value={s.fullName}>{s.fullName}</option>)}
               </select>
             </div>
-            {hasFilters && (
-              <div className="flex items-end">
-                <button onClick={clearFilters} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 px-3 py-2 rounded-lg hover:bg-slate-100">
-                  <X size={14} /> Clear filters
-                </button>
-              </div>
-            )}
           </div>
+          {(hasFilters || stalled || sortBy !== 'newest') && (
+            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100">
+              {stalled && (
+                <button onClick={() => setStalled(false)} className="text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 flex items-center gap-1">
+                  Stalled only <X size={12} />
+                </button>
+              )}
+              <button onClick={clearFilters} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100 ml-auto">
+                <X size={14} /> Reset all
+              </button>
+            </div>
+          )}
         </Card>
       )}
-
-      {/* Status pill filters */}
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-        {['All', ...JOB_STATUSES].map(s => (
-          <button key={s} onClick={() => setStatus(s === 'All' ? '' : s)}
-            className={`flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
-              (s === 'All' && !status) || status === s
-                ? 'bg-amber-500 text-white border-amber-500'
-                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-            }`}>
-            {s}
-          </button>
-        ))}
-      </div>
 
       {/* Bulk action bar */}
       {selectMode && selected.size > 0 && (

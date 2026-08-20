@@ -5,7 +5,7 @@ import { ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle, U
 import { format, parseISO } from 'date-fns';
 import {
   getMeasureSheets, getMeasureSheetsFiltered, getCustomers, getJobs, getQuotes,
-  deleteMeasureSheet, bulkDeleteMeasureSheets, duplicateMeasureSheet,
+  deleteMeasureSheet, bulkDeleteMeasureSheets, duplicateMeasureSheet, searchMatch,
 } from '../store/data';
 import { toast } from '../components/ToastContainer';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -92,13 +92,11 @@ export default function MeasureSheets() {
   const quotes    = getQuotes();
 
   const filtered = useMemo(() => {
-    const term = search.toLowerCase();
     return sheets.filter(s => {
-      if (!term) return true;
+      if (!search.trim()) return true;
       const customer = customers.find(c => c.id === s.customerId);
       const job = jobs.find(j => j.id === s.jobId);
-      return [customer?.name, customer?.phone, s.measurer, job?.jobNumber]
-        .join(' ').toLowerCase().includes(term);
+      return searchMatch([customer?.name, customer?.phone, s.measurer, job?.jobNumber], search);
     }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [sheets, customers, jobs, search]);
 
