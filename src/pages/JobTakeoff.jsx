@@ -19,7 +19,8 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 40;
 const ZOOM_STEP = 1.15;
 const TAP_SLOP  = 6;            // px of movement still counted as a tap, not a drag
-const MAX_BACKING = 4096;       // cap the canvas backing store (memory)
+const MAX_BACKING = 4096;       // cap the canvas backing store's long edge
+const MAX_BACKING_PX = 8e6;     // …and its total area — phones bail on big canvases
 const DPR = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2);
 
 const TAGS = ['Width', 'Drop', 'Height', 'Other'];
@@ -53,6 +54,10 @@ export default function JobTakeoff() {
   // view = screen transform of the page: screen = base*scale + (tx,ty)
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
   const [rasterScale, setRasterScale] = useState(1);
+  // Mirror of `view` kept in sync synchronously. A pinch on a phone fires far
+  // more moves than React commits renders, so gesture maths must read the value
+  // it just wrote, not the one from the last render.
+  const viewRef = useRef({ scale: 1, tx: 0, ty: 0 });
 
   // interaction
   const [mode, setMode] = useState('pan');                // pan|measure|calibrate
@@ -114,11 +119,14 @@ export default function JobTakeoff() {
       .catch(e => console.error('[takeoff] render', e));
   }, [pdf, pageNumber, rasterScale, pageBaseSize]);
 
-  // raster cap for the current page so the backing store stays bounded
+  // raster cap for the current page so the backing store stays bounded, by long
+  // edge and by area — a phone that can't allocate the canvas renders nothing.
   const maxRaster = useMemo(() => {
     if (!pageBaseSize) return MAX_SCALE;
-    const longEdge = Math.max(pageBaseSize.width, pageBaseSize.height);
-    return Math.max(1, MAX_BACKING / (longEdge * DPR));
+    const { width, height } = pageBaseSize;
+    const byEdge = MAX_BACKING / (Math.max(width, height) * DPR);
+    const byArea = Math.sqrt(MAX_BACKING_PX / (width * height * DPR * DPR));
+    return Math.max(1, Math.min(byEdge, byArea));
   }, [pageBaseSize]);
 
   const scheduleRaster = useCallback((scale) => {
@@ -140,13 +148,23 @@ export default function JobTakeoff() {
     );
     const tx = (rect.width - size.width * scale) / 2;
     const ty = (rect.height - size.height * scale) / 2;
-    setView({ scale, tx, ty });
+    setViewNow({ scale, tx, ty });
     setRasterScale(clamp(scale, 0.1, maxRaster));
   }
 
+  // Single writer for the view: keeps the ref and the state in lockstep and
+  // takes plain values, never an updater — updaters run during React's render
+  // phase, where reading a gesture ref that a finger-up has since cleared throws
+  // and takes the whole page down to the error boundary.
+  const setViewNow = useCallback((next) => {
+    viewRef.current = next;
+    setView(next);
+  }, []);
+
   // ── Coordinate conversion ───────────────────────────────────────────────
   const screenToBase = useCallback((clientX, clientY) => {
-    const rect = stageRef.current.getBoundingClientRect();
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
     return {
       x: (clientX - rect.left - view.tx) / view.scale,
       y: (clientY - rect.top - view.ty) / view.scale,
@@ -160,52 +178,67 @@ export default function JobTakeoff() {
 
   // ── Zoom to a screen point ──────────────────────────────────────────────
   const zoomAt = useCallback((cx, cy, factor) => {
-    setView(v => {
-      const newScale = clamp(v.scale * factor, MIN_SCALE, MAX_SCALE);
-      const k = newScale / v.scale;
-      const next = { scale: newScale, tx: cx - (cx - v.tx) * k, ty: cy - (cy - v.ty) * k };
-      scheduleRaster(newScale);
-      return next;
-    });
-  }, [scheduleRaster]);
+    const v = viewRef.current;
+    const newScale = clamp(v.scale * factor, MIN_SCALE, MAX_SCALE);
+    const k = newScale / v.scale;
+    setViewNow({ scale: newScale, tx: cx - (cx - v.tx) * k, ty: cy - (cy - v.ty) * k });
+    scheduleRaster(newScale);
+  }, [scheduleRaster, setViewNow]);
 
   const onWheel = (e) => {
     if (status !== 'ready') return;
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
     e.preventDefault();
-    const rect = stageRef.current.getBoundingClientRect();
     zoomAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP);
   };
 
   const zoomButton = (factor) => {
-    const rect = stageRef.current.getBoundingClientRect();
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
     zoomAt(rect.width / 2, rect.height / 2, factor);
   };
 
   // ── Pointer handling (pan / pinch / tap-to-place) ───────────────────────
+  // Both gestures are solved from a snapshot taken when they start, so every
+  // move recomputes the view from scratch instead of compounding it. That keeps
+  // a pinch stable when moves arrive in bursts (phones coalesce them) and makes
+  // an interrupted gesture harmless.
+  const beginPinch = () => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    const [p1, p2] = [...pointers.current.values()];
+    if (!rect || !p1 || !p2) return;
+    const v = viewRef.current;
+    pinchState.current = {
+      startDist: Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y)),
+      startScale: v.scale,
+      startTx: v.tx,
+      startTy: v.ty,
+      midX: (p1.x + p2.x) / 2 - rect.left,
+      midY: (p1.y + p2.y) / 2 - rect.top,
+    };
+    panState.current = null;
+  };
+
+  const beginPan = (pt) => {
+    const v = viewRef.current;
+    panState.current = {
+      startX: pt.x, startY: pt.y,
+      tx0: v.tx, ty0: v.ty, scale0: v.scale,
+      moved: false, placing: false,
+    };
+  };
+
   const onPointerDown = (e) => {
     if (status !== 'ready') return;
-    try { stageRef.current.setPointerCapture?.(e.pointerId); } catch { /* non-capturable pointer */ }
+    try { stageRef.current?.setPointerCapture?.(e.pointerId); } catch { /* non-capturable pointer */ }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    if (pointers.current.size === 2) {
-      // begin pinch
-      const [p1, p2] = [...pointers.current.values()];
-      pinchState.current = {
-        startDist: Math.hypot(p2.x - p1.x, p2.y - p1.y),
-        startScale: view.scale,
-        midX: (p1.x + p2.x) / 2,
-        midY: (p1.y + p2.y) / 2,
-      };
-      panState.current = null;
-      return;
-    }
+    if (pointers.current.size >= 2) { beginPinch(); return; }
 
     const panInitiated = mode === 'pan' || e.button === 1 || e.button === 2;
-    panState.current = {
-      startX: e.clientX, startY: e.clientY,
-      tx0: view.tx, ty0: view.ty,
-      moved: false, placing: !panInitiated,
-    };
+    beginPan({ x: e.clientX, y: e.clientY });
+    panState.current.placing = !panInitiated;
   };
 
   const onPointerMove = (e) => {
@@ -214,23 +247,24 @@ export default function JobTakeoff() {
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
-    // pinch zoom + pan
-    if (pinchState.current && pointers.current.size === 2) {
+    // pinch zoom + pan — solved against the gesture snapshot, so the point of
+    // the plan that was under the midpoint when the pinch began stays there.
+    if (pinchState.current && pointers.current.size >= 2) {
+      const ps = pinchState.current;
+      const rect = stageRef.current?.getBoundingClientRect();
       const [p1, p2] = [...pointers.current.values()];
-      const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-      const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
-      const rect = stageRef.current.getBoundingClientRect();
-      const targetScale = clamp(pinchState.current.startScale * (d / pinchState.current.startDist), MIN_SCALE, MAX_SCALE);
-      setView(v => {
-        const k = targetScale / v.scale;
-        return {
-          scale: targetScale,
-          tx: (midX - rect.left) - ((pinchState.current.midX - rect.left) - v.tx) * k + (midX - pinchState.current.midX),
-          ty: (midY - rect.top) - ((pinchState.current.midY - rect.top) - v.ty) * k + (midY - pinchState.current.midY),
-        };
+      if (!rect || !p1 || !p2) return;
+      const d = Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+      const midX = (p1.x + p2.x) / 2 - rect.left;
+      const midY = (p1.y + p2.y) / 2 - rect.top;
+      const scale = clamp(ps.startScale * (d / ps.startDist), MIN_SCALE, MAX_SCALE);
+      const k = scale / ps.startScale;
+      setViewNow({
+        scale,
+        tx: midX - (ps.midX - ps.startTx) * k,
+        ty: midY - (ps.midY - ps.startTy) * k,
       });
-      scheduleRaster(targetScale);
-      return;
+      return;   // re-raster once the fingers lift; rasterising mid-pinch janks
     }
 
     const ps = panState.current;
@@ -238,29 +272,45 @@ export default function JobTakeoff() {
     const dx = e.clientX - ps.startX, dy = e.clientY - ps.startY;
     if (!ps.moved && Math.hypot(dx, dy) > TAP_SLOP) ps.moved = true;
 
-    if (ps.moved && !ps.placing) {
-      setView(v => ({ ...v, tx: ps.tx0 + dx, ty: ps.ty0 + dy }));
-    } else if (ps.moved && ps.placing) {
+    if (ps.moved) {
       // dragging in a placement mode still pans (so big plans stay navigable)
-      setView(v => ({ ...v, tx: ps.tx0 + dx, ty: ps.ty0 + dy }));
+      setViewNow({ scale: ps.scale0, tx: ps.tx0 + dx, ty: ps.ty0 + dy });
     } else if (ps.placing && draft) {
       setHover(screenToBase(e.clientX, e.clientY));
     }
   };
 
-  const onPointerUp = (e) => {
+  const endPointer = (e, cancelled) => {
     const ps = panState.current;
+    const wasPinching = !!pinchState.current;
     pointers.current.delete(e.pointerId);
-    if (pointers.current.size < 2) pinchState.current = null;
+    try { stageRef.current?.releasePointerCapture?.(e.pointerId); } catch { /* not captured */ }
     panState.current = null;
+
+    if (wasPinching) {
+      pinchState.current = null;
+      // Hand the gesture over to whatever is still touching the screen, so
+      // lifting one finger of a pinch keeps panning instead of dead-ending.
+      if (pointers.current.size >= 2) beginPinch();
+      else if (pointers.current.size === 1) beginPan([...pointers.current.values()][0]);
+      scheduleRaster(viewRef.current.scale);
+      return;
+    }
+
     if (!ps) return;
-    if (ps.placing && !ps.moved) {
+    if (ps.moved) scheduleRaster(viewRef.current.scale);
+    // A cancelled pointer (OS gesture, palm rejection) is not a tap.
+    if (!cancelled && ps.placing && !ps.moved) {
       placePoint(screenToBase(e.clientX, e.clientY));
     }
   };
 
+  const onPointerUp     = (e) => endPointer(e, false);
+  const onPointerCancel = (e) => endPointer(e, true);
+
   // live cursor for desktop hover (no button pressed)
   const onHoverMove = (e) => {
+    if (pointers.current.size >= 2) return;
     if (status === 'ready' && draft && !panState.current) {
       setHover(screenToBase(e.clientX, e.clientY));
     }
@@ -501,7 +551,7 @@ export default function JobTakeoff() {
               onPointerDown={onPointerDown}
               onPointerMove={(e) => { onPointerMove(e); onHoverMove(e); }}
               onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
+              onPointerCancel={onPointerCancel}
               onContextMenu={(e) => e.preventDefault()}
             >
               {/* PDF canvas in a transform wrapper (bridges raster→live scale) */}
