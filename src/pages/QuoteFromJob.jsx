@@ -200,7 +200,7 @@ export default function QuoteFromJob() {
         customerId:      job.customerId,
         jobId:           job.id,
         measureSheetId:  selectedSheet?.id || null,
-        title:           `${customer?.name || 'Quote'} — ${job.jobType || job.title || 'Quote'}`,
+        title:           `${customer?.name || 'Quote'} — ${job.title || 'Quote'}`,
         salesperson:     displayName || '',
         siteAddress:     customer?.address || '',
         lineItems:       selectedLines,
@@ -242,7 +242,7 @@ export default function QuoteFromJob() {
           <div>
             <p className="text-sm font-semibold text-slate-800">{customer?.name}</p>
             <p className="text-xs text-slate-500 mt-0.5">
-              {job.jobNumber} · {job.jobType || 'Window Treatment'} · {job.status}
+              {job.jobNumber} · {job.status}
             </p>
             {customer?.address && (
               <p className="text-xs text-slate-400 mt-0.5">{customer.address}</p>

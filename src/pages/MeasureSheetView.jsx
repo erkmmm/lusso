@@ -104,7 +104,6 @@ function PrintView({ sheet, customer, job }) {
               {sheet.measureDate && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Measure Date</td><td style={{ fontWeight: 'bold', paddingBottom: '3px' }}>{fmt(sheet.measureDate)}</td></tr>}
               {(sheet.createdAt || sheet.updatedAt) && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Sheet Created</td><td style={{ paddingBottom: '3px' }}>{fmtDateTime(sheet.createdAt || sheet.updatedAt)}</td></tr>}
               {(sheet.updatedAt || sheet.createdAt) && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Last Edited</td><td style={{ paddingBottom: '3px' }}>{fmtDateTime(sheet.updatedAt || sheet.createdAt)}</td></tr>}
-              {job?.jobType     && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Job Type</td><td style={{ paddingBottom: '3px' }}>{job.jobType}</td></tr>}
               {sheet.urgency && sheet.urgency !== 'Normal' && <tr><td style={{ color: '#666', paddingBottom: '3px' }}>Urgency</td><td style={{ fontWeight: 'bold', color: '#dc2626', paddingBottom: '3px' }}>{sheet.urgency}</td></tr>}
               <tr><td style={{ color: '#666' }}>Items</td><td style={{ fontWeight: 'bold' }}>{sheet.lineItems?.length || 0}</td></tr>
             </tbody>
@@ -469,7 +468,7 @@ export default function MeasureSheetView() {
                     >
                       <option value="">Select a job…</option>
                       {customerJobs.map(j => (
-                        <option key={j.id} value={j.id}>{j.jobNumber} — {j.jobType} ({j.status})</option>
+                        <option key={j.id} value={j.id}>{j.jobNumber} ({j.status})</option>
                       ))}
                     </select>
                     <button
@@ -533,7 +532,6 @@ export default function MeasureSheetView() {
               <>
                 <p className="text-slate-500 text-xs">{job.jobNumber}</p>
                 <StatusBadge status={job.status} />
-                <p className="text-slate-600">{job.jobType}</p>
                 <button onClick={() => navigate(`/jobs/${job.id}`)} className="text-xs text-amber-600 hover:underline">View job →</button>
               </>
             ) : (

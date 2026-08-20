@@ -224,8 +224,16 @@ export default function Jobs() {
     };
     return jobs.filter(job => {
       const customer = custById.get(job.customerId);
+      // Customer identity + the job number only. Salesperson deliberately isn't
+      // searchable — it has its own filter, and matching on it buried the
+      // customer you were looking for under everything that rep touched.
       if (search.trim() && !searchMatch(
-        [customer?.name, customer?.phone, customer?.address, job.jobNumber, job.jobType, job.assignedStaff],
+        [
+          customer?.name, customer?.businessName,
+          customer?.address, customer?.billingAddress,
+          customer?.email, customer?.phone, customer?.mobile,
+          job.jobNumber,
+        ],
         search,
       )) return false;
       if (status && job.status !== status) return false;
@@ -325,7 +333,7 @@ export default function Jobs() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, phone, address, type…"
+            placeholder="Search by name, business, phone, email, address…"
             className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
           />
           {search && (
@@ -489,7 +497,7 @@ export default function Jobs() {
                       {(job.urgency === 'High' || job.urgency === 'Urgent') && <UrgencyBadge urgency={job.urgency} />}
                     </div>
                     <p className="text-xs text-slate-500 truncate mt-0.5">
-                      {[job.jobType, customer?.address].filter(Boolean).join('  ·  ') || 'No details yet'}
+                      {customer?.address || 'No details yet'}
                     </p>
                     <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-400 min-w-0">
                       <span className="font-medium text-slate-400 flex-shrink-0">{job.jobNumber}</span>

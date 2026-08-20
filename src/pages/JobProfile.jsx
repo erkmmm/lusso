@@ -257,9 +257,6 @@ export default function JobProfile() {
                 {editingJob ? (
                   <div className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <Field label="Job Type">
-                        <input value={jobEdits.jobType ?? job.jobType ?? ''} onChange={e => setJobEdits(p => ({...p, jobType: e.target.value}))} className="input-base" />
-                      </Field>
                       <Field label="Assigned Staff">
                         <select value={jobEdits.assignedStaff ?? job.assignedStaff ?? ''} onChange={e => setJobEdits(p => ({...p, assignedStaff: e.target.value}))} className="input-base">
                           <option value="">— Unassigned —</option>
@@ -283,7 +280,6 @@ export default function JobProfile() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <DetailRow icon={<Briefcase size={13} />} label="Project Type"  value={job.jobType} />
                     <DetailRow icon={<User size={13} />}      label="Assigned Staff" value={job.assignedStaff} />
                     <DetailRow icon={<Calendar size={13} />}  label="Measure Date"  value={job.measureDate  ? format(parseISO(job.measureDate),  'd MMM yyyy') : '—'} />
                     <DetailRow icon={<Calendar size={13} />}  label="Quote Due"     value={job.quoteDueDate ? format(parseISO(job.quoteDueDate), 'd MMM yyyy') : '—'} />

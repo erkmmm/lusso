@@ -622,7 +622,7 @@ export default function QuoteBuilder() {
       quoteNumber: '', // assigned on save
       version: 1,
       status: 'Draft',
-      title: job ? `${cust?.name || ''} – ${job.jobType || 'Window Treatment'}` : '',
+      title: job ? `${cust?.name || ''} – Window Treatment` : '',
       customerId: cust?.id || customerId || '',
       jobId: job?.id || jobId || '',
       measureSheetId: ms?.id || measureSheetId || '',

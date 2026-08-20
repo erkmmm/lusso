@@ -52,7 +52,6 @@ const SEED_JOBS = [
     jobNumber: 'LUS-0001',
     title: 'Brighton Residence – Full Window Treatment',
     status: 'Quoted',
-    jobType: 'Curtains & Blinds',
     assignedStaff: 'Alex Chen',
     measureDate: '2025-04-10',
     quoteDueDate: '2025-04-17',
@@ -71,7 +70,6 @@ const SEED_JOBS = [
     jobNumber: 'LUS-0002',
     title: 'Mosman New Build – All Rooms',
     status: 'Measure Booked',
-    jobType: 'Roller Blinds',
     assignedStaff: 'Jordan Lee',
     measureDate: '2025-05-08',
     quoteDueDate: '2025-05-15',
@@ -90,7 +88,6 @@ const SEED_JOBS = [
     jobNumber: 'LUS-0003',
     title: 'South Yarra Apartment – Bedroom & Living',
     status: 'Approved',
-    jobType: 'Sheers & Blockout',
     assignedStaff: 'Alex Chen',
     measureDate: '2025-04-22',
     quoteDueDate: '2025-04-29',
@@ -109,7 +106,6 @@ const SEED_JOBS = [
     jobNumber: 'LUS-0004',
     title: 'Brighton Residence – Outdoor Awning',
     status: 'New Enquiry',
-    jobType: 'Awnings',
     assignedStaff: 'Jordan Lee',
     measureDate: null,
     quoteDueDate: null,
@@ -128,7 +124,6 @@ const SEED_JOBS = [
     jobNumber: 'LUS-0005',
     title: 'Mosman – Office Roller Blinds',
     status: 'Ordered',
-    jobType: 'Commercial Blinds',
     assignedStaff: 'Sam Russo',
     measureDate: '2025-03-15',
     quoteDueDate: '2025-03-22',
@@ -740,7 +735,6 @@ export const createJob = (data) => {
     jobNumber: nextJobNumber(),
     title: data.title || '',
     status: data.status || 'New Enquiry',
-    jobType: data.jobType || '',
     assignedStaff: data.assignedStaff || '',
     urgency: data.urgency || 'Normal',
     measureDate: data.measureDate || null,
@@ -762,9 +756,8 @@ export const createJobFromMeasureSheet = (measureSheet, customer) => {
     id: uuidv4(),
     customerId: customer.id,
     jobNumber: nextJobNumber(),
-    title: `${customer.name} – ${measureSheet.jobType || 'Window Treatment'}`,
+    title: `${customer.name} – Window Treatment`,
     status: 'Measured',
-    jobType: measureSheet.jobType || '',
     assignedStaff: measureSheet.measurer || '',
     measureDate: measureSheet.measureDate || null,
     quoteDueDate: null,
@@ -1513,11 +1506,6 @@ export const makeProductSelectHandlers = (setLineItem, idx, productTypes) => ({
 export const MOUNT_TYPES = ['Ceiling Fix', 'Face Fix', 'Recess Fit', 'Outside Mount', 'Inside Mount'];
 export const CONTROL_SIDES = ['Left', 'Right', 'Centre', 'Motorised', 'N/A'];
 export const URGENCY_LEVELS = ['Low', 'Normal', 'High', 'Urgent'];
-export const JOB_TYPES = [
-  'Roller Blinds', 'Roman Blinds', 'Curtains & Blinds', 'Sheers & Blockout',
-  'Awnings', 'Shutters', 'Commercial Blinds', 'Full Window Treatment', 'Other',
-];
-
 // ─── Installers ───────────────────────────────────────────────────────────────
 
 export const INSTALLER_SERVICES = [

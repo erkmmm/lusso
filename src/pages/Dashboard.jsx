@@ -1576,7 +1576,7 @@ export default function Dashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">{cust?.name || 'Customer'}</p>
                     <p className="text-xs text-slate-400 truncate">
-                      {job.jobNumber}{job.jobType ? ` · ${job.jobType}` : ''}
+                      {job.jobNumber}
                     </p>
                   </div>
                   <StatusBadge status={job.status} size="sm" />
@@ -1594,7 +1594,6 @@ export default function Dashboard() {
                 <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
                   <th className="px-5 py-2.5 text-left font-medium">Customer</th>
                   <th className="px-5 py-2.5 text-left font-medium whitespace-nowrap">Job</th>
-                  <th className="px-5 py-2.5 text-left font-medium">Type</th>
                   <th className="px-5 py-2.5 text-left font-medium">Status</th>
                   <th className="px-5 py-2.5 text-right font-medium whitespace-nowrap">Updated</th>
                 </tr>
@@ -1617,7 +1616,6 @@ export default function Dashboard() {
                         </div>
                       </td>
                       <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{job.jobNumber}</td>
-                      <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{job.jobType || '—'}</td>
                       <td className="px-5 py-3"><StatusBadge status={job.status} size="sm" /></td>
                       <td className="px-5 py-3 text-right text-slate-400 whitespace-nowrap text-xs">
                         {job.updatedAt ? formatDistanceToNow(parseISO(job.updatedAt), { addSuffix: true }) : '—'}

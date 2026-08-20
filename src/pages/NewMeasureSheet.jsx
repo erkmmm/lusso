@@ -13,7 +13,7 @@ import {
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
   getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
-  getMsOptions, URGENCY_LEVELS, JOB_TYPES,
+  getMsOptions, URGENCY_LEVELS,
   MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers,
 } from '../store/data';
 import { syncNow } from '../store/db';
@@ -344,7 +344,7 @@ const EMPTY_SHEET = () => ({
   id: uuidv4(), status: 'Draft', createdAt: new Date().toISOString(),
   customerName: '', phone: '', email: '', siteAddress: '', billingAddress: '',
   preferredContact: 'Any', customerNotes: '',
-  jobType: '', measureDate: new Date().toISOString().slice(0, 10),
+  measureDate: new Date().toISOString().slice(0, 10),
   measurer: '', urgency: 'Normal', accessInstructions: '', parkingNotes: '',
   siteConditionNotes: '', internalNotes: '',
   lineItems: [EMPTY_LINE_ITEM()],
@@ -387,7 +387,6 @@ export default function NewMeasureSheet() {
         customerNotes: prelinkedCustomer.notes  || '',
         // Pre-fill from the linked job so the user doesn't re-enter what's already there
         ...(prelinkedJob ? {
-          jobType:             prelinkedJob.jobType            || '',
           urgency:             prelinkedJob.urgency            || 'Normal',
           accessInstructions:  prelinkedJob.accessInstructions || '',
           parkingNotes:        prelinkedJob.parkingNotes       || '',
@@ -934,7 +933,6 @@ export default function NewMeasureSheet() {
             <span className="text-xs font-medium text-teal-300">
               Linked to job&nbsp;
               <span className="font-bold text-white">{prelinkedJob.jobNumber}</span>
-              {prelinkedJob.jobType ? ` · ${prelinkedJob.jobType}` : ''}
               {prelinkedJob.urgency && prelinkedJob.urgency !== 'Normal' ? ` · ${prelinkedJob.urgency}` : ''}
             </span>
           </div>
@@ -963,12 +961,6 @@ export default function NewMeasureSheet() {
         /* Standalone / global create — show full job details form */
         <Section title="Job Details" icon={<Briefcase size={15} />} open={openSections.job} onToggle={() => toggleSection('job')}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="Job Type">
-              <select value={sheet.jobType} onChange={e => setField('jobType', e.target.value)} className={inputCls()}>
-                <option value="">Select job type…</option>
-                {JOB_TYPES.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </FormField>
             <FormField label="Urgency">
               <select value={sheet.urgency} onChange={e => setField('urgency', e.target.value)} className={inputCls()}>
                 {URGENCY_LEVELS.map(u => <option key={u}>{u}</option>)}

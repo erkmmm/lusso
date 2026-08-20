@@ -23,7 +23,7 @@ import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getCustomers, getCustomer, saveCustomer, createJob,
-  JOB_TYPES, JOB_STATUSES,
+  JOB_STATUSES,
 } from '../store/data';
 import Card from '../components/Card';
 
@@ -94,7 +94,6 @@ export default function NewJob() {
 
   // ── Job state ──────────────────────────────────────────────────────────────
   const [title,         setTitle]         = useState('');
-  const [jobType,       setJobType]        = useState('');
   const [status,        setStatus]         = useState('New Enquiry');
   const [urgency,       setUrgency]        = useState('Normal');
   const [assignedStaff, setAssignedStaff]  = useState('');
@@ -102,7 +101,6 @@ export default function NewJob() {
   const [siteAddress,   setSiteAddress]    = useState(customer?.address || '');
   const [accessInstructions, setAccessInstructions] = useState('');
   const [internalNotes, setInternalNotes]  = useState('');
-  const [jobErrors,     setJobErrors]      = useState({});
   const [saving,        setSaving]         = useState(false);
   const [saveError,     setSaveError]      = useState('');
   const submitLock = useRef(false); // double-click guard
@@ -169,16 +167,10 @@ export default function NewJob() {
   };
 
   // ── Job actions ────────────────────────────────────────────────────────────
-  const validateJob = () => {
-    // Project type is optional — you often don't know the exact product until
-    // later in the project. Nothing else is required to start a project.
-    setJobErrors({});
-    return true;
-  };
+  // Nothing on this step is required — a project can start with just a customer.
 
   const handleCreateJob = async () => {
     if (submitLock.current || saving) return; // double-click guard
-    if (!validateJob()) return;
 
     submitLock.current = true;
     setSaving(true);
@@ -187,8 +179,7 @@ export default function NewJob() {
     try {
       const newJob = createJob({
         customerId,
-        title:              title.trim() || [customer?.name, jobType].filter(Boolean).join(' – ') || 'New project',
-        jobType,
+        title:              title.trim() || customer?.name || 'New project',
         status,
         urgency,
         assignedStaff,
@@ -406,22 +397,6 @@ export default function NewJob() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {/* Job type */}
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Project Type <span className="text-slate-400 font-normal">(optional)</span>
-                  </label>
-                  <select
-                    value={jobType}
-                    onChange={e => { setJobType(e.target.value); setJobErrors(er => ({ ...er, jobType: '' })); }}
-                    className={inp(jobErrors.jobType)}
-                  >
-                    <option value="">Not sure yet</option>
-                    {JOB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  {jobErrors.jobType && <p className="text-xs text-red-500 mt-1">{jobErrors.jobType}</p>}
-                </div>
-
                 {/* Status */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>

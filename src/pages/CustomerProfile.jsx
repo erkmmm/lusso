@@ -224,7 +224,6 @@ export default function CustomerProfile() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-sm text-slate-800">{job.jobNumber}</span>
-                        <span className="text-slate-400 text-xs">{job.jobType}</span>
                         <StatusBadge status={job.status} size="sm" />
                       </div>
                       <div className="text-xs text-slate-400 mt-0.5 flex gap-3 flex-wrap">

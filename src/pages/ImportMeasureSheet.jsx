@@ -11,7 +11,7 @@ import {
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getCustomers, getJobs, saveMeasureSheet, getMeasureSheetsByJob,
-  getActiveProductTypes, getCustomer, createJobFromMeasureSheet, JOB_TYPES,
+  getActiveProductTypes, getCustomer, createJobFromMeasureSheet,
   saveCustomer,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -316,7 +316,6 @@ export default function ImportMeasureSheet() {
   const [customerId,     setCustomerId]     = useState(preCustomerId);
   const [jobId,          setJobId]          = useState(preJobId);
   const [jobMode,        setJobMode]        = useState(preJobId ? 'select' : 'select'); // 'select' | 'create' | 'skip'
-  const [newJobType,     setNewJobType]     = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [editingCust,    setEditingCust]    = useState(!preCustomerId);
 
@@ -544,7 +543,6 @@ export default function ImportMeasureSheet() {
         preferredContact: 'Any',
         customerNotes: cust?.notes || '',
         measurer: displayName || 'Imported',
-        jobType: job?.jobType || '',
         measureDate: now.slice(0, 10),
         urgency: 'Normal',
         accessInstructions: '', parkingNotes: '', siteConditionNotes: '',
@@ -561,8 +559,7 @@ export default function ImportMeasureSheet() {
       // Create and link a new job if requested
       let finalJobId = resolvedJobId;
       if (jobMode === 'create' && !resolvedJobId) {
-        const sheetForJob = { ...sheet, jobType: newJobType || '' };
-        const newJob = createJobFromMeasureSheet(sheetForJob, cust);
+        const newJob = createJobFromMeasureSheet(sheet, cust);
         saveMeasureSheet({ ...sheet, jobId: newJob.id, status: 'Submitted' });
         finalJobId = newJob.id;
       }
@@ -598,7 +595,7 @@ export default function ImportMeasureSheet() {
           <ClipboardList size={16} className="text-amber-500 flex-shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-amber-900">{customer.name}</p>
-            {job && <p className="text-xs text-amber-700 mt-0.5">{job.jobNumber} · {job.jobType || job.status}</p>}
+            {job && <p className="text-xs text-amber-700 mt-0.5">{job.jobNumber} · {job.status}</p>}
           </div>
           <span className="ml-auto text-xs text-amber-600 font-medium">Importing into this job</span>
         </div>
@@ -824,7 +821,7 @@ export default function ImportMeasureSheet() {
               <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800">{job.jobNumber} — {job.jobType}</p>
+                  <p className="text-sm font-medium text-slate-800">{job.jobNumber}</p>
                   <p className="text-xs text-slate-400">{job.status}</p>
                 </div>
                 {!preJobId && (
@@ -842,17 +839,6 @@ export default function ImportMeasureSheet() {
                   <button onClick={() => setJobMode('select')} className="text-xs text-slate-400 hover:text-slate-600 transition-colors">
                     Cancel
                   </button>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Job Type</label>
-                  <select
-                    value={newJobType}
-                    onChange={e => setNewJobType(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  >
-                    <option value="">— Select job type —</option>
-                    {(JOB_TYPES || []).map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
                 </div>
                 <p className="text-xs text-amber-700">A new job will be created and linked to this measure sheet when you import.</p>
               </div>
@@ -885,7 +871,7 @@ export default function ImportMeasureSheet() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-slate-800">{j.jobNumber}</p>
-                          <p className="text-xs text-slate-400">{j.jobType} · {j.status}</p>
+                          <p className="text-xs text-slate-400">{j.status}</p>
                         </div>
                         <ArrowRight size={13} className="text-slate-300 flex-shrink-0" />
                       </button>
