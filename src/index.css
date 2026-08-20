@@ -914,6 +914,25 @@ html, body {
   box-shadow: 0 0 0 2px rgb(var(--brand-bright-rgb) / 0.25);
 }
 
+/* ── No zoom-on-focus on touch screens ───────────────────────────────────
+   Mobile Safari zooms the page in whenever a focused field's text is smaller
+   than 16px, and it never zooms back out when the keyboard closes — so every
+   tap into a form left the app scaled up and needing a manual pinch. The only
+   reliable cure is 16px type on the control itself.
+
+   `!important` because these have to beat Tailwind's `text-sm` / `text-xs`
+   utilities, which are single classes and would otherwise win on specificity.
+   Scoped below `lg`, where the app is in its phone/tablet layout — the desktop
+   layout keeps its denser fields. */
+@media (pointer: coarse) and (max-width: 1023.98px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  select,
+  textarea,
+  .input-base {
+    font-size: 16px !important;
+  }
+}
+
 /* ── Global focus-visible ring ───────────────────────────────────────── */
 :focus-visible {
   outline: 2px solid var(--ring-color);
