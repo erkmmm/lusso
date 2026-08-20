@@ -135,7 +135,6 @@ export default function JobProfile() {
                   )}
                 </button>
                 <span className="text-slate-400 text-sm font-mono">{job.jobNumber}</span>
-                <StatusBadge status={job.status} />
                 <UrgencyBadge urgency={job.urgency || 'Normal'} />
               </div>
               {/* Key info strip */}
@@ -217,7 +216,7 @@ export default function JobProfile() {
                 );
               })}
             </div>
-            <p className="text-xs text-amber-600 font-medium mt-1.5">{job.status}</p>
+            <div className="mt-2"><StatusBadge status={job.status} /></div>
           </div>
         </div>
 
