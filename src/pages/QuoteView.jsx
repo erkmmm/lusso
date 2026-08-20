@@ -155,6 +155,24 @@ export default function QuoteView() {
   const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
   const isOverdue  = quote.expiryDate && isPast(new Date(quote.expiryDate)) && !['Accepted','Declined','Completed','Expired'].includes(quote.status);
 
+  // Live = the customer's link serves it (the same set that offers "Take offline").
+  const isLive = ['Sent', 'Viewed', 'Waiting'].includes(quote.status);
+
+  // Has it ever been out with the customer? `sentAt` alone won't do: taking a
+  // quote offline clears it, and that's precisely when you need to put it back
+  // up. The activity log remembers either way — local entries key on `type`,
+  // server events on `event_type`.
+  const EVER_LIVE = ['sent', 'offline', 'reactivated'];
+  const wasEverLive = !!quote.sentAt
+    || (quote.activity || []).some(a => EVER_LIVE.includes(a.type))
+    || activities.some(a => EVER_LIVE.includes(a.event_type));
+
+  // So "Make live" is only offered for a quote that has been out and is
+  // currently down — pulled back for edits, taken offline, or expired. A
+  // never-sent draft goes out with Send Quote and nothing else.
+  const canMakeLive = wasEverLive && !isLive
+    && !['Accepted', 'Declined', 'Completed'].includes(quote.status);
+
   const handleDuplicate = () => {
     const dupe = duplicateQuote(quote.id);
     navigate(`/quotes/${dupe.id}/edit`);
@@ -168,11 +186,6 @@ export default function QuoteView() {
     if (window.confirm('Mark this quote as Declined?')) {
       declineQuote(quote.id, ''); refresh();
     }
-  };
-  const handleReactivate = () => {
-    const q = reactivateQuote(quote.id, null, 'Admin');
-    refresh();
-    if (q) toast(`Quote reactivated — valid again until ${format(new Date(q.expiryDate), 'd MMM yyyy')}.`);
   };
   const handleTakeOffline = () => {
     if (!window.confirm('Take this quote offline? The customer link will stop working until you send it again. You can edit it freely while it’s offline.')) return;
@@ -213,7 +226,12 @@ export default function QuoteView() {
   const handleMakeLive = () => {
     // Publish the quote (make the customer link work + start the expiry timer)
     // WITHOUT emailing the customer — for when the link is shared manually.
-    const q = sendQuote(quote.id, 'Admin');
+    // A quote that's already been sent and has run past its expiry needs a fresh
+    // window, and sendQuote only anchors the expiry on a first send — so that
+    // case reactivates instead. One button, one meaning: the link works now.
+    const stale = quote.status === 'Expired'
+      || (quote.sentAt && quote.expiryDate && isPast(new Date(quote.expiryDate)));
+    const q = stale ? reactivateQuote(quote.id, null, 'Admin') : sendQuote(quote.id, 'Admin');
     refresh();
     if (q) toast(`Quote is live${q.expiryDate ? ` until ${format(new Date(q.expiryDate), 'd MMM yyyy')}` : ''} — no email sent.`);
   };
@@ -344,17 +362,11 @@ export default function QuoteView() {
                   <Send size={13} /> {sending ? 'Sending…' : 'Send Quote'}
                 </button>
               )}
-              {quote.status === 'Draft' && (
+              {canMakeLive && (
                 <button onClick={handleMakeLive} disabled={sending}
-                  title="Make the customer link live and start the expiry timer without emailing the customer"
+                  title="Put the customer link back up and restart the expiry timer, without emailing the customer"
                   className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors">
                   <Wifi size={13} /> Make live (no email)
-                </button>
-              )}
-              {(isOverdue || quote.status === 'Expired') && (
-                <button onClick={handleReactivate}
-                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors">
-                  <RefreshCw size={13} /> Reactivate
                 </button>
               )}
               <button onClick={() => navigate(`/quotes/${quote.id}/edit`)}
