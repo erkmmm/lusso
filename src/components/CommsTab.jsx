@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Send, MessageSquare, Mail, Phone, PhoneOutgoing, PhoneIncoming, Loader, ChevronDown } from 'lucide-react';
+import { Send, MessageSquare, Mail, Phone, PhoneOutgoing, PhoneIncoming, Loader, ChevronDown, Plus } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import Card from './Card';
 
@@ -31,6 +32,7 @@ async function sendComm(channel, payload, session) {
 }
 
 export default function CommsTab({ jobId, customerId, customerName, customerPhone, customerEmail }) {
+  const navigate = useNavigate();
   const [messages, setMessages]   = useState(null);
   const [channel, setChannel]     = useState('sms');
   const [body, setBody]           = useState('');
@@ -203,9 +205,13 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
       </div>
 
       {!hasTo && channel !== 'call' && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
-          No {channel === 'sms' ? 'phone number' : 'email address'} on file for this customer. Add one on the customer profile first.
-        </div>
+        <MissingContact
+          field={channel === 'sms' ? 'phone' : 'email'}
+          purpose={channel === 'sms' ? 'send an SMS' : 'send an email'}
+          customerId={customerId}
+          customerName={customerName}
+          navigate={navigate}
+        />
       )}
 
       {/* Message thread */}
@@ -308,9 +314,13 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
                 <Phone size={15} /> Call {customerPhone}
               </a>
             ) : (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-700">
-                No phone number on file — add one to call this customer.
-              </div>
+              <MissingContact
+                field="phone"
+                purpose="call this customer"
+                customerId={customerId}
+                customerName={customerName}
+                navigate={navigate}
+              />
             )}
 
             <div className="grid grid-cols-2 gap-2">
@@ -415,6 +425,30 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+// A missing phone/email is the one thing that stops this tab working, so say
+// which one is missing and hand over a way to add it — deep-linking straight to
+// that field on the customer's profile rather than "go and find it yourself".
+function MissingContact({ field, purpose, customerId, customerName, navigate }) {
+  const label = field === 'phone' ? 'phone number' : 'email address';
+  const who = customerName ? ` for ${customerName}` : '';
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-amber-800">No {label} on file{who}</p>
+        <p className="text-xs text-amber-700 mt-0.5">Add one to {purpose} from here.</p>
+      </div>
+      {customerId && (
+        <button
+          onClick={() => navigate(`/customers/${customerId}?edit=${field}`)}
+          className="flex-shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white text-xs font-semibold rounded-lg px-3 py-2 transition-colors"
+        >
+          <Plus size={13} /> Add {field === 'phone' ? 'phone' : 'email'}
+        </button>
+      )}
     </div>
   );
 }

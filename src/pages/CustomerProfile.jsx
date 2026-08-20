@@ -1,6 +1,6 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Phone, Mail, MapPin, Edit3, Save, X, Briefcase,
   MessageSquare, Plus, ChevronRight, Link2, Link2Off,
@@ -24,7 +24,24 @@ export default function CustomerProfile() {
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState({});
 
+  // ?edit=phone|email — the comms tab links here when the customer is missing
+  // the detail it needs. The form opens on that field whether the page is being
+  // mounted fresh or is already on screen, so it's derived, not stored.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editParam  = searchParams.get('edit');
+  const focusField = ['phone', 'email'].includes(editParam) ? editParam : null;
+  const formOpen   = editing || !!focusField;
+  const focusRef   = useRef(null);
+
   useDataRefresh();
+
+  useEffect(() => {
+    if (!focusField) return;
+    const el = focusRef.current;
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [focusField]);
 
   if (!customer) {
     return (
@@ -36,11 +53,16 @@ export default function CustomerProfile() {
 
   const jobs = getJobsByCustomer(id);
 
+  const closeEdit = () => {
+    setEditing(false);
+    setEdits({});
+    if (focusField) setSearchParams({}, { replace: true });
+  };
+
   const handleSave = () => {
     const updated = { ...customer, ...edits };
     saveCustomer(updated);
-    setEditing(false);
-    setEdits({});
+    closeEdit();
     toast('Customer saved.');
   };
 
@@ -66,9 +88,9 @@ export default function CustomerProfile() {
             <p className="text-xs text-slate-400 mt-2">Customer since {format(parseISO(customer.createdAt), 'd MMM yyyy')}</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {editing && (
+            {formOpen && (
               <button
-                onClick={() => { setEditing(false); setEdits({}); }}
+                onClick={closeEdit}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
               >
                 <X size={13} /> Cancel
@@ -76,9 +98,9 @@ export default function CustomerProfile() {
             )}
             <OptionsMenu
               align="right"
-              items={editing ? [
+              items={formOpen ? [
                 { label: 'Save Changes', icon: Save, onClick: handleSave },
-                { label: 'Cancel Edit',  icon: X,    onClick: () => { setEditing(false); setEdits({}); } },
+                { label: 'Cancel Edit',  icon: X,    onClick: closeEdit },
               ] : [
                 { label: 'Edit Details', icon: Edit3,  onClick: () => setEditing(true) },
                 { divider: true },
@@ -102,7 +124,7 @@ export default function CustomerProfile() {
         <div className="lg:col-span-2 space-y-5">
 
           {/* Edit form */}
-          {editing && (
+          {formOpen && (
             <Card>
               <div className="px-5 py-4 border-b border-slate-100">
                 <h2 className="font-semibold text-slate-800 text-sm">Edit Customer Details</h2>
@@ -117,9 +139,12 @@ export default function CustomerProfile() {
                     <div key={key}>
                       <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
                       <input
+                        ref={key === focusField ? focusRef : null}
                         value={field(key)}
                         onChange={set(key)}
-                        className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        className={`w-full border rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                          key === focusField ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200'
+                        }`}
                       />
                     </div>
                   ))}
