@@ -15,6 +15,7 @@ import {
   sendQuote, duplicateQuote, acceptQuote, declineQuote,
   reactivateQuote, takeQuoteOffline, unacceptQuote,
   addQuoteComment, updateQuoteXeroInvoice, getMessagePresets,
+  isQuoteLive, isQuoteOverdue,
 } from '../store/data';
 import Card from '../components/Card';
 import { sendQuoteEmail } from '../lib/email';
@@ -153,10 +154,10 @@ export default function QuoteView() {
   const job        = quote.jobId ? getJob(quote.jobId) : null;
   const totals     = computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, quote.selectedLineItemIds || [], quote.discountType, quote.discountValue);
   const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
-  const isOverdue  = quote.expiryDate && isPast(new Date(quote.expiryDate)) && !['Accepted','Declined','Completed','Expired'].includes(quote.status);
+  const isOverdue  = isQuoteOverdue(quote);
 
   // Live = the customer's link serves it (the same set that offers "Take offline").
-  const isLive = ['Sent', 'Viewed', 'Waiting'].includes(quote.status);
+  const isLive = isQuoteLive(quote);
 
   // Has it ever been out with the customer? `sentAt` alone won't do: taking a
   // quote offline clears it, and that's precisely when you need to put it back

@@ -7,10 +7,11 @@ import {
   DollarSign, ChevronRight, AlertCircle,
   Trash2, CheckSquare, Square, AlertTriangle,
 } from 'lucide-react';
-import { format, parseISO, isPast, differenceInSeconds } from 'date-fns';
+import { format, parseISO, differenceInSeconds } from 'date-fns';
 import {
   getQuotes, getQuotesFiltered, getCustomers, QUOTE_STATUSES, QUOTE_STATUS_COLORS,
   computeQuoteTotals, sendQuote, duplicateQuote, deleteQuote, bulkDeleteQuotes, searchMatch,
+  isQuoteOverdue,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
@@ -354,7 +355,7 @@ export default function Quotes() {
             const cust      = customers.find(c => c.id === quote.customerId);
             const total     = quote.grandTotal ?? computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, quote.selectedLineItemIds || [], quote.discountType, quote.discountValue).total;
             const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
-            const isOverdue  = quote.expiryDate && isPast(new Date(quote.expiryDate)) && !['Accepted', 'Declined', 'Completed', 'Expired'].includes(quote.status);
+            const isOverdue  = isQuoteOverdue(quote);
             const reqCount   = quote.lineItems.filter(li => li.type === 'Required').length;
             const optCount   = quote.lineItems.filter(li => li.type !== 'Required').length;
             const isSelected = selected.has(quote.id);

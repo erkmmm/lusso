@@ -1796,6 +1796,17 @@ export const reorderProductType = (id, direction) => {
 
 export const QUOTE_STATUSES = ['Draft', 'Sent', 'Viewed', 'Waiting', 'Accepted', 'Declined', 'Expired', 'Completed'];
 
+// Statuses where the customer's link actually serves the quote.
+export const QUOTE_LIVE_STATUSES = ['Sent', 'Viewed', 'Waiting'];
+export const isQuoteLive = (q) => QUOTE_LIVE_STATUSES.includes(q?.status);
+
+// Overdue means a customer is sitting on a live quote whose deadline has passed.
+// Testing the expiry date alone flags every draft that's been open a while —
+// drafts are given an expiry the day they're created, before anyone has seen
+// them — and a quote pulled back offline isn't out with anyone either.
+export const isQuoteOverdue = (q) =>
+  !!q?.expiryDate && isQuoteLive(q) && new Date(q.expiryDate) < new Date();
+
 export const QUOTE_STATUS_COLORS = {
   Draft:     'bg-slate-100 text-slate-600',
   Sent:      'bg-blue-100 text-blue-700',
