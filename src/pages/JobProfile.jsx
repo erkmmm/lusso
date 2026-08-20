@@ -6,7 +6,7 @@ import {
   Edit3, Save, X, User, MapPin, Phone, Mail,
   Calendar, ClipboardList, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
-  AlertTriangle, StickyNote, ChevronDown, HardHat, Plus, Upload,
+  AlertTriangle, StickyNote, HardHat, Plus, Upload,
   CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
@@ -14,7 +14,7 @@ import ConsultRecordings from '../components/ConsultRecordings';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import {
   getJob, getCustomer, getMeasureSheetsByJob, getActivityByJob,
-  updateJobStatus, saveJob, JOB_STATUSES, STATUS_COLORS, getQuotesByJob,
+  updateJobStatus, saveJob, JOB_STATUSES, getQuotesByJob,
   deleteQuote, deleteJob,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
@@ -64,7 +64,6 @@ export default function JobProfile() {
   const quotes       = getQuotesByJob(id).filter(q => !q.deletedAt);
 
   const [activeTab,   setActiveTab]   = useState('overview');
-  const [editingStatus, setEditingStatus] = useState(false);
   const [editingNotes,  setEditingNotes]  = useState(false);
   const [notesValue,    setNotesValue]    = useState(job?.internalNotes || '');
   const [editingJob,    setEditingJob]    = useState(false);
@@ -87,8 +86,8 @@ export default function JobProfile() {
   }
 
   const handleStatusChange = (s) => {
+    if (s === job.status) return;
     updateJobStatus(id, s, 'Admin');
-    setEditingStatus(false);
     // Peak-happiness moment: offer to ask for a Google review when the job
     // completes — only if this customer hasn't been asked for this job.
     if (s === 'Completed' && (customer?.mobile || customer?.phone) && !getReviewRequestByJob(id)) {
@@ -160,10 +159,14 @@ export default function JobProfile() {
                 <ClipboardList size={14} /> <span className="hidden sm:inline">New Measure</span>
               </button>
               {/* Status control */}
-              <button onClick={() => setEditingStatus(!editingStatus)}
-                className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${editingStatus ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-                <ChevronDown size={14} /> <span className="hidden sm:inline">Status</span>
-              </button>
+              <select
+                value={job.status}
+                onChange={e => handleStatusChange(e.target.value)}
+                aria-label="Project status"
+                className="text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 max-w-[11rem]"
+              >
+                {JOB_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
               {/* Overflow menu — occasional + destructive actions */}
               <div className="relative">
                 <button onClick={() => setMoreOpen(o => !o)} aria-label="More actions" aria-expanded={moreOpen}
@@ -189,24 +192,6 @@ export default function JobProfile() {
               </div>
             </div>
           </div>
-
-          {/* Status picker */}
-          {editingStatus && (
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">Select new status</p>
-              <div className="flex flex-wrap gap-2">
-                {JOB_STATUSES.map(s => (
-                  <button key={s} onClick={() => handleStatusChange(s)}
-                    className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
-                      s === job.status ? 'ring-2 ring-amber-400 border-amber-400' : 'border-slate-200 hover:border-slate-300'
-                    } ${STATUS_COLORS[s]}`}>
-                    {s}
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => setEditingStatus(false)} className="mt-3 text-xs text-slate-400 hover:text-slate-600">Cancel</button>
-            </div>
-          )}
 
           {/* Progress bar */}
           <div className="mt-4 pt-4 border-t border-slate-100">
