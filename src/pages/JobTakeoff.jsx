@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ArrowLeft, Upload, Ruler, Crosshair, Hand, ZoomIn, ZoomOut, Maximize2,
-  ChevronLeft, ChevronRight, Trash2, FileText, Loader2, AlertTriangle,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, FileText, Loader2, AlertTriangle,
   Target, RefreshCw, X,
 } from 'lucide-react';
 import {
@@ -65,6 +65,8 @@ export default function JobTakeoff() {
   const [hover, setHover] = useState(null);               // live cursor (base) while drawing
   const [calInput, setCalInput] = useState(null);         // {a,b,base px length} pending calibration
   const [calMm, setCalMm] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);   // measurements panel on small screens
   const [selectedId, setSelectedId] = useState(null);
 
   const stageRef = useRef(null);
@@ -376,6 +378,7 @@ export default function JobTakeoff() {
     };
     persist({ ...takeoff, measurements: [...(takeoff.measurements || []), m] });
     setSelectedId(m.id);
+    setSheetOpen(true);   // it needs a label, and on a phone the list is collapsed
   }
 
   function updateMeasurement(mid, patch) {
@@ -437,11 +440,15 @@ export default function JobTakeoff() {
     handleUpload(file, { fresh: true });
   }
 
+  // Deleting the plan drops the stored PDF as well, so it can't be walked back
+  // — and the button sits a thumb's width from the per-measurement bins. It asks
+  // first.
   function handleDeleteTakeoff() {
     if (!takeoff) return;
     deleteTakeoff(takeoff.id);
+    setConfirmDelete(false);
     setTakeoff(null); setPdf(null); setPageBaseSize(null); setStatus('empty');
-    toast('Takeoff removed.');
+    toast('Plan deleted.');
   }
 
   // ── Derived for render ──────────────────────────────────────────────────
@@ -482,8 +489,11 @@ export default function JobTakeoff() {
               <RefreshCw size={12} /> Replace
               <input type="file" accept="application/pdf" className="hidden" onChange={e => handleReplace(e.target.files?.[0])} />
             </label>
-            <button onClick={handleDeleteTakeoff} className="text-xs text-red-500 hover:underline flex items-center gap-1">
-              <Trash2 size={12} /> Remove
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="text-xs text-red-500 hover:underline flex items-center gap-1 px-1.5 py-1.5 -mr-1.5 rounded"
+            >
+              <Trash2 size={12} /> Delete plan
             </button>
           </div>
         )}
@@ -509,7 +519,7 @@ export default function JobTakeoff() {
       {status === 'ready' && (
         <div className="flex-1 flex min-h-0">
           {/* Plan stage */}
-          <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
             {/* Toolbar */}
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-100 bg-white overflow-x-auto">
               <ToolBtn active={mode === 'pan'} onClick={() => { setMode('pan'); setDraft(null); }} icon={Hand} label="Pan" />
@@ -524,7 +534,13 @@ export default function JobTakeoff() {
                 <>
                   <div className="w-px h-5 bg-slate-200 mx-1" />
                   <button disabled={pageNumber <= 1} onClick={() => setPageNumber(p => Math.max(1, p - 1))} className="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronLeft size={16} /></button>
-                  <span className="text-xs text-slate-500 whitespace-nowrap">Page {pageNumber}/{pageCount}</span>
+                  {/* keyed: a remount keeps the typed draft in step with the chevrons */}
+                  <PageJump
+                    key={pageNumber}
+                    pageNumber={pageNumber}
+                    pageCount={pageCount}
+                    onGo={(n) => setPageNumber(n)}
+                  />
                   <button disabled={pageNumber >= pageCount} onClick={() => setPageNumber(p => Math.min(pageCount, p + 1))} className="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronRight size={16} /></button>
                 </>
               )}
@@ -570,9 +586,26 @@ export default function JobTakeoff() {
                 pxPerMm={curScale?.pxPerMm}
               />
             </div>
+
+            {/* Measurements, collapsed under the plan — phones and iPads have no
+                room for the side panel, and it used to just vanish there. */}
+            <MeasureList
+              layout="sheet"
+              open={sheetOpen}
+              onToggle={() => setSheetOpen(o => !o)}
+              measurements={pageMeasurements}
+              allCount={takeoff?.measurements?.length || 0}
+              pageNumber={pageNumber}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onUpdate={updateMeasurement}
+              onRemove={removeMeasurement}
+              hasScale={!!curScale}
+              onCalibrate={() => { setMode('calibrate'); setDraft(null); }}
+            />
           </div>
 
-          {/* Measurement list */}
+          {/* Measurement list — wide screens only */}
           <MeasureList
             measurements={pageMeasurements}
             allCount={takeoff?.measurements?.length || 0}
@@ -585,6 +618,16 @@ export default function JobTakeoff() {
             onCalibrate={() => { setMode('calibrate'); setDraft(null); }}
           />
         </div>
+      )}
+
+      {/* Delete-plan confirmation */}
+      {confirmDelete && takeoff && (
+        <ConfirmDeleteDialog
+          measurements={takeoff.measurements?.length || 0}
+          pages={takeoff.pages?.length || 0}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={handleDeleteTakeoff}
+        />
       )}
 
       {/* Calibration dialog */}
@@ -665,13 +708,29 @@ function Overlay({ baseToScreen, measurements, selectedId, onSelect, draft, hove
   );
 }
 
-function MeasureList({ measurements, allCount, pageNumber, selectedId, onSelect, onUpdate, onRemove, hasScale, onCalibrate }) {
-  return (
-    <div className="w-72 border-l border-slate-200 bg-white flex flex-col min-h-0 hidden md:flex">
-      <div className="px-4 py-3 border-b border-slate-100">
-        <h2 className="font-semibold text-slate-800 text-sm">Measurements</h2>
-        <p className="text-xs text-slate-400 mt-0.5">{measurements.length} on this page · {allCount} total</p>
+// `layout='side'` is the wide-screen panel; `layout='sheet'` is the same list as
+// a collapsible tray under the plan, for anything narrower than a laptop.
+function MeasureList({ measurements, allCount, pageNumber, selectedId, onSelect, onUpdate, onRemove, hasScale, onCalibrate, layout = 'side', open = false, onToggle }) {
+  const sheet = layout === 'sheet';
+  if (sheet && !open) {
+    return (
+      <div className="lg:hidden border-t border-slate-200 bg-white flex-shrink-0">
+        <SheetHandle measurements={measurements} allCount={allCount} open={false} onToggle={onToggle} />
       </div>
+    );
+  }
+  return (
+    <div className={sheet
+      ? 'lg:hidden border-t border-slate-200 bg-white flex flex-col min-h-0 flex-shrink-0 max-h-[45vh]'
+      : 'w-72 border-l border-slate-200 bg-white flex-col min-h-0 hidden lg:flex'}>
+      {sheet ? (
+        <SheetHandle measurements={measurements} allCount={allCount} open onToggle={onToggle} />
+      ) : (
+        <div className="px-4 py-3 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-800 text-sm">Measurements</h2>
+          <p className="text-xs text-slate-400 mt-0.5">{measurements.length} on this page · {allCount} total</p>
+        </div>
+      )}
       {!hasScale && (
         <div className="m-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
           Set the scale on this page before measuring.
@@ -708,10 +767,28 @@ function MeasureList({ measurements, allCount, pageNumber, selectedId, onSelect,
           </div>
         ))}
       </div>
-      <div className="px-3 py-2 border-t border-slate-100 text-[11px] text-slate-400">
-        Labelled Width/Drop measurements flow into this job's measure sheet automatically.
-      </div>
+      {!sheet && (
+        <div className="px-3 py-2 border-t border-slate-100 text-[11px] text-slate-400">
+          Labelled Width/Drop measurements flow into this job's measure sheet automatically.
+        </div>
+      )}
     </div>
+  );
+}
+
+function SheetHandle({ measurements, allCount, open, onToggle }) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-expanded={open}
+      className="w-full flex-shrink-0 flex items-center gap-2 px-4 py-2.5 text-left border-b border-slate-100"
+    >
+      <h2 className="font-semibold text-slate-800 text-sm">Measurements</h2>
+      <span className="text-xs text-slate-400 truncate">{measurements.length} on this page · {allCount} total</span>
+      {open
+        ? <ChevronDown size={16} className="ml-auto flex-shrink-0 text-slate-400" />
+        : <ChevronUp   size={16} className="ml-auto flex-shrink-0 text-slate-400" />}
+    </button>
   );
 }
 
@@ -729,6 +806,73 @@ function UploadPane({ uploading, onFile, compact }) {
         <span className="text-xs flex items-center gap-1 text-amber-600"><FileText size={12} /> Choose PDF</span>
         <input type="file" accept="application/pdf" className="hidden" disabled={uploading} onChange={e => onFile(e.target.files?.[0])} />
       </label>
+    </div>
+  );
+}
+
+// Page readout that doubles as a jump box — paging through a 30-sheet plan set
+// with the chevrons is slow. Typing commits on Enter or blur; anything out of
+// range or non-numeric snaps back to the page you're on.
+function PageJump({ pageNumber, pageCount, onGo }) {
+  // Keyed on pageNumber by the caller, so a page change from anywhere else
+  // remounts this and the draft starts from the new page.
+  const [draft, setDraft] = useState(String(pageNumber));
+
+  const commit = () => {
+    const n = parseInt(draft, 10);
+    if (!Number.isFinite(n) || n < 1 || n > pageCount) { setDraft(String(pageNumber)); return; }
+    setDraft(String(n));
+    if (n !== pageNumber) onGo(n);
+  };
+
+  return (
+    <span className="text-xs text-slate-500 whitespace-nowrap flex items-center gap-1">
+      Page
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={draft}
+        aria-label={`Page number, 1 to ${pageCount}`}
+        onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+        onFocus={e => e.target.select()}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+          if (e.key === 'Escape') { setDraft(String(pageNumber)); e.currentTarget.blur(); }
+        }}
+        className="w-9 text-center tabular-nums border border-slate-200 rounded px-1 py-0.5 text-xs text-slate-700 bg-white outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+      />
+      /{pageCount}
+    </span>
+  );
+}
+
+function ConfirmDeleteDialog({ measurements, pages, onCancel, onConfirm }) {
+  const bits = [
+    measurements ? `${measurements} measurement${measurements === 1 ? '' : 's'}` : null,
+    pages ? `the page scale${pages === 1 ? '' : 's'}` : null,
+  ].filter(Boolean);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <Trash2 size={18} className="text-red-500" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-slate-800">Delete this plan?</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              The plan PDF{bits.length ? `, along with ${bits.join(' and ')},` : ''} will be removed from this job.
+              Lines already on the measure sheet stay. This can&rsquo;t be undone — you&rsquo;d have to upload the PDF again.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button onClick={onCancel} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Keep plan</button>
+          <button onClick={onConfirm} className="flex-1 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">Delete plan</button>
+        </div>
+      </div>
     </div>
   );
 }
