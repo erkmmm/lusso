@@ -446,7 +446,7 @@ export default function Jobs() {
           />
         </Card>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {/* Select all row */}
           {selectMode && filtered.length > 1 && (
             <div className="flex items-center gap-3 px-1 pb-1">
@@ -471,7 +471,7 @@ export default function Jobs() {
                 {/* Checkbox — always reserves space */}
                 <button
                   onClick={e => selectMode && toggleSelect(job.id, e)}
-                  className="pl-4 py-4 flex-shrink-0"
+                  className="pl-3 py-2.5 flex-shrink-0"
                 >
                   {selectMode
                     ? isSelected
@@ -486,11 +486,11 @@ export default function Jobs() {
                   role="button" tabIndex={0}
                   onClick={() => selectMode ? toggleSelect(job.id, { stopPropagation: () => {} }) : navigate(`/jobs/${job.id}`)}
                   onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !selectMode) { e.preventDefault(); navigate(`/jobs/${job.id}`); } }}
-                  className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3 py-4 pr-2 text-left min-w-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 rounded-xl"
+                  className="flex-1 flex flex-row items-center gap-2.5 py-2.5 pr-2 text-left min-w-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 rounded-xl"
                 >
                   {/* Avatar */}
-                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-amber-700 font-bold text-sm">{customer?.name?.charAt(0) || 'J'}</span>
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-amber-700 font-bold text-xs">{customer?.name?.charAt(0) || 'J'}</span>
                   </div>
 
                   {/* Info */}
@@ -516,8 +516,8 @@ export default function Jobs() {
                     <div className="text-right flex-shrink-0">
                       {valueByJob.has(job.id)
                         ? <>
-                            <p className="text-lg font-bold text-slate-900">{fmt$(valueByJob.get(job.id))}</p>
-                            <p className="text-xs text-slate-400">inc. GST</p>
+                            <p className="text-base font-bold text-slate-900 leading-tight">{fmt$(valueByJob.get(job.id))}</p>
+                            <p className="text-[11px] text-slate-400">inc. GST</p>
                           </>
                         : <p className="text-xs text-slate-300">No quote yet</p>}
                     </div>
@@ -528,7 +528,7 @@ export default function Jobs() {
                 {selectMode && (
                   <button
                     onClick={e => { e.stopPropagation(); setDeleteTarget(job.id); }}
-                    className="pr-4 py-4 flex-shrink-0 text-slate-300 hover:text-red-500 transition-colors"
+                    className="pr-3 py-2.5 flex-shrink-0 text-slate-300 hover:text-red-500 transition-colors"
                     title="Delete job"
                   >
                     <Trash2 size={15} />
