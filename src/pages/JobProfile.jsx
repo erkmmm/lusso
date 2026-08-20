@@ -174,10 +174,6 @@ export default function JobProfile() {
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
                     <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-white rounded-xl border border-slate-200 shadow-xl py-1">
-                      <button onClick={() => { navigate(`/jobs/${id}/takeoff`); setMoreOpen(false); }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                        <Ruler size={15} className="text-slate-400" /> Plan Takeoff
-                      </button>
                       <button onClick={() => { setShowCalendar(true); setMoreOpen(false); }}
                         className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
                         <CalendarPlus size={15} className="text-slate-400" /> Add to calendar
@@ -488,11 +484,16 @@ export default function JobProfile() {
       {/* ── Tab: Measures ─────────────────────────────────────────────── */}
       {activeTab === 'measures' && (
         <Card className="overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
             <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
               <ClipboardList size={15} /> Measure Sheets
             </h2>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <button onClick={() => navigate(`/jobs/${id}/takeoff`)}
+                title="Measure windows straight off the plan PDF"
+                className="flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors">
+                <Ruler size={12} /> Plan Takeoff
+              </button>
               <button onClick={() => navigate(`/measure-sheets/import?customerId=${job.customerId}&jobId=${id}`)}
                 className="flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors">
                 <Upload size={12} /> Import
@@ -508,7 +509,7 @@ export default function JobProfile() {
             <div className="p-12 text-center">
               <ClipboardList size={32} className="mx-auto mb-3 text-slate-300" />
               <p className="text-sm font-medium text-slate-600">No measure sheets yet</p>
-              <p className="text-xs text-slate-400 mt-1">Create a new sheet or import from Excel.</p>
+              <p className="text-xs text-slate-400 mt-1">Create a new sheet, import from Excel, or measure off the plan.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-50">
