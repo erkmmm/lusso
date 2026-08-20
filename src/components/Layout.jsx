@@ -13,6 +13,7 @@ import {
 import { getEmployeeCountSync } from '../store/profiles';
 import { toast } from './ToastContainer';
 import RouteErrorBoundary from './ErrorBoundary';
+import PushPrompt from './PushPrompt';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfile } from '../contexts/UserProfileContext';
 import { LogOut } from 'lucide-react';
@@ -187,6 +188,17 @@ export default function Layout() {
     return () => window.removeEventListener('lusso:storage-full', onFull);
   }, []);
 
+  // Tapping a push notification focuses the open app and posts the target
+  // route back to it — route it through the router so it doesn't hard-reload.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMessage = (e) => {
+      if (e.data?.type === 'lusso:navigate' && e.data.url) navigate(e.data.url);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [navigate]);
+
   // Close popups on outside click
   useEffect(() => {
     const handler = (e) => {
@@ -202,7 +214,8 @@ export default function Layout() {
     markNotificationRead(n.id);
     setNotifs(getNotifications());
     setNotifOpen(false);
-    if (n.jobId) navigate(`/jobs/${n.jobId}`);
+    if (n.link) navigate(n.link);
+    else if (n.jobId) navigate(`/jobs/${n.jobId}`);
   };
 
   const handleMarkAllRead = () => {
@@ -222,14 +235,17 @@ export default function Layout() {
     <div className="app-shell flex h-screen overflow-hidden bg-slate-50">
 
       {/* ── Mobile sidebar overlay ─────────────────────────────────────────── */}
+      {/* Layering on mobile: bottom nav z-20 < this scrim z-30 < sidebar z-40 <
+          modals z-50, so an open drawer covers the nav instead of being clipped
+          by it. */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-20 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* Mobile + New sheet overlay is co-located with the sheet below ── */}
 
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
-      <aside className={`app-sidebar fixed inset-y-0 left-0 z-30 w-64 bg-sidebar flex flex-col transform transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`app-sidebar fixed inset-y-0 left-0 z-40 w-64 bg-sidebar flex flex-col transform transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
 
         {/* Logo */}
         <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border">
@@ -440,7 +456,7 @@ export default function Layout() {
       </div>
 
       {/* ── Mobile bottom nav ─────────────────────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-100 flex items-stretch h-16 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] no-print">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-slate-100 flex items-stretch h-16 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] no-print">
         {/* Home */}
         <NavLink to="/" end className={({ isActive }) =>
           `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
@@ -539,6 +555,8 @@ export default function Layout() {
           </div>
         </>
       )}
+
+      <PushPrompt />
 
     </div>
   );

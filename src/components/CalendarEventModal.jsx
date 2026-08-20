@@ -11,6 +11,7 @@
  */
 
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import AddressAutocomplete from './AddressAutocomplete';
 import { toast } from './ToastContainer';
 import { format, parseISO, addWeeks } from 'date-fns';
@@ -231,7 +232,10 @@ export default function CalendarEventModal({
   const addressSuggestion = selectedJob?.address || selectedCust?.address;
 
   // ── Render ───────────────────────────────────────────────────────────────────
-  return (
+  // Portalled to <body>: rendered in place, the overlay lands inside the page
+  // root's stacking context and the mobile bottom nav paints over its footer,
+  // burying Cancel / Create Entry.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={onClose}
@@ -454,7 +458,7 @@ export default function CalendarEventModal({
         </div>
 
         {/* ── Footer ── */}
-        <div className="flex gap-3 px-5 py-4 border-t border-slate-100 flex-shrink-0">
+        <div className="flex gap-3 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-4 border-t border-slate-100 flex-shrink-0">
           <button
             type="button"
             onClick={onClose}
@@ -472,6 +476,7 @@ export default function CalendarEventModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

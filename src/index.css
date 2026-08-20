@@ -1023,6 +1023,7 @@ html.dark { color-scheme: dark; }
 .dark .bg-white         { background-color: var(--surf-card); }
 .dark .bg-slate-50      { background-color: var(--surf-page); }
 .dark .bg-slate-100     { background-color: var(--surf-muted); }
+.dark .bg-white\/60     { background-color: var(--surf-muted); }
 .dark .bg-slate-50\/80  { background-color: rgb(var(--surf-page-rgb) / 0.8); }
 .dark .bg-slate-50\/60  { background-color: rgb(var(--surf-page-rgb) / 0.6); }
 .dark .bg-slate-50\/50  { background-color: rgb(var(--surf-page-rgb) / 0.5); }
@@ -1054,11 +1055,17 @@ html.dark { color-scheme: dark; }
 .dark .text-amber-700   { color: var(--brand-bright); }
 .dark .text-amber-800   { color: var(--brand-bright); }
 .dark .text-amber-300   { color: var(--brand-bright); }
+.dark .text-amber-400   { color: var(--brand-bright); }
+/* 900 is a near-black bronze in the brand ramp — as body text on a dark card it
+   disappears, so it reads as primary text instead (keeps the bronze detail line
+   below it as the quieter tier). */
+.dark .text-amber-900   { color: var(--txt-primary); }
 .dark .bg-amber-50      { background-color: rgb(var(--brand-bright-rgb) / 0.12); }
 .dark .bg-amber-50\/40  { background-color: rgb(var(--brand-bright-rgb) / 0.12); }
 .dark .bg-amber-100     { background-color: rgb(var(--brand-bright-rgb) / 0.18); }
 .dark .bg-amber-200     { background-color: rgb(var(--brand-bright-rgb) / 0.25); }
 .dark .bg-amber-500\/20 { background-color: rgb(var(--brand-bright-rgb) / 0.18); }
+.dark .border-amber-100 { border-color:     rgb(var(--brand-bright-rgb) / 0.18); }
 .dark .border-amber-200 { border-color:     rgb(var(--brand-bright-rgb) / 0.30); }
 .dark .border-amber-300 { border-color:     rgb(var(--brand-bright-rgb) / 0.40); }
 
@@ -1241,8 +1248,11 @@ html.dark { color-scheme: dark; }
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+/* `backwards`, not `both`: a filling animation over opacity keeps a stacking
+   context on the page root forever, which traps every `fixed inset-0 z-50`
+   modal inside it — the mobile bottom nav would then paint over modal footers. */
 main > * {
-  animation: lusso-page-in 0.3s ease both;
+  animation: lusso-page-in 0.3s ease backwards;
 }
 
 /* Overlays & modals — backdrop fades, panel pops in (shadcn dialog feel).
