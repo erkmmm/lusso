@@ -464,20 +464,20 @@ export default function Jobs() {
             const isSelected = selected.has(job.id);
             return (
               <div key={job.id}
-                className={`group bg-white rounded-xl border shadow-sm flex items-center hover:shadow-md transition-all ${
+                className={`group bg-white rounded-xl border shadow-sm flex items-stretch hover:shadow-md transition-all ${
                   isSelected ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
                 {/* Checkbox — always reserves space */}
                 <button
                   onClick={e => selectMode && toggleSelect(job.id, e)}
-                  className="pl-3 py-2.5 flex-shrink-0"
+                  className="pl-3 flex items-center flex-shrink-0"
                 >
                   {selectMode
                     ? isSelected
                       ? <CheckSquare size={16} className="text-amber-500" />
                       : <Square size={16} className="text-slate-300 group-hover:text-slate-400 transition-colors" />
-                    : <span className="w-4 block" />}
+                    : <span className="w-3.5 block" />}
                 </button>
 
                 {/* Main content — a clickable div (not a <button>) so the
@@ -486,49 +486,48 @@ export default function Jobs() {
                   role="button" tabIndex={0}
                   onClick={() => selectMode ? toggleSelect(job.id, { stopPropagation: () => {} }) : navigate(`/jobs/${job.id}`)}
                   onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !selectMode) { e.preventDefault(); navigate(`/jobs/${job.id}`); } }}
-                  className="flex-1 flex flex-row items-center gap-2.5 py-2.5 pr-2 text-left min-w-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 rounded-xl"
+                  className="flex-1 flex items-start gap-3 py-3 pl-2.5 pr-3 text-left min-w-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 rounded-xl"
                 >
                   {/* Avatar */}
-                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-amber-700 font-bold text-xs">{customer?.name?.charAt(0) || 'J'}</span>
+                  <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-amber-700 font-bold text-xs">{customer?.name?.charAt(0)?.toUpperCase() || 'J'}</span>
                   </div>
 
-                  {/* Info */}
+                  {/* Info — three tiers: name / what+where / meta */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                      <span className="font-semibold text-slate-900 text-sm">{customer?.name}</span>
-                      <span className="text-slate-400 text-xs">{job.jobNumber}</span>
-                      <StatusMenu job={job} user={displayName} disabled={selectMode} />
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-semibold text-slate-900 text-sm truncate">{customer?.name || 'Unknown customer'}</span>
                       {(job.urgency === 'High' || job.urgency === 'Urgent') && <UrgencyBadge urgency={job.urgency} />}
                     </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
-                      {job.jobType && <span>{job.jobType}</span>}
-                      {customer?.address && <span className="truncate max-w-[200px]">{customer.address}</span>}
-                      {job.assignedStaff && <span>👤 {job.assignedStaff}</span>}
-                      {job.measureDate && <span>📐 {format(parseISO(job.measureDate), 'd MMM yyyy')}</span>}
-                      {job.installDate && <span>🔧 {format(parseISO(job.installDate), 'd MMM yyyy')}</span>}
-                      {job.createdAt && <span>Made {fmtDate(job.createdAt)}</span>}
-                      {job.updatedAt && <span>Edited {fmtDate(job.updatedAt)}</span>}
+                    <p className="text-xs text-slate-500 truncate mt-0.5">
+                      {[job.jobType, customer?.address].filter(Boolean).join('  ·  ') || 'No details yet'}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-400 min-w-0">
+                      <span className="font-medium text-slate-400 flex-shrink-0">{job.jobNumber}</span>
+                      {job.assignedStaff && <><span className="text-slate-300">·</span><span className="truncate">{job.assignedStaff}</span></>}
+                      {fmtDate(job.createdAt) && <><span className="text-slate-300 flex-shrink-0">·</span><span className="whitespace-nowrap flex-shrink-0">{fmtDate(job.createdAt)}</span></>}
                     </div>
                   </div>
 
-                  {!selectMode && (
-                    <div className="text-right flex-shrink-0">
-                      {valueByJob.has(job.id)
-                        ? <>
-                            <p className="text-base font-bold text-slate-900 leading-tight">{fmt$(valueByJob.get(job.id))}</p>
-                            <p className="text-[11px] text-slate-400">inc. GST</p>
-                          </>
-                        : <p className="text-xs text-slate-300">No quote yet</p>}
-                    </div>
-                  )}
+                  {/* Status (top) + value (bottom), aligned right for at-a-glance pipeline state */}
+                  <div className="flex flex-col items-end justify-between self-stretch flex-shrink-0 gap-2 pl-1">
+                    <StatusMenu job={job} user={displayName} disabled={selectMode} />
+                    {!selectMode && (
+                      valueByJob.has(job.id)
+                        ? <div className="text-right leading-none">
+                            <p className="text-sm font-bold text-slate-900">{fmt$(valueByJob.get(job.id))}</p>
+                            <p className="text-[10px] text-slate-400 mt-1">inc. GST</p>
+                          </div>
+                        : <p className="text-[11px] text-slate-300">No quote yet</p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Per-row delete */}
                 {selectMode && (
                   <button
                     onClick={e => { e.stopPropagation(); setDeleteTarget(job.id); }}
-                    className="pr-3 py-2.5 flex-shrink-0 text-slate-300 hover:text-red-500 transition-colors"
+                    className="pr-3 flex items-center flex-shrink-0 text-slate-300 hover:text-red-500 transition-colors"
                     title="Delete job"
                   >
                     <Trash2 size={15} />
