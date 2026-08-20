@@ -76,18 +76,16 @@ Deno.serve(async (req: Request) => {
 
     if (!from || !body) return xml()
 
-    // Try every plausible format for the sender's number
-    const variants = phoneVariants(from)
-    const orFilter = variants.map(v => `phone.eq.${v}`).join(",")
-
-    const { data: customers } = await admin
-      .from("customers")
-      .select("id, name")
-      .or(orFilter)
-      .is("deleted_at", null)
-      .limit(1)
-
-    const customerId = customers?.[0]?.id ?? null
+    // Who sent this? Postgres does the matching (see phone_matching.sql), so
+    // both sides reduce to the same key — the last nine digits. The old
+    // approach compared the raw string against a hand-written list of formats,
+    // which missed roughly one customer record in eight and never looked at
+    // customers.mobile at all. It also falls back to whoever we last exchanged
+    // SMS with on that number, for a customer texting from a second handset.
+    const { data: matched, error: matchErr } = await admin
+      .rpc("match_customer_by_phone", { p_phone: from })
+    if (matchErr) console.error("match_customer_by_phone:", matchErr.message)
+    const customerId = (matched as string | null) ?? null
 
     // Find the most recent active job for this customer
     let jobId: string | null = null
@@ -133,32 +131,6 @@ function requireInboundSecret(req: Request): Response | null {
     return json({ error: "unauthorized" }, 401)
   }
   return null
-}
-
-// Generate all plausible formats for a phone number so we can match
-// whatever format the customer record was saved in.
-function phoneVariants(raw: string): string[] {
-  const digits = raw.replace(/\D/g, "") // strip everything non-digit
-  const variants = new Set<string>()
-  variants.add(raw)               // original e.g. +61428501838
-  variants.add(digits)            // 61428501838
-
-  if (digits.startsWith("61") && digits.length >= 11) {
-    const local = "0" + digits.slice(2)  // 0428501838
-    variants.add(local)
-    variants.add(local.replace(/(\d{4})(\d{3})(\d{3})/, "$1 $2 $3"))  // 0428 501 838
-    variants.add("+" + digits)            // +61428501838
-    variants.add("+61 " + local.slice(1)) // +61 428501838
-  }
-
-  if (digits.startsWith("0") && digits.length === 10) {
-    const intl = "61" + digits.slice(1)  // 61428501838
-    variants.add("+" + intl)             // +61428501838
-    variants.add(intl)
-    variants.add(digits.replace(/(\d{4})(\d{3})(\d{3})/, "$1 $2 $3")) // 0428 501 838
-  }
-
-  return Array.from(variants)
 }
 
 function xml() {
