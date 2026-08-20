@@ -260,21 +260,36 @@ export const pendingIds = (table) => new Set(Object.keys(getPending()[table] || 
  * Supabase / PostgREST defaults to returning at most 1000 rows without an
  * explicit range, so tables larger than 1000 rows need this helper.
  */
-const PAGE_SIZE = 1000;
+// Smaller pages keep each request light (quotes carry heavy line_items JSONB),
+// which matters most on mobile connections and while the DB is disk-IO throttled.
+const PAGE_SIZE = 500;
+const PAGE_RETRIES = 4; // attempts per page before giving up
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function fetchAllPages(table, useDeletedFilter) {
   let all = [];
   let from = 0;
 
   while (true) {
-    let q = supabase.from(table).select('*');
-    if (useDeletedFilter) q = q.is('deleted_at', null);
-    q = q.order('created_at', { ascending: true }).range(from, from + PAGE_SIZE - 1);
+    // Retry each page with exponential backoff. A single transient page error
+    // (timeout / IO-throttle hiccup) must NOT abort the whole table — that's
+    // what left a fresh device with empty Jobs/Quotes/Customers while the tiny
+    // activity table (one page) still loaded. Only give up after all retries.
+    let page = null;
+    let lastErr = null;
+    for (let attempt = 0; attempt < PAGE_RETRIES; attempt++) {
+      let q = supabase.from(table).select('*');
+      if (useDeletedFilter) q = q.is('deleted_at', null);
+      q = q.order('created_at', { ascending: true }).range(from, from + PAGE_SIZE - 1);
 
-    const { data, error } = await q;
-    if (error) return { data: null, error };
+      const { data, error } = await q;
+      if (!error) { page = data || []; lastErr = null; break; }
+      lastErr = error;
+      if (attempt < PAGE_RETRIES - 1) await sleep(400 * Math.pow(2, attempt)); // 400, 800, 1600ms
+    }
+    if (lastErr) return { data: null, error: lastErr };
 
-    const page = data || [];
     all = all.concat(page);
     if (page.length < PAGE_SIZE) break; // reached last page
     from += PAGE_SIZE;
