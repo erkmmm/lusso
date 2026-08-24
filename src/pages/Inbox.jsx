@@ -132,18 +132,23 @@ function ChannelBadge({ channel }) {
 }
 
 // ── Conversation List Item ────────────────────────────────────────────────────
-function ConvRow({ conv, selected, onClick }) {
+function ConvRow({ conv, selected, onClick, onDelete }) {
   const hasUnread = conv.unread > 0;
   return (
+    /* The row is a button, so the delete control can't nest inside it — it sits
+       as a sibling in a relative wrapper instead. Kept permanently visible
+       rather than hover-revealed: it has to be findable on touch, and a
+       hover-only affordance is the kind that goes unnoticed. */
+    <div className={`group relative border-b border-slate-100 last:border-0 ${
+      selected
+        ? 'bg-violet-50 border-l-2 border-l-violet-500'
+        : hasUnread
+          ? 'bg-violet-50/30 hover:bg-slate-50'
+          : 'hover:bg-slate-50'
+    }`}>
     <button
       onClick={onClick}
-      className={`w-full text-left px-4 py-3.5 flex items-start gap-3 transition-colors border-b border-slate-100 last:border-0 ${
-        selected
-          ? 'bg-violet-50 border-l-2 border-l-violet-500'
-          : hasUnread
-            ? 'bg-violet-50/30 hover:bg-slate-50'
-            : 'hover:bg-slate-50'
-      }`}
+      className="w-full text-left px-4 py-3.5 pr-11 flex items-start gap-3 transition-colors"
     >
       {/* Avatar + channel badge */}
       <div className="relative flex-shrink-0 mt-0.5">
@@ -179,6 +184,16 @@ function ConvRow({ conv, selected, onClick }) {
         </span>
       )}
     </button>
+
+    <button
+      onClick={(e) => { e.stopPropagation(); onDelete?.(conv); }}
+      title="Delete conversation"
+      aria-label={`Delete conversation with ${conv.customerName}`}
+      className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 group-hover:text-slate-500 hover:!text-white hover:!bg-red-500 transition-colors"
+    >
+      <Trash2 size={15} />
+    </button>
+    </div>
   );
 }
 
@@ -457,7 +472,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
 }
 
 // ── Thread View ───────────────────────────────────────────────────────────────
-function ThreadView({ conv, onBack, onSend, onDeleteCustomer }) {
+function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversation }) {
   const [reply,   setReply]   = useState('');
   const [channel, setChannel] = useState(conv.last?.channel ?? 'sms');
   const [sending, setSending] = useState(false);
@@ -539,8 +554,9 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer }) {
           items={[
             ...(conv.jobId ? [{ label: 'View Job', icon: Briefcase, onClick: () => navigate(`/jobs/${conv.jobId}`) }] : []),
             ...(conv.customerId ? [{ label: 'View Customer', icon: User, onClick: () => navigate(`/customers/${conv.customerId}`) }] : []),
+            { divider: true },
+            { label: 'Delete Conversation', icon: Trash2, danger: true, onClick: () => onDeleteConversation?.(conv) },
             ...(conv.customerId ? [
-              { divider: true },
               { label: 'Delete Customer', icon: Trash2, danger: true, onClick: () => {
                 const cid  = conv.customerId;
                 const name = conv.customerName;
@@ -682,6 +698,53 @@ function CustomerPickerModal({ onClose, onPick }) {
   );
 }
 
+// Deleting a conversation wipes an entire message history at once and there is
+// no soft-delete to undo from, so this one gets a real modal rather than the
+// inline confirm a single message uses.
+function ConfirmDeleteConvModal({ conv, busy, onCancel, onConfirm }) {
+  const count = conv.isWebLead ? 1 : conv.messages.length;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={busy ? undefined : onCancel}>
+      <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-5 pt-5 pb-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+              <Trash2 size={16} className="text-red-500" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-slate-900 text-sm">
+                Delete this conversation?
+              </h2>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                {conv.isWebLead ? (
+                  <>The website enquiry from <span className="font-medium text-slate-700">{conv.customerName}</span> will be removed from the inbox for good.</>
+                ) : (
+                  <>The whole history with <span className="font-medium text-slate-700">{conv.customerName}</span>
+                  {count ? <> — {count} message{count === 1 ? '' : 's'} and any older ones</> : null} will be removed from the CRM for good.</>
+                )}
+              </p>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                This can't be undone. Messages already sent still sit in the customer's inbox, and their customer record is not affected.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end px-5 py-3 bg-slate-50 border-t border-slate-100">
+          <button onClick={onCancel} disabled={busy}
+            className="text-xs font-medium text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg transition-colors disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={busy}
+            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-red-500 hover:bg-red-400 disabled:opacity-60 px-3.5 py-2 rounded-lg transition-colors">
+            {busy ? <Loader size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            {busy ? 'Deleting…' : 'Delete conversation'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Inbox() {
   const navigate = useNavigate();
   const { displayName = '' } = useProfile() || {};
@@ -693,6 +756,8 @@ export default function Inbox() {
   const [mobileView, setMobile]   = useState('list'); // 'list' | 'thread'
   const [pickerOpen, setPickerOpen] = useState(false);
   const [draftConv,  setDraftConv]  = useState(null); // un-persisted "new message" thread
+  const [convToDelete, setConvToDelete] = useState(null); // conversation awaiting delete confirm
+  const [deletingConv, setDeletingConv] = useState(false);
 
   // Load all comms
   useEffect(() => {
@@ -775,6 +840,74 @@ export default function Inbox() {
         ));
       });
   }, [selectedKey]);
+
+  // Every row id belonging to a conversation — not just the ones on screen. The
+  // inbox only holds the latest 200 messages, so deleting what's loaded would
+  // leave older ones behind to resurrect the thread on the next reload.
+  const collectConversationIds = async (conv) => {
+    if (conv.customerId) {
+      const { data, error } = await supabase
+        .from('communications').select('id').eq('customer_id', conv.customerId);
+      if (error) throw error;
+      return (data ?? []).map(r => r.id);
+    }
+    // Address-keyed thread (no customer record yet). Two exact-match queries
+    // rather than one PostgREST `or` string, whose value escaping is fragile
+    // for email addresses and +61 numbers.
+    const [from, to] = await Promise.all([
+      supabase.from('communications').select('id').is('customer_id', null).eq('from_address', conv.key),
+      supabase.from('communications').select('id').is('customer_id', null).eq('to_address', conv.key),
+    ]);
+    if (from.error) throw from.error;
+    if (to.error)   throw to.error;
+    return [...new Set([...(from.data ?? []), ...(to.data ?? [])].map(r => r.id))];
+  };
+
+  const handleDeleteConversation = async (conv) => {
+    if (deletingConv) return;
+    setDeletingConv(true);
+    const snapshot = comms;
+    const leadSnapshot = leads;
+    const name = conv.customerName || 'Conversation';
+    try {
+      // A web lead is a single web_enquiries row, not a message thread.
+      if (conv.isWebLead) {
+        setLeads(prev => prev.filter(l => l.id !== conv.enquiry.id));
+        const { error, count } = await supabase
+          .from('web_enquiries').delete({ count: 'exact' }).eq('id', conv.enquiry.id);
+        if (error) throw error;
+        if (count === 0) throw new Error('blocked');
+      } else {
+        const ids = await collectConversationIds(conv);
+        if (!ids.length) { toast('Nothing left to delete.', 'info'); return; }
+        const idSet = new Set(ids);
+        setComms(prev => (prev ?? []).filter(c => !idSet.has(c.id)));
+        // Chunked so a long history doesn't blow the request URL length.
+        let removed = 0;
+        for (let i = 0; i < ids.length; i += 100) {
+          const { error, count } = await supabase
+            .from('communications').delete({ count: 'exact' }).in('id', ids.slice(i, i + 100));
+          if (error) throw error;
+          removed += count ?? 0;
+        }
+        if (removed === 0) throw new Error('blocked');
+      }
+      if (selectedKey === conv.key) { setSelected(null); setMobile('list'); }
+      setConvToDelete(null);
+      toast(`Conversation with ${name} deleted.`);
+    } catch (err) {
+      setComms(snapshot);
+      setLeads(leadSnapshot);
+      toast(
+        err?.message === 'blocked'
+          ? 'Nothing was deleted — your account may not have permission.'
+          : 'Could not delete the conversation.',
+        'error',
+      );
+    } finally {
+      setDeletingConv(false);
+    }
+  };
 
   // ── Web lead actions ──────────────────────────────────────────────────────
   const setLeadStatus = async (lead, status) => {
@@ -989,6 +1122,7 @@ export default function Inbox() {
                 conv={conv}
                 selected={conv.key === selectedKey}
                 onClick={() => handleSelect(conv)}
+                onDelete={setConvToDelete}
               />
             ))}
           </div>
@@ -1015,6 +1149,7 @@ export default function Inbox() {
                 onBack={handleBack}
                 onSend={handleSent}
                 onDeleteCustomer={() => { setSelected(null); setMobile('list'); }}
+                onDeleteConversation={setConvToDelete}
               />
             )
           ) : (
@@ -1032,6 +1167,15 @@ export default function Inbox() {
 
       {pickerOpen && (
         <CustomerPickerModal onClose={() => setPickerOpen(false)} onPick={handleNewMessage} />
+      )}
+
+      {convToDelete && (
+        <ConfirmDeleteConvModal
+          conv={convToDelete}
+          busy={deletingConv}
+          onCancel={() => setConvToDelete(null)}
+          onConfirm={() => handleDeleteConversation(convToDelete)}
+        />
       )}
     </div>
   );
