@@ -759,23 +759,38 @@ export default function Inbox() {
   const [convToDelete, setConvToDelete] = useState(null); // conversation awaiting delete confirm
   const [deletingConv, setDeletingConv] = useState(false);
 
-  // Load all comms
-  useEffect(() => {
+  // The newest created_at held, so a poll can ask only for what arrived after
+  // it rather than re-reading the same 200 rows every 20 seconds.
+  const newestCommAt = useRef(null);
+
+  const loadComms = useCallback(async ({ incremental = false } = {}) => {
     if (!supabase) return;
-    supabase
+    let q = supabase
       .from('communications')
       .select('*, jobs!left(job_number, status, deleted_at), customers!left(name, phone, email, deleted_at)')
       .order('created_at', { ascending: false })
-      .limit(200)
-      .then(({ data }) => {
-        const filtered = (data ?? []).filter(c => {
-          if (c.customers?.deleted_at) return false;
-          if (c.jobs?.deleted_at)      return false;
-          return true;
-        });
-        setComms(filtered);
-      });
+      .limit(200);
+    // A quiet poll returns nothing rather than re-reading the list — 8 shared
+    // buffer hits, all cached, at today's volume. communications_created_at_idx
+    // takes over once the table is big enough for the planner to prefer it.
+    if (incremental && newestCommAt.current) q = q.gt('created_at', newestCommAt.current);
+
+    const { data, error } = await q;
+    if (error || !data) return;
+
+    const fresh = data.filter(c => !c.customers?.deleted_at && !c.jobs?.deleted_at);
+    if (data.length) newestCommAt.current = data[0].created_at;
+    if (incremental && !fresh.length) return;
+
+    setComms(prev => {
+      if (!incremental || prev === null) return fresh;
+      // Newest first, and never trust the poll not to overlap a row we hold.
+      const seen = new Set(fresh.map(c => c.id));
+      return [...fresh, ...prev.filter(c => !seen.has(c.id))];
+    });
   }, []);
+
+  useEffect(() => { loadComms(); }, [loadComms]);
 
   // Load website enquiries
   const loadLeads = useCallback(() => {
@@ -811,13 +826,26 @@ export default function Inbox() {
     return () => supabase.removeChannel(ch);
   }, []);
 
-  // Light poll for web enquiries (realtime isn't reliable in all environments)
+  // Light poll for new messages and web enquiries. The realtime channel above
+  // covers neither: `communications` and `web_enquiries` are both absent from
+  // the supabase_realtime publication, so nothing new appeared in the inbox
+  // until the page was reloaded. Only while the tab is visible, and messages
+  // ask for the delta rather than the whole list.
   useEffect(() => {
-    const t = setInterval(() => {
-      if (document.visibilityState === 'visible') loadLeads();
-    }, 20000);
-    return () => clearInterval(t);
-  }, [loadLeads]);
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      loadComms({ incremental: true });
+      loadLeads();
+    };
+    const t = setInterval(tick, 20000);
+    // A tab left in the background falls behind; catch up the moment it returns
+    // rather than making the user wait out the rest of the interval.
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [loadComms, loadLeads]);
 
   // Mark inbound messages as read when thread is opened (web leads excluded —
   // their key is prefixed `web:` and never matches a communications row)
