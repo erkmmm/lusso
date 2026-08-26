@@ -65,8 +65,16 @@ Deno.serve(async (req: Request) => {
     let externalId: string | null = null
     let status = "sent"
     let normalizedTo = to
+    // The subject the customer actually received, so the thread in the CRM
+    // matches their inbox rather than showing a blank.
+    let sentSubject: string | null = subject ?? null
 
     if (channel === "sms") {
+      // Where Twilio should post delivery updates. Unset simply means no
+      // receipts — the send still works exactly as before.
+      const STATUS_CALLBACK = Deno.env.get("TWILIO_STATUS_CALLBACK_URL")
+        ?? `${Deno.env.get("SUPABASE_URL")}/functions/v1/comms-inbound`
+
       const TWILIO_SID    = Deno.env.get("TWILIO_ACCOUNT_SID") ?? ""
       const TWILIO_TOKEN  = Deno.env.get("TWILIO_AUTH_TOKEN") ?? ""
       const TWILIO_FROM   = Deno.env.get("TWILIO_PHONE_NUMBER") ?? ""
@@ -84,12 +92,25 @@ Deno.serve(async (req: Request) => {
           Authorization: `Basic ${toBase64(`${TWILIO_SID}:${TWILIO_TOKEN}`)}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({ To: normalizedTo, From: TWILIO_FROM, Body: body }),
+        body: new URLSearchParams({
+          To: normalizedTo,
+          From: TWILIO_FROM,
+          Body: body,
+          // Ask Twilio to report back what actually happened to the message.
+          // Without this the row below stays "sent" forever, and a text to a
+          // dead number is indistinguishable from one the customer read.
+          // Handled by comms-inbound (see delivery.ts).
+          ...(STATUS_CALLBACK ? { StatusCallback: STATUS_CALLBACK } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) return json({ error: `SMS failed: ${data.message ?? res.statusText}` }, 502)
       externalId = data.sid
-      status = "sent"
+      // Twilio's own word for it, mapped the same way the callback maps it —
+      // "queued" until a carrier has actually taken it.
+      status = data.status === "delivered" ? "delivered"
+             : data.status === "sent" ? "sent"
+             : "queued"
     } else if (channel === "email") {
       const RESEND_KEY  = Deno.env.get("RESEND_API_KEY") ?? ""
       const EMAIL_FROM  = Deno.env.get("EMAIL_FROM") ?? "Lusso <onboarding@resend.dev>"
@@ -113,6 +134,11 @@ Deno.serve(async (req: Request) => {
         firstName = cust?.name?.split(" ")[0] ?? ""
       }
 
+      // Never send a blank or "(No subject)" subject line — it's the first
+      // thing the customer sees in their inbox list and the first thing a spam
+      // filter reads. Clients should send a real one; this is the floor.
+      const subjectLine = String(subject ?? "").trim() || "Message from Lusso"
+
       // The message staff typed is the email — no invented heading or filler
       // copy on top of it, just the brand frame around their words.
       const content = {
@@ -135,6 +161,8 @@ Deno.serve(async (req: Request) => {
         if (token) replyTo = `q-${token}@${REPLY_DOMAIN}`
       }
 
+      sentSubject = subjectLine
+
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
@@ -142,7 +170,7 @@ Deno.serve(async (req: Request) => {
           from: EMAIL_FROM,
           to,
           reply_to: replyTo,
-          subject: subject ?? "(No subject)",
+          subject: subjectLine,
           html: renderEmail(content),
           text: renderText(content),
         }),
@@ -163,7 +191,7 @@ Deno.serve(async (req: Request) => {
       enquiry_id: enquiryId ?? null,
       channel,
       direction: "outbound",
-      subject: subject ?? null,
+      subject: sentSubject,
       body,
       to_address: normalizedTo,
       from_address: channel === "sms" ? Deno.env.get("TWILIO_PHONE_NUMBER") : Deno.env.get("EMAIL_FROM"),

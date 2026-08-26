@@ -4,15 +4,14 @@ import { supabase } from '../lib/supabase';
 import { Send, MessageSquare, Mail, Phone, PhoneOutgoing, PhoneIncoming, Loader, ChevronDown, Plus } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import Card from './Card';
+import DeliveryStatus from './DeliveryStatus';
+import { getSmsPresets, fillMessageTemplate, unfilledPlaceholders } from '../store/data';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
-const QUICK_SMS = [
-  'Hi {name}, just confirming your measure appointment. Please let us know if you need to reschedule.',
-  'Hi {name}, your quote is ready — we\'ll be in touch shortly.',
-  'Hi {name}, we\'re confirming your installation for the date booked. We\'ll be in touch with a time closer to the day.',
-  'Hi {name}, your installation is complete! Thanks for choosing Lusso.',
-];
+// Quick messages come from Settings → Message Presets. They used to be four
+// hard-coded strings here, which is why editing a preset appeared to do
+// nothing: nothing read them.
 
 // Call outcomes stored in the `subject` column of a channel='call' row.
 const CALL_OUTCOMES = ['Answered', 'No answer', 'Left voicemail', 'Busy', 'Wrong number'];
@@ -172,9 +171,16 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
     }
   };
 
-  const applyQuick = (tpl) => {
-    const resolved = tpl.replaceAll('{name}', customerName?.split(' ')[0] ?? 'there');
-    setBody(resolved);
+  // {name} is the only placeholder this screen can fill — {link}, {date} and
+  // {time} depend on a quote or a booking, so they're left visible for staff to
+  // complete rather than silently blanked out.
+  const quickMessages = getSmsPresets().map(p => ({
+    ...p,
+    text: fillMessageTemplate(p.template, { name: customerName?.split(' ')[0] || 'there' }),
+  }));
+
+  const applyQuick = (text) => {
+    setBody(text);
     setShowQuick(false);
     inputRef.current?.focus();
   };
@@ -284,9 +290,7 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
                     {m.direction === 'outbound' ? 'You' : customerName} · {m.created_at ? format(parseISO(m.created_at), 'd MMM h:mm a') : ''}
                   </span>
                   {m.direction === 'outbound' && (
-                    <span className={`text-[10px] ${m.status === 'failed' ? 'text-red-400' : 'text-slate-400'}`}>
-                      {m.status === 'sent' ? '✓' : m.status === 'delivered' ? '✓✓' : m.status === 'failed' ? '✗' : ''}
-                    </span>
+                    <DeliveryStatus status={m.status} detail={m.status_detail} />
                   )}
                   {!jobId && m.jobs?.job_number && (
                     <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">{m.jobs.job_number}</span>
@@ -416,12 +420,24 @@ export default function CommsTab({ jobId, customerId, customerName, customerPhon
         {showQuick && channel === 'sms' && (
           <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 space-y-1.5">
             <p className="text-xs font-medium text-slate-500 mb-2">Quick messages</p>
-            {QUICK_SMS.map((tpl, i) => (
-              <button key={i} onClick={() => applyQuick(tpl)}
-                className="w-full text-left text-xs text-slate-600 bg-white border border-slate-200 hover:border-amber-300 hover:text-amber-700 px-3 py-2 rounded-lg transition-colors">
-                {tpl.replaceAll('{name}', customerName?.split(' ')[0] ?? 'there')}
-              </button>
-            ))}
+            {quickMessages.length === 0 ? (
+              <p className="text-xs text-slate-400 px-1 py-2">
+                No quick messages yet — add them in Settings → Message Presets.
+              </p>
+            ) : quickMessages.map((q) => {
+              const todo = unfilledPlaceholders(q.text);
+              return (
+                <button key={q.key} onClick={() => applyQuick(q.text)}
+                  className="w-full text-left text-xs text-slate-600 bg-white border border-slate-200 hover:border-amber-300 hover:text-amber-700 px-3 py-2 rounded-lg transition-colors">
+                  {q.text}
+                  {todo.length > 0 && (
+                    <span className="block mt-1 text-[10px] text-amber-600">
+                      Fill in {todo.join(' and ')} before sending
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </Card>

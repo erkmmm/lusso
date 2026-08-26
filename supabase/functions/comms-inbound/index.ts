@@ -3,6 +3,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2"
 import { parseInboundEmail } from "./email.ts"
 import { requireTwilioSignature, timingSafeEqual } from "./twilio.ts"
 import { verifyResendSignature, resendWebhookToInbound } from "./resend.ts"
+import {
+  isTwilioStatusCallback, applyTwilioStatus,
+  isResendDeliveryEvent, applyResendStatus,
+} from "./delivery.ts"
 
 // Inbound customer messages.
 //
@@ -12,6 +16,12 @@ import { verifyResendSignature, resendWebhookToInbound } from "./resend.ts"
 //   Test  — a hand-rolled JSON shape for either channel, behind a shared
 //           secret, so the threading logic can be exercised without waiting
 //           on a real message.
+//
+// Delivery receipts for messages *we* sent arrive here too, on the same two
+// authenticated paths: Twilio's StatusCallback is form-urlencoded with a
+// MessageStatus and no Body, and Resend's email.delivered / email.bounced
+// events are the same Svix-signed webhook with a different type. Both are
+// matched to the original row by provider id — see delivery.ts.
 //
 // This endpoint is public (verify_jwt false) because no external sender can
 // carry a Supabase JWT, so every path authenticates itself: SMS by Twilio
@@ -41,11 +51,24 @@ Deno.serve(async (req: Request) => {
       const denied = await requireTwilioSignature(req, params)
       if (denied) return denied
 
+      // A delivery receipt for a message we sent, not a message from a
+      // customer. Same signature check, different destination.
+      if (isTwilioStatusCallback(params)) {
+        return json(await applyTwilioStatus(admin, params))
+      }
+
       from = params.get("From") ?? ""
       body = params.get("Body") ?? ""
       to   = params.get("To")   ?? ""
     } else {
       const data = JSON.parse(rawBody || "{}")
+
+      // Delivery receipt from Resend for an email we sent.
+      if (isResendDeliveryEvent(data?.type)) {
+        const denied = await verifyResendSignature(req, rawBody)
+        if (denied) return denied
+        return json(await applyResendStatus(admin, data))
+      }
 
       // Real inbound email, from Resend.
       if (data?.type === "email.received") {

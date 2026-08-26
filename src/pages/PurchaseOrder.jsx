@@ -393,6 +393,7 @@ export default function PurchaseOrder() {
         message: (message || '').trim() || defaultMessage,
         filename: `${fileBase}.pdf`,
         contentBase64,
+        jobId: sheet?.jobId,   // so the send is logged against the job
       });
       localStorage.setItem(RECIPIENT_KEY, to);
       // Only treat the order as placed on a CONFIRMED send. An unconfirmed 2xx

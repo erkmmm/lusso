@@ -1,5 +1,5 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,14 +17,25 @@ import {
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
   computeQuoteTotals, linePricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
-  createQuote, saveQuote, sendQuote, addQuoteActivity,
-  getMeasureSheetByJob, addActivity, getMessagePresets,
+  createQuote, saveQuote, addQuoteActivity,
+  getMeasureSheetByJob, getMessagePresets,
 } from '../store/data';
 import Card from '../components/Card';
-import { sendQuoteEmail } from '../lib/email';
+import { deliverQuote } from '../lib/quoteDelivery';
 import PricedItemPicker from '../components/PricedItemPicker';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// The quote saved but the email didn't go. Distinct from a save failure so
+// doSave's catch-all can let it past and the user gets the real reason rather
+// than "could not save".
+class SendFailed extends Error {
+  constructor(message, quote) {
+    super(message);
+    this.name = 'SendFailed';
+    this.quote = quote;
+  }
+}
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
 
@@ -649,6 +660,9 @@ export default function QuoteBuilder() {
 
   const [form, setForm]         = useState(initForm);
   const [saving, setSaving]     = useState(false);
+  // Set by doSave when the mail service accepted the request but didn't confirm
+  // the send — read by handleSaveAndSend so the toast doesn't over-promise.
+  const sendUnconfirmedRef      = useRef(false);
   const [saved, setSaved]       = useState(false);
   const [errors, setErrors]     = useState({});
   const [showSavedItems, setShowSavedItems] = useState(false);
@@ -855,34 +869,29 @@ export default function QuoteBuilder() {
         q = createQuote({ ...form, status: 'Draft' });
       }
       if (andSend && q) {
-        // Mark quote as sent in local store
-        sendQuote(q.id, form.salesperson || 'Admin');
-        if (form.jobId) {
-          addActivity({
-            jobId: form.jobId,
-            type: 'quote_sent',
-            message: `Quote ${q.quoteNumber} sent to customer`,
+        // Email first, mark Sent second — deliverQuote enforces that order, so
+        // a quote is never left showing "Sent" (and counting down to expiry)
+        // when nothing reached the customer. A missing email address now stops
+        // the send with a message instead of silently skipping it.
+        try {
+          const { quote: sent, unconfirmed } = await deliverQuote(q, {
             user: form.salesperson || 'Admin',
+            logActivity: true,
           });
-        }
-        q = getQuote(q.id); // refresh after send
-
-        // Actually send the email
-        const customer = getCustomer(q.customerId);
-        if (customer?.email) {
-          try {
-            await sendQuoteEmail(q, customer, getMessagePresets().quoteEmailIntro);
-          } catch (emailErr) {
-            console.error('[QuoteBuilder] Email send failed:', emailErr);
-            // Still return the quote — save succeeded even if email failed
-            setSaving(false);
-            throw emailErr; // bubble up so handleSaveAndSend can show the error
-          }
+          q = sent;
+          sendUnconfirmedRef.current = unconfirmed;
+        } catch (emailErr) {
+          console.error('[QuoteBuilder] Quote send failed:', emailErr);
+          setSaving(false);
+          // Rethrown past the outer catch below so handleSaveAndSend can show
+          // the real reason. The quote itself is saved — only the send failed.
+          throw new SendFailed(emailErr.message, q);
         }
       }
       setSaving(false);
       return q;
     } catch (err) {
+      if (err instanceof SendFailed) throw err;   // not a save failure — let it through
       console.error('Quote save error:', err);
       setSaving(false);
       return null;
@@ -904,20 +913,25 @@ export default function QuoteBuilder() {
 
   const handleSaveAndSend = async () => {
     let q = null;
+    sendUnconfirmedRef.current = false;
     try {
       q = await doSave(true);
-    } catch (emailErr) {
-      showToast('error', `Quote saved but email failed: ${emailErr.message}`);
-      const savedId = form.id;
-      if (savedId) setTimeout(() => navigate(`/quotes/${savedId}`), 900);
+    } catch (err) {
+      // The quote is saved and still a Draft — nothing went to the customer,
+      // so say that plainly rather than implying it might have.
+      showToast('error', `Quote saved as a draft — not sent. ${err.message}`);
+      const savedId = err.quote?.id || form.id;
+      if (savedId) setTimeout(() => navigate(`/quotes/${savedId}`), 1400);
       return;
     }
     if (q) {
       const email = getCustomer(q.customerId)?.email || 'customer';
-      const msg = isDraft
-        ? `Quote ${q.quoteNumber} sent to ${email}!`
-        : `Quote ${q.quoteNumber} updated and re-sent to ${email}!`;
-      showToast('success', msg);
+      const msg = sendUnconfirmedRef.current
+        ? `Quote ${q.quoteNumber} was submitted, but delivery to ${email} wasn't confirmed.`
+        : isDraft
+          ? `Quote ${q.quoteNumber} sent to ${email}!`
+          : `Quote ${q.quoteNumber} updated and re-sent to ${email}!`;
+      showToast(sendUnconfirmedRef.current ? 'error' : 'success', msg);
       setTimeout(() => navigate(`/quotes/${q.id}`), 900);
     } else {
       showToast('error', 'Could not save or send. Please fix errors and try again.');

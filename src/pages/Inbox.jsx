@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import OptionsMenu from '../components/OptionsMenu';
+import DeliveryStatus from '../components/DeliveryStatus';
 import { deleteCustomer, restoreCustomer, saveCustomer, getCustomers } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import { toast } from '../components/ToastContainer';
@@ -228,7 +229,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
     if (!supabase || !e.id) return;
     const { data } = await supabase
       .from('communications')
-      .select('id, channel, direction, body, created_at')
+      .select('id, channel, direction, body, created_at, status, status_detail')
       .eq('enquiry_id', e.id)
       .order('created_at', { ascending: true });
     setThread(data ?? []);
@@ -242,7 +243,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
     (async () => {
       const { data } = await supabase
         .from('communications')
-        .select('id, channel, direction, body, created_at')
+        .select('id, channel, direction, body, created_at, status, status_detail')
         .eq('enquiry_id', e.id)
         .order('created_at', { ascending: true });
       if (!cancelled) setThread(data ?? []);
@@ -271,7 +272,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
           channel: channel === 'text' ? 'sms' : 'email',
           enquiryId: e.id,   // gives the reply token something to point at
           to,
-          subject: channel === 'email' ? subject : undefined,
+          subject: channel === 'email' ? (subject.trim() || 'Your enquiry with Lusso') : undefined,
           body: body.trim(),
         }),
       });
@@ -381,6 +382,11 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
                     <p className={`text-[10px] mt-0.5 ${out ? 'text-teal-100 text-right' : 'text-slate-400'}`}>
                       {m.channel === 'sms' ? 'Text' : 'Email'} · {format(parseISO(m.created_at), 'h:mm a')}
                     </p>
+                    {out && (
+                      <div className="flex justify-end mt-0.5">
+                        <DeliveryStatus status={m.status} detail={m.status_detail} />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -480,6 +486,30 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
   const navigate = useNavigate();
   const bottomRef = useRef(null);
 
+  // An email needs a subject line — it's the first thing the customer sees in
+  // their inbox list, and the one a spam filter reads. This composer used to
+  // send none at all, so every email arrived titled "(No subject)". Default it
+  // to the thread it belongs to, and let staff rewrite it.
+  const suggestedSubject = useMemo(() => {
+    const lastTitled = [...conv.messages].reverse()
+      .find(m => m.channel === 'email' && m.subject && m.subject !== '(No subject)');
+    if (lastTitled) {
+      return /^re:\s/i.test(lastTitled.subject) ? lastTitled.subject : `Re: ${lastTitled.subject}`;
+    }
+    return 'Your enquiry with Lusso';
+  }, [conv.messages]);
+  const [subject, setSubject] = useState(suggestedSubject);
+  const [subjectEdited, setSubjectEdited] = useState(false);
+
+  // Follow the thread when it changes, unless staff have typed their own.
+  // Adjusted during render rather than in an effect, per the React docs and
+  // the same pattern the Quotes list uses for its filters.
+  const [prevSuggested, setPrevSuggested] = useState(suggestedSubject);
+  if (prevSuggested !== suggestedSubject) {
+    setPrevSuggested(suggestedSubject);
+    if (!subjectEdited) setSubject(suggestedSubject);
+  }
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conv.messages.length]);
@@ -507,6 +537,7 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
             customerId: conv.customerId,
             jobId:      conv.jobId,
             to,
+            subject:    channel === 'email' ? (subject.trim() || suggestedSubject) : undefined,
             body:       reply.trim(),
           }),
         }
@@ -599,6 +630,11 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
                   {format(parseISO(m.created_at), 'h:mm a')}
                   {m.channel === 'email' && <span className="ml-1">· Email</span>}
                 </p>
+                {isOut && (
+                  <div className="flex justify-end mt-0.5">
+                    <DeliveryStatus status={m.status} detail={m.status_detail} />
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -623,6 +659,15 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
               </button>
             ))}
           </div>
+        )}
+        {channel === 'email' && canSend && (
+          <input
+            value={subject}
+            onChange={e => { setSubject(e.target.value); setSubjectEdited(true); }}
+            placeholder="Subject"
+            aria-label="Email subject"
+            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+          />
         )}
         <div className="flex gap-2 items-end">
           <textarea
@@ -717,14 +762,14 @@ function ConfirmDeleteConvModal({ conv, busy, onCancel, onConfirm }) {
               </h2>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                 {conv.isWebLead ? (
-                  <>The website enquiry from <span className="font-medium text-slate-700">{conv.customerName}</span> will be removed from the inbox for good.</>
+                  <>The website enquiry from <span className="font-medium text-slate-700">{conv.customerName}</span> will be removed from the inbox.</>
                 ) : (
                   <>The whole history with <span className="font-medium text-slate-700">{conv.customerName}</span>
-                  {count ? <> — {count} message{count === 1 ? '' : 's'} and any older ones</> : null} will be removed from the CRM for good.</>
+                  {count ? <> — {count} message{count === 1 ? '' : 's'} and any older ones</> : null} will be removed from the CRM.</>
                 )}
               </p>
               <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                This can't be undone. Messages already sent still sit in the customer's inbox, and their customer record is not affected.
+                You'll get a few seconds to undo it. Messages already sent still sit in the customer's inbox, and their customer record is not affected.
               </p>
             </div>
           </div>
@@ -798,6 +843,7 @@ export default function Inbox() {
     supabase
       .from('web_enquiries')
       .select('*')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(200)
       .then(({ data }) => { if (data) setLeads(data); });
@@ -820,7 +866,13 @@ export default function Inbox() {
         (payload) => setLeads(prev => [payload.new, ...prev.filter(l => l.id !== payload.new.id)])
       )
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'web_enquiries' },
-        (payload) => setLeads(prev => prev.map(l => l.id === payload.new.id ? { ...l, ...payload.new } : l))
+        (payload) => setLeads(prev => {
+          // A soft delete is an UPDATE, and so is the Undo that reverses it.
+          if (payload.new.deleted_at) return prev.filter(l => l.id !== payload.new.id);
+          const known = prev.some(l => l.id === payload.new.id);
+          if (!known) return [payload.new, ...prev];
+          return prev.map(l => l.id === payload.new.id ? { ...l, ...payload.new } : l);
+        })
       )
       .subscribe();
     return () => supabase.removeChannel(ch);
@@ -872,25 +924,43 @@ export default function Inbox() {
   // Every row id belonging to a conversation — not just the ones on screen. The
   // inbox only holds the latest 200 messages, so deleting what's loaded would
   // leave older ones behind to resurrect the thread on the next reload.
-  const collectConversationIds = async (conv) => {
+  // Whole rows, not just ids: Undo re-inserts them exactly as they were, ids
+  // included, so a restored thread is the original and not a copy of it.
+  const collectConversationRows = async (conv) => {
     if (conv.customerId) {
       const { data, error } = await supabase
-        .from('communications').select('id').eq('customer_id', conv.customerId);
+        .from('communications').select('*').eq('customer_id', conv.customerId);
       if (error) throw error;
-      return (data ?? []).map(r => r.id);
+      return data ?? [];
     }
     // Address-keyed thread (no customer record yet). Two exact-match queries
     // rather than one PostgREST `or` string, whose value escaping is fragile
     // for email addresses and +61 numbers.
     const [from, to] = await Promise.all([
-      supabase.from('communications').select('id').is('customer_id', null).eq('from_address', conv.key),
-      supabase.from('communications').select('id').is('customer_id', null).eq('to_address', conv.key),
+      supabase.from('communications').select('*').is('customer_id', null).eq('from_address', conv.key),
+      supabase.from('communications').select('*').is('customer_id', null).eq('to_address', conv.key),
     ]);
     if (from.error) throw from.error;
     if (to.error)   throw to.error;
-    return [...new Set([...(from.data ?? []), ...(to.data ?? [])].map(r => r.id))];
+    const byId = new Map();
+    for (const r of [...(from.data ?? []), ...(to.data ?? [])]) byId.set(r.id, r);
+    return [...byId.values()];
   };
 
+  /**
+   * Delete a conversation — recoverably.
+   *
+   * This used to be a hard DELETE on both paths, which meant a lead removed by
+   * accident was simply gone: no deleted_at to clear, no rows to restore, and
+   * nothing in the database that remembered it had ever existed. A confirm
+   * dialog is not enough on its own, because the mistake people actually make
+   * is confirming the wrong row.
+   *
+   * So both paths are now reversible for as long as the Undo toast is up:
+   *   · a web lead is soft-deleted, and Undo clears deleted_at;
+   *   · a message thread is read in full before it goes, and Undo re-inserts
+   *     the rows with their original ids.
+   */
   const handleDeleteConversation = async (conv) => {
     if (deletingConv) return;
     setDeletingConv(true);
@@ -898,19 +968,34 @@ export default function Inbox() {
     const leadSnapshot = leads;
     const name = conv.customerName || 'Conversation';
     try {
+      let undo;
+
       // A web lead is a single web_enquiries row, not a message thread.
       if (conv.isWebLead) {
-        setLeads(prev => prev.filter(l => l.id !== conv.enquiry.id));
+        const leadId = conv.enquiry.id;
+        setLeads(prev => prev.filter(l => l.id !== leadId));
         const { error, count } = await supabase
-          .from('web_enquiries').delete({ count: 'exact' }).eq('id', conv.enquiry.id);
+          .from('web_enquiries')
+          .update({ deleted_at: new Date().toISOString() }, { count: 'exact' })
+          .eq('id', leadId)
+          .is('deleted_at', null);
         if (error) throw error;
         if (count === 0) throw new Error('blocked');
+
+        undo = async () => {
+          const { data, error: undoErr } = await supabase
+            .from('web_enquiries').update({ deleted_at: null }).eq('id', leadId).select().single();
+          if (undoErr) { toast('Could not restore the lead.', 'error'); return; }
+          setLeads(prev => prev.some(l => l.id === data.id) ? prev : [data, ...prev]);
+          toast(`${name} restored.`, 'info');
+        };
       } else {
-        const ids = await collectConversationIds(conv);
-        if (!ids.length) { toast('Nothing left to delete.', 'info'); return; }
-        const idSet = new Set(ids);
+        const rows = await collectConversationRows(conv);
+        if (!rows.length) { toast('Nothing left to delete.', 'info'); return; }
+        const idSet = new Set(rows.map(r => r.id));
         setComms(prev => (prev ?? []).filter(c => !idSet.has(c.id)));
         // Chunked so a long history doesn't blow the request URL length.
+        const ids = [...idSet];
         let removed = 0;
         for (let i = 0; i < ids.length; i += 100) {
           const { error, count } = await supabase
@@ -919,10 +1004,21 @@ export default function Inbox() {
           removed += count ?? 0;
         }
         if (removed === 0) throw new Error('blocked');
+
+        undo = async () => {
+          for (let i = 0; i < rows.length; i += 100) {
+            const { error: undoErr } = await supabase
+              .from('communications').insert(rows.slice(i, i + 100));
+            if (undoErr) { toast('Could not restore the conversation.', 'error'); return; }
+          }
+          setComms(prev => [...(prev ?? []), ...rows]);
+          toast(`Conversation with ${name} restored.`, 'info');
+        };
       }
+
       if (selectedKey === conv.key) { setSelected(null); setMobile('list'); }
       setConvToDelete(null);
-      toast(`Conversation with ${name} deleted.`);
+      toast(`Conversation with ${name} deleted.`, 'info', { duration: 10000, onUndo: undo });
     } catch (err) {
       setComms(snapshot);
       setLeads(leadSnapshot);

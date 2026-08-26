@@ -9,6 +9,7 @@
 
 import { requireActiveUser } from './_auth.js';
 import { renderEmail, renderText } from './_emailLayout.js';
+import { logOutboundEmail, bearerToken } from './_logComm.js';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -143,6 +144,14 @@ export async function onRequestPost(context) {
       console.error('[send-installer] Resend error:', resendText);
       return json(500, { error: resendData?.message || resendText || 'Email provider failed.' });
     }
+
+    await logOutboundEmail(context, bearerToken(context), {
+      externalId: resendData?.id,
+      to:         installer.email,
+      subject:    `Installation request – ${request.suburb || 'Job'} – ${proposedDate}`,
+      body:       `Installation request emailed to ${installer.name || installer.email}.`,
+      jobId:      job?.id,
+    });
 
     return json(200, { success: true, id: resendData?.id });
   } catch (err) {

@@ -12,6 +12,7 @@
 
 import { requireActiveUser } from './_auth.js';
 import { renderEmail, renderText } from './_emailLayout.js';
+import { logOutboundEmail, bearerToken } from './_logComm.js';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -45,7 +46,7 @@ export async function onRequestPost(context) {
     return json(400, { error: 'Invalid JSON in request body' });
   }
 
-  const { to, subject, message, filename, contentBase64 } = body || {};
+  const { to, subject, message, filename, contentBase64, jobId } = body || {};
 
   if (!to || !EMAIL_RE.test(String(to).trim())) {
     return json(400, { error: 'A valid recipient email address is required.' });
@@ -107,6 +108,14 @@ export async function onRequestPost(context) {
         error: resendData?.message || resendData?.name || resendText || 'Email provider failed to send the email.',
       });
     }
+
+    await logOutboundEmail(context, bearerToken(context), {
+      externalId: resendData?.id,
+      to:         String(to).trim(),
+      subject:    safeSubject,
+      body:       `Purchase order ${attachName} emailed to ${String(to).trim()}.`,
+      jobId,
+    });
 
     return json(200, { success: true, id: resendData?.id });
   } catch (err) {

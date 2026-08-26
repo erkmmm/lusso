@@ -2704,6 +2704,46 @@ export const DEFAULT_MESSAGE_PRESETS = {
 export const getMessagePresets = () => ({ ...DEFAULT_MESSAGE_PRESETS, ...(get('lusso_message_presets') || {}) });
 export const saveMessagePresets = (s) => set('lusso_message_presets', { ...getMessagePresets(), ...s });
 
+// The SMS presets, in the order they're offered as quick messages in the Comms
+// tab. These used to be editable in Settings and read by nothing at all — the
+// Comms tab had its own hard-coded copies, so editing a preset changed nothing
+// anybody ever received.
+export const SMS_PRESET_KEYS = [
+  { key: 'smsFollowUp',            label: 'Follow-up' },
+  { key: 'smsQuoteReady',          label: 'Quote ready' },
+  { key: 'smsAppointmentReminder', label: 'Appointment reminder' },
+  { key: 'smsOrderConfirmed',      label: 'Order confirmed' },
+  { key: 'smsInstallationBooked',  label: 'Installation booked' },
+];
+
+export const getSmsPresets = () => {
+  const presets = getMessagePresets();
+  return SMS_PRESET_KEYS
+    .map(({ key, label }) => ({ key, label, template: presets[key] || '' }))
+    .filter(p => p.template.trim());
+};
+
+/**
+ * Substitute {name}, {link}, {date}, {time} in a message preset.
+ *
+ * Placeholders we have no value for are deliberately left in the text rather
+ * than blanked. The composer shows the result before it goes, so a visible
+ * "{link}" is a prompt to fill it in — whereas a silent blank produces
+ * "see the details: " and sends it to the customer like that.
+ */
+export const fillMessageTemplate = (template, vars = {}) => {
+  let out = String(template ?? '');
+  for (const [key, value] of Object.entries(vars)) {
+    if (value === undefined || value === null || value === '') continue;
+    out = out.replaceAll(`{${key}}`, String(value));
+  }
+  return out;
+};
+
+/** Placeholders still unfilled in a message — what staff must complete. */
+export const unfilledPlaceholders = (text) =>
+  [...new Set((String(text ?? '').match(/\{[a-z]+\}/gi) || []))];
+
 // ─── Priced Items Library ─────────────────────────────────────────────────────
 
 export const getPricedItems      = () => get('lusso_priced_items') || [];

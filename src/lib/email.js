@@ -112,7 +112,10 @@ export async function sendInstallerEmail(request, installer, job, measureSheet =
  * @param {string} args.message       - email body text
  * @param {string} args.filename      - attachment filename (e.g. "Curtain PO.pdf")
  * @param {string} args.contentBase64 - base64-encoded PDF bytes
+ * @param {string} [args.jobId]       - job this PO belongs to, so the send is
+ *                                      logged against it and a bounce can be
+ *                                      traced back to the right job
  */
-export async function sendPurchaseOrder({ to, subject, message, filename, contentBase64 }) {
-  return post('send-purchase-order', { to, subject, message, filename, contentBase64 });
+export async function sendPurchaseOrder({ to, subject, message, filename, contentBase64, jobId }) {
+  return post('send-purchase-order', { to, subject, message, filename, contentBase64, jobId });
 }

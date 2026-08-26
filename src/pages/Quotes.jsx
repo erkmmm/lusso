@@ -10,9 +10,10 @@ import {
 import { format, parseISO, differenceInSeconds } from 'date-fns';
 import {
   getQuotes, getQuotesFiltered, getCustomers, QUOTE_STATUSES, QUOTE_STATUS_COLORS,
-  computeQuoteTotals, sendQuote, duplicateQuote, deleteQuote, bulkDeleteQuotes, searchMatch,
+  computeQuoteTotals, getCustomer, duplicateQuote, deleteQuote, bulkDeleteQuotes, searchMatch,
   isQuoteOverdue,
 } from '../store/data';
+import { deliverQuote } from '../lib/quoteDelivery';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
@@ -22,11 +23,20 @@ const fmt = (n) => `$${Math.round(n).toLocaleString('en-AU')}`;
 const STATUS_TABS = ['All', ...QUOTE_STATUSES];
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
-function Toast({ message, onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
+// A failed send has to be readable, so errors hold longer than confirmations
+// and don't wear a green tick.
+function Toast({ message, tone = 'success', onDone }) {
+  const isError = tone === 'error';
+  useEffect(() => {
+    const t = setTimeout(onDone, isError ? 7000 : 3000);
+    return () => clearTimeout(t);
+  }, [onDone, isError]);
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-xl flex items-center gap-2">
-      <CheckSquare size={15} className="text-green-400" /> {message}
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md bg-slate-900 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-xl flex items-start gap-2">
+      {isError
+        ? <AlertCircle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
+        : <CheckSquare size={15} className="text-green-400 flex-shrink-0 mt-0.5" />}
+      <span>{message}</span>
     </div>
   );
 }
@@ -87,6 +97,7 @@ export default function Quotes() {
   const [selected, setSelected]         = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [toast, setToast]               = useState(null);
+  const [sendingId, setSendingId]       = useState(null);
   const { isAM = true, displayName = '' } = useProfile() || {};
   const [quotes, setQuotes]             = useState(() => getQuotesFiltered(isAM, displayName));
   const customers                       = getCustomers();
@@ -175,11 +186,37 @@ export default function Quotes() {
     setDeleteTarget(null);
     setSelectMode(false);
     refresh();
-    setToast(count === 1 ? 'Quote deleted.' : `${count} quotes deleted.`);
+    setToast({ tone: 'success', message: count === 1 ? 'Quote deleted.' : `${count} quotes deleted.` });
   };
 
   // ── Per-row actions ───────────────────────────────────────────────────────
-  const handleSend = (q) => { sendQuote(q.id, 'Admin'); refresh(); };
+  // Send the email first and mark the quote Sent only once it's gone — see
+  // lib/quoteDelivery.js. This used to call sendQuote() alone, which flipped
+  // the status and started the expiry clock without emailing anybody.
+  const handleSend = async (q) => {
+    const customer = getCustomer(q.customerId);
+    if (!customer?.email) {
+      setToast({ tone: 'error', message: `${customer?.name || 'This customer'} has no email address on file. Add one to the customer record, then send the quote.` });
+      return;
+    }
+    if (!confirm(`Send quote ${q.quoteNumber || ''} to ${customer.email}?`)) return;
+    setSendingId(q.id);
+    try {
+      const { unconfirmed } = await deliverQuote(q, { user: displayName || 'Admin', logActivity: true });
+      refresh();
+      setToast({
+        tone: 'success',
+        message: unconfirmed
+          ? `Quote ${q.quoteNumber} was submitted to the mail service, but delivery wasn't confirmed. Check with ${customer.email}.`
+          : `Quote ${q.quoteNumber} sent to ${customer.email}.`,
+      });
+    } catch (err) {
+      console.error('[Quotes] Send quote failed:', err);
+      setToast({ tone: 'error', message: `Quote ${q.quoteNumber} was not sent: ${err.message}` });
+    } finally {
+      setSendingId(null);
+    }
+  };
   const handleDuplicate = (q) => { duplicateQuote(q.id); refresh(); };
   const handleDelete = (q) => {
     if (confirm(`Delete ${q.quoteNumber}? This cannot be undone.`)) {
@@ -473,8 +510,9 @@ export default function Quotes() {
                         >
                           {quote.status === 'Draft' && (
                             <button onClick={() => { handleSend(quote); setOpenMenuId(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-amber-50 hover:text-amber-700">
-                              <Send size={13} /> Send Quote
+                              disabled={sendingId === quote.id}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50">
+                              <Send size={13} /> {sendingId === quote.id ? 'Sending…' : 'Send Quote'}
                             </button>
                           )}
                           <button onClick={() => window.open(`/quotes/${quote.id}/preview?preview=1`, '_blank')}
@@ -531,7 +569,7 @@ export default function Quotes() {
       )}
 
       {/* Toast */}
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {toast && <Toast message={toast.message} tone={toast.tone} onDone={() => setToast(null)} />}
     </div>
   );
 }

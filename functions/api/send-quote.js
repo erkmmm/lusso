@@ -9,6 +9,7 @@
 
 import { requireActiveUser } from './_auth.js';
 import { renderEmail, renderText } from './_emailLayout.js';
+import { logOutboundEmail, bearerToken } from './_logComm.js';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -114,6 +115,17 @@ export async function onRequestPost(context) {
         error: resendData?.message || resendData?.name || resendText || 'Email provider failed to send the email.',
       });
     }
+
+    // Log it so the customer's thread shows the quote went out, and so a
+    // later bounce has a row to land on. Never blocks the response.
+    await logOutboundEmail(context, bearerToken(context), {
+      externalId: resendData?.id,
+      to:         customer.email,
+      subject:    `Your quote from Lusso – ${quoteRef}`,
+      body:       `Quote ${quoteRef} emailed to ${customer.email}.`,
+      customerId: customer.id,
+      jobId:      quote.jobId,
+    });
 
     return json(200, { success: true, id: resendData?.id });
 

@@ -14,11 +14,11 @@ import {
   QUOTE_STATUS_COLORS, computeQuoteTotals, linePricing,
   sendQuote, duplicateQuote, acceptQuote, declineQuote,
   reactivateQuote, takeQuoteOffline, unacceptQuote,
-  addQuoteComment, updateQuoteXeroInvoice, getMessagePresets,
+  addQuoteComment, updateQuoteXeroInvoice,
   isQuoteLive, isQuoteOverdue,
 } from '../store/data';
 import Card from '../components/Card';
-import { sendQuoteEmail } from '../lib/email';
+import { deliverQuote } from '../lib/quoteDelivery';
 import { supabase } from '../lib/supabase';
 import { xeroCreateInvoice, xeroSyncInvoice, xeroInvoiceStatusBadge } from '../lib/xero';
 
@@ -125,10 +125,13 @@ export default function QuoteView() {
     setSending(true);
     setSendError(null);
     try {
-      await sendQuoteEmail(quote, customer, getMessagePresets().quoteEmailIntro);
-      sendQuote(quote.id, 'Admin');
+      // deliverQuote emails first, then marks the quote Sent — the same order
+      // every other send screen now uses. See lib/quoteDelivery.js.
+      const { unconfirmed } = await deliverQuote(quote, { user: 'Admin', logActivity: true });
       refresh();
-      toast(`Quote ${quote.quoteNumber || ''} sent to ${customer.email}.`);
+      toast(unconfirmed
+        ? `Quote ${quote.quoteNumber || ''} was submitted, but delivery wasn't confirmed. Check with ${customer.email}.`
+        : `Quote ${quote.quoteNumber || ''} sent to ${customer.email}.`);
     } catch (err) {
       console.error('[QuoteView] Send quote error:', err);
       setSendError(err.message || 'Failed to send quote email. Please try again.');
