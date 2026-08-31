@@ -9,7 +9,7 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import OptionsMenu from '../components/OptionsMenu';
 import DeliveryStatus from '../components/DeliveryStatus';
-import { deleteCustomer, restoreCustomer, saveCustomer, getCustomers } from '../store/data';
+import { deleteCustomer, restoreCustomer, saveCustomer, getCustomers, findCustomerByIdentity } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import { toast } from '../components/ToastContainer';
 import { format, parseISO, isToday, isYesterday, isThisWeek } from 'date-fns';
@@ -72,6 +72,40 @@ function enquiryToConv(e) {
     channels: ['web'],
     messages: [],
   };
+}
+
+/**
+ * The customer profile behind a conversation, if there is one.
+ *
+ * `customerId` is set when the backend already matched the message to a
+ * customer. When it has not — an unmatched inbound number, or a website
+ * enquiry, which never carries one — fall back to the same strong identity
+ * the rest of the app matches on, so a known customer who happens to have
+ * filled in the web form is still reachable from their own name.
+ */
+function conversationCustomerId(conv) {
+  if (conv?.customerId) return conv.customerId;
+  const match = findCustomerByIdentity({ email: conv?.customerEmail, phone: conv?.customerPhone });
+  return match?.id || null;
+}
+
+/**
+ * The name in a thread header — a link to the profile where one exists, plain
+ * text where it does not, rather than a link that goes nowhere.
+ */
+function CustomerNameLink({ conv, navigate }) {
+  const id = conversationCustomerId(conv);
+  if (!id) return <p className="font-semibold text-slate-900 text-sm truncate">{conv.customerName}</p>;
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(`/customers/${id}`)}
+      title={`Open ${conv.customerName}'s profile`}
+      className="font-semibold text-slate-900 text-sm truncate max-w-full text-left hover:text-amber-600 hover:underline underline-offset-2 transition-colors"
+    >
+      {conv.customerName}
+    </button>
+  );
 }
 
 // Group all comms into per-customer conversations
@@ -202,6 +236,7 @@ function ConvRow({ conv, selected, onClick, onDelete }) {
 const PREF_LABEL = { call: 'Phone call', text: 'Text message', email: 'Email' };
 
 function WebLeadView({ conv, onBack, onStatus, onConvert }) {
+  const navigate = useNavigate();
   const e = conv.enquiry;
   const status = e.status || 'new';
   const meta = LEAD_STATUS[status] || LEAD_STATUS.new;
@@ -301,7 +336,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
           <ChannelBadge channel="web" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-slate-900 text-sm">{conv.customerName}</p>
+          <CustomerNameLink conv={conv} navigate={navigate} />
           <p className="text-xs text-slate-400 truncate">Website enquiry · lusso.com.au</p>
         </div>
         <span className={`inline-flex items-center rounded-full font-medium text-xs px-2.5 py-1 ${meta.pill}`}>
@@ -575,7 +610,7 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
         </button>
         <Avatar name={conv.customerName} size="lg" />
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-slate-900 text-sm">{conv.customerName}</p>
+          <CustomerNameLink conv={conv} navigate={navigate} />
           <p className="text-xs text-slate-400 truncate">
             {conv.customerPhone || conv.customerEmail || 'Unknown'}
           </p>

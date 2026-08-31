@@ -565,6 +565,32 @@ export const bulkDeleteCustomers = (ids, deletedBy = 'Admin') => {
 
 export const getCustomer = (id) => (get('lusso_customers') || []).find(c => c.id === id);
 
+/**
+ * The phone identity the database matches on: last nine digits.
+ *
+ * Mirrors `phone_matching.sql` deliberately — an inbound SMS arrives as
+ * "+61485075111" while the customer record says "0485 075 111", and the two
+ * have to be the same person here for the same reason they already are there.
+ */
+export const phoneIdentityKey = (p) => String(p ?? '').replace(/\D/g, '').slice(-9);
+
+/**
+ * Look up a customer by strong identity — email or phone, never address.
+ *
+ * Read-only counterpart to `findOrCreateCustomer`'s matching rule, for callers
+ * that want to know whether a profile exists without creating one. Requires a
+ * full nine-digit phone so a truncated or junk number cannot match everybody.
+ */
+export const findCustomerByIdentity = ({ email, phone } = {}) => {
+  const e = String(email ?? '').trim().toLowerCase();
+  const p = phoneIdentityKey(phone);
+  if (!e && p.length < 9) return null;
+  return getCustomers().find(c =>
+    (e && c.email && c.email.trim().toLowerCase() === e) ||
+    (p.length === 9 && c.phone && phoneIdentityKey(c.phone) === p)
+  ) || null;
+};
+
 export const findOrCreateCustomer = (data) => {
   const customers = getCustomers();
   // Match ONLY on strong identity (email or phone). Address alone is NOT an
