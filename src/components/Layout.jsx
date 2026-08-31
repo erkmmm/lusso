@@ -342,8 +342,19 @@ export default function Layout() {
 
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
       {/* Width is the only thing that animates — the contents swap instantly, so
-          nothing is caught mid-fade while the rail is settling. */}
-      <aside className={`app-sidebar fixed inset-y-0 left-0 z-40 bg-sidebar flex flex-col transform transition-[width,transform] duration-200 lg:translate-x-0 lg:static lg:z-auto ${
+          nothing is caught mid-fade while the rail is settling.
+
+          `lg:translate-none`, NOT `lg:translate-x-0`. Tailwind v4 compiles these
+          to the `translate` CSS property, and ANY value other than `none` —
+          including a zero one — makes the element a stacking context. On desktop
+          this aside is otherwise static/z-auto, so a translate of 0px trapped
+          everything inside it in its own stacking context: the notification and
+          "New" panels are absolutely positioned with z-50, but the sidebar paints
+          before <main> in DOM order, so dashboard cards drew straight over the
+          top of them however high that z-index went. `none` creates no stacking
+          context, and the desktop sidebar never needed a translate anyway — it
+          only exists to cancel the mobile drawer's -translate-x-full. */}
+      <aside className={`app-sidebar fixed inset-y-0 left-0 z-40 bg-sidebar flex flex-col transition-[width,translate] duration-200 lg:translate-none lg:static lg:z-auto ${
         rail ? 'w-64 lg:w-16' : 'w-64'
       } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
 
