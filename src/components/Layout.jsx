@@ -147,14 +147,94 @@ function CountBadge({ n, active }) {
   );
 }
 
+/**
+ * The notification bell and its panel.
+ *
+ * Extracted so it can sit in the sidebar on a laptop and in the mobile top bar,
+ * without two copies of the panel drifting apart. `placement` only moves the
+ * panel: from the sidebar it flies out to the right, since there is no room
+ * below a control that already sits at the bottom of the screen.
+ */
+function NotificationBell({ open, setOpen, unread, notifications, onMarkAllRead, onNotifClick, placement = 'below' }) {
+  // Its own ref and its own outside-click. Both placements are mounted at once
+  // (one is simply hidden by a breakpoint), so a single shared ref would point
+  // at whichever mounted last — and a click on the VISIBLE bell would read as
+  // "outside" the hidden one and close the panel the instant it opened.
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open, setOpen]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        aria-label={unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'}
+        title="Notifications"
+        className={`relative p-1.5 rounded-lg transition-colors ${
+          placement === 'side'
+            ? 'text-sidebar-text hover:text-white hover:bg-sidebar-hover'
+            : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+        }`}
+      >
+        <Bell size={18} />
+        {unread > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className={`absolute w-80 max-w-[calc(100vw-1rem)] bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden ${
+          placement === 'side' ? 'left-full bottom-0 ml-2' : 'right-0 top-full mt-2'
+        }`}>
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+            <span className="font-semibold text-slate-800 text-sm">Notifications</span>
+            {unread > 0 && (
+              <button onClick={onMarkAllRead} className="text-xs text-amber-600 hover:underline">Mark all read</button>
+            )}
+          </div>
+          <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
+            {notifications.length === 0 ? (
+              <p className="text-center text-slate-400 text-sm py-8">No notifications</p>
+            ) : (
+              notifications.slice(0, 20).map(n => {
+                const { icon: NIcon, color, bg } = NOTIF_ICONS[n.type] || NOTIF_ICONS.default;
+                return (
+                  <button key={n.id} onClick={() => onNotifClick(n)}
+                    className={`w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left ${!n.isRead ? 'bg-amber-50/40' : ''}`}>
+                    <div className={`w-7 h-7 rounded-full ${bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                      <NIcon size={13} className={color} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-slate-800">{n.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
+                      <p className="text-xs text-slate-400 mt-1">{formatDistanceToNow(parseISO(n.createdAt), { addSuffix: true })}</p>
+                    </div>
+                    {!n.isRead && <div className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0 mt-1.5" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { rail, toggle: toggleRail } = useSidebar();
   const [notifOpen, setNotifOpen]     = useState(false);
   const [sideNewOpen, setSideNewOpen]   = useState(false); // sidebar "New" dropdown
   const [mobileNewOpen, setMobileNewOpen] = useState(false); // mobile bottom sheet
   const [notifications, setNotifs]    = useState(getNotifications);
   const [counts, setCounts]           = useState(computeCounts);
-  const notifRef      = useRef(null);
   const sideNewRef    = useRef(null); // wraps sidebar + New section
   const mobileSheetRef = useRef(null); // mobile action sheet
   const navigate      = useNavigate();
@@ -219,7 +299,6 @@ export default function Layout() {
   // Close popups on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
       if (sideNewRef.current && !sideNewRef.current.contains(e.target)) setSideNewOpen(false);
       if (mobileSheetRef.current && !mobileSheetRef.current.contains(e.target)) setMobileNewOpen(false);
     };
@@ -262,32 +341,90 @@ export default function Layout() {
       {/* Mobile + New sheet overlay is co-located with the sheet below ── */}
 
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
-      <aside className={`app-sidebar fixed inset-y-0 left-0 z-40 w-64 bg-sidebar flex flex-col transform transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      {/* Width is the only thing that animates — the contents swap instantly, so
+          nothing is caught mid-fade while the rail is settling. */}
+      <aside className={`app-sidebar fixed inset-y-0 left-0 z-40 bg-sidebar flex flex-col transform transition-[width,transform] duration-200 lg:translate-x-0 lg:static lg:z-auto ${
+        rail ? 'w-64 lg:w-16' : 'w-64'
+      } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
 
         {/* Logo */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border">
-          <div>
-            <img src="/brand/lusso-white.png" alt="Lusso" className="h-6 w-auto" />
-            <div className="text-slate-400 text-xs mt-1">Job Management</div>
-          </div>
-          <button aria-label="Close sidebar" className="ml-auto lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}>
-            <X size={18} />
-          </button>
+        <div className={`flex items-center border-b border-sidebar-border ${rail ? 'justify-center px-2 py-4' : 'gap-3 px-6 py-5'}`}>
+          {rail ? (
+            <button
+              onClick={toggleRail}
+              title="Expand navigation (⌘\\)"
+              aria-label="Expand navigation"
+              className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-sidebar-hover transition-colors group"
+            >
+              {/* The mark, swapping to the expand affordance on hover — the rail
+                  has no room for both, and the logo is the obvious thing to aim
+                  at when you want your navigation back. */}
+              <img src="/icon-192.png" alt="Lusso" className="h-6 w-6 rounded group-hover:hidden" />
+              <PanelLeftOpen size={18} className="text-white hidden group-hover:block" />
+            </button>
+          ) : (
+            <>
+              <div>
+                <img src="/brand/lusso-white.png" alt="Lusso" className="h-6 w-auto" />
+                <div className="text-slate-400 text-xs mt-1">Job Management</div>
+              </div>
+              <button
+                onClick={toggleRail}
+                title="Collapse navigation (⌘\\)"
+                aria-label="Collapse navigation"
+                className="ml-auto hidden lg:block text-slate-400 hover:text-white p-1 rounded transition-colors"
+              >
+                <PanelLeftClose size={17} />
+              </button>
+              <button aria-label="Close sidebar" className="ml-auto lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}>
+                <X size={18} />
+              </button>
+            </>
+          )}
         </div>
 
+        {/* Back — desktop only; the mobile bar still carries its own. */}
+        {!isDashboard && (
+          <div className={`hidden lg:block ${rail ? 'px-2 pt-3' : 'px-4 pt-4'}`}>
+            <button
+              onClick={goBack}
+              aria-label="Back"
+              title="Back"
+              className={`flex items-center rounded-lg text-sidebar-text hover:bg-sidebar-hover hover:text-white transition-colors ${
+                rail ? 'w-10 h-10 mx-auto justify-center' : 'w-full gap-2 px-3 py-2 text-sm'
+              }`}
+            >
+              <ArrowLeft size={17} />
+              {!rail && <span className="font-medium">Back</span>}
+            </button>
+          </div>
+        )}
+
         {/* + New dropdown */}
-        <div className="px-4 py-4" ref={sideNewRef}>
+        <div className={`${rail ? 'px-2 py-3' : 'px-4 py-4'} relative`} ref={sideNewRef}>
           <button
             onClick={() => setSideNewOpen(v => !v)}
-            className="w-full flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
+            title={rail ? 'New' : undefined}
+            aria-label="New"
+            className={`bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg transition-colors flex items-center ${
+              rail ? 'w-10 h-10 mx-auto justify-center' : 'w-full gap-2 px-4 py-2.5'
+            }`}
           >
             <Plus size={16} />
-            <span className="flex-1 text-left">New</span>
-            <ChevronDown size={14} className={`transition-transform duration-200 ${sideNewOpen ? 'rotate-180' : ''}`} />
+            {!rail && (
+              <>
+                <span className="flex-1 text-left">New</span>
+                <ChevronDown size={14} className={`transition-transform duration-200 ${sideNewOpen ? 'rotate-180' : ''}`} />
+              </>
+            )}
           </button>
 
           {sideNewOpen && (
-            <div className="mt-1.5 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden z-50 relative">
+            <div className={`bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden z-50 ${
+              // In the rail the menu can't sit under a 40px button — it flies out
+              // beside it instead, which is also where a rail user expects it.
+              rail ? 'absolute left-full top-2 ml-2 w-64' : 'mt-1.5 relative'
+            }`}>
               {NEW_ACTIONS.map(({ label, sub, to, icon: Icon, color, bg }) => (
                 <button
                   key={to}
@@ -308,12 +445,18 @@ export default function Layout() {
         </div>
 
         {/* Grouped nav */}
-        <nav className="flex-1 px-3 pb-4 space-y-4 overflow-y-auto">
+        <nav className={`flex-1 pb-4 overflow-y-auto overflow-x-visible ${rail ? 'px-2 space-y-2' : 'px-3 space-y-4'}`}>
           {NAV_SECTIONS.map(section => (
             <div key={section.label}>
-              <p className="px-3 mb-1 text-[10px] font-semibold tracking-widest uppercase text-sidebar-text opacity-40 select-none">
-                {section.label}
-              </p>
+              {rail ? (
+                // A hairline stands in for the section heading, so the grouping
+                // survives without the words.
+                <div className="h-px bg-sidebar-border/60 mx-2 mb-2 first:hidden" aria-hidden="true" />
+              ) : (
+                <p className="px-3 mb-1 text-[10px] font-semibold tracking-widest uppercase text-sidebar-text opacity-40 select-none">
+                  {section.label}
+                </p>
+              )}
               <div className="space-y-0.5">
                 {section.items.map(({ to, label, icon: Icon, exact, countKey, amOnly }) => {
                   if (amOnly && !isAM) return null;
@@ -324,8 +467,12 @@ export default function Layout() {
                       to={to}
                       end={exact}
                       onClick={() => setSidebarOpen(false)}
+                      title={rail ? label : undefined}
+                      aria-label={rail ? label : undefined}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                        `flex items-center rounded-lg text-sm transition-colors relative ${
+                          rail ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3 py-2.5'
+                        } ${
                           isActive
                             ? 'bg-sidebar-active text-white font-medium'
                             : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
@@ -335,8 +482,21 @@ export default function Layout() {
                       {({ isActive }) => (
                         <>
                           <Icon size={17} />
-                          <span className="flex-1">{label}</span>
-                          <CountBadge n={count} active={isActive} />
+                          {rail ? (
+                            // No room for the number, but "there is something
+                            // waiting" still has to survive the collapse.
+                            count > 0 && (
+                              <span
+                                className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-400 ring-2 ring-sidebar"
+                                aria-label={`${count} waiting`}
+                              />
+                            )
+                          ) : (
+                            <>
+                              <span className="flex-1">{label}</span>
+                              <CountBadge n={count} active={isActive} />
+                            </>
+                          )}
                         </>
                       )}
                     </NavLink>
@@ -348,54 +508,95 @@ export default function Layout() {
         </nav>
 
         {/* User footer */}
-        <div className="px-4 py-4 border-t border-sidebar-border">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-              {(displayName || user?.email || 'A')[0].toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-white text-sm font-medium leading-tight truncate">
-                {displayName || user?.email || 'User'}
+        <div className={`border-t border-sidebar-border ${rail ? 'px-2 py-3' : 'px-4 py-4'}`}>
+          {rail ? (
+            // Who you are and the way out — the two things worth 40px each.
+            <div className="flex flex-col items-center gap-2">
+              <div className="hidden lg:block">
+                <NotificationBell
+            open={notifOpen} setOpen={setNotifOpen}
+                  unread={unread} notifications={notifications}
+                  onMarkAllRead={handleMarkAllRead} onNotifClick={handleNotifClick}
+                  placement="side"
+                />
               </div>
-              {(() => {
-                const role = profile?.employeeRole;
-                if (isAM || role === 'account_manager') return (
-                  <span className="inline-flex items-center text-[10px] font-medium bg-amber-500/20 text-amber-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                    Account Manager
-                  </span>
-                );
-                if (role === 'installer') return (
-                  <span className="inline-flex items-center text-[10px] font-medium bg-blue-500/20 text-blue-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                    Installer
-                  </span>
-                );
-                if (role === 'salesperson') return (
-                  <span className="inline-flex items-center text-[10px] font-medium bg-teal-500/20 text-teal-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                    Salesperson
-                  </span>
-                );
-                return (
-                  <span className="inline-flex items-center text-[10px] font-medium bg-slate-500/20 text-slate-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                    Standard User
-                  </span>
-                );
-              })()}
+              <div
+                className="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-bold"
+                title={displayName || user?.email || 'User'}
+              >
+                {(displayName || user?.email || 'A')[0].toUpperCase()}
+              </div>
+              <button onClick={signOut} aria-label="Sign out" title="Sign out"
+                className="text-sidebar-text hover:text-white p-1.5 rounded transition-colors">
+                <LogOut size={15} />
+              </button>
             </div>
-            <button onClick={signOut} aria-label="Sign out"
-              className="text-sidebar-text hover:text-white p-1 rounded transition-colors flex-shrink-0">
-              <LogOut size={15} />
-            </button>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                  {(displayName || user?.email || 'A')[0].toUpperCase()}
+                </div>
+                <div className="hidden lg:block -ml-1">
+                  <NotificationBell
+            open={notifOpen} setOpen={setNotifOpen}
+                    unread={unread} notifications={notifications}
+                    onMarkAllRead={handleMarkAllRead} onNotifClick={handleNotifClick}
+                    placement="side"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-white text-sm font-medium leading-tight truncate">
+                    {displayName || user?.email || 'User'}
+                  </div>
+                  {(() => {
+                    const role = profile?.employeeRole;
+                    if (isAM || role === 'account_manager') return (
+                      <span className="inline-flex items-center text-[10px] font-medium bg-amber-500/20 text-amber-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                        Account Manager
+                      </span>
+                    );
+                    if (role === 'installer') return (
+                      <span className="inline-flex items-center text-[10px] font-medium bg-blue-500/20 text-blue-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                        Installer
+                      </span>
+                    );
+                    if (role === 'salesperson') return (
+                      <span className="inline-flex items-center text-[10px] font-medium bg-teal-500/20 text-teal-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                        Salesperson
+                      </span>
+                    );
+                    return (
+                      <span className="inline-flex items-center text-[10px] font-medium bg-slate-500/20 text-slate-300 rounded-full px-1.5 py-0.5 mt-0.5">
+                        Standard User
+                      </span>
+                    );
+                  })()}
+                </div>
+                <button onClick={signOut} aria-label="Sign out"
+                  className="text-sidebar-text hover:text-white p-1 rounded transition-colors flex-shrink-0">
+                  <LogOut size={15} />
+                </button>
+              </div>
 
-          <BuildMarker />
+              <BuildMarker />
+            </>
+          )}
         </div>
+
       </aside>
 
       {/* ── Main content ──────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Top bar — z-10 keeps burger + bell above any in-page backdrop/dropdowns */}
-        <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 flex-shrink-0 relative z-10">
+        {/* Top bar — MOBILE ONLY.
+            On a laptop the sidebar is already on screen, so this row was
+            spending ~53px of every page on a logo the sidebar repeats, a
+            breadcrumb chevron pointing at nothing, and two controls that fit
+            perfectly well in the sidebar itself. Back and the bell moved there;
+            below `lg` the sidebar is a drawer, so the bar still earns its keep.
+            z-10 keeps burger + bell above any in-page backdrop/dropdowns. */}
+        <header className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 flex-shrink-0 relative z-10">
           <button aria-label="Open navigation" className="lg:hidden text-slate-500 hover:text-slate-800" onClick={() => setSidebarOpen(true)}>
             <Menu size={20} />
           </button>
@@ -413,55 +614,11 @@ export default function Layout() {
           </div>
           <div className="flex-1" />
 
-          {/* Notification bell */}
-          <div className="relative" ref={notifRef}>
-            <button
-              onClick={() => setNotifOpen(!notifOpen)}
-              aria-label={unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'}
-              className="relative text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <Bell size={18} />
-              {unread > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {unread > 9 ? '9+' : unread}
-                </span>
-              )}
-            </button>
-
-            {notifOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1rem)] bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                  <span className="font-semibold text-slate-800 text-sm">Notifications</span>
-                  {unread > 0 && (
-                    <button onClick={handleMarkAllRead} className="text-xs text-amber-600 hover:underline">Mark all read</button>
-                  )}
-                </div>
-                <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
-                  {notifications.length === 0 ? (
-                    <p className="text-center text-slate-400 text-sm py-8">No notifications</p>
-                  ) : (
-                    notifications.slice(0, 20).map(n => {
-                      const { icon: NIcon, color, bg } = NOTIF_ICONS[n.type] || NOTIF_ICONS.default;
-                      return (
-                        <button key={n.id} onClick={() => handleNotifClick(n)}
-                          className={`w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left ${!n.isRead ? 'bg-amber-50/40' : ''}`}>
-                          <div className={`w-7 h-7 rounded-full ${bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                            <NIcon size={13} className={color} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-slate-800">{n.title}</p>
-                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
-                            <p className="text-xs text-slate-400 mt-1">{formatDistanceToNow(parseISO(n.createdAt), { addSuffix: true })}</p>
-                          </div>
-                          {!n.isRead && <div className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0 mt-1.5" />}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <NotificationBell
+            open={notifOpen} setOpen={setNotifOpen}
+            unread={unread} notifications={notifications}
+            onMarkAllRead={handleMarkAllRead} onNotifClick={handleNotifClick}
+          />
         </header>
 
         {/* Page content — extra bottom padding on mobile for bottom nav */}

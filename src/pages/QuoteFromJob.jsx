@@ -8,7 +8,7 @@ import {
 import {
   getJob, getCustomer, getMeasureSheetsByJob,
   createQuote, saveQuote, addActivity, getQuotesByJob,
-  getCurtainRates, getPricedItems,
+  getCurtainRates, getPricedItems, DEFAULT_MARGIN_PERCENT,
 } from '../store/data';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -68,7 +68,7 @@ function msLineToQuoteLine(msLi, idx, rates, pricedItems) {
     attachedLining: !!msLi.attachedLining,
     curtainFittingEnabled: true,
     ...curtainCost,
-    marginPercent: 40,
+    marginPercent: DEFAULT_MARGIN_PERCENT,
     manualSellPrice: '',
     taxable: true,
     customerNotes: '',

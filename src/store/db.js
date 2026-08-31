@@ -297,8 +297,54 @@ const savePending = (p) => { try { lsSet(PENDING_KEY, p); } catch { /* best-effo
 function markPending(table, id) {
   if (!table || !id) return;
   const p = getPending();
-  (p[table] = p[table] || {})[id] = Date.now();
+  const bucket = (p[table] = p[table] || {});
+  // Entries were plain timestamps; keep tolerating that shape while carrying a
+  // strip counter forward, so a queued-because-incomplete record doesn't reset
+  // its budget every time it is retried.
+  const prev = bucket[id];
+  const strips = (prev && typeof prev === 'object' && prev.strips) || 0;
+  bucket[id] = strips ? { at: Date.now(), strips } : Date.now();
   savePending(p);
+}
+
+// How many flush attempts a record gets while the server keeps rejecting one of
+// its columns. A stale PostgREST schema cache clears in seconds; a column that
+// genuinely doesn't exist never will, and retrying it forever would churn every
+// hydration. After this many, give up loudly rather than quietly.
+const MAX_STRIP_FLUSHES = 6;
+
+/**
+ * A write landed, but WITHOUT some of its columns.
+ *
+ * The row on the server is now incomplete, so the record deliberately STAYS in
+ * the pending outbox: hydration never overwrites a pending record, which is
+ * what stops the stripped server row replacing the complete local one, and the
+ * next flush re-sends it once the schema catches up.
+ */
+function noteStrippedWrite(table, id, dropped) {
+  const p = getPending();
+  const bucket = (p[table] = p[table] || {});
+  const prev = bucket[id];
+  const strips = ((prev && typeof prev === 'object' && prev.strips) || 0) + 1;
+
+  if (strips > MAX_STRIP_FLUSHES) {
+    console.error(
+      `[db] GIVING UP on ${table}/${id}: the server has rejected ${dropped.join(', ')} ` +
+      `${strips} times. The row is saved WITHOUT those fields. Either add the column(s) ` +
+      `to the database (then: notify pgrst, 'reload schema') or list them in EXCLUDE_COLUMNS.`
+    );
+    clearPending(table, id);
+    return;
+  }
+
+  bucket[id] = { at: Date.now(), strips };
+  savePending(p);
+  console.error(
+    `[db] ${table}/${id} saved WITHOUT ${dropped.join(', ')} — the server doesn't know ` +
+    `those columns yet. Kept queued (attempt ${strips}/${MAX_STRIP_FLUSHES}); the local ` +
+    `copy is intact and will re-send. If this persists, the schema cache is stale ` +
+    `(notify pgrst, 'reload schema') or the column is missing.`
+  );
 }
 function clearPending(table, id) {
   const p = getPending();
@@ -323,6 +369,13 @@ const PAGE_RETRIES = 4; // attempts per page before giving up
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Tables with no `deleted_at`. Filtering on it returns a 400, and the caller's
+// fallback only kicks in AFTER the retry loop has burned four attempts and
+// ~2.8s of backoff — on every hydration, for every user, filling the console
+// with errors that mask real ones. Verified against the live schema
+// 2026-08-31; a table missing from here still works, just slowly.
+const NO_SOFT_DELETE = new Set(['scheduling_dismissals']);
+
 async function fetchAllPages(table, useDeletedFilter) {
   let all = [];
   let from = 0;
@@ -336,7 +389,7 @@ async function fetchAllPages(table, useDeletedFilter) {
     let lastErr = null;
     for (let attempt = 0; attempt < PAGE_RETRIES; attempt++) {
       let q = supabase.from(table).select('*');
-      if (useDeletedFilter) q = q.is('deleted_at', null);
+      if (useDeletedFilter && !NO_SOFT_DELETE.has(table)) q = q.is('deleted_at', null);
       q = q.order('created_at', { ascending: true }).range(from, from + PAGE_SIZE - 1);
 
       const { data, error } = await q;
@@ -374,8 +427,8 @@ export async function hydrateFromSupabase() {
       // Fetch only non-deleted records so soft-deleted items stay gone after refresh.
       // Fall back to unfiltered fetch for tables without a deleted_at column.
       // fetchAllPages handles >1000 rows via range-based pagination.
-      let fetchedData = null;
-      const { data: d1, error: e1 } = await fetchAllPages(table, true);
+      let fetchedData;
+      const { data: d1, error: e1 } = await fetchAllPages(table, !NO_SOFT_DELETE.has(table));
       if (e1) {
         const { data: d2, error: e2 } = await fetchAllPages(table, false);
         if (e2) { console.warn(`[db] hydrate ${table}:`, e2.message); return; }
@@ -587,6 +640,12 @@ export async function syncNow(entries, { sequential = false } = {}) {
     const raw = toDb(record);
     const excludeSet = new Set(EXCLUDE_COLUMNS[table] || []);
     let row = Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
+    // Same rule as upsert(): a write that had columns stripped is INCOMPLETE on
+    // the server, so it stays queued rather than being cleared as a success.
+    // (This path had its own copy of the strip logic and its own copy of the
+    // bug — an explicit "Sync now" could quietly drop the very fields the user
+    // pressed the button to push.)
+    const dropped = [];
     for (let attempt = 0; attempt < 10; attempt++) {
       let error;
       try {
@@ -596,13 +655,20 @@ export async function syncNow(entries, { sequential = false } = {}) {
         errors.push(`${table}: ${e?.message || e}`);
         return;
       }
-      if (!error) { clearPending(table, record.id); return; } // confirmed
+      if (!error) {
+        if (dropped.length) {
+          noteStrippedWrite(table, record.id, dropped);
+          errors.push(`${table}: saved without ${dropped.join(', ')} — column(s) missing on the server`);
+        } else {
+          clearPending(table, record.id);
+        }
+        return;
+      }
       const colMatch = error.message.match(/Could not find the '([^']+)' column/);
       if (colMatch) {
-        const badCol = colMatch[1];
-        console.error(`[db] syncNow ${table}: DB has no '${badCol}' column — stripping. If this holds real data, it is a schema mismatch to fix in EXCLUDE_COLUMNS/toDb.`);
-        const { [badCol]: _dropped, ...rest } = row;
-        row = rest;
+        dropped.push(colMatch[1]);
+        row = { ...row };
+        delete row[colMatch[1]];
       } else {
         console.warn(`[db] syncNow ${table}:`, error.message); // stays queued for retry
         errors.push(`${table}: ${error.message}`);
@@ -631,7 +697,13 @@ async function upsert(table, record) {
   let row = Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
 
   // Self-healing: if Supabase rejects an unknown column (an app-only field not
-  // in EXCLUDE_COLUMNS, or a column never added to the DB), strip it and retry.
+  // in EXCLUDE_COLUMNS, or one the schema cache hasn't picked up yet), strip it
+  // and retry so the REST of the record still lands. What must not happen is
+  // treating that as a clean success — the server row is missing fields, and
+  // clearing the outbox would let the next hydration overwrite the complete
+  // local copy with the incomplete remote one. That is how a takeoff's window
+  // items vanished after the columns for them were added.
+  const dropped = [];
   for (let attempt = 0; attempt < 10; attempt++) {
     let error;
     try {
@@ -640,13 +712,17 @@ async function upsert(table, record) {
       console.warn(`[db] upsert ${table} network error:`, e?.message || e); // stays queued
       return;
     }
-    if (!error) { clearPending(table, record.id); return; } // confirmed — safe to clear
+    if (!error) {
+      if (dropped.length) noteStrippedWrite(table, record.id, dropped);  // incomplete → stays queued
+      else clearPending(table, record.id);                              // confirmed complete
+      return;
+    }
     const colMatch = error.message.match(/Could not find the '([^']+)' column/);
     if (colMatch) {
       const badCol = colMatch[1];
-      console.error(`[db] upsert ${table}: DB has no '${badCol}' column — stripping. If this holds real data, it is a schema mismatch to fix in EXCLUDE_COLUMNS/toDb.`);
-      const { [badCol]: _dropped, ...rest } = row;
-      row = rest;
+      dropped.push(badCol);
+      row = { ...row };
+      delete row[badCol];
     } else {
       console.warn(`[db] upsert ${table}:`, error.message); // stays queued for retry
       return;

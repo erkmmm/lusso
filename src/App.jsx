@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { UserProfileProvider } from './contexts/UserProfileContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
+import { SidebarProvider } from './contexts/SidebarContext';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import ToastContainer from './components/ToastContainer';
 // Users page merged into Employees (Team) — import kept for redirect only
@@ -424,9 +425,13 @@ export default function App() {
         <AuthProvider>
           <UserProfileProvider>
             <RealtimeProvider>
-              <AppRoutes />
-              <UpdateBanner />
-              <ToastContainer />
+              {/* Above the routes so a page can ask for the nav rail as it
+                  mounts, and the choice survives navigating between them. */}
+              <SidebarProvider>
+                <AppRoutes />
+                <UpdateBanner />
+                <ToastContainer />
+              </SidebarProvider>
             </RealtimeProvider>
           </UserProfileProvider>
         </AuthProvider>

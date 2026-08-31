@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Trash2, ChevronDown, ChevronUp, Camera, Ruler, Plus, Loader2, X,
   AlertTriangle, MapPin, Hash, Spline, Waypoints, FlipHorizontal2,
+  PanelRightOpen, PanelRightClose,
 } from 'lucide-react';
 import { plausibility } from '../../lib/planScale';
 import { signedPhotoUrl } from '../../lib/takeoffStorage';
@@ -173,6 +174,7 @@ export default function ItemPanel({
   onUpdateItem, onRemoveItem, onUpdateMeasurement, onRemoveMeasurement,
   onUpdateMarker, onRemoveMarker, onMeasureDrop, onAddPhoto, onRemovePhoto,
   onSetArcRadius, onFlipArc, focusLabelId, focusSelectsAll, onLabelFocused, photoBusyId,
+  collapsed = false, onToggleCollapsed,
 }) {
   const sheet = layout === 'sheet';
   const loose = measurements.filter(m => !m.itemId);
@@ -190,6 +192,38 @@ export default function ItemPanel({
     );
   }
 
+  // Collapsed: a 64px rail mirroring the nav and tool rails on the other side,
+  // so the plan sits between two matching edges instead of one rail and one
+  // 320px slab. The counts stay visible — that's the bit you glance at.
+  if (!sheet && collapsed) {
+    return (
+      <div className="w-16 border-l border-slate-200 bg-white hidden lg:flex flex-col items-center py-2 gap-3 flex-shrink-0">
+        <button
+          onClick={onToggleCollapsed}
+          title="Show the takeoff panel"
+          aria-label="Show the takeoff panel"
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
+        >
+          <PanelRightOpen size={17} />
+        </button>
+        <div className="text-center leading-tight">
+          <div className="text-sm font-semibold text-slate-800 tabular-nums">{onPage}</div>
+          <div className="text-[9px] text-slate-400">page</div>
+        </div>
+        <div className="text-center leading-tight">
+          <div className="text-sm font-semibold text-slate-500 tabular-nums">{total}</div>
+          <div className="text-[9px] text-slate-400">total</div>
+        </div>
+        {!hasScale && (
+          <button onClick={onCalibrate} title="Set the scale on this page"
+            className="w-10 h-10 rounded-lg flex items-center justify-center text-amber-500 hover:bg-amber-50">
+            <AlertTriangle size={17} />
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={sheet
       ? 'lg:hidden border-t border-slate-200 bg-white flex flex-col min-h-0 flex-shrink-0 max-h-[55vh]'
@@ -197,11 +231,21 @@ export default function ItemPanel({
       {sheet ? (
         <PanelHandle onPage={onPage} total={total} noun={noun} open onToggle={onToggle} />
       ) : (
-        <div className="px-4 py-3 border-b border-slate-100">
-          <h2 className="font-semibold text-slate-800 text-sm">Takeoff</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {onPage} {noun}{onPage === 1 ? '' : 's'} on this page · {total} total
-          </p>
+        <div className="px-4 py-3 border-b border-slate-100 flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-semibold text-slate-800 text-sm">Takeoff</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {onPage} {noun}{onPage === 1 ? '' : 's'} on this page · {total} total
+            </p>
+          </div>
+          <button
+            onClick={onToggleCollapsed}
+            title="Collapse the panel"
+            aria-label="Collapse the panel"
+            className="text-slate-400 hover:text-slate-700 p-1 -mr-1 rounded transition-colors flex-shrink-0"
+          >
+            <PanelRightClose size={17} />
+          </button>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { CheckCircle2, Ruler, Camera, FileDown, Loader2 } from 'lucide-react';
+import { CheckCircle2, Ruler, Camera, FileDown, Loader2, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { colourFor, summarise, measuredProgress } from '../../lib/clientSchedule';
 import { arcPathD } from '../../lib/takeoffGeometry';
 
@@ -117,20 +117,62 @@ function EndStop({ p, towards, colour, bold }) {
 export default function ClientSchedule({
   entries, palette, pageNumber, pageCount, showSizes, onToggleSizes,
   selectedKey, onSelect, onExport, exporting, customerName, jobNumber,
+  collapsed = false, onToggleCollapsed,
 }) {
   const onPage = entries.filter(e => e.pageNumber === pageNumber);
   const totals = summarise(entries);
   const progress = measuredProgress(entries);
 
+  // Collapsed to the same 64px rail as the working panel and the two rails on
+  // the left — a client is often shown this on a laptop, where the plan wants
+  // every pixel it can get.
+  if (collapsed) {
+    return (
+      <div className="w-16 border-l border-slate-200 bg-white hidden lg:flex flex-col items-center py-2 gap-3 flex-shrink-0">
+        <button
+          onClick={onToggleCollapsed}
+          title="Show the window schedule"
+          aria-label="Show the window schedule"
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
+        >
+          <PanelRightOpen size={17} />
+        </button>
+        <div className="text-center leading-tight">
+          <div className="text-sm font-semibold text-slate-800 tabular-nums">{onPage.length}</div>
+          <div className="text-[9px] text-slate-400">page</div>
+        </div>
+        <div className="text-center leading-tight">
+          <div className="text-sm font-semibold text-slate-500 tabular-nums">{entries.length}</div>
+          <div className="text-[9px] text-slate-400">total</div>
+        </div>
+        <div title={progress.allMeasured ? 'All sizes confirmed on site' : `${progress.measured} of ${progress.total} measured on site`}>
+          {progress.allMeasured
+            ? <CheckCircle2 size={17} className="text-green-600" />
+            : <Ruler size={17} className="text-amber-500" />}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-80 border-l border-slate-200 bg-white flex flex-col min-h-0 hidden lg:flex">
-      <div className="px-4 py-3 border-b border-slate-100">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-600">Window schedule</p>
-        <h2 className="font-semibold text-slate-900 text-sm mt-0.5 truncate">{customerName || 'This job'}</h2>
-        <p className="text-xs text-slate-400">
-          {jobNumber ? `${jobNumber} · ` : ''}{entries.length} opening{entries.length === 1 ? '' : 's'}
-          {pageCount > 1 && ` · ${onPage.length} on this page`}
-        </p>
+      <div className="px-4 py-3 border-b border-slate-100 flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-600">Window schedule</p>
+          <h2 className="font-semibold text-slate-900 text-sm mt-0.5 truncate">{customerName || 'This job'}</h2>
+          <p className="text-xs text-slate-400">
+            {jobNumber ? `${jobNumber} · ` : ''}{entries.length} opening{entries.length === 1 ? '' : 's'}
+            {pageCount > 1 && ` · ${onPage.length} on this page`}
+          </p>
+        </div>
+        <button
+          onClick={onToggleCollapsed}
+          title="Collapse the panel"
+          aria-label="Collapse the panel"
+          className="text-slate-400 hover:text-slate-700 p-1 -mr-1 rounded transition-colors flex-shrink-0"
+        >
+          <PanelRightClose size={17} />
+        </button>
       </div>
 
       {/* What's confirmed vs still scaled off the drawing. Saying this plainly

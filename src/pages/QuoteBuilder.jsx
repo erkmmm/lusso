@@ -15,7 +15,7 @@ import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
-  getQuoteWording,
+  getQuoteWording, DEFAULT_MARGIN_PERCENT,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
   computeQuoteTotals, linePricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
@@ -74,7 +74,7 @@ const EMPTY_PART_ITEM = (preset = {}) => ({
   heading: '', hem: '', trackColour: '', baseBarColour: '', trackBaseBarColour: '',
   baseBarType: '', chainColour: '', trackType: '',
   attachedLining: false,
-  unitCostPrice: '', labourCost: '', marginPercent: 40,
+  unitCostPrice: '', labourCost: '', marginPercent: DEFAULT_MARGIN_PERCENT,
   manualSellPrice: preset.price || '',
   discountPercent: '', discountAmount: '',
   supplier: 'Acmeda',
@@ -119,7 +119,7 @@ const EMPTY_LINE_ITEM = () => ({
   curtainFittingEnabled: true,
   unitCostPrice: '',
   labourCost: '',
-  marginPercent: 40,
+  marginPercent: DEFAULT_MARGIN_PERCENT,
   manualSellPrice: '',
   discountPercent: '',
   discountAmount: '',
@@ -428,6 +428,57 @@ function Section({ title, icon: Icon, children, defaultOpen = true }) {
   );
 }
 
+/**
+ * Cost, margin and the numbers that fall out of them.
+ *
+ * Shared by ordinary lines and parts. A part is bought and resold exactly like
+ * a blind is, so quoting it at a flat sell price left it out of every margin
+ * figure the business actually runs on.
+ */
+function PricingFields({ item, set, pricing }) {
+  const { finalSell, lineTotal, grossProfit, gpPercent, totalCost, calcSell, preDiscountSell, discountTotal } = pricing;
+  return (
+    <div className="bg-slate-50 rounded-xl p-3 space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <FieldInput label="Material Cost 🔒" value={item.unitCostPrice} onChange={v => set('unitCostPrice', v)} type="number" placeholder="0.00" prefix="$" />
+        <FieldInput label="Labour Cost 🔒" value={item.labourCost} onChange={v => set('labourCost', v)} type="number" placeholder="0.00" prefix="$" />
+        <FieldInput label="Margin % 🔒" value={item.marginPercent} onChange={v => set('marginPercent', v)} type="number" placeholder={String(DEFAULT_MARGIN_PERCENT)} />
+        <FieldInput label="Supplier 🔒" value={item.supplier} onChange={v => set('supplier', v)} placeholder="e.g. Acmeda" />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Calc. Sell Price</label>
+          <p className="text-sm text-slate-500 py-1.5">{fmt(calcSell)}</p>
+        </div>
+        <FieldInput label="Manual Sell Price (override)" value={item.manualSellPrice} onChange={v => set('manualSellPrice', v)} type="number" placeholder={`${fmt(calcSell)} (auto)`} prefix="$" />
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Final Sell (ea)</label>
+          <p className="text-sm font-bold text-slate-800 py-1.5">{fmt(finalSell)}</p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Line Total</label>
+          <p className="text-sm font-bold text-amber-700 py-1.5">{fmt(lineTotal)}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <FieldInput label="Discount %" value={item.discountPercent} onChange={v => { set('discountPercent', v); if (v) set('discountAmount', ''); }} type="number" placeholder="0" />
+        <FieldInput label="or Discount $ (each)" value={item.discountAmount} onChange={v => { set('discountAmount', v); if (v) set('discountPercent', ''); }} type="number" placeholder="0.00" prefix="$" />
+        {discountTotal > 0 && (
+          <div className="col-span-2 flex items-center gap-2 text-xs text-amber-700 pt-6">
+            <span className="line-through text-slate-400">{fmt(preDiscountSell)}</span>
+            <span className="font-semibold">− {fmt(discountTotal)} off this line</span>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pt-1.5 border-t border-slate-200">
+        <span className="text-xs text-slate-400">Cost: <span className="font-medium text-slate-600">{fmt(totalCost * (Number(item.quantity) || 1))}</span></span>
+        <span className="text-xs text-slate-400">GP: <span className={`font-semibold ${grossProfit * (Number(item.quantity) || 1) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(grossProfit * (Number(item.quantity) || 1))}</span></span>
+        <span className="text-xs text-slate-400">GP%: <span className={`font-semibold ${gpPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{gpPercent.toFixed(1)}%</span></span>
+      </div>
+    </div>
+  );
+}
+
 // ─── LineItemCard ─────────────────────────────────────────────────────────────
 
 function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock }) {
@@ -442,7 +493,8 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
   const isCurtain = isCurtainProduct(item.productNameSnapshot || productType?.name || '');
 
   const pricing = linePricing(item);
-  const { finalSell, lineTotal, grossProfit, gpPercent, totalCost, calcSell, preDiscountSell, discountTotal } = pricing;
+  // Only what the collapsed row shows — the rest is PricingFields' business.
+  const { lineTotal, discountTotal } = pricing;
 
   const TYPE_COLORS = {
     Required:         'bg-slate-100 text-slate-700 border-slate-200',
@@ -542,18 +594,9 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
               placeholder="e.g. Acmeda Automate Pulse WiFi Hub"
               className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
           </div>
-          {/* Qty + Price */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <FieldInput label="Qty" value={item.quantity} onChange={v => set('quantity', v)} type="number" placeholder="1" />
-            <FieldInput label="Sell Price (each)" value={item.manualSellPrice} onChange={v => set('manualSellPrice', v)} type="number" placeholder="0.00" prefix="$" />
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Line Total</label>
-              <p className="text-sm font-bold text-amber-700 py-1.5">{fmt(Number(item.manualSellPrice || 0) * Number(item.quantity || 1))}</p>
-            </div>
-          </div>
-          {/* Supplier + taxable */}
+          {/* Qty + taxable */}
           <div className="grid grid-cols-2 gap-3">
-            <FieldInput label="Supplier 🔒" value={item.supplier} onChange={v => set('supplier', v)} placeholder="e.g. Acmeda" />
+            <FieldInput label="Qty" value={item.quantity} onChange={v => set('quantity', v)} type="number" placeholder="1" />
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Taxable</label>
               <button type="button" onClick={() => set('taxable', !item.taxable)}
@@ -562,6 +605,11 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
               </button>
             </div>
           </div>
+          {/* A part is bought and resold like anything else on the quote, so it
+              gets the same cost/margin panel. It only ever had a flat sell
+              price, which left every part invisible to the margin figures the
+              rest of the quote is judged on. */}
+          <PricingFields item={item} set={set} pricing={pricing} />
         </div>
       )}
 
@@ -679,41 +727,8 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
         </button>
 
         {showPricing && (
-          <div className="bg-slate-50 rounded-xl p-3 space-y-3">
-            {/* Cost inputs row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <FieldInput label="Material Cost 🔒" value={item.unitCostPrice} onChange={v => set('unitCostPrice', v)} type="number" placeholder="0.00" prefix="$" />
-              <FieldInput label="Labour Cost 🔒" value={item.labourCost} onChange={v => set('labourCost', v)} type="number" placeholder="0.00" prefix="$" />
-              <FieldInput label="Margin % 🔒" value={item.marginPercent} onChange={v => set('marginPercent', v)} type="number" placeholder="40" />
-              <FieldInput label="Supplier 🔒" value={item.supplier} onChange={v => set('supplier', v)} placeholder="e.g. Acmeda" />
-            </div>
-            {/* Sell price row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Calc. Sell Price</label>
-                <p className="text-sm text-slate-500 py-1.5">{fmt(calcSell)}</p>
-              </div>
-              <FieldInput label="Manual Sell Price (override)" value={item.manualSellPrice} onChange={v => set('manualSellPrice', v)} type="number" placeholder={`${fmt(calcSell)} (auto)`} prefix="$" />
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Final Sell (ea)</label>
-                <p className="text-sm font-bold text-slate-800 py-1.5">{fmt(finalSell)}</p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Line Total</label>
-                <p className="text-sm font-bold text-amber-700 py-1.5">{fmt(lineTotal)}</p>
-              </div>
-            </div>
-            {/* Per-line discount row (optional) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <FieldInput label="Discount %" value={item.discountPercent} onChange={v => { set('discountPercent', v); if (v) set('discountAmount', ''); }} type="number" placeholder="0" />
-              <FieldInput label="or Discount $ (each)" value={item.discountAmount} onChange={v => { set('discountAmount', v); if (v) set('discountPercent', ''); }} type="number" placeholder="0.00" prefix="$" />
-              {discountTotal > 0 && (
-                <div className="col-span-2 flex items-center gap-2 text-xs text-amber-700 pt-6">
-                  <span className="line-through text-slate-400">{fmt(preDiscountSell)}</span>
-                  <span className="font-semibold">− {fmt(discountTotal)} off this line</span>
-                </div>
-              )}
-            </div>
+          <div className="space-y-3">
+            <PricingFields item={item} set={set} pricing={pricing} />
             {/* Curtain cost calculator — the Excel workbook, inline. Shown on
                 every curtain line, measured or not: a line missing its drop is
                 the one that most needs to say so, and hiding the panel there
@@ -744,12 +759,6 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
               );
             })()}
 
-            {/* GP row */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pt-1.5 border-t border-slate-200">
-              <span className="text-xs text-slate-400">Cost: <span className="font-medium text-slate-600">{fmt(totalCost * (Number(item.quantity)||1))}</span></span>
-              <span className="text-xs text-slate-400">GP: <span className={`font-semibold ${grossProfit * (Number(item.quantity)||1) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(grossProfit * (Number(item.quantity)||1))}</span></span>
-              <span className="text-xs text-slate-400">GP%: <span className={`font-semibold ${gpPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{gpPercent.toFixed(1)}%</span></span>
-            </div>
           </div>
         )}
 
@@ -1196,7 +1205,7 @@ export default function QuoteBuilder() {
       description: si.description || '',
       unitCostPrice: si.unitCostPrice !== undefined ? si.unitCostPrice : '',
       labourCost: si.labourCost || '',
-      marginPercent: si.marginPercent !== undefined ? si.marginPercent : 40,
+      marginPercent: si.marginPercent !== undefined ? si.marginPercent : DEFAULT_MARGIN_PERCENT,
       manualSellPrice: si.manualSellPrice !== undefined ? si.manualSellPrice : '',
       customerNotes: si.notes || '',
       sortOrder: form.lineItems.length,
@@ -1214,7 +1223,7 @@ export default function QuoteBuilder() {
       description:         pi.description || '',
       unitCostPrice:       pi.costPrice ?? '',
       labourCost:          pi.labourCost ?? '',
-      marginPercent:       pi.marginPercent || 40,
+      marginPercent:       pi.marginPercent || DEFAULT_MARGIN_PERCENT,
       manualSellPrice:     sell,
       supplier:            pi.supplier || '',
       taxable:             pi.gstApplicable !== false,

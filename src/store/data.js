@@ -2157,6 +2157,16 @@ export const DEPOSIT_TYPES    = ['None', 'Fixed Amount', 'Percentage'];
  * If manualSellPrice is set (non-empty), it overrides the calculated sell price.
  * Returns per-unit figures plus lineTotal (finalSell × quantity).
  */
+/**
+ * The margin a new quote line starts on.
+ *
+ * One constant rather than a literal repeated at each place a line can be
+ * created — a new item, a part, a saved item, a priced-library item, a measure
+ * sheet import — because those drifting apart is how a quote ends up with two
+ * different house margins on it depending on where each line came from.
+ */
+export const DEFAULT_MARGIN_PERCENT = 42.5;
+
 export const calcItemPricing = (unitCostPrice, labourCost, marginPercent, manualSellPrice, quantity = 1, pricePerSqm = null, areaSqm = 0) => {
   const cost      = Number(unitCostPrice) || 0;
   const labour    = Number(labourCost)    || 0;

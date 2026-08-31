@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  ArrowLeft, Upload, Ruler, Crosshair, Hand, ZoomIn, ZoomOut, Maximize2,
+  Upload, Ruler, Crosshair, Hand, ZoomIn, ZoomOut, Maximize2,
   ChevronLeft, ChevronRight, Trash2, FileText, Loader2, AlertTriangle,
   Target, RefreshCw, Undo2, Redo2, Magnet, Square, Hash, MoreHorizontal,
   Copy, Download, History, CloudOff, CheckCircle2, DoorOpen, WifiOff,
@@ -13,6 +13,7 @@ import {
   applyTakeoffToMeasureSheet, takeoffRows, getProductTypes, addActivity,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
+import { useSidebar } from '../contexts/SidebarContext';
 import { toast } from '../components/ToastContainer';
 import {
   uploadTakeoffPlan, downloadTakeoffPlan, uploadTakeoffPhoto,
@@ -61,6 +62,12 @@ export default function JobTakeoff() {
   const { id: jobId } = useParams();
   const navigate = useNavigate();
   const { displayName = '' } = useProfile() || {};
+
+  // This page is a canvas with a panel either side of it — ask for the nav rail
+  // while it's open, and hand the sidebar back on the way out. Ignored entirely
+  // once the user has set the sidebar themselves, so it suggests and never argues.
+  const { requestRail } = useSidebar();
+  useEffect(() => requestRail(), [requestRail]);
 
   const job = getJob(jobId);
   const customer = job ? getCustomer(job.customerId) : null;
@@ -116,6 +123,17 @@ export default function JobTakeoff() {
   const clearLabelFocus = useCallback(() => setFocusLabel(null), []);
   const [menuOpen, setMenuOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Panel open/closed, remembered per device. Same `ui.` namespace as the
+  // sidebar rail — a view preference, deliberately outside the `lusso_` keys
+  // that get mirrored into the durable job-data store.
+  const [panelCollapsed, setPanelCollapsed] = useState(() => {
+    try { return localStorage.getItem('ui.takeoff.panel') === 'collapsed'; } catch { return false; }
+  });
+  const togglePanel = useCallback(() => setPanelCollapsed(v => {
+    const next = !v;
+    try { localStorage.setItem('ui.takeoff.panel', next ? 'collapsed' : 'open'); } catch { /* private mode */ }
+    return next;
+  }), []);
   // The key handler is bound once; a ref keeps it aware of the page count
   // without re-binding on every render.
   const pageCountRef = useRef(1);
@@ -1635,10 +1653,11 @@ export default function JobTakeoff() {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
+      {/* No back button of our own — the app shell already puts one in the top
+          bar on every page but the dashboard, and two arrows side by side in the
+          same corner is one arrow too many. The job is still reachable by name
+          below. */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white">
-        <button onClick={() => navigate(`/jobs/${jobId}`)} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-sm">
-          <ArrowLeft size={16} /> <span className="hidden sm:inline">Back to job</span>
-        </button>
         <div className="min-w-0">
           <h1 className="font-semibold text-slate-900 text-sm truncate flex items-center gap-2">
             <Ruler size={15} className="text-amber-500" /> Plan Takeoff
@@ -1646,7 +1665,16 @@ export default function JobTakeoff() {
               <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-semibold">r{takeoff.revision}</span>
             )}
           </h1>
-          <p className="text-xs text-slate-400 truncate">{customer?.name} · {job.jobNumber}</p>
+          <p className="text-xs text-slate-400 truncate">
+            {customer?.name} ·{' '}
+            <button
+              onClick={() => navigate(`/jobs/${jobId}`)}
+              className="hover:text-amber-600 hover:underline"
+              title="Open this job"
+            >
+              {job.jobNumber}
+            </button>
+          </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {!online && (
@@ -1736,50 +1764,44 @@ export default function JobTakeoff() {
         <div className="flex-1 flex min-h-0">
           {/* Plan stage */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
-            {/* Toolbar */}
+            {/* View bar — everything about LOOKING at the plan. Kept apart
+                from the tools so the row you reach for while drawing never
+                moves as the page or zoom changes. */}
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-100 bg-white overflow-x-auto">
-              {clientView ? (
-                <span className="text-xs text-slate-500 flex items-center gap-1.5 pr-2">
-                  <Eye size={13} className="text-slate-400" /> Client view — nothing here can be edited
-                </span>
-              ) : (
+              {!clientView && (
                 <>
-              <ToolBtn active={mode === 'pan'} onClick={() => { setMode('pan'); cancelDraft(); }} icon={Hand} label="Pan" hint="V" />
-              <ToolBtn active={mode === 'window'} onClick={() => { setMode('window'); cancelDraft(); }} icon={Square} label="Window" hint="W" disabled={!curScale} />
-              <ToolBtn active={mode === 'measure'} onClick={() => { setMode('measure'); cancelDraft(); }} icon={Ruler} label="Measure" hint="M" disabled={!curScale} />
-              <ToolBtn active={mode === 'chain'} onClick={() => { setMode('chain'); cancelDraft(); }} icon={Waypoints} label="Bay" hint="B" disabled={!curScale} />
-              <ToolBtn active={mode === 'arc'} onClick={() => { setMode('arc'); cancelDraft(); }} icon={Spline} label="Curve" hint="R" disabled={!curScale} />
-              <ToolBtn active={mode === 'count'} onClick={() => { setMode('count'); cancelDraft(); }} icon={Hash} label="Count" hint="C" />
-              <ToolBtn active={mode === 'calibrate'} onClick={() => { setMode('calibrate'); cancelDraft(); }} icon={Crosshair} label="Scale" hint="S" />
-
-              <div className="w-px h-5 bg-slate-200 mx-1" />
-              <IconBtn onClick={() => setSnapOn(v => !v)} active={snapOn} title={`${snapOn ? 'Snapping on — endpoints and linework' : 'Snapping off'} (G)`}><Magnet size={15} /></IconBtn>
-              <IconBtn onClick={() => setOrthoOn(v => !v)} active={orthoOn} title="Lock to horizontal / vertical (O, or hold Shift)">
-                <span className="text-[11px] font-bold px-0.5">90°</span>
-              </IconBtn>
-              <IconBtn onClick={undo} disabled={!historyCounts.past} title="Undo (⌘Z)"><Undo2 size={15} /></IconBtn>
-              <IconBtn onClick={redo} disabled={!historyCounts.future} title="Redo (⇧⌘Z)"><Redo2 size={15} /></IconBtn>
+                  <IconBtn onClick={undo} disabled={!historyCounts.past} title="Undo (⌘Z)"><Undo2 size={17} /></IconBtn>
+                  <IconBtn onClick={redo} disabled={!historyCounts.future} title="Redo (⇧⌘Z)"><Redo2 size={17} /></IconBtn>
+                  <div className="w-px h-5 bg-slate-200 mx-1" />
+                  <IconBtn onClick={() => setSnapOn(v => !v)} active={snapOn} title={`${snapOn ? 'Snapping on — endpoints and linework' : 'Snapping off'} (G)`}><Magnet size={17} /></IconBtn>
+                  <IconBtn onClick={() => setOrthoOn(v => !v)} active={orthoOn} title="Lock to horizontal / vertical (O, or hold Shift)">
+                    <span className="text-[11px] font-bold px-0.5">90°</span>
+                  </IconBtn>
+                  <div className="w-px h-5 bg-slate-200 mx-1" />
                 </>
               )}
 
-              <div className="w-px h-5 bg-slate-200 mx-1" />
-              <button onClick={() => zoomButton(1 / ZOOM_STEP)} className="p-1.5 rounded hover:bg-slate-100 text-slate-600" title="Zoom out (−)"><ZoomOut size={16} /></button>
+              <button onClick={() => zoomButton(1 / ZOOM_STEP)} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Zoom out (−)"><ZoomOut size={17} /></button>
               <span className="text-xs text-slate-500 tabular-nums w-12 text-center">{Math.round(view.scale * 100)}%</span>
-              <button onClick={() => zoomButton(ZOOM_STEP)} className="p-1.5 rounded hover:bg-slate-100 text-slate-600" title="Zoom in (+)"><ZoomIn size={16} /></button>
-              <button onClick={() => fitPage()} className="p-1.5 rounded hover:bg-slate-100 text-slate-600" title="Fit page (F)"><Maximize2 size={16} /></button>
+              <button onClick={() => zoomButton(ZOOM_STEP)} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Zoom in (+)"><ZoomIn size={17} /></button>
+              <button onClick={() => fitPage()} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Fit page (F)"><Maximize2 size={17} /></button>
 
               {pageCount > 1 && (
                 <>
                   <div className="w-px h-5 bg-slate-200 mx-1" />
-                  <button disabled={pageNumber <= 1} onClick={() => setPageNumber(p => Math.max(1, p - 1))} title="Previous page ([)" className="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronLeft size={16} /></button>
+                  <button disabled={pageNumber <= 1} onClick={() => setPageNumber(p => Math.max(1, p - 1))} title="Previous page ([)" className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronLeft size={17} /></button>
                   {/* keyed: a remount keeps the typed draft in step with the chevrons */}
                   <PageJump key={pageNumber} pageNumber={pageNumber} pageCount={pageCount} onGo={setPageNumber} />
-                  <button disabled={pageNumber >= pageCount} onClick={() => setPageNumber(p => Math.min(pageCount, p + 1))} title="Next page (])" className="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronRight size={16} /></button>
+                  <button disabled={pageNumber >= pageCount} onClick={() => setPageNumber(p => Math.min(pageCount, p + 1))} title="Next page (])" className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronRight size={17} /></button>
                 </>
               )}
 
               <div className="ml-auto flex items-center gap-2 pl-2 whitespace-nowrap">
-                {clientView ? null : curScale ? (
+                {clientView ? (
+                  <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <Eye size={13} className="text-slate-400" /> Client view — nothing here can be edited
+                  </span>
+                ) : curScale ? (
                   <button
                     onClick={() => setScaleDialog({})}
                     className="text-xs text-green-600 flex items-center gap-1 hover:underline"
@@ -1828,6 +1850,23 @@ export default function JobTakeoff() {
                 </span>
               )}
             </div>
+
+            {/* Tools down the left of the plan, stage to their right. The tool
+                you're using stays under the same thumb no matter how long the
+                view bar above gets. */}
+            <div className="flex-1 flex min-h-0">
+              {!clientView && (
+                <div className="flex-shrink-0 w-16 border-r border-slate-100 bg-white flex flex-col items-center gap-1 py-2 overflow-y-auto">
+                  <ToolBtn active={mode === 'pan'} onClick={() => { setMode('pan'); cancelDraft(); }} icon={Hand} label="Pan" hint="V" />
+                  <ToolBtn active={mode === 'window'} onClick={() => { setMode('window'); cancelDraft(); }} icon={Square} label="Window" hint="W" disabled={!curScale} />
+                  <ToolBtn active={mode === 'measure'} onClick={() => { setMode('measure'); cancelDraft(); }} icon={Ruler} label="Measure" hint="M" disabled={!curScale} />
+                  <ToolBtn active={mode === 'chain'} onClick={() => { setMode('chain'); cancelDraft(); }} icon={Waypoints} label="Bay" hint="B" disabled={!curScale} />
+                  <ToolBtn active={mode === 'arc'} onClick={() => { setMode('arc'); cancelDraft(); }} icon={Spline} label="Curve" hint="R" disabled={!curScale} />
+                  <ToolBtn active={mode === 'count'} onClick={() => { setMode('count'); cancelDraft(); }} icon={Hash} label="Count" hint="C" />
+                  <div className="w-8 h-px bg-slate-200 my-1" />
+                  <ToolBtn active={mode === 'calibrate'} onClick={() => { setMode('calibrate'); cancelDraft(); }} icon={Crosshair} label="Scale" hint="S" />
+                </div>
+              )}
 
             {/* Stage */}
             <div
@@ -1916,6 +1955,7 @@ export default function JobTakeoff() {
                 </div>
               )}
             </div>
+            </div>
 
             {/* Panel, collapsed under the plan — phones and iPads have no room
                 for the side panel, and it used to just vanish there. */}
@@ -1980,6 +2020,8 @@ export default function JobTakeoff() {
               exporting={!!busy}
               customerName={customer?.name}
               jobNumber={job?.jobNumber}
+              collapsed={panelCollapsed}
+              onToggleCollapsed={togglePanel}
             />
           ) : (
           <ItemPanel
@@ -2010,6 +2052,8 @@ export default function JobTakeoff() {
             focusSelectsAll={focusSelects}
             onLabelFocused={clearLabelFocus}
             photoBusyId={photoBusyId}
+            collapsed={panelCollapsed}
+            onToggleCollapsed={togglePanel}
           />
           )}
         </div>
@@ -2072,22 +2116,28 @@ export default function JobTakeoff() {
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
+/**
+ * One tool in the left-hand rail: icon over label, with its key in the corner.
+ *
+ * The label stays — at 12px it is still the fastest way to find "Bay" among
+ * seven glyphs — and the key rides in the corner rather than a tooltip, which
+ * is the difference between a shortcut people discover and one they don't.
+ */
 function ToolBtn({ active, onClick, icon: Icon, label, disabled, hint }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={disabled ? 'Set the scale first' : `${label}${hint ? ` (${hint})` : ''}`}
-      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 flex-shrink-0 ${
+      className={`relative w-12 py-1.5 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors disabled:opacity-40 flex-shrink-0 ${
         active ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-100'
       }`}
     >
-      <Icon size={14} /> <span className="hidden sm:inline">{label}</span>
-      {/* The key printed on the button, not hidden in a tooltip — that's the
-          difference between a shortcut people discover and one they don't. */}
+      <Icon size={17} />
+      <span className="text-[10px] font-medium leading-none">{label}</span>
       {hint && (
-        <kbd className={`hidden md:inline text-[9px] font-semibold leading-none px-1 py-0.5 rounded border ${
-          active ? 'border-white/40 text-white/80' : 'border-slate-200 text-slate-400'
+        <kbd className={`absolute top-0.5 right-1 text-[8px] font-semibold leading-none ${
+          active ? 'text-white/70' : 'text-slate-300'
         }`}>
           {hint}
         </kbd>
@@ -2102,7 +2152,7 @@ function IconBtn({ active, disabled, onClick, title, children }) {
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`p-1.5 rounded flex-shrink-0 disabled:opacity-30 transition-colors ${
+      className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 disabled:opacity-30 transition-colors ${
         active ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
       }`}
     >

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Collapsing the main navigation to an icon rail.
@@ -12,14 +12,24 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
  *   • `collapsed`  — is the rail on
  *   • `manual`     — has the user ever chosen for themselves
  *
- * A page can ask for the rail on entry (`autoCollapse`), but only until someone
- * expresses a preference. After that their choice wins everywhere, forever —
- * a layout that keeps re-deciding itself against you is worse than one that
- * never helps.
+ * A canvas page can ask for the rail while it is open (`requestRail`), but that
+ * request is TRANSIENT — it is never written to storage and it unwinds when you
+ * leave the page. Opening one plan should not silently collapse the navigation
+ * on every other screen for the rest of time.
+ *
+ * The moment the user works the toggle themselves it becomes `manual`: their
+ * choice is stored, applies everywhere, and pages stop asking. A layout that
+ * keeps re-deciding itself against you is worse than one that never helps.
  */
 
-const COLLAPSED_KEY = 'lusso_sidebar_collapsed';
-const MANUAL_KEY    = 'lusso_sidebar_manual';
+// Deliberately NOT `lusso_`-prefixed. `initDurableStore` mirrors every
+// `lusso_` key into IndexedDB and restores it if localStorage ever loses it —
+// that machinery exists to protect unsynced on-site job data, and sweeping a
+// chrome preference into it means the preference outlives being cleared and
+// rides along with the business records. This is a view setting; it belongs to
+// the device and nothing else.
+const COLLAPSED_KEY = 'ui.sidebar.collapsed';
+const MANUAL_KEY    = 'ui.sidebar.manual';
 const DESKTOP_QUERY = '(min-width: 1024px)';   // Tailwind's `lg`
 
 const read = (key) => {
@@ -34,6 +44,10 @@ const SidebarCtx = createContext(null);
 export function SidebarProvider({ children }) {
   const [collapsed, setCollapsedState] = useState(() => read(COLLAPSED_KEY));
   const [manual, setManual] = useState(() => read(MANUAL_KEY));
+  // Read by `requestRail`, which must know the CURRENT value to restore it and
+  // can't depend on `collapsed` without re-firing every page's effect.
+  const collapsedRef = useRef(collapsed);
+  useEffect(() => { collapsedRef.current = collapsed; }, [collapsed]);
 
   // Below `lg` the sidebar is already an off-canvas drawer with a bottom nav,
   // so the rail must not apply there — it would collapse the drawer itself.
@@ -61,13 +75,18 @@ export function SidebarProvider({ children }) {
   const toggle = useCallback(() => setCollapsed(!collapsed), [collapsed, setCollapsed]);
 
   /**
-   * A canvas-heavy page asking for the rail as it opens. Silently ignored once
-   * the user has set the sidebar themselves.
+   * A canvas-heavy page asking for the rail while it is open.
+   *
+   * Returns the undo, so `useEffect(() => requestRail(), [requestRail])` puts
+   * the sidebar back on the way out. Silently inert once the user has set the
+   * sidebar themselves — including if they set it WHILE the page is open, which
+   * is why the undo re-checks rather than trusting the flag it captured.
    */
-  const autoCollapse = useCallback((want = true) => {
-    if (read(MANUAL_KEY)) return;
-    setCollapsedState(want);
-    write(COLLAPSED_KEY, want);
+  const requestRail = useCallback(() => {
+    if (read(MANUAL_KEY)) return () => {};
+    const previous = collapsedRef.current;
+    setCollapsedState(true);
+    return () => { if (!read(MANUAL_KEY)) setCollapsedState(previous); };
   }, []);
 
   // ⌘\ / Ctrl+\ — a modifier chord, because the takeoff has claimed most of
@@ -92,8 +111,8 @@ export function SidebarProvider({ children }) {
     manual,
     setCollapsed,
     toggle,
-    autoCollapse,
-  }), [collapsed, isDesktop, manual, setCollapsed, toggle, autoCollapse]);
+    requestRail,
+  }), [collapsed, isDesktop, manual, setCollapsed, toggle, requestRail]);
 
   return <SidebarCtx.Provider value={value}>{children}</SidebarCtx.Provider>;
 }
@@ -101,5 +120,5 @@ export function SidebarProvider({ children }) {
 /** Safe outside the provider (public quote page, login) — returns inert defaults. */
 export const useSidebar = () => useContext(SidebarCtx) || {
   rail: false, collapsed: false, isDesktop: true, manual: false,
-  setCollapsed: () => {}, toggle: () => {}, autoCollapse: () => {},
+  setCollapsed: () => {}, toggle: () => {}, requestRail: () => () => {},
 };
