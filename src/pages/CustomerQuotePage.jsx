@@ -349,6 +349,10 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const selectableIds = [...optionalItems, ...choiceItems].map(li => li.id);
   const selectedCount = selectableIds.filter(sid => selectedOptionals.includes(sid)).length;
   const selectedLabel = `${selectedCount} of ${selectableIds.length}`;
+  // A quote with nothing to add and nothing to choose between should not talk
+  // about options at all — "0 of 0" and an invitation to toggle things read as
+  // though something is missing from the page.
+  const hasOptions = selectableIds.length > 0;
 
   // Summary rows — reconcile per-line + quote-level discounts.
   const activeItems = items.filter(isSelected);
@@ -491,14 +495,19 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4, fontWeight: 500, color: on || fixed ? T.ink : T.graphite, textWrap: 'pretty' }}>{item.displayName || item.productNameSnapshot || 'Window treatment'}</p>
           {desc && <p style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.7, color: T.stone, textWrap: 'pretty' }}>{desc}</p>}
           {meta && <p style={{ margin: '4px 0 0', fontSize: 12, lineHeight: 1.6, color: T.stone }}>{meta}</p>}
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 12, padding: '5px 10px 5px 8px', borderRadius: 999,
-            fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase',
-            background: on && !fixed ? T.ink : 'transparent', border: on && !fixed ? 'none' : `0.5px solid ${T.mist}`, color: on && !fixed ? T.paper : T.stone,
-          }}>
-            <span style={{ width: 5, height: 5, borderRadius: 999, display: 'block', background: on && !fixed ? T.bronze : T.mist }} />
-            <span>{fixed ? 'Included' : (on ? 'Selected' : 'Not selected')}</span>
-          </div>
+          {/* Only lines the customer can act on carry a state pill. Stamping
+              "Included" on every fixed line said the same thing the whole page
+              already says, once per row. */}
+          {!fixed && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 12, padding: '5px 10px 5px 8px', borderRadius: 999,
+              fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase',
+              background: on ? T.ink : 'transparent', border: on ? 'none' : `0.5px solid ${T.mist}`, color: on ? T.paper : T.stone,
+            }}>
+              <span style={{ width: 5, height: 5, borderRadius: 999, display: 'block', background: on ? T.bronze : T.mist }} />
+              <span>{on ? 'Selected' : 'Not selected'}</span>
+            </div>
+          )}
         </div>
         {/* marginLeft:auto keeps the price hard right both inline on desktop and
             on its own wrapped line on a phone, where it used to float mid-card
@@ -606,11 +615,15 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           <div style={{ borderTop: `2px solid ${T.bronze}`, paddingTop: 16, maxWidth: '60ch' }}>
             <h2 style={{ margin: 0, fontWeight: 300, fontSize: 21, letterSpacing: '-0.3px', color: T.ink }}>Your options</h2>
             <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.7, color: T.graphite }}>
-              Everything below is quoted for your rooms. Toggle the pieces you want, or choose between treatments where we have offered alternatives — your total updates as you go.{quote.includesGST ? ' Prices exclude GST.' : ''}
+              Everything below is quoted for your rooms.{hasOptions ? ' Toggle the pieces you want, or choose between treatments where we have offered alternatives — your total updates as you go.' : ''}{quote.includesGST ? ' Prices exclude GST.' : ''}
             </p>
           </div>
 
-          {rooms.map(({ room, entries }) => (
+          {rooms.map(({ room, entries }) => {
+            // "Optional — add if you want it" on three optionals in a row said
+            // it three times. Label the start of a run, not every line in it.
+            let lastEyebrow = '';
+            return (
             <section key={room} style={{ marginTop: 38 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
                 <h3 style={h3}>{room}</h3>
@@ -625,9 +638,13 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                       {entry.blocks.map(block => {
                         const isChoice = block.kind === 'choice';
                         const anyPicked = block.items.some(i => selectedOptionals.includes(i.id));
+                        // A choice block always keeps its label — each one is
+                        // a separate decision, even back to back.
+                        const showEyebrow = !!block.eyebrow && (isChoice || block.eyebrow !== lastEyebrow);
+                        lastEyebrow = block.eyebrow;
                         return (
                           <div key={block.key} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            {block.eyebrow && (
+                            {showEyebrow && (
                               <Eyebrow color={isChoice ? T.bronze : T.stone} dash={isChoice ? T.bronze : T.stone}>{block.eyebrow}</Eyebrow>
                             )}
                             <div style={isChoice
@@ -649,7 +666,8 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                 ))}
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
 
         {quote.planSnapshot?.pages?.length > 0 && (
@@ -662,10 +680,12 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         <div style={{ ...container, padding: '40px 22px 0' }} ref={tailRef}>
           <section style={{ ...card, padding: 22 }}>
             <Eyebrow>Summary</Eyebrow>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, marginTop: 16 }}>
-              <span style={{ fontSize: 14 }}>Options selected</span>
-              <span style={{ fontSize: 14, fontWeight: 500, color: T.ink }}>{selectedLabel}</span>
-            </div>
+            {hasOptions && (
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, marginTop: 16 }}>
+                <span style={{ fontSize: 14 }}>Options selected</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: T.ink }}>{selectedLabel}</span>
+              </div>
+            )}
             <hr style={hairline} />
             <div style={{ display: 'grid', gap: 12 }}>
               {summaryRows.map((r, i) => (
@@ -793,7 +813,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginTop: 22, paddingTop: 20, borderTop: `0.5px solid ${T.borderInverse}` }}>
                   <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Accepted total</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{money(totals.total)}</p></div>
-                  <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Options</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{selectedLabel}</p></div>
+                  {hasOptions && <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Options</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{selectedLabel}</p></div>}
                   <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Accepted</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{fmtDate(new Date())}</p></div>
                 </div>
               </div>
@@ -905,7 +925,9 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                     <span style={{ fontSize: 11, color: unansweredRequired.length ? T.bronze : T.stone, whiteSpace: 'nowrap' }}>
                       {unansweredRequired.length
                         ? `${unansweredRequired.length} choice${unansweredRequired.length > 1 ? 's' : ''} still to make`
-                        : `${selectedLabel} options${quote.includesGST ? ' · incl. GST' : ''}`}
+                        : hasOptions
+                          ? `${selectedLabel} options${quote.includesGST ? ' · incl. GST' : ''}`
+                          : (quote.includesGST ? 'incl. GST' : `${items.length} item${items.length === 1 ? '' : 's'}`)}
                     </span>
                     <span style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.bronze, whiteSpace: 'nowrap' }}>{expanded ? 'Hide ▲' : 'Breakdown ▼'}</span>
                   </div>

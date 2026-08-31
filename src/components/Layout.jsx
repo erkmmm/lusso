@@ -5,8 +5,7 @@ import {
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, UserCog, Users2, Inbox, ArrowLeft,
-  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks,
-} from 'lucide-react';
+  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
   getCustomers, getJobs, getQuotes, getInstallRequests,
@@ -17,6 +16,7 @@ import RouteErrorBoundary from './ErrorBoundary';
 import PushPrompt from './PushPrompt';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfile } from '../contexts/UserProfileContext';
+import { useSidebar } from '../contexts/SidebarContext';
 import { LogOut } from 'lucide-react';
 import { formatDistanceToNow, parseISO, isSameDay } from 'date-fns';
 
