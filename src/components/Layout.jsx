@@ -7,7 +7,7 @@ import {
   ChevronDown, Home, UserCog, Users2, Inbox, ArrowLeft,
   Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
-  getNotifications, markNotificationRead, markAllNotificationsRead,
+  getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
 } from '../store/data';
 import { getEmployeeCountSync } from '../store/profiles';
@@ -310,8 +310,7 @@ export default function Layout() {
     markNotificationRead(n.id);
     setNotifs(getNotifications());
     setNotifOpen(false);
-    if (n.link) navigate(n.link);
-    else if (n.jobId) navigate(`/jobs/${n.jobId}`);
+    navigate(notificationLink(n));
   };
 
   const handleMarkAllRead = () => {

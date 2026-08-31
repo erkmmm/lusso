@@ -2061,6 +2061,42 @@ export const getNotifications = () =>
 
 export const getUnreadNotifications = () => getNotifications().filter(n => !n.isRead);
 
+/**
+ * Where a notification takes you when it's tapped — on the bell or on a push.
+ *
+ * `link` is what the DB writes and is always preferred. It used to be the only
+ * thing consulted, and track_quote_event was the one notification source that
+ * never set it, so a quote opening landed you on its job at best — and on the
+ * rows with no job either, tapping it did nothing whatsoever.
+ *
+ * Everything below `link` is a floor, not a routing table: it exists so that no
+ * notification is ever a dead tap, including old rows and any type added later
+ * that forgets to set a link. Landing somewhere adjacent and useful beats
+ * landing nowhere.
+ */
+export const notificationLink = (n) => {
+  if (!n) return '/today';
+  if (n.link) return n.link;
+  const job = n.jobId ? `/jobs/${n.jobId}` : null;
+  switch (n.type) {
+    // The quote itself is the point; its job is the next best thing.
+    case 'quote_first_opened':
+    case 'quote_viewed':
+    case 'quote_accepted':
+    case 'quote_declined':   return job || '/quotes';
+    case 'comm_inbound':
+    case 'web_enquiry':      return '/inbox';
+    case 'install_accepted':
+    case 'install_declined':
+    case 'needs_booking':    return job || '/calendar';
+    case 'review_ready':     return job || '/reviews';
+    case 'task_assigned':
+    case 'task_due':
+    case 'morning_brief':    return '/today';
+    default:                 return job || '/today';
+  }
+};
+
 export const addNotification = ({ jobId, installRequestId, type, title, message }) => {
   const list = getNotifications();
   list.unshift({

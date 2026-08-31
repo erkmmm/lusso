@@ -72,7 +72,11 @@ Deno.serve(async (req: Request) => {
       title: n.title,
       body: n.body ?? "",
       tag: n.id ?? n.type ?? "lusso",
-      url: n.link || (n.jobId ? `/jobs/${n.jobId}` : "/"),
+      // Mirrors notificationLink() in src/store/data.js: `link` is what the DB
+      // writes and is always preferred, the job is the next best thing, and
+      // /today is a floor so a tap is never wasted. It used to fall back to "/",
+      // which dropped you on the dashboard with no idea what had just buzzed.
+      url: n.link || (n.jobId ? `/jobs/${n.jobId}` : "/today"),
       type: n.type ?? "",
     })
 
