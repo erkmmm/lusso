@@ -8,7 +8,7 @@ import {
   AlertTriangle, Sun, Moon, Monitor, Clock, Wifi, WifiOff,
   Link2, Link2Off, ExternalLink, Building2, Loader, Bot, Trash2,
   MessageSquare, Database, Zap, ClipboardList, FileDown, Bell, BellOff, Smartphone,
-  Calculator, RotateCcw,
+  Calculator, RotateCcw, Type,
 } from 'lucide-react';
 import { useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -17,6 +17,7 @@ import { useProfile } from '../contexts/UserProfileContext';
 import {
   getProductTypes, saveProductType, addProductType, reorderProductType,
   MS_SPEC_FIELDS, getTypeSpecKeys, getMsOptions,
+  getOperationWords, setOperationWord, OPERATION_TYPE_OPTIONS,
   getMessagePresets, saveMessagePresets, DEFAULT_MESSAGE_PRESETS,
   getPoPresets, savePoPreset, deletePoPreset,
   MS_OPTION_FIELDS, getMsCustomOptions, addMsOption, deleteMsOption,
@@ -195,6 +196,7 @@ export default function Settings() {
       { id: 'general',      label: 'General',        icon: Sun,           desc: 'Appearance' },
       { id: 'quote',        label: 'Quote & Brand',  icon: FileText,      desc: 'Customer quote details' },
       { id: 'messages',     label: 'Messages',       icon: MessageSquare, desc: 'Email & SMS presets' },
+      { id: 'wording',      label: 'Quote Wording',  icon: Type,          desc: 'How specs read to customers' },
     ]},
     { label: 'Catalogue', items: [
       { id: 'products',     label: 'Product Types',  icon: Tag,           desc: 'Types & their specs' },
@@ -632,6 +634,8 @@ export default function Settings() {
           </>)}
 
           {/* ── MEASURE SHEET ── */}
+          {section === 'wording' && <QuoteWordingSection />}
+
           {section === 'measure' && <MeasureSheetOptionsSection />}
 
           {section === 'exports' && <BuzExportSection />}
@@ -1332,6 +1336,93 @@ function TypeOptionEditor({ pt, onChange }) {
 }
 
 // ─── Measure Sheet dropdown options ───────────────────────────────────────────
+/**
+ * How each operation / track type reads on a customer's quote.
+ *
+ * The quote used to say "Curtain", which is true and tells the customer
+ * nothing — what they are buying is a wand operated reverse pleat sheer
+ * curtain. The heading and fabric are already words; the operation is a trade
+ * code (KAW, MKH, Oslo 84) that only means something in the workroom. This is
+ * where those get their plain-English half.
+ *
+ * A code left blank is deliberately silent: the title simply omits the
+ * operation rather than printing a guess.
+ */
+function QuoteWordingSection() {
+  useDataRefresh();
+  const [words, setWords] = useState(getOperationWords);
+  const [drafts, setDrafts] = useState({});
+
+  // Everything the Operation Type dropdown can produce — the built-in list plus
+  // anything added in Settings → Measure Sheet, and any per-product overrides,
+  // so a code can never exist on a line without a row here to name it.
+  const productTypes = getProductTypes();
+  const codes = [...new Set([
+    ...OPERATION_TYPE_OPTIONS,
+    ...getMsOptions('operationType'),
+    ...productTypes.flatMap(pt => pt?.options?.operationType || []),
+  ].map(c => String(c).trim()).filter(Boolean))];
+
+  const keyOf = (code) => code.toLowerCase().replace(/\s+/g, ' ');
+  const valueFor = (code) => {
+    const k = keyOf(code);
+    return drafts[k] !== undefined ? drafts[k] : (words[k] || '');
+  };
+
+  const commit = (code) => {
+    const k = keyOf(code);
+    if (drafts[k] === undefined) return;
+    setOperationWord(code, drafts[k]);
+    setWords(getOperationWords());
+    setDrafts(d => { const n = { ...d }; delete n[k]; return n; });
+    toast('Wording saved.');
+  };
+
+  const named = codes.filter(c => (words[keyOf(c)] || '').trim()).length;
+
+  return (
+    <Card className="p-5">
+      <div className="mb-4">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Type size={15} className="text-amber-500" /> Quote Wording
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          What each operation type is called on the customer&rsquo;s quote. &ldquo;KAW&rdquo; becomes
+          &ldquo;wand operated&rdquo;, so the line reads <em>Wand operated reverse pleat sheer curtain</em> instead of
+          just <em>Curtain</em>. Leave one blank to keep it off the quote entirely.
+        </p>
+        <p className="text-xs text-slate-400 mt-1.5">{named} of {codes.length} named.</p>
+      </div>
+
+      <div className="border border-slate-200 rounded-xl divide-y divide-slate-100">
+        {codes.map(code => {
+          const k = keyOf(code);
+          const dirty = drafts[k] !== undefined && drafts[k] !== (words[k] || '');
+          return (
+            <div key={code} className="flex flex-wrap items-center gap-3 p-3">
+              <span className="text-sm font-medium text-slate-700 w-44 flex-shrink-0">{code}</span>
+              <span className="text-slate-300 flex-shrink-0"><ArrowRight size={13} /></span>
+              <input
+                value={valueFor(code)}
+                onChange={e => setDrafts(d => ({ ...d, [k]: e.target.value }))}
+                onBlur={() => commit(code)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+                placeholder="not shown on the quote"
+                className="flex-1 min-w-[180px] border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+              {dirty && <span className="text-[11px] text-amber-600 flex-shrink-0">unsaved</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-slate-400 mt-3">
+        Applies when the quote is saved. Lines whose product name was written by hand are left exactly as typed.
+      </p>
+    </Card>
+  );
+}
+
 function MeasureSheetOptionsSection() {
   useDataRefresh();
   const [drafts, setDrafts] = useState({});

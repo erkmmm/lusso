@@ -15,6 +15,7 @@ import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
+  getOperationWords,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
   computeQuoteTotals, linePricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
@@ -26,6 +27,9 @@ import Card from '../components/Card';
 import CurtainCostPanel from '../components/CurtainCostPanel';
 import { isCurtainProduct, autoCostCurtainLine } from '../lib/curtainCalc';
 import { quoteSections } from '../lib/quoteSections';
+import { nextRoomLabel, splitRoomLabel, capitaliseRoom } from '../lib/roomNaming';
+import { describeLine } from '../lib/describeLine';
+
 import CustomerQuotePage from './CustomerQuotePage';
 import { deliverQuote } from '../lib/quoteDelivery';
 import { captureQuotePlan, removeQuotePlan, snapshotIsStale } from '../lib/quotePlanSnapshot';
@@ -426,7 +430,7 @@ function Section({ title, icon: Icon, children, defaultOpen = true }) {
 
 // ─── LineItemCard ─────────────────────────────────────────────────────────────
 
-function LineItemCard({ item, productTypes, onChange, onRemove, canRemove, isExpanded, onToggle, inBlock }) {
+function LineItemCard({ item, productTypes, operationWords, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock }) {
   const [showSpecs, setShowSpecs] = useState(false);
   const [showPricing, setShowPricing] = useState(true);
 
@@ -473,7 +477,7 @@ function LineItemCard({ item, productTypes, onChange, onRemove, canRemove, isExp
         {/* Title + customer-facing description, as the customer will read it */}
         <div className="flex-1 min-w-0">
           <span className="text-sm font-semibold text-slate-800 block">
-            {item.productNameSnapshot || <span className="text-slate-400 font-normal">New item — no product yet</span>}
+            {describeLine(item, productTypes, operationWords) || <span className="text-slate-400 font-normal">New item — no product yet</span>}
           </span>
           {desc && <span className="text-xs text-slate-500 leading-relaxed block mt-0.5">{desc}</span>}
           {meta && <span className="text-xs text-slate-400 block mt-0.5">{meta}</span>}
@@ -498,6 +502,14 @@ function LineItemCard({ item, productTypes, onChange, onRemove, canRemove, isExp
           {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
         {/* Remove button — stop propagation so it doesn't toggle */}
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onDuplicate(item.id); }}
+          className="text-slate-300 hover:text-amber-500 transition-colors flex-shrink-0 p-1"
+          title="Duplicate this item"
+        >
+          <Copy size={14} />
+        </button>
         {canRemove && (
           <button
             type="button"
@@ -571,7 +583,9 @@ function LineItemCard({ item, productTypes, onChange, onRemove, canRemove, isExp
         </div>
         {/* Row 1: Location + Product */}
         <div className="grid grid-cols-2 gap-3">
-          <DeferredInput label="Location / Room" value={item.location} onCommit={v => set('location', v)} placeholder="e.g. Master Bedroom — or Bed 2 A, Bed 2 B" />
+          <DeferredInput label="Location / Room" value={item.location}
+            onCommit={v => set('location', capitaliseRoom(v))}
+            placeholder="e.g. Master Bedroom — or Bed 2 A, Bed 2 B" />
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Product</label>
             <PricedItemPicker
@@ -894,6 +908,9 @@ export default function QuoteBuilder() {
 
   const settings      = getQuoteSettings();
   const productTypes  = getActiveProductTypes();
+  // Read once per render rather than per line — describeLine is called for
+  // every row's header, and this is a localStorage parse.
+  const operationWords = getOperationWords();
   const customers     = getCustomers();
   // Active salespeople from Supabase — pending/suspended users never appear here
   const { salespeople: staff } = useActiveSalespeople();
@@ -1115,6 +1132,58 @@ export default function QuoteBuilder() {
     expandItem(newItem.id); // auto-expand the new item so it's ready to fill in
   };
 
+  /**
+   * Duplicate a line, in place, as the next window in its room.
+   *
+   * A plain copy would land under the SAME letter as its original — which the
+   * quote reads as two treatments on one window, not two windows. So a normal
+   * line takes the next free letter in its room ("Bed 2 A" → "Bed 2 B"), which
+   * is what duplicating a window actually means. Alternatives and parts keep
+   * their location: another option for window B is still window B.
+   */
+  const duplicateLineItem = (itemId) => {
+    setForm(f => {
+      const idx = f.lineItems.findIndex(li => li.id === itemId);
+      if (idx < 0) return f;
+      const src = f.lineItems[idx];
+      const copy = { ...src, id: uuidv4() };
+      // The copy is a new window, not the one that was measured — keeping the
+      // link would have two quote lines claiming the same measure-sheet item.
+      copy.measureSheetLineItemId = null;
+      copy.sourceMeasureSheetItemId = null;
+
+      // Only re-letter where the room already uses letters. Lettering a room
+      // that does not would rename every line in it — including the "choose
+      // one" options and the optional extras, which are not windows and must
+      // not take window letters. Left bare, the copy simply shows as the next
+      // item in the room, which is already correct.
+      const { letter } = splitRoomLabel(src.location || '');
+      if (letter && src.type !== 'Multiple Choice' && src.type !== 'Part') {
+        const { room } = splitRoomLabel(src.location || '');
+        if (room) {
+          const existing = f.lineItems.map(li => ({ id: li.id, label: li.location || '' }));
+          const { label, renames } = nextRoomLabel(room, existing);
+          copy.location = label;
+          // nextRoomLabel may need to retro-letter a bare first window: the
+          // moment a room has two, neither is "the" one any more.
+          if (renames.length) {
+            // A plain object, not a Map: lucide-react's `Map` icon is imported
+            // into this module and shadows the global, so `new Map()` here
+            // constructs a React component and throws.
+            const byId = Object.fromEntries(renames.map(r => [r.id, r.to]));
+            f = { ...f, lineItems: f.lineItems.map(li => byId[li.id] ? { ...li, location: byId[li.id] } : li) };
+          }
+        }
+      }
+
+      const items = [...f.lineItems];
+      items.splice(idx + 1, 0, copy);
+      // Renumber so the copy sorts immediately after its original rather than
+      // inheriting a duplicate sortOrder and landing wherever ties fall.
+      return { ...f, lineItems: items.map((li, i) => ({ ...li, sortOrder: i })) };
+    });
+  };
+
   const removeLineItem = (itemId) => {
     setForm(f => ({ ...f, lineItems: f.lineItems.filter(li => li.id !== itemId) }));
   };
@@ -1243,13 +1312,20 @@ export default function QuoteBuilder() {
     setSaving(true);
     try {
       let q;
+      // Stamp the customer-facing name onto every line before it is stored.
+      // The public quote page has no product-type list to compose one from —
+      // a customer's browser has no localStorage copy — so the name is
+      // snapshotted here alongside productNameSnapshot, for the same reason.
+      const saveForm = { ...form, lineItems: form.lineItems.map(li => ({
+        ...li, displayName: describeLine(li, productTypes, operationWords),
+      })) };
       if (isEdit) {
         const now = new Date().toISOString();
-        saveQuote({ ...form, updatedAt: now });
+        saveQuote({ ...saveForm, updatedAt: now });
         addQuoteActivity(form.id, 'edited', 'Quote updated', form.salesperson || 'Admin');
         q = getQuote(form.id);
       } else {
-        q = createQuote({ ...form, status: 'Draft' });
+        q = createQuote({ ...saveForm, status: 'Draft' });
       }
       if (andSend && q) {
         // Email first, mark Sent second — deliverQuote enforces that order, so
@@ -1339,7 +1415,9 @@ export default function QuoteBuilder() {
     }
     // A snapshot of the form as it stands — unsaved edits included, and
     // nothing is written or sent until Send is pressed at the bottom.
-    setSendPreview({ ...form, lineItems: form.lineItems.map(li => ({ ...li })) });
+    setSendPreview({ ...form, lineItems: form.lineItems.map(li => ({
+      ...li, displayName: describeLine(li, productTypes, operationWords),
+    })) });
   };
 
   const handlePreview = async () => {
@@ -1896,8 +1974,10 @@ export default function QuoteBuilder() {
                                     key={item.id}
                                     item={item}
                                     productTypes={productTypes}
+                                    operationWords={operationWords}
                                     onChange={setLineItem}
                                     onRemove={removeLineItem}
+                                    onDuplicate={duplicateLineItem}
                                     canRemove={form.lineItems.length > 0}
                                     isExpanded={expandedItems.has(item.id)}
                                     onToggle={() => toggleItem(item.id)}

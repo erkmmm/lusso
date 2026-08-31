@@ -11,7 +11,11 @@
  * they typed it — renaming under the cursor would be maddening.
  */
 
-const SUFFIX_RE = /^(.*?)\s+([A-Z]{1,2})$/;
+// Case-insensitive on purpose. New labels are always written uppercase, but
+// plenty were typed by hand as "North bed 2 a" — and both splitting a room
+// apart and extending its series have to recognise those, or a lowercase room
+// silently starts a second parallel series alongside the one already there.
+const SUFFIX_RE = /^(.*?)\s+([A-Za-z]{1,2})$/;
 const norm = (s) => (s || '').trim().replace(/\s+/g, ' ');
 const key = (s) => norm(s).toLowerCase();
 
@@ -67,10 +71,14 @@ export function nextRoomLabel(base, existing = []) {
   // Highest letter in play, so a re-added window doesn't reuse a retired one.
   const highest = suffixed.reduce((max, e) => Math.max(max, e.index), -1);
 
-  // The room had exactly one, unsuffixed. It becomes A; the new one is B.
+  // The room had unsuffixed ones. They become A, B, C…; the new one takes the
+  // letter after them. `letterAt(1)` was hard-coded here, which was right for
+  // the single-bare case the takeoff produces and collided with the second
+  // entry for any other — a caller with three bare lines got a fourth also
+  // called B.
   if (bare.length && !suffixed.length) {
     return {
-      label: `${b} ${letterAt(1)}`,
+      label: `${b} ${letterAt(bare.length)}`,
       renames: bare.map((e, i) => ({ id: e.id, to: `${b} ${letterAt(i)}` })),
     };
   }
@@ -91,19 +99,28 @@ export function nextRoomLabel(base, existing = []) {
  *
  * Returns `letter: ''` when there is no suffix to take.
  */
-// Reading is deliberately laxer than writing: `nextRoomLabel` only ever emits
-// uppercase, but plenty of locations were typed by hand as "North bed 2 a",
-// and a quote that grouped "… A" but not "… a" would be worse than useless.
-const READ_SUFFIX_RE = /^(.*?)\s+([A-Za-z]{1,2})$/;
-
 export function splitRoomLabel(label) {
   const raw = norm(label);
-  const m = raw.match(READ_SUFFIX_RE);
+  const m = raw.match(SUFFIX_RE);
   if (!m) return { room: raw, letter: '', index: -1 };
   const index = indexOfLetter(m[2]);
   if (index < 0 || !norm(m[1])) return { room: raw, letter: '', index: -1 };
   return { room: norm(m[1]), letter: m[2].toUpperCase(), index };
 }
+
+/**
+ * Capitalise a room's first letter, leave everything else alone.
+ *
+ * Rooms are typed in a hurry on site — "north master northeast", "butlers
+ * pantry" — and then printed on a quote the customer reads. Only the first
+ * letter is touched: title-casing the lot would fight names that are
+ * deliberately cased ("Bed 2 A", "TV room") and there is no way to tell those
+ * from a typo.
+ */
+export const capitaliseRoom = (s) => {
+  const t = norm(s);
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+};
 
 /** "Bed 5" + "B" → "Bed 5 B". The inverse of `splitRoomLabel`, for POs etc. */
 export const formatRoomRef = (room, ref) => (ref ? `${norm(room)} ${ref}` : norm(room));
@@ -156,7 +173,7 @@ export function groupByRoom(items = [], opts = {}) {
     const rk = roomKeyOf(p);
     let room = byRoom.get(rk);
     if (!room) {
-      room = { room: p.split.letter ? p.split.room : p.full, entries: [], byKey: new Map() };
+      room = { room: capitaliseRoom(p.split.letter ? p.split.room : p.full), entries: [], byKey: new Map() };
       byRoom.set(rk, room);
     }
     // The letter IS the window's identity, so everything carrying it lands in

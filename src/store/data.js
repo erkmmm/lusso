@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { removeTakeoffPlans, removeTakeoffPhotos } from '../lib/takeoffStorage';
 import { removeQuotePlan } from '../lib/quotePlanStorage';
 import { mergeCurtainRates } from '../lib/curtainCalc';
+import { OPERATION_WORDS, operationKey } from '../lib/describeLine';
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -3028,6 +3029,38 @@ export const googleReviewsLink = (settings = {}) => {
   if (settings.googleReviewsUrl) return settings.googleReviewsUrl;
   const id = /placeid=([^&]+)/.exec(settings.googleReviewUrl || '')?.[1];
   return id ? `https://search.google.com/local/reviews?placeid=${id}` : '';
+};
+
+/**
+ * How each operation / track type reads on a customer's quote.
+ *
+ * Built-in defaults, overridden by whatever is set in Settings → Quote Wording.
+ * Kept in the quote-settings blob so it syncs to the team the same way the
+ * business details do — every quote should describe a KAW track the same way,
+ * whoever wrote it.
+ *
+ * An empty string is a deliberate "say nothing", and is honoured: it removes a
+ * built-in default rather than falling back to it.
+ */
+export const getOperationWords = () => {
+  const saved = getQuoteSettings().operationWords || {};
+  const merged = { ...OPERATION_WORDS };
+  Object.entries(saved).forEach(([code, phrase]) => {
+    const key = operationKey(code);
+    if (!key) return;
+    const v = String(phrase ?? '').trim();
+    if (v) merged[key] = v; else delete merged[key];
+  });
+  return merged;
+};
+
+/** Save one code → phrase pairing. Pass '' to say nothing for that code. */
+export const setOperationWord = (code, phrase) => {
+  const key = operationKey(code);
+  if (!key) return getQuoteSettings();
+  const operationWords = { ...(getQuoteSettings().operationWords || {}) };
+  operationWords[key] = String(phrase ?? '').trim();
+  return saveQuoteSettings({ operationWords });
 };
 
 export const saveQuoteSettings = (s) => {

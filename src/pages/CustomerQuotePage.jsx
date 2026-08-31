@@ -484,7 +484,11 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           </div>
         )}
         <div style={{ flex: '1 1 200px', minWidth: 0 }}>
-          <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4, fontWeight: 500, color: on || fixed ? T.ink : T.graphite, textWrap: 'pretty' }}>{item.productNameSnapshot || 'Window treatment'}</p>
+          {/* displayName is composed and stamped by the builder on save — the
+              product type alone reads "Curtain", which tells the customer
+              nothing about what they are buying. Older quotes saved before it
+              existed fall back to the raw snapshot. */}
+          <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4, fontWeight: 500, color: on || fixed ? T.ink : T.graphite, textWrap: 'pretty' }}>{item.displayName || item.productNameSnapshot || 'Window treatment'}</p>
           {desc && <p style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.7, color: T.stone, textWrap: 'pretty' }}>{desc}</p>}
           {meta && <p style={{ margin: '4px 0 0', fontSize: 12, lineHeight: 1.6, color: T.stone }}>{meta}</p>}
           <div style={{
