@@ -29,6 +29,7 @@ import { isCurtainProduct, autoCostCurtainLine } from '../lib/curtainCalc';
 import { quoteSections } from '../lib/quoteSections';
 import { nextRoomLabel, splitRoomLabel, capitaliseRoom } from '../lib/roomNaming';
 import { describeLine } from '../lib/describeLine';
+import { curtainBlockers } from '../lib/curtainBlockers';
 
 import CustomerQuotePage from './CustomerQuotePage';
 import { deliverQuote } from '../lib/quoteDelivery';
@@ -481,7 +482,7 @@ function PricingFields({ item, set, pricing }) {
 
 // ─── LineItemCard ─────────────────────────────────────────────────────────────
 
-function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock }) {
+function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock, measureSheetId, navigate }) {
   const [showSpecs, setShowSpecs] = useState(false);
   const [showPricing, setShowPricing] = useState(true);
 
@@ -491,6 +492,12 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
   // panel is offered whenever the line is one.
   const productType = productTypes.find(p => p.id === item.productTypeId);
   const isCurtain = isCurtainProduct(item.productNameSnapshot || productType?.name || '');
+
+  // Why this curtain can't be costed, if it is one and it can't. Computed here
+  // so the collapsed row can say so without anyone opening the pricing panel —
+  // a blank cost that explains itself is the whole point.
+  const costed = isCurtain ? autoCostCurtainLine(item, getCurtainRates(), getPricedItems()) : null;
+  const blockers = costed?.blocked ? curtainBlockers(costed.warnings, { measureSheetId }) : [];
 
   const pricing = linePricing(item);
   // Only what the collapsed row shows — the rest is PricingFields' business.
@@ -535,6 +542,25 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
           {meta && <span className="text-xs text-slate-400 block mt-0.5">{meta}</span>}
           {!item.location && (
             <span className="text-[11px] text-amber-600 block mt-1">No room set — shows under “General”</span>
+          )}
+          {/* Said on the row, not behind "Show pricing": a curtain that cannot
+              be costed is exactly the line you would otherwise scroll past. */}
+          {blockers.length > 0 && (
+            <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                <AlertCircle size={11} /> Can&rsquo;t be priced
+              </span>
+              <span className="text-[11px] text-slate-500">
+                {blockers.map(b => b.what + (b.detail ? ` ${b.detail}` : '')).join(' · ')}
+              </span>
+              {blockers.filter(b => b.href).map(b => (
+                <button key={b.code} type="button"
+                  onClick={e => { e.stopPropagation(); navigate(b.href); }}
+                  className="text-[11px] font-medium text-amber-700 underline underline-offset-2 hover:text-amber-800">
+                  {b.fixLabel}
+                </button>
+              ))}
+            </span>
           )}
         </div>
         {/* Type badge — redundant inside a block that already says "choose one"
@@ -1276,6 +1302,22 @@ export default function QuoteBuilder() {
     return [];
   })();
 
+  /**
+   * Which measure sheet a quote line came from.
+   *
+   * The link back has to name a specific sheet — "open the measure sheet" that
+   * opens the wrong one is worse than no link. Matched by the line's own
+   * source id, falling back to the single linked sheet when there is only one.
+   */
+  const sheetIdForLine = (li) => {
+    const srcId = li?.measureSheetLineItemId || li?.sourceMeasureSheetItemId;
+    if (srcId) {
+      const owner = linkedMsAll.find(ms => (ms.lineItems || []).some(x => x.id === srcId));
+      if (owner) return owner.id;
+    }
+    return linkedMsAll.length === 1 ? linkedMsAll[0].id : null;
+  };
+
   const msItems = linkedMsAll.flatMap(ms =>
     (ms.lineItems || []).map(li => ({ ...li, _msDate: ms.measureDate }))
   );
@@ -1937,6 +1979,31 @@ export default function QuoteBuilder() {
             </div>
 
             <div className="p-4 space-y-4">
+              {/* Said once at the top as well as on each line: on a long quote
+                  the unpriceable curtain is below the fold, and a quote that
+                  goes out with a $0 curtain on it is the failure this exists
+                  to prevent. */}
+              {(() => {
+                const stuck = form.lineItems
+                  .filter(li => isCurtainProduct(li.productNameSnapshot))
+                  .map(li => ({ li, costed: autoCostCurtainLine(li, getCurtainRates(), getPricedItems()) }))
+                  .filter(x => x.costed?.blocked);
+                if (!stuck.length) return null;
+                return (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                    <AlertCircle size={15} className="mt-0.5 shrink-0 text-amber-600" />
+                    <div className="text-xs text-amber-900">
+                      <p className="font-semibold">
+                        {stuck.length} curtain{stuck.length === 1 ? '' : 's'} can&rsquo;t be priced yet.
+                      </p>
+                      <p className="mt-0.5 text-amber-800">
+                        {stuck.map(x => x.li.location || x.li.productNameSnapshot || 'Unnamed line').join(', ')}
+                        {' — '}each says what it needs on the line below.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
               {form.lineItems.length === 0 ? (
                 <div className="text-center py-8">
                   <Package size={28} className="mx-auto mb-2 text-slate-300" />
@@ -1987,6 +2054,8 @@ export default function QuoteBuilder() {
                                     onChange={setLineItem}
                                     onRemove={removeLineItem}
                                     onDuplicate={duplicateLineItem}
+                                    measureSheetId={sheetIdForLine(item)}
+                                    navigate={navigate}
                                     canRemove={form.lineItems.length > 0}
                                     isExpanded={expandedItems.has(item.id)}
                                     onToggle={() => toggleItem(item.id)}

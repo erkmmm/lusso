@@ -218,7 +218,7 @@ export default function CurtainCostPanel({ item, set }) {
         <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
           <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
           <ul className="space-y-0.5 text-[11px] text-amber-800">
-            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+            {warnings.map((w, i) => <li key={i}>{typeof w === 'string' ? w : w.message}</li>)}
           </ul>
         </div>
       )}

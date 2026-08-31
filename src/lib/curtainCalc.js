@@ -265,8 +265,8 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
   // workbook returned #N/A for these; returning $0 and a warning keeps a
   // half-filled row from quietly contributing a fitting charge to a quote.
   if (widthMm <= 0 || dropMm <= 0) {
-    if (widthMm <= 0) warnings.push('No width — not priced.');
-    if (dropMm  <= 0) warnings.push('No drop — not priced.');
+    if (widthMm <= 0) warnings.push({ code: 'no-width', message: 'No width — not priced.' });
+    if (dropMm  <= 0) warnings.push({ code: 'no-drop',  message: 'No drop — not priced.' });
     return {
       warnings, priced: false,
       fabric:  { mode: null, fullness: 0, meterage: 0, pricePerM: fabricPricePerM, cost: 0 },
@@ -280,10 +280,11 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
 
   const fullness = fullnessFor(heading, r);
   if (fullness === null) {
-    warnings.push(heading ? `Unknown heading "${heading}" — fabric not priced.`
-                          : 'No heading — fabric not priced.');
+    warnings.push(heading
+      ? { code: 'unknown-heading', heading, message: `Unknown heading "${heading}" — fabric not priced.` }
+      : { code: 'no-heading', message: 'No heading — fabric not priced.' });
   }
-  if (fabricPricePerM <= 0) warnings.push('No fabric price — fabric costed at $0.');
+  if (fabricPricePerM <= 0) warnings.push({ code: 'no-fabric-price', message: 'No fabric price — fabric costed at $0.' });
 
   // ── Face fabric ────────────────────────────────────────────────────────────
   const fm = fullness !== null
@@ -327,7 +328,7 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
                         ? num(lin.pricePerM) : num(linCfg.pricePerM);
 
     if (linFullness === null) {
-      warnings.push(`Unknown lining heading "${linHeading}" — lining not priced.`);
+      warnings.push({ code: 'unknown-lining-heading', heading: linHeading, message: `Unknown lining heading "${linHeading}" — lining not priced.` });
       lining = { enabled: true, cost: 0, fabricCost: 0, makingCost: 0, heading: linHeading };
     } else {
       const lm = fabricMetreage({
@@ -370,11 +371,11 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
         const key = Object.keys(r.oslo.prices || {})
           .find(k => k.toLowerCase() === String(trackType).trim().toLowerCase());
         const bands = r.oslo.prices?.[key]?.widthsMm?.length ? r.oslo.prices[key].widthsMm : (r.oslo.widthsMm || [0]);
-        warnings.push(`${trackType} is not priced past ${Math.max(...bands)}mm — track costed at $0.`);
+        warnings.push({ code: 'track-over-max', trackType, maxMm: Math.max(...bands), message: `${trackType} is not priced past ${Math.max(...bands)}mm — track costed at $0.` });
       } else if (!trackType) {
-        warnings.push('No track type — track costed at $0.');
+        warnings.push({ code: 'no-track-type', message: 'No track type — track costed at $0.' });
       } else {
-        warnings.push(`Unknown track type "${trackType}" — track costed at $0.`);
+        warnings.push({ code: 'unknown-track-type', trackType, message: `Unknown track type "${trackType}" — track costed at $0.` });
       }
       track = { type: trackType, method: 'none', cost: 0 };
     } else {
