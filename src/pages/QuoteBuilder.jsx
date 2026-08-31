@@ -15,7 +15,7 @@ import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
   getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
-  getOperationWords,
+  getQuoteWording,
   CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
   computeQuoteTotals, linePricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
@@ -430,7 +430,7 @@ function Section({ title, icon: Icon, children, defaultOpen = true }) {
 
 // ─── LineItemCard ─────────────────────────────────────────────────────────────
 
-function LineItemCard({ item, productTypes, operationWords, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock }) {
+function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock }) {
   const [showSpecs, setShowSpecs] = useState(false);
   const [showPricing, setShowPricing] = useState(true);
 
@@ -477,7 +477,7 @@ function LineItemCard({ item, productTypes, operationWords, onChange, onRemove, 
         {/* Title + customer-facing description, as the customer will read it */}
         <div className="flex-1 min-w-0">
           <span className="text-sm font-semibold text-slate-800 block">
-            {describeLine(item, productTypes, operationWords) || <span className="text-slate-400 font-normal">New item — no product yet</span>}
+            {describeLine(item, productTypes, wording) || <span className="text-slate-400 font-normal">New item — no product yet</span>}
           </span>
           {desc && <span className="text-xs text-slate-500 leading-relaxed block mt-0.5">{desc}</span>}
           {meta && <span className="text-xs text-slate-400 block mt-0.5">{meta}</span>}
@@ -910,7 +910,7 @@ export default function QuoteBuilder() {
   const productTypes  = getActiveProductTypes();
   // Read once per render rather than per line — describeLine is called for
   // every row's header, and this is a localStorage parse.
-  const operationWords = getOperationWords();
+  const wording = getQuoteWording();
   const customers     = getCustomers();
   // Active salespeople from Supabase — pending/suspended users never appear here
   const { salespeople: staff } = useActiveSalespeople();
@@ -1317,7 +1317,7 @@ export default function QuoteBuilder() {
       // a customer's browser has no localStorage copy — so the name is
       // snapshotted here alongside productNameSnapshot, for the same reason.
       const saveForm = { ...form, lineItems: form.lineItems.map(li => ({
-        ...li, displayName: describeLine(li, productTypes, operationWords),
+        ...li, displayName: describeLine(li, productTypes, wording),
       })) };
       if (isEdit) {
         const now = new Date().toISOString();
@@ -1416,7 +1416,7 @@ export default function QuoteBuilder() {
     // A snapshot of the form as it stands — unsaved edits included, and
     // nothing is written or sent until Send is pressed at the bottom.
     setSendPreview({ ...form, lineItems: form.lineItems.map(li => ({
-      ...li, displayName: describeLine(li, productTypes, operationWords),
+      ...li, displayName: describeLine(li, productTypes, wording),
     })) });
   };
 
@@ -1974,7 +1974,7 @@ export default function QuoteBuilder() {
                                     key={item.id}
                                     item={item}
                                     productTypes={productTypes}
-                                    operationWords={operationWords}
+                                    wording={wording}
                                     onChange={setLineItem}
                                     onRemove={removeLineItem}
                                     onDuplicate={duplicateLineItem}

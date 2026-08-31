@@ -52,14 +52,40 @@ export const OPERATION_WORDS = {
   'li-ion motor 2.0':   'battery motorised',
   'li-ion motor 3.0':   'battery motorised',
 
+  // Roller blinds. RB09 is read from the data rather than assumed: every RB09
+  // line on file carries a chain colour and no motorised line does.
+  'rb09':               'chain operated',
+
   // Deliberately absent, pending someone who knows: 'Oslo 84 (Manual)',
   // 'Oslo 70 (Recess)', 'CRM01', 'RB09', 'No tracks'. An unmapped code costs a
   // shorter title; a guessed one prints a false claim on a customer's quote.
 };
 
 
-/** Fabric qualities worth saying out loud, spotted in the fabric name. */
-const FABRIC_WORDS = ['sheer', 'blockout', 'block out', 'translucent', 'dimout', 'dim out'];
+/**
+ * Fabric qualities worth saying out loud, spotted inside the fabric name.
+ *
+ * This is what carries a roller blind: its operation is often blank, and the
+ * word that tells the customer what they are getting is buried in a supplier
+ * code — "Kleen screen ivory", "Linesque soba blockout", "890 0000 white
+ * silver screen originals". Keys are matched as substrings of the lowercased
+ * fabric name, longest first, so "sun screen" wins over "screen".
+ *
+ * Overridable in Settings → Quote Wording, because which words a fabric range
+ * deserves is a merchandising call, not a code one.
+ */
+export const FABRIC_WORDS = {
+  'blockout':     'blockout',
+  'block out':    'blockout',
+  'sheer':        'sheer',
+  'sunscreen':    'sunscreen',
+  'sun screen':   'sunscreen',
+  'screen':       'sunscreen',
+  'translucent':  'translucent',
+  'light filter': 'light filtering',
+  'dimout':       'dimout',
+  'dim out':      'dimout',
+};
 
 /**
  * True when `snapshot` is just the bare product type ("Curtain"), rather than a
@@ -81,12 +107,14 @@ export const isBareProductName = (snapshot, productTypes = []) => {
  *
  * @param {Object} item          quote or measure-sheet line item
  * @param {Array}  productTypes  product types, to recognise a bare name
- * @param {Object} operationWords  code → phrase map; defaults to the built-ins.
- *   Callers inside the app should pass `getOperationWords()` so the wording
- *   configured in Settings is what the customer actually reads.
+ * @param {Object} wording  `{ operationWords, fabricWords }`, each a map that
+ *   defaults to the built-ins. Callers inside the app should pass
+ *   `getQuoteWording()` so what Settings says is what the customer reads.
  * @returns {string} e.g. "Wand operated reverse pleat sheer curtain"
  */
-export function describeLine(item, productTypes = [], operationWords = OPERATION_WORDS) {
+export function describeLine(item, productTypes = [], wording = {}) {
+  const operationWords = wording.operationWords || OPERATION_WORDS;
+  const fabricWords    = wording.fabricWords || FABRIC_WORDS;
   const snapshot = norm(item?.productNameSnapshot || item?.productType);
   if (!isBareProductName(snapshot, productTypes)) return snapshot;
 
@@ -103,11 +131,15 @@ export function describeLine(item, productTypes = [], operationWords = OPERATION
   const heading = lower(item?.heading);
   if (heading && heading !== 'n/a') parts.push(heading);
 
-  // "sheer" / "blockout" out of the fabric name, which is where it actually
-  // lives ("Hugo sheer white", "Midnight Grey blockout").
+  // "sheer" / "blockout" / "sunscreen" out of the fabric name, which is where
+  // it actually lives ("Hugo sheer white", "Kleen screen ivory"). Longest key
+  // first so "sun screen" is not swallowed by "screen".
   const fabric = lower(item?.fabricColour);
-  const quality = FABRIC_WORDS.find(w => fabric.includes(w));
-  if (quality) parts.push(quality.replace(' ', ''));
+  const hit = Object.keys(fabricWords)
+    .filter(w => w && fabric.includes(w))
+    .sort((a, b) => b.length - a.length)[0];
+  const quality = hit && String(fabricWords[hit] || '').trim();
+  if (quality) parts.push(quality);
 
   // Nothing to add — the line carries no heading, fabric quality or known
   // operation. Hand back the name exactly as it was rather than round-tripping

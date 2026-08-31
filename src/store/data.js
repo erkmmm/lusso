@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { removeTakeoffPlans, removeTakeoffPhotos } from '../lib/takeoffStorage';
 import { removeQuotePlan } from '../lib/quotePlanStorage';
 import { mergeCurtainRates } from '../lib/curtainCalc';
-import { OPERATION_WORDS, operationKey } from '../lib/describeLine';
+import { OPERATION_WORDS, FABRIC_WORDS, operationKey } from '../lib/describeLine';
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -3062,6 +3062,40 @@ export const setOperationWord = (code, phrase) => {
   operationWords[key] = String(phrase ?? '').trim();
   return saveQuoteSettings({ operationWords });
 };
+
+/**
+ * Fabric keyword → the word the customer reads, same override rules as above.
+ *
+ * This is the one that carries roller blinds: their operation is usually
+ * blank, so "Kleen screen ivory" is the only thing on the line that says what
+ * the blind actually does.
+ */
+export const getFabricWords = () => {
+  const saved = getQuoteSettings().fabricWords || {};
+  const merged = { ...FABRIC_WORDS };
+  Object.entries(saved).forEach(([word, phrase]) => {
+    const key = operationKey(word);
+    if (!key) return;
+    const v = String(phrase ?? '').trim();
+    if (v) merged[key] = v; else delete merged[key];
+  });
+  return merged;
+};
+
+/** Save one fabric keyword → phrase pairing. Pass '' to drop the keyword. */
+export const setFabricWord = (word, phrase) => {
+  const key = operationKey(word);
+  if (!key) return getQuoteSettings();
+  const fabricWords = { ...(getQuoteSettings().fabricWords || {}) };
+  fabricWords[key] = String(phrase ?? '').trim();
+  return saveQuoteSettings({ fabricWords });
+};
+
+/** Both wording maps, as describeLine wants them. */
+export const getQuoteWording = () => ({
+  operationWords: getOperationWords(),
+  fabricWords: getFabricWords(),
+});
 
 export const saveQuoteSettings = (s) => {
   const merged = { ...getQuoteSettings(), ...s };
