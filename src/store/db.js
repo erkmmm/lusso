@@ -195,6 +195,10 @@ const withTimeout = (promise, ms = WRITE_TIMEOUT_MS) =>
   ]);
 
 // ── Table manifest (shared by hydrate + push) ────────────────────────
+// `hardDelete: true` marks a table with NO deleted_at column, whose rows are
+// removed outright by remove() rather than tombstoned by softDelete(). Hydration
+// must not apply the `deleted_at is null` filter to those — PostgREST answers a
+// filter on a missing column with 400 42703, not an empty result.
 const TABLES = [
   { table: 'customers',              key: KEYS.customers },
   { table: 'jobs',                   key: KEYS.jobs },
@@ -215,7 +219,11 @@ const TABLES = [
   { table: 'takeoffs',               key: KEYS.takeoffs },
   { table: 'review_requests',        key: KEYS.reviewRequests },
   { table: 'measure_sheet_options',  key: KEYS.measureSheetOptions },
-  { table: 'scheduling_dismissals',  key: KEYS.schedulingDismissals },
+  // Scheduling dismissals are pure presence records — the row existing IS the
+  // dismissal, and un-dismissing deletes it (restoreJobScheduling → remove()).
+  // A tombstoned dismissal would be indistinguishable from no dismissal, so the
+  // table has no deleted_at and never should.
+  { table: 'scheduling_dismissals',  key: KEYS.schedulingDismissals, hardDelete: true },
   // NOTE: 'activity' is intentionally NOT here — it's append-only and synced
   // via a union (see hydrateFromSupabase) so existing local history is never
   // dropped by the "Supabase is authoritative" rule.
@@ -267,6 +275,12 @@ const PAGE_RETRIES = 4; // attempts per page before giving up
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Postgres class-42 errors (undefined column/table, syntax, insufficient
+// privilege) describe the query itself, so an identical retry always fails the
+// same way. Retrying one turned a single schema mismatch into four 400s and
+// ~2.8s of backoff on every load. Fail fast instead and let the caller fall back.
+const isNonRetryable = (error) => /^42/.test(error?.code || '');
+
 async function fetchAllPages(table, useDeletedFilter) {
   let all = [];
   let from = 0;
@@ -286,6 +300,7 @@ async function fetchAllPages(table, useDeletedFilter) {
       const { data, error } = await q;
       if (!error) { page = data || []; lastErr = null; break; }
       lastErr = error;
+      if (isNonRetryable(error)) break;
       if (attempt < PAGE_RETRIES - 1) await sleep(400 * Math.pow(2, attempt)); // 400, 800, 1600ms
     }
     if (lastErr) return { data: null, error: lastErr };
@@ -314,12 +329,14 @@ export async function hydrateFromSupabase() {
   try { await flushPending(); } catch { /* never block hydration */ }
 
   await Promise.all(
-    TABLES.map(async ({ table, key }) => {
+    TABLES.map(async ({ table, key, hardDelete }) => {
       // Fetch only non-deleted records so soft-deleted items stay gone after refresh.
-      // Fall back to unfiltered fetch for tables without a deleted_at column.
+      // Tables flagged hardDelete have no deleted_at column, so they skip the
+      // filter outright. The unfiltered retry below stays as a safety net for a
+      // table whose column goes missing without the manifest being updated.
       // fetchAllPages handles >1000 rows via range-based pagination.
       let fetchedData = null;
-      const { data: d1, error: e1 } = await fetchAllPages(table, true);
+      const { data: d1, error: e1 } = await fetchAllPages(table, !hardDelete);
       if (e1) {
         const { data: d2, error: e2 } = await fetchAllPages(table, false);
         if (e2) { console.warn(`[db] hydrate ${table}:`, e2.message); return; }
