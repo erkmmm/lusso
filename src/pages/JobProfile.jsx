@@ -7,7 +7,7 @@ import {
   Calendar, ClipboardList, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, HardHat, Plus, Upload,
-  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal,
+  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal, CheckSquare,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import ConsultRecordings from '../components/ConsultRecordings';
@@ -16,6 +16,7 @@ import {
   getJob, getCustomer, getMeasureSheetsByJob, getActivityByJob,
   updateJobStatus, saveJob, JOB_STATUSES, getQuotesByJob,
   deleteQuote, deleteJob,
+  installProgress,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -60,6 +61,10 @@ export default function JobProfile() {
   const job          = getJob(id);
   const customer     = getCustomer(job?.customerId);
   const measureSheets = getMeasureSheetsByJob(id);
+  // Install-day progress across every line on this job's sheets, so the button
+  // can say how far through it is without opening the view.
+  const { done: installDone, total: installTotal } =
+    installProgress(measureSheets.flatMap(ms => ms.lineItems || []));
   const activity     = getActivityByJob(id);
   const quotes       = getQuotesByJob(id).filter(q => !q.deletedAt);
 
@@ -484,6 +489,18 @@ export default function JobProfile() {
                 className="flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors">
                 <Ruler size={12} /> Plan Takeoff
               </button>
+              {/* Only worth offering once there is something to install. */}
+              {installTotal > 0 && (
+                <button onClick={() => navigate(`/jobs/${id}/install`)}
+                  title="Room-by-room checklist for install day"
+                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors border ${
+                    installDone === installTotal
+                      ? 'border-green-200 text-green-700 bg-green-50 hover:bg-green-100'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}>
+                  <CheckSquare size={12} /> Install {installDone}/{installTotal}
+                </button>
+              )}
               <button onClick={() => navigate(`/measure-sheets/import?customerId=${job.customerId}&jobId=${id}`)}
                 className="flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors">
                 <Upload size={12} /> Import

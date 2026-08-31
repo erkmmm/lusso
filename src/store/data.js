@@ -1290,6 +1290,53 @@ export const confirmAllCheckMeasures = (sheetId, by = '') => {
   return getMeasureSheet(sheetId);
 };
 
+// ─── Install day ────────────────────────────────────────────────────────────
+// A line is ticked off as it goes up. Stored on the line item itself (the
+// measure sheet's `line_items` is jsonb, so this costs no migration) rather
+// than a separate table, because the tick belongs to the same row the installer
+// is reading the sizes off.
+
+/** Has this line been installed? */
+export const isInstalled = (li) => !!li?.installedAt;
+
+/** Tick a line off, or untick it (a blind that came back down). */
+export const setLineInstalled = (sheetId, lineId, installed, by = '') => {
+  const sheet = getMeasureSheet(sheetId);
+  if (!sheet) return null;
+  const lineItems = (sheet.lineItems || []).map(li => li.id !== lineId ? li : (
+    installed
+      ? { ...li, installedAt: new Date().toISOString(), installedBy: by }
+      : { ...li, installedAt: null, installedBy: '' }
+  ));
+  saveMeasureSheet({ ...sheet, lineItems });
+  return getMeasureSheet(sheetId);
+};
+
+/** Tick off everything in one room at once. */
+export const setRoomInstalled = (sheetId, lineIds, installed, by = '') => {
+  const sheet = getMeasureSheet(sheetId);
+  if (!sheet) return null;
+  const ids = new Set(lineIds);
+  const now = new Date().toISOString();
+  const lineItems = (sheet.lineItems || []).map(li => !ids.has(li.id) ? li : (
+    installed ? { ...li, installedAt: now, installedBy: by }
+              : { ...li, installedAt: null, installedBy: '' }
+  ));
+  saveMeasureSheet({ ...sheet, lineItems });
+  return getMeasureSheet(sheetId);
+};
+
+/** How far through the install this sheet is, counting quantities not rows. */
+export const installProgress = (lineItems = []) => {
+  let done = 0, total = 0;
+  for (const li of lineItems) {
+    const qty = Math.max(1, Number(li.quantity) || 1);
+    total += qty;
+    if (isInstalled(li)) done += qty;
+  }
+  return { done, total, remaining: total - done, complete: total > 0 && done === total };
+};
+
 /**
  * Ordering gate for a set of lines: which are still plan estimates.
  * `blocked` is what a purchase order should refuse to send.

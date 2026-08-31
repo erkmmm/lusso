@@ -172,7 +172,8 @@ export default function ItemPanel({
   selectedIds, onSelect, hasScale, onCalibrate,
   productTypes, roomSuggestions, estimate,
   onUpdateItem, onRemoveItem, onUpdateMeasurement, onRemoveMeasurement,
-  onUpdateMarker, onRemoveMarker, onMeasureDrop, onAddPhoto, onRemovePhoto,
+  onUpdateMarker, onRemoveMarker, onMeasureDrop, onNameFromPlan, roomCount = 0,
+  onAddPhoto, onRemovePhoto,
   onSetArcRadius, onFlipArc, focusLabelId, focusSelectsAll, onLabelFocused, photoBusyId,
   collapsed = false, onToggleCollapsed,
 }) {
@@ -275,6 +276,7 @@ export default function ItemPanel({
             onUpdate={patch => onUpdateItem(item.id, patch)}
             onRemove={() => onRemoveItem(item.id)}
             onMeasureDrop={() => onMeasureDrop(item.id)}
+            onNameFromPlan={roomCount ? (() => onNameFromPlan(item.id)) : null}
             onAddPhoto={file => onAddPhoto(item.id, file)}
             onRemovePhoto={photo => onRemovePhoto(item.id, photo)}
             onSetArcRadius={onSetArcRadius}
@@ -301,6 +303,7 @@ export default function ItemPanel({
                 onRemove={() => onRemoveMeasurement(m.id)}
                 onSetArcRadius={onSetArcRadius}
                 onFlipArc={onFlipArc}
+                onNameFromPlan={roomCount ? (() => onNameFromPlan(m.id)) : null}
                 focusLabel={focusLabelId === m.id}
                 focusSelectsAll={focusSelectsAll}
                 onLabelFocused={onLabelFocused}
@@ -362,7 +365,7 @@ function PanelHandle({ onPage, total, noun, open, onToggle }) {
 /** One window: its label, size, product and photos. */
 function ItemRow({
   item, measurements, selected, productTypes, roomSuggestions,
-  onSelect, onUpdate, onRemove, onMeasureDrop, onAddPhoto, onRemovePhoto,
+  onSelect, onUpdate, onRemove, onMeasureDrop, onNameFromPlan, onAddPhoto, onRemovePhoto,
   onSetArcRadius, onFlipArc, focusLabel, focusSelectsAll, onLabelFocused, photoBusy,
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -386,6 +389,16 @@ function ItemRow({
             placeholder="Room / window"
             className="flex-1 min-w-0 text-sm font-medium bg-transparent border-b border-transparent focus:border-amber-400 outline-none text-slate-800 placeholder:text-slate-300"
           />
+          {onNameFromPlan && (
+            <button
+              onClick={e => { e.stopPropagation(); onNameFromPlan(); }}
+              title="Pick the room off the plan"
+              aria-label="Pick the room off the plan"
+              className="text-slate-300 hover:text-amber-600 flex-shrink-0"
+            >
+              <MapPin size={14} />
+            </button>
+          )}
           <button
             onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
             className="text-slate-300 hover:text-slate-600"
@@ -553,7 +566,7 @@ function ItemRow({
 }
 
 /** A measurement not attached to a window — the original flat behaviour. */
-function LooseRow({ m, selected, onSelect, onUpdate, onRemove, onSetArcRadius, onFlipArc, focusLabel, focusSelectsAll, onLabelFocused }) {
+function LooseRow({ m, selected, onSelect, onUpdate, onRemove, onSetArcRadius, onFlipArc, onNameFromPlan, focusLabel, focusSelectsAll, onLabelFocused }) {
   const flag = plausibility(m.tag, m.lengthMm);
   const labelRef = useLabelFocus(focusLabel, onLabelFocused, focusSelectsAll);
   return (
@@ -567,6 +580,16 @@ function LooseRow({ m, selected, onSelect, onUpdate, onRemove, onSetArcRadius, o
           placeholder="Label (e.g. Bed 1 window)"
           className="flex-1 min-w-0 text-sm bg-transparent border-b border-transparent focus:border-amber-400 outline-none text-slate-800 placeholder:text-slate-300"
         />
+        {onNameFromPlan && (
+          <button
+            onClick={e => { e.stopPropagation(); onNameFromPlan(); }}
+            title="Pick the room off the plan"
+            aria-label="Pick the room off the plan"
+            className="text-slate-300 hover:text-amber-600 flex-shrink-0"
+          >
+            <MapPin size={14} />
+          </button>
+        )}
         <button onClick={e => { e.stopPropagation(); onRemove(); }} className="text-slate-300 hover:text-red-500">
           <Trash2 size={14} />
         </button>

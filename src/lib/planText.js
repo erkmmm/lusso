@@ -46,6 +46,9 @@ const NOISE_RE = new RegExp('^(?:' + [
   'detail', 'section', 'elevation', 'legend', 'note', 'boundary', 'setback',
   'easement', 'ffl', 'ngl', 'fall\\b', 'slope', 'ridge', 'gutter', 'downpipe',
   'smoke', 'hydrant', 'over\\b', 'below\\b', 'above\\b',
+  // Dimensional and code annotations — "MIN. 1000 CLEAR", "NCC PART H8",
+  // "AS1428". Never a room, and they crowd out the real names in the picker.
+  'min\\.', 'max\\.', 'ncc\\b', 'as ?\\d{4}', 'part [a-z]\\d', 'clear\\b',
 ].join('|') + ')', 'i');
 
 const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();

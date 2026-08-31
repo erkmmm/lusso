@@ -34,6 +34,7 @@ import ClientSchedule, { ClientPins, ClientScheduleTray } from '../components/ta
 import { buildRateCard, estimateTakeoff } from '../lib/planEstimate';
 import Overlay from '../components/takeoff/Overlay';
 import ItemPanel from '../components/takeoff/ItemPanel';
+import RoomPicker from '../components/takeoff/RoomPicker';
 import {
   ScaleDialog, DoorCheckDialog, DuplicatePageDialog, ReplacePlanDialog,
   RevisionsDialog, ConfirmDeleteDialog, PrintedDimensionPrompt,
@@ -118,6 +119,9 @@ export default function JobTakeoff() {
   // true when the focus came from placing a mark, so its suggested name is
   // selected and one keystroke replaces it.
   const [focusSelects, setFocusSelects] = useState(false);
+  // Id awaiting a room chosen off the plan. While set, the stage stops placing
+  // points — a tap belongs to the picker, not to a new measurement.
+  const [namingFromPlan, setNamingFromPlan] = useState(null);
   // Stable identity: it sits in an effect's dep list down in the panel, and a
   // fresh closure each render would re-run that effect on every keystroke.
   const clearLabelFocus = useCallback(() => setFocusLabel(null), []);
@@ -662,6 +666,7 @@ export default function JobTakeoff() {
 
   // ── Placement ───────────────────────────────────────────────────────────
   function placePoint(base) {
+    if (namingFromPlan) return;   // the picker owns this tap
     if (mode === 'count') { addMarker(base); return; }
     // Tapping the same spot twice is how you finish a run without reaching for
     // a button — the second tap would be a zero-length facet anyway.
@@ -798,6 +803,33 @@ export default function JobTakeoff() {
       ...(t.measurements || []).filter(m => !m.itemId).map(m => ({ id: m.id, label: m.label || '' })),
     ];
     return nextRoomLabel(base, existing);
+  }
+
+  /**
+   * Name something from a room label tapped on the plan.
+   *
+   * Runs through the same A / B / C rule as auto-naming, so picking "Bed 5" for
+   * a second window in that room promotes the first to "Bed 5 A". The target is
+   * excluded from the existing set, or a re-pick would see its own old name and
+   * letter itself against it.
+   */
+  function nameFromPlan(targetId, base) {
+    const t = takeoffRef.current;
+    if (!t || !base) return;
+    const existing = [
+      ...(t.items || []).map(i => ({ id: i.id, label: i.label || '' })),
+      ...(t.measurements || []).filter(m => !m.itemId).map(m => ({ id: m.id, label: m.label || '' })),
+    ].filter(e => e.id !== targetId);
+    const { label, renames } = nextRoomLabel(base, existing);
+    const next = applyRenames(t, renames);
+    persist({
+      ...next,
+      items: (next.items || []).map(i => i.id === targetId ? { ...i, label } : i),
+      measurements: (next.measurements || []).map(m => m.id === targetId ? { ...m, label } : m),
+    });
+    setNamingFromPlan(null);
+    setFocusLabel(null);
+    toast(`Named "${label}".`);
   }
 
   /** Apply the renames `autoName` asked for, to whichever holds each id. */
@@ -1494,6 +1526,7 @@ export default function JobTakeoff() {
       }
       if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
       if (e.key === 'Escape') {
+        if (namingFromPlan) { setNamingFromPlan(null); return; }
         if (drawing) cancelDraft();
         else { setSelectedIds(new Set()); setFocusLabel(null); }
         return;
@@ -1602,6 +1635,15 @@ export default function JobTakeoff() {
     if (!m) return [];
     return nearestRooms(textIndex, { x: (m.x1 + m.x2) / 2, y: (m.y1 + m.y2) / 2 }, { limit: 3, maxDist: 600 });
   }, [textIndex, selectedIds, takeoff]);
+
+  /** Where the thing being named sits, for ranking the room labels around it. */
+  const namingAnchor = useMemo(() => {
+    if (!namingFromPlan || !takeoff) return null;
+    const m = (takeoff.measurements || []).find(x => x.id === namingFromPlan)
+           || (takeoff.measurements || []).find(x => x.itemId === namingFromPlan);
+    if (!m) return null;
+    return { x: (m.x1 + m.x2) / 2, y: (m.y1 + m.y2) / 2 };
+  }, [namingFromPlan, takeoff]);
 
   const flagged = useMemo(
     () => pageMeasurements.filter(m => plausibility(m.tag, m.lengthMm) === 'hard').length,
@@ -1824,7 +1866,12 @@ export default function JobTakeoff() {
                   Every numbered pin is one opening we&rsquo;ve allowed for. Tap a pin, or a line in the list, to see which is which.
                 </span>
               )}
-              <span className={`truncate ${clientView ? 'hidden' : ''}`}>
+              {namingFromPlan && (
+                <span className="truncate text-amber-700">
+                  Tap the room name on the plan to name this one — or press Escape and type it.
+                </span>
+              )}
+              <span className={`truncate ${clientView || namingFromPlan ? 'hidden' : ''}`}>
                 {dropTarget && 'Drag across the DROP on an elevation sheet for this window.'}
                 {!dropTarget && mode === 'pan' && 'Drag to pan · scroll or pinch to zoom.'}
                 {!dropTarget && mode === 'window' && (drawing ? 'Tap the other side of the opening.' : 'Tap each side of a window — the room name is filled in for you.')}
@@ -1940,6 +1987,16 @@ export default function JobTakeoff() {
                 </div>
               )}
 
+              {!clientView && namingFromPlan && (
+                <RoomPicker
+                  rooms={textIndex?.rooms || []}
+                  baseToScreen={baseToScreen}
+                  anchor={namingAnchor}
+                  onPick={(room) => nameFromPlan(namingFromPlan, room)}
+                  onCancel={() => setNamingFromPlan(null)}
+                />
+              )}
+
               {!clientView && printedPrompt && (
                 <PrintedDimensionPrompt
                   suggestion={printedPrompt.suggestion}
@@ -1992,6 +2049,8 @@ export default function JobTakeoff() {
               onUpdateMarker={updateMarker}
               onRemoveMarker={removeMarker}
               onMeasureDrop={(id) => { setDropTarget(id); setMode('measure'); cancelDraft(); setSheetOpen(false); }}
+              onNameFromPlan={(id) => { setNamingFromPlan(id); setSheetOpen(false); }}
+              roomCount={textIndex?.rooms?.length || 0}
               onAddPhoto={addPhoto}
               onRemovePhoto={removePhoto}
               onSetArcRadius={setArcRadius}
@@ -2044,6 +2103,8 @@ export default function JobTakeoff() {
             onUpdateMarker={updateMarker}
             onRemoveMarker={removeMarker}
             onMeasureDrop={(id) => { setDropTarget(id); setMode('measure'); cancelDraft(); }}
+            onNameFromPlan={(id) => setNamingFromPlan(id)}
+            roomCount={textIndex?.rooms?.length || 0}
             onAddPhoto={addPhoto}
             onRemovePhoto={removePhoto}
             onSetArcRadius={setArcRadius}
