@@ -1,0 +1,13 @@
+-- Job-stage notifications + the daily morning brief.
+--
+-- The two predicates below deliberately mirror the rules the UI already uses, so
+-- a notification can never disagree with the page it links to:
+--   job_needs_install_booking → InstallationCalendar.jsx "needing installation scheduling"
+--   job_review_ask_ready      → Reviews.jsx "eligible"
+--
+-- Split of responsibilities: anything that *happens* fires immediately from a
+-- trigger; anything that is merely *sitting there* is summarised once a morning
+-- by notify_morning_brief(), so a lingering job can't become a daily drip of
+-- separate alerts. See notify_job_lifecycle_and_morning_brief +
+-- morning_brief_use_calendar_events in the Supabase migration history for the
+-- applied SQL (installs are booked as calendar_events, not installations rows).

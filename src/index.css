@@ -32,8 +32,14 @@
 }
 
 /* ── Global mobile overflow lock ─────────────────────────────────────────── */
+/* `clip` rather than `hidden`: `overflow-x: hidden` turns the element into a
+   scroll container, which silently breaks every `position: sticky` descendant
+   (the customer quote page's summary bar and staff-preview banner both died
+   this way). `clip` locks horizontal overflow without creating a scrollport.
+   The `hidden` line stays first as the fallback for browsers without `clip`. */
 html, body {
   overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100%;
 }
 
@@ -861,6 +867,7 @@ html, body {
     -webkit-font-smoothing: antialiased;
     cursor: default;
     overflow-x: hidden;
+    overflow-x: clip;   /* see the overflow lock above — `hidden` kills sticky */
   }
 
   #root {
@@ -868,6 +875,7 @@ html, body {
     min-height: 100vh;
     text-align: left;
     overflow-x: hidden;
+    overflow-x: clip;   /* ditto — both body and #root must be `clip` */
   }
 }
 
@@ -893,6 +901,25 @@ html, body {
   --color-background:            var(--background);
   --color-foreground:            var(--foreground);
   --radius:                      var(--radius);
+}
+
+/* ── Number inputs: no spinner arrows ─────────────────────────────────────
+   The up/down steppers are never used here — every numeric field in the app is
+   typed (widths, drops, quantities, prices) — and in the measure-sheet grid
+   they sit right where the fill handle goes. `.no-spin` is the explicit hook;
+   the bare selectors kill them everywhere else too. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button,
+.no-spin::-webkit-outer-spin-button,
+.no-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type='number'],
+.no-spin {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 /* ── Input base style ────────────────────────────────────────────────── */
@@ -1325,3 +1352,62 @@ button:not(:disabled):active {
 .brand-logo-dark  { display: none; }
 .dark .brand-logo-light { display: none; }
 .dark .brand-logo-dark  { display: inline; }
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────
+   One seamless scrollbar everywhere: a thin, rounded, translucent thumb on a
+   transparent track that darkens on hover, instead of the platform's grey
+   chrome. The thumb is neutral (ink / white at low alpha) rather than themed,
+   so it sits on any surface — page, card, modal, table, dropdown — without
+   fighting the theme.
+
+   Two declarations on purpose: modern Chrome/Firefox honour the standard
+   `scrollbar-width`/`scrollbar-color` (and then ignore the ::-webkit-* rules
+   entirely), while Safari and older Chromium fall back to the pseudo-elements.
+   Keep the two blocks visually in sync. */
+@layer base {
+  :root {
+    --scroll-thumb:       rgb(16 17 19 / 0.16);
+    --scroll-thumb-hover: rgb(16 17 19 / 0.30);
+  }
+  .dark {
+    --scroll-thumb:       rgb(255 255 255 / 0.14);
+    --scroll-thumb-hover: rgb(255 255 255 / 0.28);
+  }
+  /* Sidebar is dark in both modes, so its thumbs always read as light. */
+  .app-sidebar {
+    --scroll-thumb:       rgb(255 255 255 / 0.14);
+    --scroll-thumb-hover: rgb(255 255 255 / 0.28);
+  }
+
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+  *, *::before, *::after {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+
+  ::-webkit-scrollbar            { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track      { background: transparent; }
+  ::-webkit-scrollbar-corner     { background: transparent; }
+  /* The transparent border + `background-clip: content-box` is what makes the
+     thumb read as a floating 5px pill with breathing room, not a full-width
+     slab wedged against the content. */
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scroll-thumb);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover  { background-color: var(--scroll-thumb-hover); }
+  ::-webkit-scrollbar-thumb:active { background-color: var(--scroll-thumb-hover); }
+  /* Kill the stepper arrows some platforms still draw. */
+  ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+}
+
+/* Nothing should paint a scrollbar on paper. */
+@media print {
+  ::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+}

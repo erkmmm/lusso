@@ -2,7 +2,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { lsGet, lsSet } from './storage';
 import { db, batchUpsertCustomers, batchUpsertPricedItems, hydrateFromSupabase } from './db';
 import { supabase } from '../lib/supabase';
-import { removeTakeoffPlan } from '../lib/takeoffStorage';
+import { removeTakeoffPlans, removeTakeoffPhotos } from '../lib/takeoffStorage';
+import { removeQuotePlan } from '../lib/quotePlanStorage';
+import { mergeCurtainRates } from '../lib/curtainCalc';
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -904,8 +906,16 @@ export const duplicateMeasureSheet = (id, overrides = {}) => {
 };
 
 // ─── Takeoffs (PDF plan markups) ────────────────────────────────────────────────
-// One active takeoff per job to start. The PDF binary lives in Supabase Storage;
-// the record here holds the file path, per-page scale, and all measurements.
+// One active takeoff per job. The PDF binary lives in Supabase Storage; the
+// record here holds the file path, per-page scale, and the markup.
+//
+// The markup has two levels:
+//   • `measurements` — the primitive: one line on one page, with a tag.
+//   • `items`        — a window/opening: the label, qty, product type, status
+//                      and the site photos, with its measurements pointing at
+//                      it via `itemId`.
+// Loose measurements (no itemId) still work exactly as they always did, so
+// every takeoff recorded before items existed keeps flowing to the sheet.
 export const getTakeoffs        = () => (get('lusso_takeoffs') || []).filter(t => !t.deletedAt);
 export const getTakeoff         = (id) => (get('lusso_takeoffs') || []).find(t => t.id === id);
 export const getTakeoffByJob    = (jobId) => getTakeoffs().find(t => t.jobId === jobId);
@@ -928,12 +938,16 @@ export const deleteTakeoff = (id) => {
   const idx = all.findIndex(t => t.id === id);
   if (idx < 0) return;
   const now = new Date().toISOString();
-  const { filePath } = all[idx];
-  all[idx] = { ...all[idx], deletedAt: now, updatedAt: now };
+  const rec = all[idx];
+  all[idx] = { ...rec, deletedAt: now, updatedAt: now };
   set('lusso_takeoffs', all);
   db.deleteTakeoff(id);
-  // Best-effort removal of the stored PDF — non-fatal if it fails.
-  if (filePath) removeTakeoffPlan(filePath);
+  // Best-effort removal of every stored binary: the current plan, each earlier
+  // revision, and any site photos. Non-fatal if it fails.
+  const plans = [rec.filePath, ...(rec.revisions || []).map(r => r.filePath)].filter(Boolean);
+  const photos = (rec.items || []).flatMap(i => (i.photos || []).map(p => p.path)).filter(Boolean);
+  if (plans.length) removeTakeoffPlans(plans);
+  if (photos.length) removeTakeoffPhotos(photos);
 };
 
 // Tags that map onto a measure-sheet dimension column.
@@ -941,39 +955,149 @@ export const deleteTakeoff = (id) => {
 const TAKEOFF_TAG_COLUMN = { Width: 'widthMm', Drop: 'dropMm', Height: 'dropMm' };
 
 /**
- * Reconcile a takeoff's measurements into its job's measure sheet.
- * Measurements are grouped by label → one line item each (Width→widthMm,
- * Drop/Height→dropMm). Only rows flagged source:'takeoff' are ever touched, so
- * manually-entered rows are never clobbered. Creates the sheet on first need.
- * Safe to call after every measurement add/edit/delete.
+ * What a non-straight measurement has to tell the workroom.
+ *
+ * A bay or bow window measured as one straight line reads the CHORD, and a
+ * track made to the chord is short. So the shape travels with the row: the
+ * facet breakdown for a bay, and radius + arc for a curve — the two numbers a
+ * supplier needs to bend track to.
  */
-export const applyTakeoffToMeasureSheet = (takeoff) => {
-  if (!takeoff?.jobId) return;
+export const describeShape = (m) => {
+  if (!m) return '';
+  if (m.kind === 'chain' && m.segments?.length > 1) {
+    return `Bay/splayed run — ${m.segments.map(v => Math.round(v)).join(' + ')} = ${Math.round(m.lengthMm)} mm total`;
+  }
+  if (m.kind === 'arc' && m.radiusMm) {
+    return `Curved — radius ${Math.round(m.radiusMm)} mm, arc ${Math.round(m.lengthMm)} mm, chord ${Math.round(m.chordMm)} mm`;
+  }
+  return '';
+};
 
-  // Build label → { widthMm, dropMm }. A window's Width + Drop pair into one
-  // line via their shared label. But NEVER silently overwrite: if a value would
-  // land on a column that's already filled (two Widths, or a Drop AND a Height —
-  // both map to dropMm), start a new numbered group so distinct windows stay
-  // separate and the collision surfaces as its own line. Unlabelled measurements
-  // are surfaced under an "Unlabelled N" placeholder instead of being dropped.
+/**
+ * Flatten a takeoff into the rows it wants on the measure sheet.
+ *
+ * Two sources, in order:
+ *   1. `items` — a window placed as one object. Carries everything the item
+ *      knows (qty, product type, fixing) and owns a stable key, so renaming a
+ *      window on the plan renames its sheet row instead of orphaning it.
+ *   2. loose measurements — the original label-pairing behaviour, kept for
+ *      takeoffs recorded before items existed. Grouped by shared label, and a
+ *      value that would land on an already-filled column starts a new numbered
+ *      group so two Widths never silently overwrite each other.
+ *
+ * Returns `[{ key, label, widthMm, dropMm, ... }]`, `key` matching a line
+ * item's `takeoffGroup`.
+ */
+export const takeoffRows = (takeoff) => {
+  if (!takeoff) return [];
+  const measurements = takeoff.measurements || [];
+  const rows = [];
+
+  // 1. Items ────────────────────────────────────────────────────────────────
+  for (const item of takeoff.items || []) {
+    const mine = measurements.filter(m => m.itemId === item.id);
+    // Last one placed wins — re-measuring a window should replace, not stack.
+    const pickM = (...tags) => [...mine].reverse().find(m => tags.includes(m.tag) && m.lengthMm != null) || null;
+    const widthM = pickM('Width');
+    const dropM  = pickM('Drop', 'Height');
+    const dropMm = item.dropMm !== '' && item.dropMm != null
+      ? Math.round(Number(item.dropMm))
+      : (dropM ? Math.round(dropM.lengthMm) : '');
+    const label = (item.label || '').trim() || 'Unlabelled window';
+    const shape = describeShape(widthM);
+    const notes = [item.notes, shape].filter(Boolean).join(' · ');
+    const common = {
+      itemId: item.id,
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      productTypeId: item.productTypeId || '',
+      productNameSnapshot: item.productNameSnapshot || '',
+      fixing: item.fixing || '',
+      control: item.control || '',
+      pageNumber: item.pageNumber || mine[0]?.pageNumber || null,
+      photoCount: (item.photos || []).length,
+    };
+
+    // A bay is usually THREE blinds, not one wide one. When the window says so,
+    // each facet becomes its own row — that's what actually gets ordered.
+    if (item.splitSegments !== false && widthM?.kind === 'chain' && widthM.segments?.length > 1) {
+      widthM.segments.forEach((seg, i) => {
+        rows.push({
+          ...common,
+          key: `item:${item.id}#${i}`,
+          label: `${label} — ${i + 1} of ${widthM.segments.length}`,
+          widthMm: Math.round(seg),
+          dropMm,
+          notes: [item.notes, `Facet ${i + 1} of a ${widthM.segments.length}-part bay (total ${Math.round(widthM.lengthMm)} mm)`]
+            .filter(Boolean).join(' · '),
+        });
+      });
+      continue;
+    }
+
+    rows.push({ ...common, key: `item:${item.id}`, label, widthMm: widthM ? Math.round(widthM.lengthMm) : '', dropMm, notes });
+  }
+
+  // 2. Loose measurements ───────────────────────────────────────────────────
   const groups = new Map();
   let unlabelled = 0;
-  for (const m of takeoff.measurements || []) {
+  for (const m of measurements) {
+    if (m.itemId) continue;
     const col = TAKEOFF_TAG_COLUMN[m.tag];
     if (!col || m.lengthMm == null) continue;
     const base = (m.label || '').trim() || `Unlabelled ${++unlabelled}`;
     let key = base, n = 1;
     while (groups.has(key) && groups.get(key)[col] !== '') { n += 1; key = `${base} (${n})`; }
-    if (!groups.has(key)) groups.set(key, { widthMm: '', dropMm: '' });
+    if (!groups.has(key)) groups.set(key, { widthMm: '', dropMm: '', pageNumber: m.pageNumber, notes: '' });
     groups.get(key)[col] = Math.round(m.lengthMm);
+    const shape = describeShape(m);
+    if (shape) groups.get(key).notes = [groups.get(key).notes, shape].filter(Boolean).join(' · ');
   }
+  for (const [label, vals] of groups) {
+    rows.push({
+      // Legacy key format (the bare label) so sheets written before items
+      // existed keep matching their rows instead of being rebuilt.
+      key: label,
+      itemId: null,
+      label,
+      widthMm: vals.widthMm,
+      dropMm: vals.dropMm,
+      quantity: 1,
+      productTypeId: '',
+      productNameSnapshot: '',
+      fixing: '',
+      control: '',
+      notes: vals.notes || '',
+      pageNumber: vals.pageNumber || null,
+      photoCount: 0,
+    });
+  }
+  return rows;
+};
+
+/**
+ * Reconcile a takeoff into its job's measure sheet.
+ *
+ * Only rows flagged source:'takeoff' are ever touched, so manually-entered rows
+ * are never clobbered. Two rules matter:
+ *   • A field the takeoff doesn't know (blank product type, no fixing) never
+ *     overwrites a value someone typed on the sheet.
+ *   • Once a row has been CHECK-MEASURED on site, the plan no longer owns its
+ *     dimensions — the scaled figures are kept alongside as `planWidthMm` /
+ *     `planDropMm` purely so the variance can be shown.
+ * Safe to call after every measurement add/edit/delete.
+ */
+export const applyTakeoffToMeasureSheet = (takeoff) => {
+  if (!takeoff?.jobId) return;
+
+  const rows = takeoffRows(takeoff);
+  const byKey = new Map(rows.map(r => [r.key, r]));
 
   let sheet = getMeasureSheetByJob(takeoff.jobId);
   const hadTakeoffRows = !!sheet?.lineItems?.some(li => li.source === 'takeoff');
 
   // Nothing to map and no prior takeoff rows to clean up → leave the sheet alone
   // (don't create an empty sheet just because a takeoff exists).
-  if (groups.size === 0 && !hadTakeoffRows) return;
+  if (rows.length === 0 && !hadTakeoffRows) return;
 
   if (!sheet) {
     const job = getJob(takeoff.jobId);
@@ -989,33 +1113,168 @@ export const applyTakeoffToMeasureSheet = (takeoff) => {
   }
 
   const items = [...(sheet.lineItems || [])];
-  // Drop takeoff rows whose label group no longer exists.
-  const kept = items.filter(li => li.source !== 'takeoff' || groups.has(li.takeoffGroup));
+  // Drop takeoff rows whose group no longer exists.
+  const kept = items.filter(li => li.source !== 'takeoff' || byKey.has(li.takeoffGroup));
   let order = kept.reduce((max, li) => Math.max(max, li.sortOrder ?? 0), -1);
 
-  for (const [label, vals] of groups) {
-    const existing = kept.find(li => li.source === 'takeoff' && li.takeoffGroup === label);
+  // Only fill a field the takeoff actually knows about.
+  const fill = (target, field, value) => {
+    if (value === '' || value === null || value === undefined) return;
+    target[field] = value;
+  };
+
+  for (const row of rows) {
+    const existing = kept.find(li => li.source === 'takeoff' && li.takeoffGroup === row.key);
     if (existing) {
-      existing.location = label;
-      existing.widthMm = vals.widthMm;
-      existing.dropMm = vals.dropMm;
+      existing.location = row.label;
+      existing.takeoffItemId = row.itemId;
+      existing.takeoffPage = row.pageNumber;
+      // Plan figures are always recorded, even when the site measure owns the
+      // live dimensions — that pair is what the variance check compares.
+      existing.planWidthMm = row.widthMm;
+      existing.planDropMm  = row.dropMm;
+      if (existing.measureSource !== 'site') {
+        existing.widthMm = row.widthMm;
+        existing.dropMm  = row.dropMm;
+        existing.measureSource = 'plan';
+      }
+      fill(existing, 'quantity', row.quantity > 1 ? row.quantity : undefined);
+      fill(existing, 'productTypeId', row.productTypeId);
+      fill(existing, 'productNameSnapshot', row.productNameSnapshot);
+      fill(existing, 'fixing', row.fixing);
+      fill(existing, 'control', row.control);
     } else {
       kept.push({
         id: uuidv4(),
-        location: label,
-        productTypeId: '', productNameSnapshot: '',
-        quantity: 1, widthMm: vals.widthMm, dropMm: vals.dropMm,
-        fabricColour: '', control: '', returnSide: '', motorSide: '', fixing: '',
+        location: row.label,
+        productTypeId: row.productTypeId, productNameSnapshot: row.productNameSnapshot,
+        quantity: row.quantity, widthMm: row.widthMm, dropMm: row.dropMm,
+        fabricColour: '', control: row.control, returnSide: '', motorSide: '', fixing: row.fixing,
         heading: '', attachedLining: false, liningFabricColour: '', hem: '',
         trackColour: '', baseBarColour: '', baseBarType: '', chainColour: '',
-        notes: 'From plan takeoff',
-        source: 'takeoff', takeoffGroup: label,
+        notes: row.notes || 'From plan takeoff',
+        source: 'takeoff', takeoffGroup: row.key,
+        takeoffItemId: row.itemId, takeoffPage: row.pageNumber,
+        // Scaled off a drawing until someone stands in the room and says
+        // otherwise. `orderGate` below is what enforces that.
+        measureSource: 'plan',
+        planWidthMm: row.widthMm, planDropMm: row.dropMm,
         sortOrder: ++order,
       });
     }
   }
 
   saveMeasureSheet({ ...sheet, lineItems: kept });
+};
+
+// ─── Check measure ──────────────────────────────────────────────────────────
+// A dimension scaled off a plan is an estimate: paper stretches, plans are
+// superseded, and builders move openings. Ordering custom-made blinds against
+// one is the most expensive mistake this business can make, so a takeoff row
+// stays flagged `measureSource: 'plan'` until it has been confirmed on site.
+
+/** Is this line still carrying plan-scaled dimensions? */
+export const isPlanEstimate = (li) =>
+  li?.source === 'takeoff' && li?.measureSource !== 'site';
+
+/**
+ * Difference between the plan figures and the confirmed site measure.
+ * Returns null when the line was never plan-derived or isn't measured yet.
+ */
+export const lineVariance = (li) => {
+  if (!li || li.measureSource !== 'site') return null;
+  const pw = Number(li.planWidthMm) || 0;
+  const pd = Number(li.planDropMm) || 0;
+  const w  = Number(li.widthMm) || 0;
+  const d  = Number(li.dropMm) || 0;
+  if (!pw && !pd) return null;
+  const widthDelta = pw && w ? w - pw : null;
+  const dropDelta  = pd && d ? d - pd : null;
+  const worst = Math.max(
+    pw && w ? Math.abs(widthDelta) / pw : 0,
+    pd && d ? Math.abs(dropDelta) / pd : 0
+  );
+  return {
+    widthDelta, dropDelta,
+    percent: worst * 100,
+    // A plan that was out by more than 5% was worth check-measuring; worth
+    // saying so, because it tells you how much to trust the rest of the sheet.
+    significant: worst > 0.05,
+  };
+};
+
+/**
+ * Pure line transforms. The measure-sheet editor holds the sheet in local form
+ * state until save, so it needs to patch a line WITHOUT writing to the store —
+ * same logic, two callers.
+ */
+export const markLineCheckMeasured = (li, { widthMm, dropMm, by } = {}) => ({
+  ...li,
+  // Snapshot the plan figures the first time, so the variance survives the
+  // site measure overwriting the live dimensions.
+  planWidthMm: li.planWidthMm ?? li.widthMm,
+  planDropMm:  li.planDropMm  ?? li.dropMm,
+  widthMm: widthMm !== undefined && widthMm !== '' ? Number(widthMm) : li.widthMm,
+  dropMm:  dropMm  !== undefined && dropMm  !== '' ? Number(dropMm)  : li.dropMm,
+  measureSource: 'site',
+  checkMeasuredAt: new Date().toISOString(),
+  checkMeasuredBy: by || '',
+});
+
+export const markLinePlanEstimate = (li) => ({
+  ...li,
+  widthMm: li.planWidthMm ?? li.widthMm,
+  dropMm:  li.planDropMm  ?? li.dropMm,
+  measureSource: 'plan',
+  checkMeasuredAt: null,
+  checkMeasuredBy: '',
+});
+
+/**
+ * Confirm a line's dimensions on site. Passing width/drop overrides the plan
+ * figures; passing neither simply accepts the plan values as verified.
+ */
+export const confirmCheckMeasure = (sheetId, lineId, opts = {}) => {
+  const sheet = getMeasureSheet(sheetId);
+  if (!sheet) return null;
+  const lineItems = (sheet.lineItems || []).map(li =>
+    li.id === lineId ? markLineCheckMeasured(li, opts) : li);
+  saveMeasureSheet({ ...sheet, lineItems });
+  return getMeasureSheet(sheetId);
+};
+
+/** Undo a check measure (mis-tap, or the site measure turned out to be wrong). */
+export const revertToPlanEstimate = (sheetId, lineId) => {
+  const sheet = getMeasureSheet(sheetId);
+  if (!sheet) return null;
+  const lineItems = (sheet.lineItems || []).map(li =>
+    li.id === lineId ? markLinePlanEstimate(li) : li);
+  saveMeasureSheet({ ...sheet, lineItems });
+  return getMeasureSheet(sheetId);
+};
+
+/** Confirm every outstanding plan-estimate line in one go. */
+export const confirmAllCheckMeasures = (sheetId, by = '') => {
+  const sheet = getMeasureSheet(sheetId);
+  if (!sheet) return null;
+  const lineItems = (sheet.lineItems || []).map(li =>
+    isPlanEstimate(li) ? markLineCheckMeasured(li, { by }) : li);
+  saveMeasureSheet({ ...sheet, lineItems });
+  return getMeasureSheet(sheetId);
+};
+
+/**
+ * Ordering gate for a set of lines: which are still plan estimates.
+ * `blocked` is what a purchase order should refuse to send.
+ */
+export const orderGate = (lineItems = []) => {
+  const pending = lineItems.filter(isPlanEstimate);
+  return {
+    pending,
+    blocked: pending.length > 0,
+    count: pending.length,
+    labels: pending.map(li => li.location || 'Unnamed'),
+  };
 };
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
@@ -1708,7 +1967,24 @@ export const respondToInstallRequest = (token, _action, comment = '') => {
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
-export const getNotifications = () => get('lusso_notifications') || [];
+/**
+ * Newest first — and the sort is load-bearing, not cosmetic.
+ *
+ * Hydration replaces this list with the server's rows in the order it fetched
+ * them, which is `created_at` ASCENDING. The bell renders `.slice(0, 20)`, so
+ * on any account with more than twenty notifications it was showing the twenty
+ * OLDEST and silently cutting off everything recent — the bell looked frozen
+ * months in the past while new rows piled up off the end of the array.
+ *
+ * Sorting here rather than at the call site because every reader wants the
+ * same order, and the stored order depends on whether the list was last
+ * written by a hydrate (ascending) or by addNotification (unshift, descending).
+ */
+export const getNotifications = () =>
+  (get('lusso_notifications') || [])
+    .slice()
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
 export const getUnreadNotifications = () => getNotifications().filter(n => !n.isRead);
 
 export const addNotification = ({ jobId, installRequestId, type, title, message }) => {
@@ -1728,16 +2004,26 @@ export const addNotification = ({ jobId, installRequestId, type, title, message 
   db.saveNotification(list[0]);
 };
 
+// Read state is pushed, not just stored. These used to write localStorage only,
+// and because a notification row carries no updatedAt for the hydrate merge to
+// compare, the server's is_read:false won every time — so "Mark all read"
+// cleared the badge until the next sync put all of them back.
 export const markNotificationRead = (id) => {
   const list = getNotifications();
   const idx = list.findIndex(n => n.id === id);
-  if (idx >= 0) list[idx].isRead = true;
+  if (idx < 0) return;
+  list[idx] = { ...list[idx], isRead: true };
   set('lusso_notifications', list);
+  db.saveNotification(list[idx]);
 };
 
 export const markAllNotificationsRead = () => {
-  const list = getNotifications().map(n => ({ ...n, isRead: true }));
-  set('lusso_notifications', list);
+  const list = getNotifications();
+  const changed = list.filter(n => !n.isRead).map(n => ({ ...n, isRead: true }));
+  if (!changed.length) return;
+  const byId = new Map(changed.map(n => [n.id, n]));
+  set('lusso_notifications', list.map(n => byId.get(n.id) || n));
+  changed.forEach(n => db.saveNotification(n));
 };
 
 // ─── Product Types ────────────────────────────────────────────────────────────
@@ -1795,6 +2081,23 @@ export const reorderProductType = (id, direction) => {
 // ─── Quotes ───────────────────────────────────────────────────────────────────
 
 export const QUOTE_STATUSES = ['Draft', 'Sent', 'Viewed', 'Waiting', 'Accepted', 'Declined', 'Expired', 'Completed'];
+
+/**
+ * A note on `statusChangedAt`, which every quote carries but nothing here sets.
+ *
+ * Saving a quote pushes the WHOLE row, so an ordinary edit (retitle a line, fix
+ * a price) carries a `status` field too: whatever this browser last pulled. If
+ * the customer accepted in the meantime, that stale 'Sent' would land on top of
+ * the acceptance and quietly un-sell the job.
+ *
+ * `statusChangedAt` is the version marker that stops it. It is read from the
+ * server and written straight back untouched, so it says which lifecycle this
+ * browser was looking at. The guard trigger on public.quotes honours a status
+ * change only from a writer whose marker still matches the stored one, and
+ * stamps the new value itself. Deliberately NOT set here: a timestamp from the
+ * browser's own clock would make a laptop running slow look permanently stale.
+ * See supabase/migrations/quote_status_guard.sql.
+ */
 
 // Statuses where the customer's link actually serves the quote.
 export const QUOTE_LIVE_STATUSES = ['Sent', 'Viewed', 'Waiting'];
@@ -2179,16 +2482,20 @@ const SEED_QUOTE_TEMPLATES = [
 ];
 
 const DEFAULT_QUOTE_SETTINGS = {
-  businessName: 'Lusso Blinds & Curtains',
-  businessEmail: 'info@lusso.com.au',
-  businessPhone: '03 9000 1234',
+  businessName: 'Lusso Fashion for Windows',
+  businessEmail: 'jobs@lusso.com.au',
+  businessPhone: '07 5528 4006',
+  // Second number, shown as a "text us" line under the phone. Blank hides it.
+  // Kept separate from businessPhone because the landline is what we ask people
+  // to call, while this one is the Twilio line a text lands in the CRM on.
+  businessPhoneSms: '0485 075 111',
   // FROM-panel details on the customer-facing quote. These render for every
-  // viewer (incl. customers on a device with no localStorage), so they live in
-  // the defaults as editable placeholders — replace with the real details in
-  // Settings → Quote defaults.
-  businessAddress: 'PO Box 000, Melbourne VIC 3000',
+  // viewer (incl. customers on a device with no localStorage) — which is why
+  // they are the real details, not placeholders: a customer opening the link on
+  // their own phone falls all the way back to this object.
+  businessAddress: '3 Crinum Crescent, Southport QLD 4215',
   businessWebsite: 'www.lusso.com.au',
-  businessABN: '00 000 000 000',
+  businessABN: '72 388 582 539',
   defaultExpiryDays: 30,
   defaultDepositType: 'Percentage',
   defaultDepositValue: 50,
@@ -2198,6 +2505,12 @@ const DEFAULT_QUOTE_SETTINGS = {
   defaultIntro: 'Thank you for the opportunity to quote on your window furnishings. Please find our detailed proposal below.',
   // Shown in the "To place your order" block on the customer quote.
   orderTerms: 'To accept this quote, click "Accept quotation" below or contact us by phone or email. A 50% deposit is required to confirm your order and book your installation.',
+  // The "Terms of trade" card beside the payment details. This used to be
+  // hardcoded in the customer quote page and said "balance on booking of
+  // installation", contradicting defaultTerms directly above it on the same
+  // page. It reads from here now so the two can't disagree. The deposit
+  // sentence is prepended automatically from the quote's own deposit terms.
+  termsOfTrade: 'Balance is due on completion of installation. Orders for custom-made product cannot be cancelled once in production.',
   // Optional link to a full Terms & Conditions document (PDF/web). Blank hides the link.
   termsAttachmentUrl: '',
   termsAttachmentLabel: 'Download full Terms & Conditions',
@@ -2216,12 +2529,39 @@ const DEFAULT_QUOTE_SETTINGS = {
   // misrepresentation, so the section simply doesn't render until it has real
   // ones.
   testimonials: [],
+  // Two different links: one to WRITE a review (used by the review-request
+  // flow), one to READ them (the "See all reviews" link on a quote). Sending a
+  // customer who wants to read reviews to the write-a-review form is the kind
+  // of small wrongness that costs trust, so they're separate fields. Blank
+  // googleReviewsUrl derives the read link from the write link's place id.
   googleReviewUrl: 'https://search.google.com/local/writereview?placeid=ChIJscqHCScFkWsRDQvVRjxuzao',
+  googleReviewsUrl: '',
   googleRating: 4.9,
   googleReviewCount: 120,
   quoteNumberPrefix: 'QT-',
   currency: 'AUD',
   showSizesToClient: false,
+};
+
+/**
+ * The customer-facing link for a quote.
+ *
+ * The `t` parameter is the quote's public_token and is what actually authorises
+ * the page: quote ids are sequential (qnt-1, qnt-4 …), so a link that carried
+ * only the id was a link anyone could guess. Never build this URL by hand.
+ *
+ * @param {object} quote            the quote (needs id + publicToken)
+ * @param {object} [opts]
+ * @param {string} [opts.origin]    absolute origin; omit for a relative URL
+ * @param {boolean} [opts.preview]  staff preview — no tracking, no status change
+ */
+export const publicQuoteUrl = (quote, { origin = '', preview = false } = {}) => {
+  if (!quote?.id) return '';
+  const params = new URLSearchParams();
+  if (quote.publicToken) params.set('t', quote.publicToken);
+  if (preview) params.set('preview', '1');
+  const qs = params.toString();
+  return `${origin}/quotes/${quote.id}/preview${qs ? `?${qs}` : ''}`;
 };
 
 export const getQuotes           = () => (get('lusso_quotes') || []).filter(q => !q.deletedAt);
@@ -2297,6 +2637,11 @@ export const createQuote = (data) => {
   const quote = {
     quoteNumber: newNum,
     version: 1,
+    // The capability token that authorises the customer link. Minted here, not
+    // left to the column default, so the link can be built the moment the quote
+    // is created — waiting for a round-trip would mean a quote created and sent
+    // in one sitting went out with a tokenless (i.e. dead) link.
+    publicToken: uuidv4(),
     status: 'Draft',
     title: 'New Quote',
     customerId: null,
@@ -2529,6 +2874,9 @@ export const duplicateQuote = (quoteId, overrides = {}) => {
   const dupe = {
     ...original,
     id: uuidv4(),
+    // A copy is a different quote and must never share the original's customer
+    // link — otherwise the same token would open two different quotes.
+    publicToken: uuidv4(),
     quoteNumber: getNextQuoteNumber(),
     version: 1,
     status: 'Draft',
@@ -2541,6 +2889,10 @@ export const duplicateQuote = (quoteId, overrides = {}) => {
     comments: [],
     createdAt: now,
     updatedAt: now,
+    // Drop the attached plan. Its images live under the ORIGINAL quote's path,
+    // so carrying the reference across would make removing it from the copy
+    // delete the original's plan too. Re-attach on the duplicate if it's wanted.
+    planSnapshot: null,
     // Clear all Xero fields — the duplicate is a fresh quote, not linked to any invoice
     xeroInvoiceId: null,
     xeroInvoiceNumber: null,
@@ -2572,10 +2924,14 @@ export const deleteQuote = (quoteId, deletedBy = 'System') => {
   const idx = all.findIndex(q => q.id === quoteId);
   if (idx < 0) return;
   const now = new Date().toISOString();
+  const { planSnapshot } = all[idx];
   all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
   set('lusso_quotes', all);
   // Hard-delete from Supabase — fires Realtime DELETE event on all other devices instantly.
   db.deleteQuote(quoteId);
+  // The quote row is gone, so its plan images would be orphaned in a PUBLIC
+  // bucket — still reachable by anyone holding a link. Take them down with it.
+  if (planSnapshot) removeQuotePlan(planSnapshot);
 };
 
 export const bulkDeleteQuotes = (ids, deletedBy = 'Admin') => {
@@ -2659,6 +3015,20 @@ export const deleteQuoteTemplate = (id) => set('lusso_quote_templates', getQuote
 // ─── Quote Settings ───────────────────────────────────────────────────────────
 
 export const getQuoteSettings = () => get('lusso_quote_settings') || DEFAULT_QUOTE_SETTINGS;
+
+/**
+ * The link a customer follows to READ our Google reviews.
+ *
+ * Falls back to deriving it from the write-a-review URL's place id, so a
+ * settings row that only ever stored the write link (every existing one) still
+ * sends someone who wants to read reviews to the reviews, not to a blank
+ * "rate us" form.
+ */
+export const googleReviewsLink = (settings = {}) => {
+  if (settings.googleReviewsUrl) return settings.googleReviewsUrl;
+  const id = /placeid=([^&]+)/.exec(settings.googleReviewUrl || '')?.[1];
+  return id ? `https://search.google.com/local/reviews?placeid=${id}` : '';
+};
 
 export const saveQuoteSettings = (s) => {
   const merged = { ...getQuoteSettings(), ...s };
@@ -2744,6 +3114,36 @@ export const fillMessageTemplate = (template, vars = {}) => {
 export const unfilledPlaceholders = (text) =>
   [...new Set((String(text ?? '').match(/\{[a-z]+\}/gi) || []))];
 
+// ─── Curtain Calculator Rates ─────────────────────────────────────────────────
+// The rate card behind lib/curtainCalc.js — fullness multipliers, making and
+// track rates, the Oslo price bands and the fitting scale.
+//
+// Kept OUT of quote settings on purpose: those mirror to business_settings,
+// which the public customer quote page reads anonymously. These are supplier
+// cost rates, so they live in their own table (readable by staff only).
+
+const CURTAIN_RATES_ID = 'default';
+
+/** The stored rate card, merged over the defaults. Always safe to call. */
+export const getCurtainRates = () => {
+  const row = (get('lusso_curtain_rates') || []).find(r => r.id === CURTAIN_RATES_ID);
+  return mergeCurtainRates(row?.rates);
+};
+
+/** Only the fields that have been explicitly overridden (what's in the table). */
+export const getCurtainRatesRaw = () =>
+  (get('lusso_curtain_rates') || []).find(r => r.id === CURTAIN_RATES_ID)?.rates || {};
+
+export const saveCurtainRates = (rates) => {
+  const row = { id: CURTAIN_RATES_ID, rates, updatedAt: new Date().toISOString() };
+  set('lusso_curtain_rates', [row]);
+  db.saveCurtainRates?.(row);
+  return mergeCurtainRates(rates);
+};
+
+/** Back to the workbook's original rates. */
+export const resetCurtainRates = () => saveCurtainRates({});
+
 // ─── Priced Items Library ─────────────────────────────────────────────────────
 
 export const getPricedItems      = () => get('lusso_priced_items') || [];
@@ -2828,8 +3228,12 @@ export const runPricedItemImport = async (batchId, rows) => {
       category:       m.category      || '',
       supplier:       m.supplier      || '',
       unitType:       m.unitType      || '',
+      // Mirrored under both names: the DB column is `unit`, but this local
+      // record is read straight back by the UI before any hydration happens.
+      unit:           m.unitType      || m.unit || '',
       costPrice:      m.costPrice     ?? null,
       sellPrice:      m.sellPrice     ?? null,
+      fabricWidthMm:  m.fabricWidthMm ?? null,
       labourCost:     m.labourCost    ?? null,
       marginPercent:  m.marginPercent ?? null,
       markupPercent:  m.markupPercent ?? null,

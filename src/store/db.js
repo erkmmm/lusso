@@ -75,6 +75,7 @@ const KEYS = {
   reviewRequests:       'lusso_review_requests',
   measureSheetOptions:  'lusso_measure_sheet_options',
   schedulingDismissals: 'lusso_scheduling_dismissals',
+  curtainRates:         'lusso_curtain_rates',
 };
 
 // ── Per-table column exclusions ──────────────────────────────────────
@@ -158,11 +159,25 @@ const EXCLUDE_COLUMNS = {
     'assigned_employee',
   ],
   quotes: [
+    // Server-owned: written ONLY by track_quote_event when the customer opens,
+    // accepts or declines. They are pulled down for display, so every browser
+    // holds a copy — and a full-row upsert used to push that copy straight back
+    // over the live values. A staff machine holding a pre-open copy therefore
+    // reset first_opened_at to null, and the customer's next open announced
+    // itself as their first all over again. Read them, never write them.
+    'first_opened_at', 'last_viewed_at', 'view_count', 'customer_last_seen_at',
     // App-only fields that do NOT exist as DB columns:
-    'version', 'measure_sheet_id', 'site_address', 'terms_and_conditions',
-    'internal_notes', 'follow_up_date', 'show_sizes_to_client',
+    'version', 'measure_sheet_id',
+    'internal_notes', 'follow_up_date',
     'viewed_at', 'declined_at', 'accepted_by', 'activity', 'deleted_by',
     'source', 'import_note',
+    // site_address / terms_and_conditions / show_sizes_to_client used to be
+    // listed here, so they were stripped from every write and existed only in
+    // the author's own localStorage. The customer opening the link on their
+    // phone therefore got a quote with no site address, the generic default
+    // terms rather than the ones written for them, and sizes permanently
+    // hidden however the "Show dimensions to client" box was set. They are real
+    // columns now — see supabase/migrations/public_quote_link_hardening.sql.
     // DB has: grand_total, gst_amount, public_token, comments, selected_line_item_ids,
     //         total_cost, total_sell, xero_invoice_id, xero_invoice_number,
     //         xero_invoice_status, xero_invoice_url, xero_invoice_created_at,
@@ -174,7 +189,47 @@ const EXCLUDE_COLUMNS = {
   //               xero_last_synced_at — written normally via pushAllToSupabase
 };
 
-// ── Tables skipped during push (DB table doesn't exist yet) ──────────
+// ── Server-owned lifecycle fields (camelCase — these are post-fromDb names) ──
+// Where a quote or a job is up to is decided on the server: track_quote_event
+// when the customer opens / accepts / declines, job_advance_status behind it,
+// and the guard triggers that arbitrate between those and a staff write
+// (supabase/migrations/quote_status_guard.sql, job_status_guard.sql).
+//
+// Hydration below merges by updatedAt, and most of those server paths never
+// touch it — only the accept path bumps updated_at, and then only via
+// quote_recompute_totals. So after a decline, or a plain open moving Sent →
+// Viewed, a browser whose own updatedAt happens to be newer keeps its entire
+// local row: the server is right and that screen goes on showing "Sent" until
+// it next writes something.
+//
+// Taking these fields from the server row whenever we keep a local one closes
+// that, and does it without needing the browser's clock to agree with the
+// database's. It is safe because it runs AFTER the pending-outbox check: a
+// local write not yet confirmed returns early and is never overwritten here.
+const SERVER_LIFECYCLE_FIELDS = {
+  quotes: ['status', 'statusChangedAt', 'acceptedAt', 'sentAt', 'declineReason',
+           'selectedLineItemIds', 'firstOpenedAt', 'lastViewedAt', 'viewCount',
+           'customerLastSeenAt'],
+  jobs:   ['status', 'statusChangedAt'],
+};
+
+// Only the fields the server actually returned: a column that doesn't exist yet
+// (status_changed_at before its migration is applied) must not blank the local
+// value on its way through.
+function serverLifecycle(table, sbRow) {
+  const fields = SERVER_LIFECYCLE_FIELDS[table];
+  if (!fields) return null;
+  const out = {};
+  for (const f of fields) if (f in sbRow) out[f] = sbRow[f];
+  return out;
+}
+
+// ── Tables skipped by the bulk pushAllToSupabase() sweep ─────────────
+// `employees` has no Supabase table at all (profiles is used instead).
+// `notifications` does exist and IS written one row at a time by
+// db.saveNotification — read state has to reach the server or hydrate puts it
+// back. It stays out of the bulk sweep only because those rows are generated
+// server-side, so re-uploading a device's local copy of them proves nothing.
 const SKIP_PUSH_TABLES = new Set(['employees', 'notifications']);
 
 // ── Per-table upsert conflict column override ─────────────────────────
@@ -216,6 +271,7 @@ const TABLES = [
   { table: 'review_requests',        key: KEYS.reviewRequests },
   { table: 'measure_sheet_options',  key: KEYS.measureSheetOptions },
   { table: 'scheduling_dismissals',  key: KEYS.schedulingDismissals },
+  { table: 'curtain_rates',          key: KEYS.curtainRates },
   // NOTE: 'activity' is intentionally NOT here — it's append-only and synced
   // via a union (see hydrateFromSupabase) so existing local history is never
   // dropped by the "Supabase is authoritative" rule.
@@ -364,7 +420,10 @@ export async function hydrateFromSupabase() {
         if (pend.has(sbRow.id)) return localRow;
         const sbMs = new Date(sbRow.updatedAt || 0).getTime();
         const locMs = new Date(localRow.updatedAt || 0).getTime();
-        return locMs > sbMs ? localRow : sbRow;
+        if (locMs <= sbMs) return sbRow;
+        // Local is the newer row overall — but the lifecycle is the server's to
+        // state, not this browser's. See SERVER_LIFECYCLE_FIELDS.
+        return { ...localRow, ...serverLifecycle(table, sbRow) };
       });
 
       // Also keep pending records that don't exist on the server yet (new,
@@ -702,6 +761,9 @@ export const db = {
   deleteTakeoff:      (id) => softDelete('takeoffs', id),
 
   // Measure-sheet custom dropdown options
+  // Curtain calculator rate card (single 'default' row)
+  saveCurtainRates:         (r) => upsert('curtain_rates', r),
+
   saveMeasureSheetOption:   (r) => upsert('measure_sheet_options', r),
   deleteMeasureSheetOption: (id) => remove('measure_sheet_options', id),
 
@@ -881,6 +943,10 @@ function toPricedItemDbRow(item) {
     tax_rate:       item.taxRate       ?? 10,
     gst_applicable: item.gstApplicable !== false,
     unit:           item.unitType      || item.unit || '',
+    // Roll width, for fabric sold by the metre. The curtain calculator uses it
+    // to decide Continuous vs Regular cutting, so losing it here would quietly
+    // send every imported fabric back to the rate card's generic width.
+    fabric_width_mm: item.fabricWidthMm ?? null,
     is_active:      item.isActive      !== false,
     price_per_sqm:  item.pricePerSqm   ?? null,
     source:         item.source        || '',

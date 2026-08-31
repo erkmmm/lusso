@@ -15,11 +15,14 @@ import {
   getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
   getMsOptions, URGENCY_LEVELS,
   MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers,
+  isPlanEstimate, markLineCheckMeasured, markLinePlanEstimate,
 } from '../store/data';
 import { syncNow } from '../store/db';
+import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
 import ConsultRecorder from '../components/ConsultRecorder';
 import MeasureSheetTable from '../components/MeasureSheetTable';
+import CheckMeasureControl, { CheckMeasureBanner } from '../components/CheckMeasureControl';
 import PricedItemPicker from '../components/PricedItemPicker';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import { toast } from '../components/ToastContainer';
@@ -359,6 +362,7 @@ export default function NewMeasureSheet() {
   const isEdit           = Boolean(id && id !== 'new');
   // Active salespeople from Supabase — pending/suspended never appear here
   const { salespeople: staff } = useActiveSalespeople();
+  const { displayName = '' } = useProfile() || {};
   const productTypes     = getActiveProductTypes();
   const allCustomers     = useMemo(() => getCustomers(), []);
   const allJobs          = useMemo(() => getJobs(), []);
@@ -481,6 +485,26 @@ export default function NewMeasureSheet() {
     items[idx] = { ...items[idx], [field]: value };
     return { ...s, lineItems: items };
   });
+
+  // Multi-field patch — check-measuring flips five fields at once, and doing
+  // that as five setLineItem calls would drop four of them (each reads the
+  // same stale `s.lineItems`).
+  const patchLineItem = (idx, patch) => setSheet(s => {
+    const items = [...s.lineItems];
+    items[idx] = { ...items[idx], ...patch };
+    return { ...s, lineItems: items };
+  });
+
+  // Plan-scaled dimensions stay flagged until confirmed on site. Applied to the
+  // form's local state, so it saves with everything else on the sheet.
+  const confirmLineMeasured = (idx) =>
+    patchLineItem(idx, markLineCheckMeasured(sheet.lineItems[idx], { by: displayName }));
+  const revertLineToPlan = (idx) =>
+    patchLineItem(idx, markLinePlanEstimate(sheet.lineItems[idx]));
+  const confirmAllMeasured = () => setSheet(s => ({
+    ...s,
+    lineItems: s.lineItems.map(li => isPlanEstimate(li) ? markLineCheckMeasured(li, { by: displayName }) : li),
+  }));
 
   const addLineItem = () => {
     const newItem = EMPTY_LINE_ITEM();
@@ -1008,6 +1032,11 @@ export default function NewMeasureSheet() {
       >
         {openSections.items && (
           <div className="space-y-4">
+            {/* Lines scaled off a plan can't go to a supplier until someone
+                has confirmed them with a tape — say so before the sheet is
+                saved, not when the purchase order refuses to send. */}
+            <CheckMeasureBanner lineItems={sheet.lineItems} onConfirmAll={confirmAllMeasured} />
+
             {/* Layout switch — card view (default) or spreadsheet table */}
             <div className="flex justify-end items-center gap-2">
               {itemLayout === 'table' && (
@@ -1035,8 +1064,12 @@ export default function NewMeasureSheet() {
                   lineItems={sheet.lineItems}
                   setLineItem={setLineItem}
                   removeLineItem={removeLineItem}
+                  addLineItem={addLineItem}
+                  copyLineItem={copyLineItem}
                   productTypes={productTypes}
                   errors={errors}
+                  onConfirmMeasured={confirmLineMeasured}
+                  onRevertToPlan={revertLineToPlan}
                 />
               </div>
             )}
@@ -1074,8 +1107,12 @@ export default function NewMeasureSheet() {
                     lineItems={sheet.lineItems}
                     setLineItem={setLineItem}
                     removeLineItem={removeLineItem}
+                    addLineItem={addLineItem}
+                    copyLineItem={copyLineItem}
                     productTypes={productTypes}
                     errors={errors}
+                    onConfirmMeasured={confirmLineMeasured}
+                    onRevertToPlan={revertLineToPlan}
                   />
                 </div>
               </div>,
@@ -1101,7 +1138,7 @@ export default function NewMeasureSheet() {
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Location *</label>
                         <input value={item.location} onChange={e => setLineItem(idx, 'location', e.target.value)}
-                          placeholder="e.g. Master Bedroom"
+                          placeholder="e.g. Master Bedroom — or Bed 2 A, Bed 2 B"
                           className={inp() + (errors[`item_${idx}_location`] ? ' border-red-300 ring-1 ring-red-300' : '')} />
                       </div>
                       <div>
@@ -1116,6 +1153,11 @@ export default function NewMeasureSheet() {
                         />
                       </div>
                     </div>
+                    <CheckMeasureControl
+                      item={item}
+                      onConfirm={() => confirmLineMeasured(idx)}
+                      onRevert={() => revertLineToPlan(idx)}
+                    />
                     <button onClick={() => copyLineItem(idx)}
                       className="flex-shrink-0 text-slate-300 hover:text-amber-500 transition-colors p-1 rounded" title="Copy to new line">
                       <Copy size={15} />

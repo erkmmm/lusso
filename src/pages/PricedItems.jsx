@@ -7,13 +7,14 @@ import {
   XCircle, SkipForward, RefreshCw, Download, History, ArrowRight,
   Info, X, Loader2, Library, Plus, Search, Edit2, Trash2,
   ToggleLeft, ToggleRight, DollarSign, Tag, ChevronDown, Cloud, CloudOff, Sparkles,
-  CheckSquare, Square,
+  CheckSquare, Square, Layers,
 } from 'lucide-react';
 import {
   getPricedItems, savePricedItem, deletePricedItem,
   getPricedItemBatches, createPricedItemBatch, runPricedItemImport,
   savePricedItemBatch,
 } from '../store/data';
+import { isFabricItem } from '../lib/curtainCalc';
 import Card from '../components/Card';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -253,6 +254,7 @@ const EMPTY_ITEM = () => ({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function PricedItems() {
+  const navigate = useNavigate();
   useDataRefresh();
   const fileRef    = useRef(null);
   const pdfFileRef = useRef(null);
@@ -275,7 +277,7 @@ export default function PricedItems() {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() => {
     const t = searchParams.get('tab');
-    return t === 'import' || t === 'history' ? t : 'library';
+    return ['import', 'history', 'fabrics'].includes(t) ? t : 'library';
   });
 
   // Library state
@@ -305,9 +307,23 @@ export default function PricedItems() {
 
   // ── Library helpers ──────────────────────────────────────────────────────
 
-  const categories = [...new Set(items.map(p => p.category).filter(Boolean))].sort();
+  const categories = [...new Set(items.filter(p => !isFabricItem(p)).map(p => p.category).filter(Boolean))].sort();
 
-  const filteredItems = items.filter(p => {
+  // Fabric lives on its own tab. It's bought by the metre and consumed by the
+  // curtain calculator rather than quoted as a line item, and a few hundred
+  // fabrics in the general list buries the products you actually pick.
+  const fabricItems  = items.filter(isFabricItem);
+  const productItems = items.filter(p => !isFabricItem(p));
+
+  const filteredFabrics = fabricItems.filter(p => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (p.itemName || '').toLowerCase().includes(q)
+        || (p.supplier || '').toLowerCase().includes(q)
+        || (p.description || '').toLowerCase().includes(q);
+  });
+
+  const filteredItems = productItems.filter(p => {
     if (filterStatus === 'active'   && !p.isActive) return false;
     if (filterStatus === 'inactive' &&  p.isActive) return false;
     if (filterCat && p.category !== filterCat) return false;
@@ -462,14 +478,15 @@ export default function PricedItems() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-        {[['library', Library, 'Library'], ['import', Upload, 'Import'], ['history', History, 'History']].map(([t, Icon, label]) => (
+        {[['library', Library, 'Library'], ['fabrics', Layers, 'Fabrics'], ['import', Upload, 'Import'], ['history', History, 'History']].map(([t, Icon, label]) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
             className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === t ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <Icon size={14}/>{label}
-            {t === 'library' && <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold">{items.filter(p=>p.isActive).length}</span>}
+            {t === 'library' && <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold">{productItems.filter(p=>p.isActive).length}</span>}
+            {t === 'fabrics' && fabricItems.length > 0 && <span className="ml-1 text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full font-semibold">{fabricItems.length}</span>}
           </button>
         ))}
       </div>
@@ -690,6 +707,113 @@ export default function PricedItems() {
       )}
 
       {/* ── Import Tab ── */}
+      {/* ── FABRICS ─────────────────────────────────────────────────────────
+          Fabric is priced per metre and feeds the curtain calculator, so it
+          gets the columns that actually matter for it — rate and roll width —
+          rather than the generic product columns. */}
+      {activeTab === 'fabrics' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search fabrics by name or supplier…"
+                className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+            </div>
+            <button
+              onClick={() => navigate('/priced-items/import-pdf')}
+              className="text-xs font-medium px-3 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-lg flex items-center gap-1.5"
+            >
+              <Upload size={12} /> Import price list
+            </button>
+          </div>
+
+          {fabricItems.length === 0 ? (
+            <Card className="p-10 text-center">
+              <Layers size={26} className="mx-auto text-slate-300 mb-3" />
+              <p className="text-sm font-semibold text-slate-700 mb-1">No fabrics yet</p>
+              <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
+                Fabrics are items sold <span className="font-medium">per metre</span> with a cost price.
+                Import a supplier price list and they&rsquo;ll land here — the curtain calculator then
+                prices a quote from the fabric&rsquo;s own rate and roll width.
+              </p>
+              <button
+                onClick={() => navigate('/priced-items/import-pdf')}
+                className="text-xs font-semibold px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-lg inline-flex items-center gap-1.5"
+              >
+                <Upload size={12} /> Import a price list
+              </button>
+            </Card>
+          ) : (
+            <Card className="overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-baseline gap-2">
+                <span className="text-sm font-semibold text-slate-800">
+                  {filteredFabrics.length === fabricItems.length
+                    ? `${fabricItems.length} fabrics`
+                    : `${filteredFabrics.length} of ${fabricItems.length} fabrics`}
+                </span>
+                <span className="text-xs text-slate-400">
+                  priced per metre · used by the curtain calculator
+                </span>
+                <span className="ml-auto text-xs text-slate-400">
+                  {fabricItems.filter(f => f.fabricWidthMm).length} with a roll width
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" style={{ minWidth: 620 }}>
+                  <thead className="bg-slate-50 text-xs text-slate-500">
+                    <tr>
+                      <th className="text-left font-medium px-4 py-2">Fabric</th>
+                      <th className="text-left font-medium px-4 py-2">Supplier</th>
+                      <th className="text-right font-medium px-4 py-2">Cost</th>
+                      <th className="text-right font-medium px-4 py-2">Roll width</th>
+                      <th className="text-left font-medium px-4 py-2">Cuts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredFabrics.map(f => (
+                      <tr key={f.id} className="border-t border-slate-100 hover:bg-slate-50">
+                        <td className="px-4 py-2">
+                          <span className="font-medium text-slate-800">{f.itemName}</span>
+                          {f.description && (
+                            <span className="block text-xs text-slate-400 truncate max-w-[280px]">{f.description}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-slate-500 text-xs">{f.supplier || '—'}</td>
+                        <td className="px-4 py-2 text-right tabular-nums font-medium text-slate-800">
+                          ${Number(f.costPrice).toFixed(2)}<span className="text-xs text-slate-400">/m</span>
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-slate-600">
+                          {f.fabricWidthMm
+                            ? `${f.fabricWidthMm}mm`
+                            : <span className="text-xs text-amber-600">not set</span>}
+                        </td>
+                        <td className="px-4 py-2">
+                          {/* Whether a fabric railroads is a property of its roll,
+                              so it can be shown here rather than per quote line. */}
+                          {f.fabricWidthMm
+                            ? <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                f.fabricWidthMm >= 2500
+                                  ? 'bg-teal-50 text-teal-700 border border-teal-200'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {f.fabricWidthMm >= 2500 ? 'Wide roll' : 'Into drops'}
+                              </span>
+                            : <span className="text-xs text-slate-300">—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
       {activeTab === 'import' && (
         <>
           {step !== 'done' && (

@@ -55,7 +55,12 @@ export async function onRequestPost(context) {
 
   // ── Build email ───────────────────────────────────────────────────────────
   const origin    = appUrl || 'https://app.lusso.com.au';
-  const quoteUrl  = `${origin}/quotes/${quote.id}/preview`;
+  // ?t= is the quote's public_token and is what authorises the page. Quote ids
+  // are sequential, so a link carrying only the id was one anyone could guess —
+  // and the page's RPCs now refuse without it, so a link built without the
+  // token simply won't open.
+  const quoteUrl  = `${origin}/quotes/${quote.id}/preview`
+    + (quote.publicToken ? `?t=${encodeURIComponent(quote.publicToken)}` : '');
   const firstName = customer.name?.split(' ')[0] || customer.name || 'there';
   const quoteRef  = quote.quoteNumber || quote.id;
   const expiryFmt = quote.expiryDate

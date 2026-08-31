@@ -150,6 +150,10 @@ function PrintView({ sheet, customer, job }) {
         const width   = item.widthMm || item.width;
         const drop    = item.dropMm  || item.drop;
         const filledSpecs = ALL_SPECS.map(([label, fn]) => [label, fn(item)]).filter(([, v]) => v);
+        // This sheet is what gets carried on site and handed to the workroom, so
+        // a dimension that was only ever scaled off a plan has to say so here —
+        // it's the one place someone might otherwise order straight from it.
+        const planEstimate = item.source === 'takeoff' && item.measureSource !== 'site';
 
         return (
           <div key={item.id || i} style={{ border: '1px solid #ddd', borderRadius: '4px', marginBottom: '8px', breakInside: 'avoid', pageBreakInside: 'avoid' }}>
@@ -162,6 +166,11 @@ function PrintView({ sheet, customer, job }) {
               <span style={{ color: '#555', marginLeft: '4px' }}>—</span>
               <span style={{ color: '#174D4D', fontWeight: 'bold', fontSize: '12px' }}>{product}</span>
               {item.quantity > 1 && <span style={{ marginLeft: 'auto', background: '#174D4D', color: '#fff', borderRadius: '3px', padding: '1px 6px', fontSize: '10px', fontWeight: 'bold' }}>×{item.quantity}</span>}
+              {planEstimate && (
+                <span style={{ marginLeft: item.quantity > 1 ? '6px' : 'auto', background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', borderRadius: '3px', padding: '1px 6px', fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  Plan estimate — not check measured
+                </span>
+              )}
             </div>
 
             <div style={{ padding: '8px 10px' }}>
@@ -169,11 +178,11 @@ function PrintView({ sheet, customer, job }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: filledSpecs.length > 0 || item.notes ? '8px' : '0', paddingBottom: filledSpecs.length > 0 || item.notes ? '8px' : '0', borderBottom: filledSpecs.length > 0 || item.notes ? '1px dashed #e5e7eb' : 'none' }}>
                 <div>
                   <div style={{ fontSize: '9px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase' }}>Width</div>
-                  <div style={{ fontWeight: 'bold', fontSize: '13px', fontFamily: 'monospace' }}>{width ? `${width} mm` : '—'}</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '13px', fontFamily: 'monospace', color: planEstimate ? '#92400e' : undefined }}>{width ? `${width} mm` : '—'}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: '9px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase' }}>Drop</div>
-                  <div style={{ fontWeight: 'bold', fontSize: '13px', fontFamily: 'monospace' }}>{drop ? `${drop} mm` : '—'}</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '13px', fontFamily: 'monospace', color: planEstimate ? '#92400e' : undefined }}>{drop ? `${drop} mm` : '—'}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: '9px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase' }}>Qty</div>

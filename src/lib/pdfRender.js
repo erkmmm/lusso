@@ -21,6 +21,9 @@ async function getPdfjs() {
   return pdfjs;
 }
 
+/** The configured pdf.js module (worker already wired up). */
+export const pdfjsLib = () => getPdfjs();
+
 /** Load a PDF document from an ArrayBuffer. Returns the pdf.js document proxy. */
 export async function loadPdf(arrayBuffer) {
   const { getDocument } = await getPdfjs();

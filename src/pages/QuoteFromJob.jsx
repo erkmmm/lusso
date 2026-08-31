@@ -8,13 +8,15 @@ import {
 import {
   getJob, getCustomer, getMeasureSheetsByJob,
   createQuote, saveQuote, addActivity, getQuotesByJob,
+  getCurtainRates, getPricedItems,
 } from '../store/data';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
+import { autoCostCurtainLine } from '../lib/curtainCalc';
 
 // Convert a measure-sheet line item → snapshot quote line item
-function msLineToQuoteLine(msLi, idx) {
+function msLineToQuoteLine(msLi, idx, rates, pricedItems) {
   const parts = [];
   if (msLi.fabricColour && msLi.fabricColour !== 'N/A') parts.push(msLi.fabricColour);
   const prod = msLi.productNameSnapshot || msLi.productType || '';
@@ -25,6 +27,21 @@ function msLineToQuoteLine(msLi, idx) {
   let desc = parts.join(' ');
   if (suffs.length) desc = desc ? `${desc} with ${suffs.join(', ')}` : suffs.join(', ');
   if (desc) desc = desc.charAt(0).toUpperCase() + desc.slice(1);
+
+  // Curtains are costed from their measurements by the calculator that replaced
+  // the Excel workbook; everything else comes across with cost blank to price by
+  // hand. Shared with QuoteBuilder's import so the two can't drift.
+  const costed = autoCostCurtainLine(
+    { ...msLi, productNameSnapshot: msLi.productNameSnapshot || msLi.productType },
+    rates, pricedItems,
+  );
+  const curtainCost = costed && !costed.blocked
+    ? {
+        unitCostPrice:          costed.unitCostPrice,
+        labourCost:             costed.labourCost,
+        curtainFabricPricePerM: costed.curtainFabricPricePerM,
+      }
+    : { unitCostPrice: '', labourCost: '', curtainFabricPricePerM: '' };
 
   return {
     id: uuidv4(),
@@ -47,8 +64,10 @@ function msLineToQuoteLine(msLi, idx) {
     trackBaseBarColour: msLi.trackBaseBarColour || '',
     baseBarType: msLi.baseBarType || '',
     chainColour: msLi.chainColour || '',
-    unitCostPrice: '',
-    labourCost: '',
+    trackType: msLi.trackType || '',
+    attachedLining: !!msLi.attachedLining,
+    curtainFittingEnabled: true,
+    ...curtainCost,
     marginPercent: 40,
     manualSellPrice: '',
     taxable: true,
@@ -192,9 +211,11 @@ export default function QuoteFromJob() {
     setCreating(true);
     setError('');
     try {
+      const curtainRates = getCurtainRates();
+      const fabricLib    = getPricedItems();
       const selectedLines = lineItems
         .filter(li => checkedIds.has(li.id))
-        .map((li, i) => msLineToQuoteLine(li, i));
+        .map((li, i) => msLineToQuoteLine(li, i, curtainRates, fabricLib));
 
       const quote = createQuote({
         customerId:      job.customerId,

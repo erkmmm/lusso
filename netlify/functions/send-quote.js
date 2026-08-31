@@ -22,7 +22,10 @@ export const handler = async (event) => {
       return respond(400, { error: 'Missing quote or customer email' });
     }
 
-    const quoteUrl  = `${appUrl || process.env.URL || 'http://localhost:8888'}/quotes/${quote.id}/preview`;
+    // ?t= is the quote's public_token — see functions/api/send-quote.js. A link
+    // without it will not open.
+    const quoteUrl  = `${appUrl || process.env.URL || 'http://localhost:8888'}/quotes/${quote.id}/preview`
+      + (quote.publicToken ? `?t=${encodeURIComponent(quote.publicToken)}` : '');
     const expiryFmt = quote.expiryDate
       ? new Date(quote.expiryDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
       : null;

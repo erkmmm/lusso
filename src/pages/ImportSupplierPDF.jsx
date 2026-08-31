@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import {
   Upload, FileText, Sparkles, ChevronDown, ChevronUp,
   CheckSquare, Square, Edit2, Check, X, AlertTriangle,
-  ArrowLeft, ArrowRight, Package, RotateCcw,
+  ArrowLeft, ArrowRight, Package, RotateCcw, Table2, Columns3,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { extractPdfText } from '../lib/pdfExtract';
+import { extractPdfTable, rowsToItems, dataRows, isDraperyRow, parseWidthMm } from '../lib/pdfTable';
+import { isPerMetreUnit } from '../lib/curtainCalc';
 import { supabase } from '../lib/supabase';
 import { getPricedItems, savePricedItemBatch, runPricedItemImport, getProductTypes } from '../store/data';
 import { toast } from '../components/ToastContainer';
@@ -19,6 +21,19 @@ const LUSSO_CATEGORIES = [
   'Venetian Blind', 'Vertical Blind', 'Aluminium Blind', 'Timber Blind',
   'Pleated Blind', 'Cellular Blind',
   'Track System', 'Installation', 'Accessory', 'Other',
+];
+
+// Priced-item fields a price-list column can be mapped onto. Order is the order
+// they appear in the mapping dropdown.
+const MAPPABLE_FIELDS = [
+  { key: 'itemName',      label: 'Name' },
+  { key: 'costPrice',     label: 'Cost price' },
+  { key: 'itemCode',      label: 'Item code' },
+  { key: 'fabricWidthMm', label: 'Roll width' },
+  { key: 'collection',    label: 'Collection' },
+  { key: 'composition',   label: 'Composition' },
+  { key: 'usage',         label: 'Usage' },
+  { key: 'railroaded',    label: 'Railroaded' },
 ];
 
 // ── Step indicator ────────────────────────────────────────────────────────────
@@ -194,6 +209,56 @@ export default function ImportSupplierPDF() {
   // Drag visual state
   const [dragOver, setDragOver] = useState(false);
 
+  // Table path — a price list whose columns line up is read off the page
+  // directly, no model involved. `table` holds the detected grid; `mapping` is
+  // column index → priced-item field.
+  const [table,    setTable]    = useState(null);
+  const [mapping,  setMapping]  = useState({});
+  const [scanning, setScanning] = useState(false);
+  // What the imported rows ARE. `unit` matters beyond bookkeeping: the curtain
+  // calculator only treats an item as fabric when it's sold per linear metre,
+  // so importing a blind list as "per m" would quietly pollute fabric pricing.
+  const [importUnit,     setImportUnit]     = useState('per m');
+  const [importCategory, setImportCategory] = useState('Curtain Fabric');
+  // Price lists mix upholstery and drapery in one table. On by default, because
+  // importing the upholstery range into a curtain fabric library buries the
+  // fabrics you actually hang.
+  const [draperyOnly, setDraperyOnly] = useState(true);
+  // Rows missing a roll width are almost always a second table bolted onto the
+  // end of the price list with different columns — real fabric rows all have one.
+  const [requireWidth, setRequireWidth] = useState(true);
+
+  // Rows the current mapping would actually import, and a few of them to show
+  // as samples. Recomputed as the mapping changes so the count on the button is
+  // the real one, not an estimate.
+  const mappedRows    = table ? dataRows(table, mapping) : [];
+  // The drapery filter reads the usage column, so it can only apply when one is
+  // mapped. Counts shown on the button are the real post-filter numbers.
+  const usageMapped   = Object.values(mapping).includes('usage');
+  const widthMapped   = Object.values(mapping).includes('fabricWidthMm');
+  const widthIdx      = Object.entries(mapping).find(([, f]) => f === 'fabricWidthMm')?.[0];
+  const usageIdx      = Object.entries(mapping).find(([, f]) => f === 'usage')?.[0];
+  const draperyCount  = usageMapped
+    ? mappedRows.filter(r => isDraperyRow({ usage: r.cells[usageIdx] })).length
+    : 0;
+  const noWidthCount  = widthMapped
+    ? mappedRows.filter(r => {
+        if (draperyOnly && usageMapped && !isDraperyRow({ usage: r.cells[usageIdx] })) return false;
+        return !parseWidthMm(r.cells[widthIdx]);
+      }).length
+    : 0;
+  const afterDrapery  = (draperyOnly && usageMapped) ? draperyCount : mappedRows.length;
+  const willImport    = afterDrapery - ((requireWidth && widthMapped) ? noWidthCount : 0);
+  const mappedRowCount = mappedRows.length;
+
+  // Fabric is a cost per metre, not a product with a sell price and a margin —
+  // it's an input to the curtain calculator. When the rows being imported are
+  // fabric, the preview drops the sell/margin columns that can only ever read
+  // "—" for them, and shows the roll width instead, which is the field that
+  // actually changes what a curtain costs.
+  const fabricMode = items.length > 0 && items.every(i => isPerMetreUnit(i.unit));
+  const sampleRows    = mappedRows.length ? mappedRows.slice(0, 3) : (table?.rows || []).slice(0, 3);
+
   // ── File pick ───────────────────────────────────────────────────────────────
   const handleFileDrop = useCallback(async (f) => {
     setDragOver(false);
@@ -212,6 +277,63 @@ export default function ImportSupplierPDF() {
       setSupplierName(base.slice(0, 60));
     }
   }, [supplierName]);
+
+  // ── Read the columns ─────────────────────────────────────────────────────────
+  // Tried first, because a price list that IS a table can be read exactly:
+  // every price comes off the page rather than out of a model, nothing is
+  // truncated, and it costs nothing to run. Only a list whose columns don't
+  // line up falls through to the AI parser.
+  const handleScan = async () => {
+    if (!file) { setParseError('Select a PDF first.'); return; }
+    if (!supplierName.trim()) { setParseError('Enter a supplier name.'); return; }
+
+    setScanning(true);
+    setParseError('');
+    try {
+      const t = await extractPdfTable(file);
+      if (!t.columns.length || t.confidence < 0.12) {
+        setParseError('No table columns found in this PDF — try "Parse with AI" instead, which reads it as prose.');
+        setTable(null);
+        return;
+      }
+      const auto = {};
+      t.columns.forEach(c => { if (c.field) auto[c.index] = c.field; });
+      setTable(t);
+      setMapping(auto);
+    } catch (e) {
+      setParseError(`Could not read the PDF: ${e.message}`);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  // Accept the mapping and turn the grid into draft priced items.
+  const handleUseTable = () => {
+    const drafts = rowsToItems(table, mapping, {
+      supplier: supplierName.trim(),
+      unit: importUnit,
+      category: importCategory,
+      draperyOnly: draperyOnly && usageMapped,
+      requireWidth: requireWidth && widthMapped,
+    });
+    if (!drafts.length) {
+      setParseError('That mapping produced no rows. Check the Name and Price columns are set.');
+      return;
+    }
+    const existing = getPricedItems();
+    const byCode = new Map(existing.map(p => [p.itemCode?.toLowerCase(), p]));
+    const byName = new Map(existing.map(p => [p.itemName?.toLowerCase(), p]));
+    const dupes = new Set();
+    const withIds = drafts.map(d => {
+      const tmpId = uuidv4();
+      if ((d.itemCode && byCode.get(d.itemCode.toLowerCase())) || byName.get(d.itemName.toLowerCase())) dupes.add(tmpId);
+      return { ...d, tmpId, supplierName: supplierName.trim() };
+    });
+    setItems(withIds);
+    setSelected(new Set(withIds.filter(i => !dupes.has(i.tmpId)).map(i => i.tmpId)));
+    setDupeIds(dupes);
+    setStep(2);
+  };
 
   // ── Parse ────────────────────────────────────────────────────────────────────
   const handleParse = async () => {
@@ -341,6 +463,7 @@ export default function ImportSupplierPDF() {
             costPrice:     item.costPrice ?? null,
             sellPrice:     item.sellPrice ?? null,
             pricePerSqm:   item.pricePerSqm ?? null,
+            fabricWidthMm: item.fabricWidthMm ?? null,
             marginPercent: item.marginPercent ?? null,
             labourCost:    null,
             markupPercent: null,
@@ -378,7 +501,7 @@ export default function ImportSupplierPDF() {
         </div>
         <div>
           <h1 className="text-xl font-bold text-slate-900">Import from Supplier PDF</h1>
-          <p className="text-sm text-slate-500">AI reads the price list and populates your product library</p>
+          <p className="text-sm text-slate-500">Read a supplier price list straight into your price library</p>
         </div>
       </div>
 
@@ -458,22 +581,204 @@ export default function ImportSupplierPDF() {
             </div>
           </div>
 
-          {/* What the AI does */}
-          <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4">
-            <div className="flex items-start gap-3">
-              <Sparkles size={16} className="text-violet-500 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-violet-800 mb-1">What the AI will do</p>
-                <ul className="text-xs text-violet-700 space-y-1">
-                  <li>• Extract every product — name, code, description, category, cost price, sell price</li>
-                  <li>• Normalise categories to your product types (Roller Blind, Sheer Curtain, etc.)</li>
-                  <li>• Write rich descriptions optimised for Quote Autopilot matching</li>
-                  <li>• Skip headers, totals, and non-product rows</li>
-                  <li>• Flag items already in your library as duplicates</li>
-                </ul>
+          {/* How it reads the file */}
+          {!table && (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <Table2 size={16} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 mb-1">How it reads the file</p>
+                  <p className="text-xs text-slate-600 mb-2">
+                    Most price lists are tables. Every word in a PDF knows where it sits on the page,
+                    so the columns are measured rather than guessed — every row, exact prices, nothing
+                    dropped. You confirm what each column is before anything is imported.
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    If the columns don&rsquo;t line up — a scan, or a catalogue written as prose —
+                    use <span className="font-medium text-violet-700">Parse with AI</span> instead.
+                    It handles any layout, but reads longer lists in part and infers prices rather
+                    than reading them off the page.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* ── Detected table ───────────────────────────────────────────────
+              Shown once the columns have been measured off the page. Every
+              column is listed with real sample values so the mapping can be
+              checked against what's actually in the file, not guessed at. */}
+          {table && (
+            <div className="bg-white border border-teal-200 rounded-2xl overflow-hidden">
+              <div className="bg-teal-50 border-b border-teal-200 px-5 py-3 flex flex-wrap items-center gap-2">
+                <Table2 size={15} className="text-teal-600" />
+                <span className="text-sm font-semibold text-teal-800">Table found</span>
+                <span className="text-xs text-teal-700">
+                  {table.columns.length} columns · {table.pageCount} pages · {mappedRowCount.toLocaleString()} priceable rows
+                </span>
+                <button
+                  onClick={() => { setTable(null); setMapping({}); }}
+                  className="ml-auto text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  Rescan
+                </button>
+              </div>
+
+              <div className="px-5 py-4">
+                <p className="text-xs text-slate-500 mb-3 flex items-center gap-1.5">
+                  <Columns3 size={13} className="text-slate-400" />
+                  Tell it what each column is. Anything left as &ldquo;Skip&rdquo; is ignored.
+                </p>
+
+                <div className="overflow-x-auto -mx-1 px-1">
+                  <table className="w-full text-xs" style={{ minWidth: 520 }}>
+                    <thead>
+                      <tr className="text-left text-slate-400">
+                        <th className="pb-2 pr-3 font-medium">Column</th>
+                        <th className="pb-2 pr-3 font-medium">Sample values</th>
+                        <th className="pb-2 font-medium">Import as</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {table.columns.map(col => {
+                        const samples = sampleRows
+                          .map(r => r.cells[col.index])
+                          .filter(Boolean).slice(0, 3);
+                        const active = !!mapping[col.index];
+                        return (
+                          <tr key={col.index} className="border-t border-slate-100">
+                            <td className="py-2 pr-3 align-top">
+                              <span className={`font-medium ${active ? 'text-slate-800' : 'text-slate-400'}`}>
+                                {col.label}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 align-top text-slate-400 font-mono">
+                              {samples.length
+                                ? samples.map((v, i) => <div key={i} className="truncate max-w-[220px]">{v}</div>)
+                                : <span className="italic">empty</span>}
+                            </td>
+                            <td className="py-2 align-top">
+                              <select
+                                value={mapping[col.index] || ''}
+                                onChange={e => setMapping(m => {
+                                  const next = { ...m };
+                                  // A field can only come from one column, so
+                                  // choosing it here releases it elsewhere.
+                                  if (e.target.value) {
+                                    for (const k of Object.keys(next)) {
+                                      if (next[k] === e.target.value) delete next[k];
+                                    }
+                                    next[col.index] = e.target.value;
+                                  } else delete next[col.index];
+                                  return next;
+                                })}
+                                className={`border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                                  active ? 'border-teal-300 bg-teal-50 text-teal-800 font-medium' : 'border-slate-200 text-slate-500'
+                                }`}
+                              >
+                                <option value="">Skip</option>
+                                {MAPPABLE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                              </select>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {usageMapped && (
+                  <label className="mt-4 flex items-start gap-2.5 border-t border-slate-100 pt-4 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={draperyOnly}
+                      onChange={e => setDraperyOnly(e.target.checked)}
+                      className="mt-0.5 accent-teal-600"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-slate-800">
+                        Drapery fabrics only
+                      </span>
+                      <span className="block text-xs text-slate-500 mt-0.5">
+                        Keeps the {draperyCount.toLocaleString()} rows marked for drapery and leaves{' '}
+                        {(mappedRowCount - draperyCount).toLocaleString()} upholstery rows out. Read from the
+                        Usage column, so narrow drapery fabrics are kept too — they&rsquo;re cut into drops
+                        rather than railroaded.
+                      </span>
+                    </span>
+                  </label>
+                )}
+
+                {widthMapped && noWidthCount > 0 && (
+                  <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={requireWidth}
+                      onChange={e => setRequireWidth(e.target.checked)}
+                      className="mt-0.5 accent-teal-600"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-slate-800">
+                        Skip rows with no roll width
+                      </span>
+                      <span className="block text-xs text-slate-500 mt-0.5">
+                        Drops {noWidthCount.toLocaleString()} rows. A price list often ends with a second
+                        table laid out differently — those rows land on the wrong columns and come through
+                        with a nonsense width, while every row of the real table has one.
+                      </span>
+                    </span>
+                  </label>
+                )}
+
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-100 pt-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">These rows are sold</label>
+                    <select
+                      value={importUnit}
+                      onChange={e => setImportUnit(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <option value="per m">per metre — fabric off a roll</option>
+                      <option value="per sqm">per m² — sized goods</option>
+                      <option value="each">each — a fixed-price item</option>
+                    </select>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Only <span className="font-medium">per metre</span> items are used as curtain fabric.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">Category</label>
+                    <select
+                      value={importCategory}
+                      onChange={e => setImportCategory(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <option value="Curtain Fabric">Curtain Fabric</option>
+                      {LUSSO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {!mapping || !Object.values(mapping).includes('itemName') || !Object.values(mapping).includes('costPrice') ? (
+                  <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertTriangle size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-amber-800">
+                      Set at least a <strong>Name</strong> and a <strong>Cost price</strong> column to continue.
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleUseTable}
+                    className="mt-4 w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
+                  >
+                    <Check size={15} />
+                    Use these {willImport.toLocaleString()} rows
+                    <ArrowRight size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {parseError && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
@@ -482,24 +787,33 @@ export default function ImportSupplierPDF() {
             </div>
           )}
 
-          <button
-            onClick={handleParse}
-            disabled={parsing || !file}
-            className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-semibold py-3.5 rounded-xl transition-colors text-sm"
-          >
-            {parsing ? (
-              <>
-                <Sparkles size={16} className="animate-pulse" />
-                Reading PDF and extracting products…
-              </>
-            ) : (
-              <>
-                <Sparkles size={16} />
-                Parse with AI
-                <ArrowRight size={15} />
-              </>
-            )}
-          </button>
+          {!table && (
+            <div className="space-y-2">
+              <button
+                onClick={handleScan}
+                disabled={scanning || parsing || !file}
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-semibold py-3.5 rounded-xl transition-colors text-sm"
+              >
+                {scanning ? (
+                  <><Table2 size={16} className="animate-pulse" /> Reading the columns…</>
+                ) : (
+                  <><Table2 size={16} /> Read price list <ArrowRight size={15} /></>
+                )}
+              </button>
+
+              <button
+                onClick={handleParse}
+                disabled={parsing || scanning || !file}
+                className="w-full flex items-center justify-center gap-2 border border-violet-200 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 text-violet-700 font-medium py-2.5 rounded-xl transition-colors text-xs"
+              >
+                {parsing ? (
+                  <><Sparkles size={14} className="animate-pulse" /> Reading PDF and extracting products…</>
+                ) : (
+                  <><Sparkles size={14} /> Parse with AI instead</>
+                )}
+              </button>
+            </div>
+          )}
 
           {parsing && (
             <p className="text-center text-xs text-slate-400">
@@ -548,20 +862,28 @@ export default function ImportSupplierPDF() {
           {/* Table */}
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
             {/* Table header */}
-            <div className="grid grid-cols-[32px_1fr_80px_140px_80px_80px_70px_80px_60px] gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+            <div className={`grid ${fabricMode
+                ? 'grid-cols-[32px_1fr_80px_140px_90px_100px_80px]'
+                : 'grid-cols-[32px_1fr_80px_140px_80px_80px_70px_80px_60px]'} gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wide`}>
               <button onClick={toggleAll} className="flex items-center">
                 {selected.size === items.length
                   ? <CheckSquare size={15} className="text-amber-500" />
                   : <Square size={15} className="text-slate-400" />
                 }
               </button>
-              <div>Product Name</div>
+              <div>{fabricMode ? 'Fabric' : 'Product Name'}</div>
               <div>Code</div>
               <div>Category</div>
-              <div>Cost $</div>
-              <div>Sell $</div>
-              <div>$/m²</div>
-              <div>Margin%</div>
+              <div>{fabricMode ? 'Cost $/m' : 'Cost $'}</div>
+              {fabricMode ? (
+                <div>Roll width</div>
+              ) : (
+                <>
+                  <div>Sell $</div>
+                  <div>$/m²</div>
+                  <div>Margin%</div>
+                </>
+              )}
               <div>Unit</div>
             </div>
 
@@ -577,7 +899,9 @@ export default function ImportSupplierPDF() {
                     className={`px-4 py-3 ${isSelected ? 'bg-white' : 'bg-slate-50/60 opacity-60'} hover:bg-amber-50/20 transition-colors`}
                   >
                     {/* Main row */}
-                    <div className="grid grid-cols-[32px_1fr_80px_140px_80px_80px_70px_80px_60px] gap-2 items-start">
+                    <div className={`grid ${fabricMode
+                      ? 'grid-cols-[32px_1fr_80px_140px_90px_100px_80px]'
+                      : 'grid-cols-[32px_1fr_80px_140px_80px_80px_70px_80px_60px]'} gap-2 items-start`}>
                       {/* Checkbox */}
                       <button onClick={() => toggleOne(item.tmpId)} className="mt-0.5">
                         {isSelected
@@ -625,24 +949,38 @@ export default function ImportSupplierPDF() {
                         type="number"
                       />
 
-                      {/* Sell */}
-                      <EditableCell
-                        value={item.sellPrice}
-                        onChange={v => editItem(item.tmpId, 'sellPrice', v)}
-                        type="number"
-                      />
+                      {fabricMode ? (
+                        /* Roll width — decides Continuous vs Regular cutting */
+                        <div className="flex items-baseline gap-1">
+                          <EditableCell
+                            value={item.fabricWidthMm ?? ''}
+                            onChange={v => editItem(item.tmpId, 'fabricWidthMm', v === '' || v == null ? null : Number(v))}
+                            type="number"
+                          />
+                          {item.fabricWidthMm ? <span className="text-[10px] text-slate-400">mm</span> : null}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Sell */}
+                          <EditableCell
+                            value={item.sellPrice}
+                            onChange={v => editItem(item.tmpId, 'sellPrice', v)}
+                            type="number"
+                          />
 
-                      {/* $/m² */}
-                      <EditableCell
-                        value={item.pricePerSqm}
-                        onChange={v => editItem(item.tmpId, 'pricePerSqm', v == null || v === '' ? null : Number(v))}
-                        type="number"
-                      />
+                          {/* $/m² */}
+                          <EditableCell
+                            value={item.pricePerSqm}
+                            onChange={v => editItem(item.tmpId, 'pricePerSqm', v == null || v === '' ? null : Number(v))}
+                            type="number"
+                          />
 
-                      {/* Margin */}
-                      <div className="text-sm text-slate-500">
-                        {item.marginPercent != null ? `${item.marginPercent.toFixed(1)}%` : '—'}
-                      </div>
+                          {/* Margin */}
+                          <div className="text-sm text-slate-500">
+                            {item.marginPercent != null ? `${item.marginPercent.toFixed(1)}%` : '—'}
+                          </div>
+                        </>
+                      )}
 
                       {/* Unit */}
                       <EditableCell

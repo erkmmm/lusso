@@ -7,6 +7,10 @@ import { renderEmail, renderText } from "./emailLayout.ts"
 // shared token only the DB knows, so this public endpoint can't be used to spam
 // staff or read their emails. Recipients + details come from SECURITY DEFINER
 // RPCs that exclude suspended/deactivated/banned/deleted/unconfirmed accounts.
+//
+// On acceptance it also sends the CUSTOMER a confirmation. The accepted-quote
+// page has always told them "a copy has been emailed to you" — and until this
+// existed, nothing was: the only mail leaving the building went to staff.
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -58,12 +62,16 @@ Deno.serve(async (req: Request) => {
     const RESEND_KEY = Deno.env.get("RESEND_API_KEY") ?? ""
     const EMAIL_FROM = Deno.env.get("EMAIL_FROM") ?? "Lusso <onboarding@resend.dev>"
 
-    if (dryRun) return json({ ok: true, dryRun: true, recipients: to.length, resendConfigured: !!RESEND_KEY, from: EMAIL_FROM, subject })
-    if (!to.length) return json({ ok: true, note: "no recipients" })
-    if (!RESEND_KEY) return json({ ok: false, note: "Resend API key not configured" })
-
     const appUrl = Deno.env.get("APP_URL") || "https://app.lusso.com.au"
     const link = p.jobId ? `${appUrl}/jobs/${p.jobId}` : `${appUrl}/quotes/${quoteId}`
+
+    if (dryRun) return json({ ok: true, dryRun: true, recipients: to.length, resendConfigured: !!RESEND_KEY, from: EMAIL_FROM, subject, customerEmail: !!p.customerEmail })
+    if (!RESEND_KEY) return json({ ok: false, note: "Resend API key not configured" })
+    // No account managers configured is not a reason to withhold the customer's
+    // own confirmation, so this check no longer short-circuits the whole run.
+    if (!to.length && !(eventType === "quote_accepted" && p.customerEmail)) {
+      return json({ ok: true, note: "no recipients" })
+    }
 
     const content = {
       preheader: `${custName} · ${p.quoteNumber}${p.salesperson ? ` · ${p.salesperson}` : ""}`,
@@ -75,20 +83,82 @@ Deno.serve(async (req: Request) => {
       footerNote: `Salesperson: ${p.salesperson || "—"}`,
     }
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: EMAIL_FROM,
-        to,
-        subject,
-        html: renderEmail(content),
-        text: renderText(content),
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) return json({ ok: false, note: data?.message || "send failed" })
-    return json({ ok: true, id: data?.id, recipients: to.length })
+    // Guarded because `to` may legitimately be empty now: an acceptance with no
+    // account managers configured still owes the customer their confirmation,
+    // and Resend rejects an empty recipient list.
+    let staffSend: Record<string, unknown> = { sent: false, note: "no recipients" }
+    if (to.length) {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: EMAIL_FROM,
+          to,
+          subject,
+          html: renderEmail(content),
+          text: renderText(content),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      staffSend = res.ok ? { sent: true, id: data?.id } : { sent: false, note: data?.message || "send failed" }
+    }
+
+    // ── Customer confirmation ────────────────────────────────────────────────
+    // Their receipt: what they chose, what it came to, and what happens next.
+    // Failing to send it must never fail the staff notification, so it's
+    // wrapped and reported rather than thrown.
+    let customerSend: Record<string, unknown> = { sent: false }
+    if (eventType === "quote_accepted" && p.customerEmail) {
+      try {
+        const money = (n: unknown) =>
+          "$" + Number(n ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        const items: Array<{ name: string; location?: string; quantity?: number; total?: number }> =
+          Array.isArray(p.items) ? p.items : []
+        const lines = items
+          .map(i => `• ${i.name}${i.location ? ` (${i.location})` : ""}${Number(i.quantity) > 1 ? ` × ${i.quantity}` : ""} — ${money(i.total)}`)
+          .join("\n")
+        const deposit = p.depositAmount != null
+          ? `\n\nYour ${p.depositLabel ?? ""} deposit of ${money(p.depositAmount)} confirms the order — we'll sort that out with you on the call.`
+          : ""
+        const quoteLink = p.publicToken
+          ? `${appUrl}/quotes/${quoteId}/preview?t=${encodeURIComponent(String(p.publicToken))}`
+          : ""
+
+        const custContent = {
+          preheader: `Your order is confirmed · ${p.quoteNumber} · ${money(p.grandTotal)}`,
+          eyebrow: "Order confirmed",
+          heading: `Thank you — we have your acceptance`,
+          greeting: `Hi ${String(custName).split(" ")[0] || "there"},`,
+          body:
+            `Thanks for accepting quote ${p.quoteNumber}${p.siteAddress ? ` for ${p.siteAddress}` : ""}. `
+            + `Here's what you've confirmed:\n\n${lines}\n\nTotal: ${money(p.grandTotal)} (incl. GST where it applies).${deposit}`,
+          cta: quoteLink ? { label: "View your quote", url: quoteLink } : null,
+          outro: "We'll call within one business day to arrange the deposit and book your installation. "
+               + "If anything here doesn't look right, just reply to this email — it comes straight to us.",
+          signOff: "The Lusso Team",
+        }
+
+        const custRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: EMAIL_FROM,
+            to: [p.customerEmail],
+            subject: `Your Lusso order is confirmed — ${p.quoteNumber}`,
+            html: renderEmail(custContent),
+            text: renderText(custContent),
+          }),
+        })
+        const custData = await custRes.json().catch(() => ({}))
+        customerSend = custRes.ok
+          ? { sent: true, id: custData?.id }
+          : { sent: false, note: custData?.message || "customer send failed" }
+      } catch (e) {
+        customerSend = { sent: false, note: String(e) }
+      }
+    }
+
+    return json({ ok: true, staff: staffSend, recipients: to.length, customer: customerSend })
   } catch (e) {
     return json({ ok: false, error: String(e) })
   }

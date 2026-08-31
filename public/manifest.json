@@ -4,7 +4,7 @@
   "description": "Lusso Job Management",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#174D4D",
+  "background_color": "#FFFFFF",
   "theme_color": "#174D4D",
   "orientation": "portrait-primary",
   "icons": [

@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { format, addDays, parseISO } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
-import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown } from 'lucide-react';
+import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown, Ruler, AlertTriangle } from 'lucide-react';
 import {
   getMeasureSheet, getCustomer, getJob,
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
-  addActivity, advanceJobStatus,
+  addActivity, advanceJobStatus, orderGate,
 } from '../store/data';
 import { getLogoDataUrl, LOGO_ASPECT } from '../lib/brandLogo';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -96,6 +96,25 @@ function wandsForOp(op) {
 }
 const remoteLabel   = (r) => [r.qty ? `${r.qty} ×` : '', r.type, r.colour].filter(Boolean).join(' ');
 
+// ── Motor side vs stack side ─────────────────────────────────────────────────
+// A one-way draw curtain stacks on its control side, and the motor belongs at
+// that same end so it finishes up hidden behind the stacked fabric. A left
+// motor against a right-stacking curtain (or the reverse) is a keying slip that
+// only shows itself once the track has been made — so it gets flagged here,
+// while the PO can still be changed.
+// C/O, C/O-FR and FR stack at both ends, so either motor side is valid.
+const BOTH_ENDS = ['CO', 'COFR', 'FR'];
+// Normalise a Control / Motor side value to 'L', 'R', or null when it doesn't
+// pin down one end (blank, N/A, or a both-ends control).
+function sideCode(value) {
+  const k = String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (!k || BOTH_ENDS.includes(k)) return null;
+  if (k === 'L' || k === 'LEFT'  || k === 'LHS') return 'L';
+  if (k === 'R' || k === 'RIGHT' || k === 'RHS') return 'R';
+  return null;
+}
+const SIDE_WORD = { L: 'left', R: 'right' };
+
 export default function PurchaseOrder() {
   const { id } = useParams();
   const { displayName = '' } = useProfile() || {};
@@ -125,12 +144,32 @@ export default function PurchaseOrder() {
     return next;
   });
 
+  // ── Check-measure gate ────────────────────────────────────────────────────
+  // Curtains are cut to size and non-returnable. A line whose dimensions were
+  // scaled off a plan is an estimate, so ordering against one is how a whole
+  // job becomes scrap. The gate covers only the curtains ON THIS ORDER, and it
+  // can be overridden — but only deliberately, and the override is logged.
+  const gate = orderGate(curtains);
+  const [gateOverride, setGateOverride] = useState(false);
+  const blocked = gate.blocked && !gateOverride;
+
   // Split-across-suppliers flow: keys already put on a PO this session (sent,
   // downloaded or printed). Whatever's left over can be carried into a fresh
   // order in one tap without re-ticking.
   const [orderedKeys, setOrderedKeys] = useState(() => new Set());
   const [nextDismissed, setNextDismissed] = useState(false);
   const markOrdered = () => {
+    // An override is a deliberate decision to order against plan-scaled sizes.
+    // Record who made it and on what — this is the line that gets looked up
+    // when a workroom asks why a curtain came back 40 mm short.
+    if (gate.blocked && gateOverride && job?.id) {
+      addActivity({
+        jobId: job.id,
+        type: 'purchase-order',
+        message: `PO placed with ${gate.count} un-check-measured plan estimate${gate.count === 1 ? '' : 's'}: ${gate.labels.join(', ')}`,
+        user: displayName || 'Someone',
+      });
+    }
     setOrderedKeys(prev => new Set([...prev, ...curtains.map(c => c._key)]));
     setNextDismissed(false); // re-arm the carry-over prompt for the new leftover
   };
@@ -220,6 +259,11 @@ export default function PurchaseOrder() {
   const [curtainsOpen, setCurtainsOpen] = useState(false);
   const toggleMotorised = () => setMotorised(v => { const n = !v; localStorage.setItem('lusso_po_motorised', String(n)); return n; });
 
+  // Accessory reminder: the pending action sits here while the prompt is up,
+  // and each kind is only ever asked about once (see withAccessoryCheck below).
+  const [accessoryPrompt, setAccessoryPrompt] = useState(null);
+  const [accessoryAcked, setAccessoryAcked] = useState({});
+
   if (!sheet) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
@@ -239,10 +283,64 @@ export default function PurchaseOrder() {
     return showMotor ? cells : cells.slice(0, -1);
   });
 
+  // Motor side vs stack side. Only meaningful once this is a motorised order —
+  // a curtain with no motor, or a control that stacks both ends, can't clash.
+  const motorClashes = !showMotor ? [] : curtains.reduce((acc, it, i) => {
+    const stack = sideCode(it.control);
+    const motor = sideCode(motorFor(it));
+    if (stack && motor && stack !== motor) {
+      acc.push({ key: it._key, index: i, label: it.location || `Curtain ${i + 1}`, stack, motor, control: it.control || '' });
+    }
+    return acc;
+  }, []);
+  const clashKeys = new Set(motorClashes.map(c => c.key));
+  const clashRows = new Set(motorClashes.map(c => c.index));
+
+  // Jump straight to the per-curtain motor inputs from the warning banner.
+  const openMotorSides = () => {
+    setMotorOpen(true);
+    requestAnimationFrame(() => {
+      document.getElementById('po-motor-sides')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   // Only entries with at least one filled field reach the PO.
   const liveWands = wands.filter(w => !wandIsEmpty(w));
   const liveRemotes = remotes.filter(r => !remoteIsEmpty(r));
   const hasAccessories = liveWands.length > 0 || liveRemotes.length > 0;
+
+  // ── Accessory reminder ────────────────────────────────────────────────────
+  // The accessories are the easiest thing to forget, and a missing one means a
+  // second order to the same supplier. A motorised line needs a remote to drive
+  // it; a line with no motor is hand-drawn and needs a wand. The two never
+  // apply at once — a motorised order isn't asked about wands.
+  const motorLineCount = curtains.filter(it => String(motorFor(it) || '').trim() !== '').length;
+  const missingAccessory =
+    motorLineCount > 0 ? (liveRemotes.length === 0 ? 'remotes' : null)
+                       : (liveWands.length === 0 ? 'wands' : null);
+
+  // Wraps an outgoing action (send / print / PDF / XLSX). Asked once per kind —
+  // after that the user has answered it and the PO gets out of the way.
+  const withAccessoryCheck = (verb, action) => () => {
+    if (missingAccessory && !accessoryAcked[missingAccessory]) {
+      setAccessoryPrompt({ kind: missingAccessory, verb, action });
+      return;
+    }
+    action();
+  };
+  const confirmAccessoryPrompt = () => {
+    const pending = accessoryPrompt;
+    setAccessoryPrompt(null);
+    if (!pending) return;
+    setAccessoryAcked(a => ({ ...a, [pending.kind]: true }));
+    pending.action();
+  };
+  const goToAccessories = () => {
+    setAccessoryPrompt(null);
+    requestAnimationFrame(() => {
+      document.getElementById('po-accessories')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   // ── XLSX export — mirrors the example PO cell positions ────────────────────
   const handleExport = () => {
@@ -455,6 +553,77 @@ export default function PurchaseOrder() {
         <p className="text-xs text-slate-400 mt-1.5">Review the order below — send, print or download it at the bottom.</p>
       </Card>
 
+      {/* Check-measure gate — the last stop before size errors become scrap */}
+      {gate.blocked && (
+        <div className={`rounded-xl px-4 py-3 border ${gateOverride ? 'bg-slate-50 border-slate-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex items-start gap-3">
+            <Ruler size={18} className={gateOverride ? 'text-slate-400 mt-0.5' : 'text-red-500 mt-0.5'} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-semibold ${gateOverride ? 'text-slate-700' : 'text-red-800'}`}>
+                {gate.count} curtain{gate.count === 1 ? '' : 's'} on this order {gate.count === 1 ? 'is' : 'are'} still scaled off the plan
+              </p>
+              <p className="text-xs text-slate-600 mt-1">
+                {gate.labels.slice(0, 5).join(', ')}{gate.labels.length > 5 && ` and ${gate.labels.length - 5} more`}
+                {' '}— these dimensions came from a plan takeoff and haven&rsquo;t been check-measured on site.
+                Curtains are cut to size and can&rsquo;t be returned.
+              </p>
+              <div className="flex flex-wrap items-center gap-3 mt-2">
+                <Link
+                  to={`/measure-sheets/${id}/edit`}
+                  className="text-xs font-medium text-amber-600 hover:underline"
+                >
+                  Open the measure sheet to confirm them
+                </Link>
+                <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={gateOverride}
+                    onChange={e => setGateOverride(e.target.checked)}
+                    className="accent-red-500"
+                  />
+                  I&rsquo;ve confirmed these sizes another way — order anyway
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Motor side vs stack side — caught before the track gets made */}
+      {motorClashes.length > 0 && (
+        <div className="rounded-xl px-4 py-3 border bg-orange-50 border-orange-200">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="text-orange-500 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-orange-800">
+                {motorClashes.length} curtain{motorClashes.length === 1 ? ' has' : 's have'} the motor on the opposite side to the stack
+              </p>
+              <ul className="mt-1.5 space-y-0.5">
+                {motorClashes.map(c => (
+                  <li key={c.key} className="text-xs text-slate-600">
+                    <span className="font-medium text-slate-700">{c.index + 1}. {c.label}</span>
+                    {' — '}{SIDE_WORD[c.motor]} motor on a {SIDE_WORD[c.stack]}-stacking curtain
+                    {c.control && <span className="text-slate-400"> (control {c.control})</span>}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-slate-500 mt-2">
+                The motor normally sits at the stacking end so it ends up behind the fabric. Change the motor side below,
+                or the Control on the measure sheet — or leave it if that&rsquo;s genuinely how the track is being made.
+              </p>
+              <div className="flex flex-wrap items-center gap-3 mt-2">
+                <button type="button" onClick={openMotorSides} className="text-xs font-medium text-amber-600 hover:underline">
+                  Review motor sides
+                </button>
+                <Link to={`/measure-sheets/${id}/edit`} className="text-xs font-medium text-amber-600 hover:underline">
+                  Open the measure sheet
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Carry-over prompt: some curtains ordered, others still to place */}
       {orderedKeys.size > 0 && remaining.length > 0 && !nextDismissed && (
         <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -537,12 +706,17 @@ export default function PurchaseOrder() {
           })()}
 
           {/* Motorised order — expandable; controls the Motor side column on the PO */}
-          <Card>
+          <Card id="po-motor-sides">
             <button type="button" onClick={() => setMotorOpen(o => !o)} aria-expanded={motorOpen}
               className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left">
               <div className="flex items-center gap-2 min-w-0">
                 <h2 className="font-semibold text-slate-800 text-sm">Motorised order</h2>
                 <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${motorised ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{motorised ? 'On' : 'Off'}</span>
+                {motorClashes.length > 0 && (
+                  <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                    <AlertTriangle size={11} /> {motorClashes.length} to check
+                  </span>
+                )}
               </div>
               <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 transition-transform ${motorOpen ? 'rotate-180' : ''}`} />
             </button>
@@ -559,21 +733,42 @@ export default function PurchaseOrder() {
                   <div className="mt-4">
                     <p className="text-xs font-medium text-slate-600 mb-2">Motor side (per curtain)</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {curtains.map((it, i) => (
-                        <div key={it.id || i} className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2">
-                          <span className="text-sm text-slate-700 truncate">{i + 1}. {it.location || '—'}</span>
-                          <div className="flex gap-1 flex-shrink-0">
-                            {['L', 'R'].map(side => (
-                              <button key={side} onClick={() => setMotor(it, motorFor(it) === side ? '' : side)}
-                                className={`text-xs font-semibold w-8 py-1 rounded-md border transition-colors ${
-                                  motorFor(it) === side ? 'bg-amber-500 text-white border-amber-500' : 'text-slate-500 border-slate-200 hover:border-slate-300'
-                                }`}>
-                                {side}
-                              </button>
-                            ))}
+                      {curtains.map((it, i) => {
+                        // Stack side comes from the curtain's Control; a clash is a
+                        // motor keyed to the opposite end (see motorClashes above).
+                        const stack = sideCode(it.control);
+                        const clash = clashKeys.has(it._key);
+                        return (
+                          <div key={it.id || i}
+                            className={`border rounded-lg px-3 py-2 ${clash ? 'border-orange-300 bg-orange-50' : 'border-slate-200'}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm text-slate-700 truncate">{i + 1}. {it.location || '—'}</span>
+                              <div className="flex gap-1 flex-shrink-0">
+                                {['L', 'R'].map(side => (
+                                  <button key={side} onClick={() => setMotor(it, motorFor(it) === side ? '' : side)}
+                                    className={`text-xs font-semibold w-8 py-1 rounded-md border transition-colors ${
+                                      motorFor(it) === side
+                                        ? (clash ? 'bg-orange-500 text-white border-orange-500' : 'bg-amber-500 text-white border-amber-500')
+                                        : 'text-slate-500 border-slate-200 hover:border-slate-300'
+                                    }`}>
+                                    {side}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {stack ? (
+                              <p className={`text-[11px] mt-1 ${clash ? 'text-orange-700 font-medium' : 'text-slate-400'}`}>
+                                Stacks {SIDE_WORD[stack]}{it.control ? ` (${it.control})` : ''}
+                                {clash && ' — motor is on the other end'}
+                              </p>
+                            ) : (
+                              <p className="text-[11px] mt-1 text-slate-400">
+                                {it.control ? `${it.control} — stacks both ends` : 'No control set — stack side unknown'}
+                              </p>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -582,7 +777,7 @@ export default function PurchaseOrder() {
           </Card>
 
           {/* Accessories — repeatable wand & remote entries (hidden until added) */}
-          <Card>
+          <Card id="po-accessories">
             <div className="px-5 py-4 border-b border-slate-100">
               <h2 className="font-semibold text-slate-800 text-sm">Accessories</h2>
               <p className="text-xs text-slate-400 mt-0.5">Add wands and remotes as needed — only added items appear on the PO.</p>
@@ -685,7 +880,7 @@ export default function PurchaseOrder() {
                   </thead>
                   <tbody>
                     {rows.map((r, ri) => (
-                      <tr key={ri}>
+                      <tr key={ri} className={clashRows.has(ri) ? 'bg-orange-50' : ''}>
                         {r.map((cell, ci) => (
                           <td key={ci} className="border border-slate-200 px-2 py-1.5 text-slate-700 whitespace-nowrap">{cell === '' || cell == null ? '' : cell}</td>
                         ))}
@@ -823,20 +1018,24 @@ export default function PurchaseOrder() {
 
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-1">
-                <button onClick={handleSend} disabled={sending || !curtains.length}
+                <button onClick={withAccessoryCheck('Send', handleSend)} disabled={sending || !curtains.length || blocked}
+                  title={blocked ? 'Check-measure the plan-estimate lines first' : undefined}
                   className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white">
                   {sending ? <Loader size={14} className="animate-spin" /> : <Send size={14} />} Send PO
                 </button>
-                <button onClick={handlePrint}
-                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50">
+                <button onClick={withAccessoryCheck('Print', handlePrint)} disabled={blocked}
+                  title={blocked ? 'Check-measure the plan-estimate lines first' : undefined}
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
                   <Printer size={14} /> Print
                 </button>
-                <button onClick={handleDownloadPdf} disabled={!curtains.length}
+                <button onClick={withAccessoryCheck('Download', handleDownloadPdf)} disabled={!curtains.length || blocked}
+                  title={blocked ? 'Check-measure the plan-estimate lines first' : undefined}
                   className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
                   <FileText size={14} /> Download PDF
                 </button>
-                <button onClick={handleExport}
-                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50">
+                <button onClick={withAccessoryCheck('Export', handleExport)} disabled={blocked}
+                  title={blocked ? 'Check-measure the plan-estimate lines first' : undefined}
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
                   <Download size={14} /> Export XLSX
                 </button>
               </div>
@@ -844,6 +1043,43 @@ export default function PurchaseOrder() {
             </div>
           </Card>
         </>
+      )}
+
+      {/* Accessory reminder — last check before the PO leaves */}
+      {accessoryPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setAccessoryPrompt(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="p-5">
+              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-500" />
+                {accessoryPrompt.kind === 'remotes' ? 'No remotes on this order' : 'No wands on this order'}
+              </h3>
+              {accessoryPrompt.kind === 'remotes' ? (
+                <p className="text-sm text-slate-600 mt-2">
+                  {motorLineCount} curtain{motorLineCount === 1 ? ' has' : 's have'} a motor side set, but no remotes have
+                  been added. Motorised curtains need something to drive them — did you forget the remotes?
+                </p>
+              ) : (
+                <p className="text-sm text-slate-600 mt-2">
+                  Nothing on this order is motorised and no wands have been added. Hand-drawn curtains are operated by a
+                  wand — did you forget them?
+                  {wandCalc.total > 0 && ` Lusso suggests ${wandCalc.total} from the control codes.`}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2 px-5 pb-5">
+              <button onClick={goToAccessories}
+                className="flex-1 text-sm font-semibold px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-white">
+                Add {accessoryPrompt.kind}
+              </button>
+              <button onClick={confirmAccessoryPrompt}
+                className="flex-1 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600">
+                {accessoryPrompt.verb} anyway
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

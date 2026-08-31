@@ -1,13 +1,14 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings2, Plus, ChevronUp, ChevronDown, Edit3, Save, X, Check,
-  ToggleLeft, ToggleRight, Tag, Upload, Users, Library, History,
+  ToggleLeft, ToggleRight, Tag, Upload, Library,
   ArrowRight, FileText, Cloud, CloudUpload, RefreshCw, CheckCircle2,
   AlertTriangle, Sun, Moon, Monitor, Clock, Wifi, WifiOff,
   Link2, Link2Off, ExternalLink, Building2, Loader, Bot, Trash2,
   MessageSquare, Database, Zap, ClipboardList, FileDown, Bell, BellOff, Smartphone,
+  Calculator, RotateCcw,
 } from 'lucide-react';
 import { useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -16,16 +17,17 @@ import { useProfile } from '../contexts/UserProfileContext';
 import {
   getProductTypes, saveProductType, addProductType, reorderProductType,
   MS_SPEC_FIELDS, getTypeSpecKeys, getMsOptions,
-  getImportBatches, getPricedItemBatches,
   getMessagePresets, saveMessagePresets, DEFAULT_MESSAGE_PRESETS,
   getPoPresets, savePoPreset, deletePoPreset,
   MS_OPTION_FIELDS, getMsCustomOptions, addMsOption, deleteMsOption,
   getQuoteSettings, saveQuoteSettings,
   getBuzFabricCodes, saveBuzFabricCode, deleteBuzFabricCode,
   getBuzValueMap, setBuzValueMapEntry,
+  getCurtainRates, saveCurtainRates, resetCurtainRates,
 } from '../store/data';
 import { BUZ_MAP_FIELDS } from '../lib/buzExport';
-import { getPushStatus, enablePush, disablePush, sendTestPush, pushSupported, needsHomeScreenInstall } from '../lib/push';
+import { getPushStatus, enablePush, disablePush, sendTestPush, pushSupported, needsHomeScreenInstall,
+         NOTIFICATION_GROUPS, getMutedTypes, setGroupMuted } from '../lib/push';
 import { pushAllToSupabase, hydrateFromSupabase, flushPending } from '../store/db';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
@@ -185,18 +187,39 @@ export default function Settings() {
     toast('Sync complete — reconciled with the cloud.');
   };
 
-  const NAV = [
-    { id: 'general',      label: 'General',       icon: Settings2,   desc: 'Appearance & sync' },
-    { id: 'quote',        label: 'Quote & Brand',  icon: FileText,    desc: 'Customer quote details' },
-    { id: 'messages',     label: 'Messages',       icon: MessageSquare, desc: 'Presets & templates' },
-    { id: 'integrations', label: 'Integrations',   icon: Zap,         desc: 'Xero & more' },
-    { id: 'products',     label: 'Products',       icon: Tag,         desc: 'Types & pricing' },
-    { id: 'measure',      label: 'Measure Sheet',  icon: ClipboardList, desc: 'Dropdown options' },
-    { id: 'buz',          label: 'BUZ Export',     icon: FileDown,    desc: 'Fabric → inventory codes' },
-    { id: 'data',         label: 'Data & AI',      icon: Database,    desc: 'Knowledge & imports' },
+  // Grouped by what the setting is FOR, not by which component implements it.
+  // The old flat list of nine put pricing in three different places and left
+  // "Data & AI" as a bucket for whatever didn't fit.
+  const NAV_GROUPS = [
+    { label: 'Business', items: [
+      { id: 'general',      label: 'General',        icon: Sun,           desc: 'Appearance' },
+      { id: 'quote',        label: 'Quote & Brand',  icon: FileText,      desc: 'Customer quote details' },
+      { id: 'messages',     label: 'Messages',       icon: MessageSquare, desc: 'Email & SMS presets' },
+    ]},
+    { label: 'Catalogue', items: [
+      { id: 'products',     label: 'Product Types',  icon: Tag,           desc: 'Types & their specs' },
+      { id: 'measure',      label: 'Measure Sheet',  icon: ClipboardList, desc: 'Dropdown options' },
+      { id: 'pricing',      label: 'Price Library',  icon: Library,       desc: 'Products & fabrics' },
+      { id: 'curtains',     label: 'Curtain Rates',  icon: Calculator,    desc: 'Costing rate card' },
+    ]},
+    { label: 'Data', items: [
+      { id: 'imports',      label: 'Imports',        icon: Upload,        desc: 'Price lists & more' },
+      { id: 'exports',      label: 'Exports',        icon: FileDown,      desc: 'BUZ inventory codes' },
+      { id: 'integrations', label: 'Integrations',   icon: Zap,           desc: 'Xero' },
+    ]},
+    { label: 'Advanced', items: [
+      { id: 'advanced',     label: 'Sync & Data',    icon: Database,      desc: 'Diagnostics & AI' },
+    ]},
   ];
+  const NAV = NAV_GROUPS.flatMap(g => g.items);
 
-  const [section, setSection] = useState('general');
+  // ?section=<id> opens straight to a settings section, so a page that sends you
+  // here (the track price importer) can land you on the thing it just changed
+  // rather than on General.
+  const [section, setSection] = useState(() => {
+    const want = searchParams.get('section');
+    return NAV.some(n => n.id === want) ? want : 'general';
+  });
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto">
@@ -228,23 +251,30 @@ export default function Settings() {
       <div className="flex gap-6 items-start">
 
         {/* ── Sidebar nav (desktop only) ── */}
-        <aside className="hidden sm:flex flex-col gap-1 w-44 flex-shrink-0 sticky top-6">
-          {NAV.map(({ id, label, icon: Icon, desc }) => (
-            <button
-              key={id}
-              onClick={() => setSection(id)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
-                section === id
-                  ? 'bg-amber-50 border border-amber-200 text-amber-700'
-                  : 'text-slate-600 hover:bg-slate-100 border border-transparent'
-              }`}
-            >
-              <Icon size={16} className={section === id ? 'text-amber-500' : 'text-slate-400'} />
-              <div className="min-w-0">
-                <p className={`text-sm font-medium leading-tight ${section === id ? 'text-amber-700' : 'text-slate-700'}`}>{label}</p>
-                <p className="text-[10px] text-slate-400 truncate">{desc}</p>
-              </div>
-            </button>
+        <aside className="hidden sm:flex flex-col gap-4 w-48 flex-shrink-0 sticky top-6">
+          {NAV_GROUPS.map(group => (
+            <div key={group.label} className="flex flex-col gap-0.5">
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                {group.label}
+              </p>
+              {group.items.map(({ id, label, icon: Icon, desc }) => (
+                <button
+                  key={id}
+                  onClick={() => setSection(id)}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-all ${
+                    section === id
+                      ? 'bg-amber-50 border border-amber-200 text-amber-700'
+                      : 'text-slate-600 hover:bg-slate-100 border border-transparent'
+                  }`}
+                >
+                  <Icon size={15} className={section === id ? 'text-amber-500' : 'text-slate-400'} />
+                  <div className="min-w-0">
+                    <p className={`text-sm font-medium leading-tight ${section === id ? 'text-amber-700' : 'text-slate-700'}`}>{label}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
           ))}
         </aside>
 
@@ -359,6 +389,12 @@ export default function Settings() {
               )}
             </Card>
 
+          </>)}
+
+          {/* ── ADVANCED ── Sync diagnostics and the destructive resync live
+               here rather than under General, where they sat one scroll below
+               the theme picker. */}
+          {section === 'advanced' && (<>
             {/* Cloud sync status */}
             <Card>
               <div className="px-5 py-4 flex items-center gap-3">
@@ -439,6 +475,7 @@ export default function Settings() {
                 )}
               </Card>
             )}
+            {isCloud && <AIKnowledgeSection />}
           </>)}
 
           {/* ── QUOTE & BRAND ── */}
@@ -462,7 +499,8 @@ export default function Settings() {
           )}
 
           {/* ── PRODUCTS ── */}
-          {section === 'products' && (<>
+          {/* ── PRICE LIBRARY ── signposts the real page, which is in the sidebar. */}
+          {section === 'pricing' && (<>
             {/* Price Library */}
             <Card>
               <div className="px-5 py-4 border-b border-slate-100">
@@ -484,6 +522,10 @@ export default function Settings() {
               </button>
             </Card>
 
+          </>)}
+
+          {/* ── PRODUCT TYPES ── */}
+          {section === 'products' && (<>
             {/* Product Types */}
             <Card>
               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -592,13 +634,33 @@ export default function Settings() {
           {/* ── MEASURE SHEET ── */}
           {section === 'measure' && <MeasureSheetOptionsSection />}
 
-          {section === 'buz' && <BuzExportSection />}
+          {section === 'exports' && <BuzExportSection />}
+
+          {section === 'curtains' && <CurtainRatesSection />}
 
           {/* ── DATA & AI ── */}
-          {section === 'data' && (<>
-            <ImportsSection navigate={navigate} />
-            {isCloud && <AIKnowledgeSection />}
-          </>)}
+          {/* ── IMPORTS ── A signpost, not a second copy: every importer lives
+               on the Import page in the sidebar, so there's one list to keep
+               right rather than two that drift. */}
+          {section === 'imports' && (
+            <Card className="p-6">
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                <Upload size={15} className="text-amber-500" /> Imports
+              </h2>
+              <p className="text-xs text-slate-500 mt-1 max-w-lg">
+                Loading data in — supplier price lists, track prices, priced items, contacts,
+                past quotes and measure sheets — is a job rather than a setting, so it has its
+                own place in the sidebar.
+              </p>
+              <button
+                onClick={() => navigate('/imports')}
+                className="mt-4 flex items-center gap-1.5 rounded-lg bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white hover:bg-amber-400"
+              >
+                <Upload size={13} /> Open Import
+                <ArrowRight size={13} />
+              </button>
+            </Card>
+          )}
 
         </div>
       </div>
@@ -1072,14 +1134,15 @@ function QuoteDefaultsSection() {
           </button>
         </div>
         <div className="p-5 space-y-4">
-          <p className="text-xs text-slate-400">These appear in the FROM panel and footer of the customer-facing quote. Replace the placeholder values below with your real business details.</p>
+          <p className="text-xs text-slate-400">These appear in the FROM panel and footer of the customer-facing quote — and they are what a customer sees on their own phone, where the app has no other copy of them. Anything left blank here falls back to the built-in defaults.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {field('Business name', 'businessName', 'Lusso Blinds & Curtains')}
-            {field('ABN', 'businessABN', '00 000 000 000')}
-            {field('Phone', 'businessPhone', '03 9000 1234')}
-            {field('Email', 'businessEmail', 'info@lusso.com.au')}
+            {field('Business name', 'businessName', 'Lusso Fashion for Windows')}
+            {field('ABN', 'businessABN', '72 388 582 539')}
+            {field('Phone', 'businessPhone', '07 5528 4006')}
+            {field('Text / SMS number (optional)', 'businessPhoneSms', '0485 075 111')}
+            {field('Email', 'businessEmail', 'jobs@lusso.com.au')}
             {field('Website', 'businessWebsite', 'www.lusso.com.au')}
-            {field('Postal address', 'businessAddress', 'PO Box 000, Melbourne VIC 3000')}
+            {field('Postal address', 'businessAddress', '3 Crinum Crescent, Southport QLD 4215')}
           </div>
         </div>
       </Card>
@@ -1091,6 +1154,12 @@ function QuoteDefaultsSection() {
             <label className="block text-xs font-medium text-slate-500 mb-1">"To place your order" text</label>
             <textarea value={s.orderTerms ?? ''} onChange={e => set('orderTerms', e.target.value)} rows={3}
               className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">"Terms of trade" card</label>
+            <textarea value={s.termsOfTrade ?? ''} onChange={e => set('termsOfTrade', e.target.value)} rows={2}
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none" />
+            <p className="text-[11px] text-slate-400 mt-1">Shown beside the payment details. The deposit sentence is added automatically from the quote&rsquo;s own deposit terms — keep this to what happens after the deposit, and make sure it agrees with your T&amp;Cs.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
@@ -1154,9 +1223,16 @@ function QuoteDefaultsSection() {
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Google review URL</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Write-a-review URL</label>
               <input value={s.googleReviewUrl ?? ''} onChange={e => set('googleReviewUrl', e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              <p className="text-[11px] text-slate-400 mt-1">Where review requests send people to leave a rating.</p>
+            </div>
+            <div className="sm:col-span-3">
+              <label className="block text-xs font-medium text-slate-500 mb-1">Read-reviews URL (optional)</label>
+              <input value={s.googleReviewsUrl ?? ''} onChange={e => set('googleReviewsUrl', e.target.value)} placeholder="Leave blank to derive it from the write-a-review link"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              <p className="text-[11px] text-slate-400 mt-1">Where the quote&rsquo;s &ldquo;See all reviews&rdquo; link goes. This used to point at the write-a-review form, so a customer wanting to read reviews was asked to leave one.</p>
             </div>
           </div>
           {(s.testimonials || []).map((t, i) => (
@@ -1317,6 +1393,268 @@ function MeasureSheetOptionsSection() {
   );
 }
 
+// ─── Curtain Rates ────────────────────────────────────────────────────────────
+// The rate card behind the curtain cost calculator (lib/curtainCalc.js) — the
+// numbers that used to live scattered through the Excel workbook's formulas.
+//
+// Only edited fields are stored; everything else falls through to the defaults,
+// so "Reset" is just clearing the row.
+
+function RateNum({ label, value, onChange, prefix, suffix, hint, step = 'any' }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
+      <div className="relative">
+        {prefix && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">{prefix}</span>}
+        <input
+          type="number" step={step} value={value ?? ''}
+          onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+          className={`w-full border border-slate-200 rounded-lg py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 ${prefix ? 'pl-6' : 'pl-3'} ${suffix ? 'pr-10' : 'pr-3'}`}
+        />
+        {suffix && <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">{suffix}</span>}
+      </div>
+      {hint && <p className="text-[11px] text-slate-400 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+function CurtainRatesSection() {
+  useDataRefresh();
+  const navigate = useNavigate();
+  const [rates, setRates] = useState(() => getCurtainRates());
+  const [dirty, setDirty] = useState(false);
+
+  // Nested setter: path is a dot path into the rate card.
+  const put = (path, value) => {
+    setRates(prev => {
+      const next = structuredClone(prev);
+      const keys = path.split('.');
+      let node = next;
+      for (const k of keys.slice(0, -1)) node = node[k];
+      node[keys.at(-1)] = value;
+      return next;
+    });
+    setDirty(true);
+  };
+
+  const save = () => {
+    saveCurtainRates(rates);
+    setDirty(false);
+    toast('Curtain rates saved.');
+  };
+
+  const reset = () => {
+    setRates(resetCurtainRates());
+    setDirty(false);
+    toast('Curtain rates reset to defaults.');
+  };
+
+  const headings = Object.keys(rates.fullness);
+  const tracks   = Object.keys(rates.trackRatePerM);
+  const osloCols = Object.keys(rates.oslo.prices);
+  // Each track can carry its own bands — a recess track is sold 1–6m in half
+  // metres, a battery track stops at 8m. The grid is the union of every band in
+  // use, and a track with no price at a band shows blank rather than the next
+  // value along, which would misrepresent it on screen.
+  const osloWidthsFor = (col) =>
+    rates.oslo.prices[col]?.widthsMm?.length ? rates.oslo.prices[col].widthsMm : rates.oslo.widthsMm;
+  const osloRows = [...new Set(osloCols.flatMap(osloWidthsFor))].sort((a, b) => a - b);
+  const osloIdx  = (col, width) => osloWidthsFor(col).indexOf(width);
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-5">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+              <Calculator size={15} className="text-amber-500" /> Curtain Costing Rates
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              What the curtain calculator charges. These are <span className="font-medium">cost</span> rates —
+              the sell price still comes from each quote line&apos;s margin. Shared with everyone on the team,
+              and never shown on a customer&apos;s quote page.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={reset}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg px-3 py-2">
+              <RotateCcw size={13} /> Reset
+            </button>
+            <button onClick={save} disabled={!dirty}
+              className={`flex items-center gap-1.5 text-xs font-semibold rounded-lg px-3 py-2 ${
+                dirty ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+              <Save size={13} /> Save
+            </button>
+          </div>
+        </div>
+
+        {/* Fullness */}
+        <h3 className="text-xs font-semibold text-slate-700 mb-2">Fullness by heading</h3>
+        <p className="text-[11px] text-slate-400 mb-3">
+          The width is multiplied by this before being divided into drops. Matched regardless of capitalisation.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {headings.map(h => (
+            <RateNum key={h} label={h} value={rates.fullness[h]} suffix="×"
+              onChange={v => put(`fullness.${h}`, v)} />
+          ))}
+        </div>
+
+        {/* Fabric + making */}
+        <h3 className="text-xs font-semibold text-slate-700 mb-2">Fabric &amp; making</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+          <RateNum label="Default fabric roll width" value={rates.fabricWidthMm} suffix="mm"
+            onChange={v => put('fabricWidthMm', v)}
+            hint="A drop that fits inside this is railroaded (continuous)." />
+          <RateNum label="Default fabric price" value={rates.fabricPricePerM} prefix="$" suffix="/m"
+            onChange={v => put('fabricPricePerM', v)}
+            hint="Used when a quote line doesn't specify one." />
+          <RateNum label="Side / return allowance" value={rates.sideAllowanceM} suffix="m"
+            onChange={v => put('sideAllowanceM', v)}
+            hint="Added to every fullness calculation." />
+          <RateNum label="Hem allowance" value={rates.hemAllowanceMm} suffix="mm"
+            onChange={v => put('hemAllowanceMm', v)}
+            hint="Added to the drop for a cut length." />
+          <RateNum label="Making rate" value={rates.makingRatePerDrop} prefix="$" suffix="/drop"
+            onChange={v => put('makingRatePerDrop', v)} />
+          <RateNum label="Standard drop width" value={rates.makingDropWidthM} suffix="m"
+            onChange={v => put('makingDropWidthM', v)}
+            hint="Total fullness ÷ this = drops charged for making." />
+        </div>
+
+        {/* Lining */}
+        <h3 className="text-xs font-semibold text-slate-700 mb-2">Attached lining</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <RateNum label="Lining price" value={rates.lining.pricePerM} prefix="$" suffix="/m"
+            onChange={v => put('lining.pricePerM', v)} />
+          <RateNum label="Lining roll width" value={rates.lining.fabricWidthMm} suffix="mm"
+            onChange={v => put('lining.fabricWidthMm', v)} />
+          <RateNum label="Lining making rate" value={rates.lining.makingRatePerDrop} prefix="$" suffix="/drop"
+            onChange={v => put('lining.makingRatePerDrop', v)} />
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Lining fullness</label>
+            <select
+              value={rates.lining.followCurtain ? '__follow' : rates.lining.heading}
+              onChange={e => {
+                if (e.target.value === '__follow') put('lining.followCurtain', true);
+                else { put('lining.followCurtain', false); put('lining.heading', e.target.value); }
+              }}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <option value="__follow">Match the curtain&apos;s heading</option>
+              {headings.map(h => <option key={h} value={h}>{h}</option>)}
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1">The spreadsheet always used Gathered.</p>
+          </div>
+        </div>
+
+        {/* Fitting */}
+        <h3 className="text-xs font-semibold text-slate-700 mb-2">Fitting</h3>
+        <p className="text-[11px] text-slate-400 mb-3">
+          Charged on the width band, plus a surcharge for tall drops. Doubled for dual tracks
+          ({rates.fitting.dualTrackTypes.join(', ')}).
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+          {rates.fitting.bands.map((b, i) => (
+            <RateNum key={i} label={`Up to ${b.maxWidthMm}mm`} value={b.cost} prefix="$"
+              onChange={v => put('fitting.bands', rates.fitting.bands.map((x, j) => j === i ? { ...x, cost: v } : x))} />
+          ))}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <RateNum label={`Over ${rates.fitting.over.fromMm}mm — base`} value={rates.fitting.over.base} prefix="$"
+            onChange={v => put('fitting.over.base', v)} />
+          <RateNum label="…plus, per extra metre" value={rates.fitting.over.step} prefix="$"
+            onChange={v => put('fitting.over.step', v)}
+            hint="Whole metres only, rounded down." />
+          <RateNum label="Tall-drop surcharge over" value={rates.fitting.dropSurcharge.overMm} suffix="mm"
+            onChange={v => put('fitting.dropSurcharge.overMm', v)} />
+          <RateNum label="…per extra metre of drop" value={rates.fitting.dropSurcharge.amount} prefix="$"
+            onChange={v => put('fitting.dropSurcharge.amount', v)}
+            hint="Whole metres only, rounded down." />
+        </div>
+
+        {/* Tracks priced per metre */}
+        <h3 className="text-xs font-semibold text-slate-700 mb-2">Tracks priced per metre</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {tracks.map(t => (
+            <RateNum key={t} label={t} value={rates.trackRatePerM[t]} prefix="$" suffix="/m"
+              onChange={v => put(`trackRatePerM.${t}`, v)} />
+          ))}
+        </div>
+      </Card>
+
+      {/* Oslo band table */}
+      <Card className="p-5">
+        <div className="mb-4">
+          <h2 className="font-semibold text-slate-800 text-sm">Oslo track price bands</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Motorised and Oslo tracks are priced by band, not per metre — the first band at or above the
+            curtain width is the one charged. A Wave Fold heading takes the Clear Wave column.
+            Widths past the last band aren&apos;t priced, and the calculator says so rather than guessing.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="text-xs">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="text-left font-medium text-slate-500 px-2 py-2 sticky left-0 bg-white">Width</th>
+                {osloCols.map(c => (
+                  <th key={c} colSpan={2} className="text-center font-medium text-slate-600 px-2 py-2 border-l border-slate-100">{c}</th>
+                ))}
+              </tr>
+              <tr className="border-b border-slate-200">
+                <th className="sticky left-0 bg-white" />
+                {osloCols.map(c => (
+                  <Fragment key={c}>
+                    <th className="text-center font-normal text-slate-400 px-2 py-1 border-l border-slate-100">Standard</th>
+                    <th className="text-center font-normal text-slate-400 px-2 py-1">Clear Wave</th>
+                  </Fragment>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {osloRows.map(w => (
+                <tr key={w} className="border-b border-slate-50">
+                  <td className="px-2 py-1 text-slate-600 font-medium sticky left-0 bg-white whitespace-nowrap">≤ {w}mm</td>
+                  {osloCols.map(c => {
+                    const bi = osloIdx(c, w);
+                    const cell = (key) => bi < 0
+                      ? <span className="block w-20 text-center text-xs text-slate-300">—</span>
+                      : (
+                        <input type="number" step="any" value={rates.oslo.prices[c][key][bi] ?? ''}
+                          onChange={e => put(`oslo.prices.${c}.${key}`,
+                            rates.oslo.prices[c][key].map((x, j) => j === bi ? Number(e.target.value) : x))}
+                          className="w-20 border border-slate-200 rounded px-1.5 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-400" />
+                      );
+                    return (
+                      <Fragment key={c}>
+                        <td className="px-1 py-1 border-l border-slate-100">{cell('standard')}</td>
+                        <td className="px-1 py-1">{cell('clearWave')}</td>
+                      </Fragment>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 flex flex-wrap justify-between gap-2">
+          <button
+            onClick={() => navigate('/curtain-rates/import')}
+            className="flex items-center gap-1.5 text-xs font-semibold rounded-lg px-3 py-2 border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+          >
+            <Upload size={13} /> Update from a supplier price book
+          </button>
+          <button onClick={save} disabled={!dirty}
+            className={`flex items-center gap-1.5 text-xs font-semibold rounded-lg px-3 py-2 ${
+              dirty ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+            <Save size={13} /> Save
+          </button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function BuzExportSection() {
   useDataRefresh();
   const codes = getBuzFabricCodes();
@@ -1463,94 +1801,6 @@ function BuzValueMapCard() {
     </Card>
   );
 }
-
-function ImportsSection({ navigate }) {
-  const contactBatches    = getImportBatches();
-  const pricedItemBatches = getPricedItemBatches();
-  const totalImports      = contactBatches.length + pricedItemBatches.length;
-
-  const lastContact    = contactBatches[0];
-  const lastPriced     = pricedItemBatches[0];
-  const lastQuotes     = contactBatches.find(b => b.source === 'Quotient Quotes CSV Import');
-
-  const tiles = [
-    {
-      icon:  Users,
-      color: 'text-blue-600',
-      bg:    'bg-blue-50',
-      label: 'Import Contacts',
-      desc:  'Upload a CSV to import customer contacts from Quotient or any source.',
-      meta:  lastContact
-        ? `Last run: ${new Date(lastContact.completedAt || lastContact.createdAt).toLocaleDateString('en-AU')} · ${lastContact.importedCount} imported`
-        : 'No imports yet',
-      action: () => navigate('/import'),
-    },
-    {
-      icon:  FileText,
-      color: 'text-green-600',
-      bg:    'bg-green-50',
-      label: 'Import Quotes (Quotient)',
-      desc:  'Upload Quotient "Summary of Quotes" + "Price Items" CSVs to bring in your full quote history.',
-      meta:  lastQuotes
-        ? `Last run: ${new Date(lastQuotes.completedAt || lastQuotes.createdAt).toLocaleDateString('en-AU')} · ${lastQuotes.importedCount} imported`
-        : 'No imports yet',
-      action: () => navigate('/quotes/import'),
-    },
-    {
-      icon:  Library,
-      color: 'text-amber-600',
-      bg:    'bg-amber-50',
-      label: 'Import Priced Items',
-      desc:  'Upload a CSV to populate the reusable pricing library from Quotient.',
-      meta:  lastPriced
-        ? `Last run: ${new Date(lastPriced.completedAt || lastPriced.createdAt).toLocaleDateString('en-AU')} · ${lastPriced.importedCount} imported`
-        : 'No imports yet',
-      action: () => navigate('/priced-items?tab=import'),
-    },
-    {
-      icon:  History,
-      color: 'text-slate-500',
-      bg:    'bg-slate-100',
-      label: 'Import History',
-      desc:  'View all past contact and priced item import batches in one place.',
-      meta:  `${totalImports} total import${totalImports !== 1 ? 's' : ''}`,
-      action: () => navigate('/import-history'),
-    },
-  ];
-
-  return (
-    <Card>
-      <div className="px-5 py-4 border-b border-slate-100">
-        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-          <Upload size={14} className="text-amber-500" /> Imports
-        </h2>
-        <p className="text-xs text-slate-400 mt-0.5">
-          Import contacts and priced items from CSV. Admin access only.
-        </p>
-      </div>
-      <div className="divide-y divide-slate-50">
-        {tiles.map(({ icon: Icon, color, bg, label, desc, meta, action }) => (
-          <button
-            key={label}
-            onClick={action}
-            className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors text-left"
-          >
-            <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
-              <Icon size={18} className={color} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm text-slate-800">{label}</p>
-              <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
-              <p className="text-xs text-slate-400 mt-1">{meta}</p>
-            </div>
-            <ArrowRight size={16} className="text-slate-300 flex-shrink-0" />
-          </button>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 // ─── Message Presets Section ──────────────────────────────────────────────────
 const PRESET_FIELDS = [
   {
@@ -2006,10 +2256,12 @@ function AIKnowledgeSection() {
 function PushNotificationsSection() {
   const [status, setStatus]   = useState({ supported: true, permission: 'default', subscribed: false });
   const [devices, setDevices] = useState([]);
+  const [muted, setMuted]     = useState(new Set());
   const [busy, setBusy]       = useState(false);
 
   const refresh = async () => {
     setStatus(await getPushStatus());
+    setMuted(await getMutedTypes());
     if (supabase) {
       const { data } = await supabase
         .from('push_subscriptions')
@@ -2048,6 +2300,21 @@ function PushNotificationsSection() {
       toast(e.message || 'Test failed.', 'error', { duration: 8000 });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const toggleGroup = async (group) => {
+    const isOn = !group.types.every(t => muted.has(t));
+    const prev = muted;
+    // Optimistic: the switch should move under your finger, not after a round trip.
+    const optimistic = new Set(prev);
+    group.types.forEach(t => (isOn ? optimistic.add(t) : optimistic.delete(t)));
+    setMuted(optimistic);
+    try {
+      setMuted(await setGroupMuted(group, isOn, prev));
+    } catch (e) {
+      setMuted(prev);
+      toast(e.message || 'Could not save that preference.', 'error');
     }
   };
 
@@ -2106,6 +2373,35 @@ function PushNotificationsSection() {
               Send a test notification
             </button>
           )}
+
+          <div className="pt-3 border-t border-slate-100">
+            <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-1">
+              What you’re notified about
+            </p>
+            <p className="text-[11px] text-slate-400 mb-2 leading-snug">
+              Switching one off silences the push on every one of your devices — it still appears in the bell.
+            </p>
+            {NOTIFICATION_GROUPS.map((g) => {
+              const on = !g.types.every(t => muted.has(t));
+              return (
+                <div key={g.key} className="flex items-center gap-3 py-1.5">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-700">{g.label}</p>
+                    <p className="text-[11px] text-slate-400 leading-tight">{g.desc}</p>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={g.label}
+                    onClick={() => toggleGroup(g)}
+                    className={`relative flex-shrink-0 w-9 h-5 rounded-full transition-colors ${on ? 'bg-amber-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
 
           {devices.length > 0 && (
             <div className="pt-2 border-t border-slate-100 space-y-1">

@@ -152,3 +152,45 @@ export async function pushPromptMode() {
   if (subscribed || permission !== 'default') return null;
   return 'enable';
 }
+
+// ── Per-type mutes ───────────────────────────────────────────────────────────
+// Grouped the way you'd actually think about them, not one row per DB `type`.
+// Muting silences the push only — the notification still lands in the bell.
+export const NOTIFICATION_GROUPS = [
+  { key: 'web_enquiry',      label: 'New website lead',        desc: 'Someone enquires from lusso.com.au',        types: ['web_enquiry'] },
+  { key: 'comm_inbound',     label: 'Customer replies',        desc: 'Inbound email and SMS hitting the inbox',   types: ['comm_inbound'] },
+  { key: 'quotes',           label: 'Quote activity',          desc: 'Opened, accepted or declined',              types: ['quote_first_opened', 'quote_viewed', 'quote_accepted', 'quote_declined'] },
+  { key: 'install_response', label: 'Installer responses',     desc: 'An installer accepts or declines a job',    types: ['install_accepted', 'install_declined'] },
+  { key: 'needs_booking',    label: 'Ready to book an install', desc: 'Job approved with nothing in the diary',   types: ['needs_booking'] },
+  { key: 'review_ready',     label: 'Review request ready',    desc: 'Job finished, customer worth asking',       types: ['review_ready'] },
+  { key: 'tasks',            label: 'Tasks',                   desc: 'Assigned to someone, or falling due',       types: ['task_assigned', 'task_due'] },
+  { key: 'morning_brief',    label: 'Morning brief',           desc: 'One 7am summary of what’s waiting',         types: ['morning_brief'] },
+];
+
+export async function getMutedTypes() {
+  if (!supabase) return new Set();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return new Set();
+  const { data } = await supabase
+    .from('notification_prefs').select('muted_types').eq('user_id', user.id).maybeSingle();
+  return new Set(data?.muted_types || []);
+}
+
+/** Mute or unmute a whole group, and persist the new full mute list. */
+export async function setGroupMuted(group, muted, current) {
+  if (!supabase) throw new Error('Not connected to the cloud.');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('You need to be signed in.');
+
+  const next = new Set(current);
+  group.types.forEach((t) => (muted ? next.add(t) : next.delete(t)));
+
+  const { error } = await supabase.from('notification_prefs').upsert({
+    user_id: user.id,
+    muted_types: [...next],
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' });
+  if (error) throw new Error(error.message);
+
+  return next;
+}

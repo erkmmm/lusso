@@ -5,6 +5,7 @@ import {
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, UserCog, Users2, Inbox, ArrowLeft,
+  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks,
 } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead,
@@ -25,6 +26,7 @@ const NAV_SECTIONS = [
     label: 'WORKFLOW',
     items: [
       { to: '/',               label: 'Dashboard', icon: LayoutDashboard, exact: true },
+      { to: '/today',          label: 'Today',     icon: ListChecks },
       { to: '/customers', label: 'Customers', icon: Users,     countKey: 'customers' },
       { to: '/jobs',      label: 'Projects',  icon: Briefcase, countKey: 'jobs' },
       { to: '/inbox',     label: 'Inbox',     icon: Inbox },
@@ -33,9 +35,13 @@ const NAV_SECTIONS = [
   {
     label: 'OPERATIONS',
     items: [
-      { to: '/installers', label: 'Installers', icon: HardHat },
-      { to: '/calendar',   label: 'Calendar',   icon: CalendarDays, countKey: 'todayInstalls' },
-      { to: '/reviews',    label: 'Reviews',    icon: Star },
+      { to: '/installers',   label: 'Installers',    icon: HardHat },
+      { to: '/calendar',     label: 'Calendar',      icon: CalendarDays, countKey: 'todayInstalls' },
+      { to: '/reviews',      label: 'Reviews',       icon: Star },
+      // The price library was reachable only from a button inside Settings, so
+      // nobody could find it. It's a working tool, not a setting.
+      { to: '/priced-items', label: 'Price Library', icon: Tags },
+      { to: '/imports',      label: 'Import',        icon: Upload },
     ],
   },
   {
@@ -76,9 +82,20 @@ const NEW_ACTIONS = [
 ];
 
 const NOTIF_ICONS = {
-  install_accepted: { icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-50' },
-  install_declined: { icon: AlertTriangle, color: 'text-red-500',  bg: 'bg-red-50' },
-  default:          { icon: Info,          color: 'text-blue-500',  bg: 'bg-blue-50' },
+  install_accepted:   { icon: CheckCircle2,  color: 'text-green-500',  bg: 'bg-green-50' },
+  install_declined:   { icon: AlertTriangle, color: 'text-red-500',    bg: 'bg-red-50' },
+  web_enquiry:        { icon: Globe,         color: 'text-amber-600',  bg: 'bg-amber-50' },
+  comm_inbound:       { icon: MessageSquare, color: 'text-violet-500', bg: 'bg-violet-50' },
+  quote_first_opened: { icon: Eye,           color: 'text-sky-500',    bg: 'bg-sky-50' },
+  quote_viewed:       { icon: Eye,           color: 'text-sky-400',    bg: 'bg-sky-50' },
+  quote_accepted:     { icon: CheckCircle2,  color: 'text-green-500',  bg: 'bg-green-50' },
+  quote_declined:     { icon: XCircle,       color: 'text-red-500',    bg: 'bg-red-50' },
+  task_assigned:      { icon: ClipboardList, color: 'text-slate-500',  bg: 'bg-slate-100' },
+  task_due:           { icon: Clock,         color: 'text-orange-500', bg: 'bg-orange-50' },
+  needs_booking:      { icon: CalendarDays,  color: 'text-teal-600',   bg: 'bg-teal-50' },
+  review_ready:       { icon: Star,          color: 'text-yellow-500', bg: 'bg-yellow-50' },
+  morning_brief:      { icon: Sun,           color: 'text-amber-500',  bg: 'bg-amber-50' },
+  default:            { icon: Info,          color: 'text-blue-500',   bg: 'bg-blue-50' },
 };
 
 // ── Live counts ───────────────────────────────────────────────────────────────

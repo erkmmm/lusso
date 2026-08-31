@@ -12,6 +12,7 @@ import {
   getQuotes, getQuotesFiltered, getCustomers, QUOTE_STATUSES, QUOTE_STATUS_COLORS,
   computeQuoteTotals, getCustomer, duplicateQuote, deleteQuote, bulkDeleteQuotes, searchMatch,
   isQuoteOverdue,
+  publicQuoteUrl,
 } from '../store/data';
 import { deliverQuote } from '../lib/quoteDelivery';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -515,7 +516,7 @@ export default function Quotes() {
                               <Send size={13} /> {sendingId === quote.id ? 'Sending…' : 'Send Quote'}
                             </button>
                           )}
-                          <button onClick={() => window.open(`/quotes/${quote.id}/preview?preview=1`, '_blank')}
+                          <button onClick={() => window.open(publicQuoteUrl(quote, { preview: true }), '_blank')}
                             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">
                             <Eye size={13} /> Customer Preview
                           </button>

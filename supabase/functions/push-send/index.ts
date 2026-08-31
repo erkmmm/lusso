@@ -46,14 +46,27 @@ Deno.serve(async (req: Request) => {
 
     let q = admin.from("push_subscriptions").select("id, endpoint, p256dh, auth, user_id")
     if (onlyUserId) q = q.eq("user_id", onlyUserId)
-    const { data: subs, error: subErr } = await q
+    const { data: allSubs, error: subErr } = await q
     if (subErr) return json({ ok: false, error: subErr.message })
-    if (!subs?.length) return json({ ok: true, sent: 0, note: "no subscriptions" })
+    if (!allSubs?.length) return json({ ok: true, sent: 0, note: "no subscriptions" })
 
     const n = test
       ? { id: "test", type: "test", title: "Lusso test 🔔", body: "Push notifications are working on this device.", link: "/" }
       : notification
     if (!n?.title) return json({ error: "notification required" }, 400)
+
+    // Per-person mute list. The notification is already in the bell by the time
+    // we get here — muting decides only whether the phone lights up. A test push
+    // is an explicit request, so it ignores mutes.
+    let subs = allSubs as Sub[]
+    if (!test && n.type) {
+      const userIds = [...new Set(subs.map((s) => s.user_id))]
+      const { data: prefs } = await admin
+        .from("notification_prefs").select("user_id, muted_types").in("user_id", userIds)
+      const muted = new Map((prefs ?? []).map((p) => [p.user_id, new Set(p.muted_types ?? [])]))
+      subs = subs.filter((s) => !muted.get(s.user_id)?.has(n.type))
+      if (!subs.length) return json({ ok: true, sent: 0, note: `muted: ${n.type}` })
+    }
 
     const payload = JSON.stringify({
       title: n.title,
@@ -64,7 +77,7 @@ Deno.serve(async (req: Request) => {
     })
 
     // ── Deliver ───────────────────────────────────────────────────────────────
-    const results = await Promise.all((subs as Sub[]).map(async (s) => {
+    const results = await Promise.all(subs.map(async (s) => {
       try {
         const body = await encryptPayload(payload, s.p256dh, s.auth)
         const res = await fetch(s.endpoint, {

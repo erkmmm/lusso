@@ -8,7 +8,8 @@ import {
   Plus, Trash2, ChevronDown, ChevronUp, Eye, Send, Save,
   User, FileText, Settings, DollarSign, ChevronRight, GripVertical,
   Package, ClipboardList, BookOpen, Sparkles, Info, Check, Copy,
-  AlertCircle, CheckCircle2, X, Loader2, ExternalLink,
+  AlertCircle, CheckCircle2, X, Loader2, ExternalLink, Map, RefreshCw, Ruler,
+  Calculator,
 } from 'lucide-react';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
@@ -18,10 +19,16 @@ import {
   HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
   computeQuoteTotals, linePricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
   createQuote, saveQuote, addQuoteActivity,
-  getMeasureSheetByJob, getMessagePresets,
+  getMeasureSheetByJob, getMessagePresets, getTakeoffByJob,
+  getCurtainRates,
 } from '../store/data';
 import Card from '../components/Card';
+import CurtainCostPanel from '../components/CurtainCostPanel';
+import { isCurtainProduct, autoCostCurtainLine } from '../lib/curtainCalc';
+import { quoteSections } from '../lib/quoteSections';
+import CustomerQuotePage from './CustomerQuotePage';
 import { deliverQuote } from '../lib/quoteDelivery';
+import { captureQuotePlan, removeQuotePlan, snapshotIsStale } from '../lib/quotePlanSnapshot';
 import PricedItemPicker from '../components/PricedItemPicker';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -52,6 +59,7 @@ const EMPTY_PART_ITEM = (preset = {}) => ({
   id: uuidv4(),
   type: 'Part',
   choiceGroupId: null,
+  choiceRequired: false,
   location: '',
   productTypeId: '',
   productNameSnapshot: preset.name || '',
@@ -60,7 +68,8 @@ const EMPTY_PART_ITEM = (preset = {}) => ({
   widthMm: '', dropMm: '', fabricColour: '',
   control: '', returnSide: '', motorSide: '', fixing: '',
   heading: '', hem: '', trackColour: '', baseBarColour: '', trackBaseBarColour: '',
-  baseBarType: '', chainColour: '',
+  baseBarType: '', chainColour: '', trackType: '',
+  attachedLining: false,
   unitCostPrice: '', labourCost: '', marginPercent: 40,
   manualSellPrice: preset.price || '',
   discountPercent: '', discountAmount: '',
@@ -75,6 +84,7 @@ const EMPTY_LINE_ITEM = () => ({
   id: uuidv4(),
   type: 'Required',
   choiceGroupId: null,
+  choiceRequired: false,
   location: '',
   productTypeId: '',
   productNameSnapshot: '',
@@ -95,6 +105,14 @@ const EMPTY_LINE_ITEM = () => ({
   trackBaseBarColour: '',
   baseBarType: '',
   chainColour: '',
+  trackType: '',
+  attachedLining: false,
+  // Curtain calculator inputs (see components/CurtainCostPanel)
+  curtainFabricPricePerM: '',
+  curtainFabricWidthMm: '',
+  curtainLiningPricePerM: '',
+  curtainExtraCost: '',
+  curtainFittingEnabled: true,
   unitCostPrice: '',
   labourCost: '',
   marginPercent: 40,
@@ -139,7 +157,23 @@ function genClientDesc(msLi) {
 }
 
 // msItemToQuoteLine: converts a measure sheet line item to a quote line item
-function msItemToQuoteLine(msLi, sortOrder) {
+//
+// Curtains arrive pre-costed by the calculator (src/lib/curtainCalc.js). This
+// path and QuoteFromJob's share autoCostCurtainLine so the two can't drift.
+function msItemToQuoteLine(msLi, sortOrder, rates, pricedItems) {
+  const costed = autoCostCurtainLine(
+    { ...msLi, productNameSnapshot: msLi.productNameSnapshot || msLi.productType },
+    rates || getCurtainRates(),
+    pricedItems || getPricedItems(),
+  );
+  const curtainCost = costed && !costed.blocked
+    ? {
+        unitCostPrice:          costed.unitCostPrice,
+        labourCost:             costed.labourCost,
+        curtainFabricPricePerM: costed.curtainFabricPricePerM,
+      }
+    : {};
+
   return {
     ...EMPTY_LINE_ITEM(),
     measureSheetLineItemId: msLi.id,
@@ -163,6 +197,12 @@ function msItemToQuoteLine(msLi, sortOrder) {
     trackBaseBarColour: msLi.trackBaseBarColour || '',
     baseBarType:       msLi.baseBarType || '',
     chainColour: msLi.chainColour || '',
+    // The calculator needs the track and lining, which this converter used to
+    // drop — without them the panel opened with no track and couldn't price it.
+    trackType:          msLi.trackType || '',
+    attachedLining:     !!msLi.attachedLining,
+    liningFabricColour: msLi.liningFabricColour || '',
+    ...curtainCost,
     internalNotes: msLi.notes || '',
     sortOrder,
   };
@@ -201,6 +241,33 @@ function SpecSelect({ label, value, onChange, options }) {
   );
 }
 
+/**
+ * A text field that commits when you leave it, not on every keystroke.
+ *
+ * Location and choice-group decide which room section and which "choose one"
+ * block a line belongs to. Regrouping per keystroke would tear the card out of
+ * the DOM mid-word and take the caret with it, so those two fields hold their
+ * own value while focused and hand it over on blur or Enter.
+ */
+function DeferredInput({ label, value, onCommit, placeholder, className }) {
+  const [draft, setDraft] = useState(null);
+  const shown = draft ?? (value || '');
+  const commit = () => { if (draft !== null) { onCommit(draft); setDraft(null); } };
+  return (
+    <div>
+      {label && <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>}
+      <input
+        value={shown}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur(); } }}
+        placeholder={placeholder}
+        className={className || 'w-full px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400'}
+      />
+    </div>
+  );
+}
+
 function FieldInput({ label, value, onChange, placeholder, type = 'text', prefix }) {
   return (
     <div>
@@ -220,6 +287,123 @@ function FieldInput({ label, value, onChange, placeholder, type = 'text', prefix
 }
 
 // ─── Section wrapper ─────────────────────────────────────────────────────────
+
+/**
+ * Attach the job's plan takeoff so the customer can see WHERE each product
+ * goes, not just a list of rooms and prices.
+ *
+ * The wording leans on "snapshot" throughout because that's the behaviour that
+ * will surprise someone otherwise: change the takeoff later and this quote
+ * keeps showing what was priced, until it's refreshed on purpose.
+ */
+function PlanAttachment({ takeoff, snapshot, busy, onAttach, onDetach, onToggleSizes }) {
+  const stale = snapshotIsStale(snapshot, takeoff);
+
+  if (!takeoff?.filePath && !snapshot) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 flex items-start gap-2.5">
+        <Map size={15} className="text-slate-300 mt-0.5 flex-shrink-0" />
+        <p className="text-xs text-slate-400">
+          No plan takeoff on this job yet. Mark one up on the job&rsquo;s plan and you can attach it here, so the
+          customer sees which window is getting what alongside the price.
+        </p>
+      </div>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <div className="rounded-xl border border-slate-200 px-4 py-3">
+        <div className="flex items-start gap-2.5">
+          <Map size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-slate-800">Attach the plan takeoff</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Adds the marked-up plan and window schedule to the customer&rsquo;s quote page — each covering drawn
+              where it goes, colour-coded by product.
+            </p>
+          </div>
+          <button
+            type="button" onClick={onAttach} disabled={busy}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Map size={13} />} Attach
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const measured = snapshot.schedule.filter(e => e.measured).length;
+  return (
+    <div className="rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-4 py-3 flex items-start gap-2.5 bg-slate-50/70">
+        <Map size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-800">
+            Plan attached · {snapshot.schedule.length} opening{snapshot.schedule.length === 1 ? '' : 's'}
+          </p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {snapshot.pages.length} page{snapshot.pages.length === 1 ? '' : 's'} ·
+            {' '}captured {new Date(snapshot.capturedAt).toLocaleDateString('en-AU')}
+            {snapshot.fileName ? ` from ${snapshot.fileName}` : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            type="button" onClick={onAttach} disabled={busy}
+            title="Re-capture from the current takeoff"
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-white disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          </button>
+          <button
+            type="button" onClick={onDetach} disabled={busy}
+            title="Remove the plan from this quote"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-white disabled:opacity-50"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* The takeoff has moved on since this was captured. Saying so is the
+          whole reason the snapshot carries a revision. */}
+      {stale && (
+        <div className="px-4 py-2 bg-amber-50 border-t border-amber-100 text-xs text-amber-800 flex items-center gap-1.5">
+          <AlertCircle size={13} className="flex-shrink-0" />
+          The takeoff has changed since this was captured — refresh to show the customer the latest.
+        </div>
+      )}
+
+      <div className="px-4 py-2.5 border-t border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="text-xs text-slate-500 flex items-center gap-1.5">
+          <Ruler size={12} className={measured === snapshot.schedule.length ? 'text-green-600' : 'text-amber-500'} />
+          {measured} of {snapshot.schedule.length} measured on site
+        </span>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer ml-auto">
+          <input
+            type="checkbox" checked={snapshot.showSizes !== false}
+            onChange={e => onToggleSizes(e.target.checked)}
+            className="accent-amber-500"
+          />
+          Show sizes to the customer
+        </label>
+      </div>
+
+      {snapshot.pages[0]?.url && (
+        <div className="px-4 pb-3 pt-1 flex gap-2 overflow-x-auto">
+          {snapshot.pages.map(pg => (
+            <img
+              key={pg.path} src={pg.url} alt={`Plan page ${pg.pageNumber}`}
+              className="h-24 rounded-lg border border-slate-200 bg-white flex-shrink-0"
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Section({ title, icon: Icon, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -242,11 +426,16 @@ function Section({ title, icon: Icon, children, defaultOpen = true }) {
 
 // ─── LineItemCard ─────────────────────────────────────────────────────────────
 
-function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, isExpanded, onToggle }) {
+function LineItemCard({ item, productTypes, onChange, onRemove, canRemove, isExpanded, onToggle, inBlock }) {
   const [showSpecs, setShowSpecs] = useState(false);
   const [showPricing, setShowPricing] = useState(true);
 
-  const set = (field, value) => onChange(idx, field, value);
+  const set = (field, value) => onChange(item.id, field, value);
+
+  // Curtains are costed by the calculator rather than a flat price, so the
+  // panel is offered whenever the line is one.
+  const productType = productTypes.find(p => p.id === item.productTypeId);
+  const isCurtain = isCurtainProduct(item.productNameSnapshot || productType?.name || '');
 
   const pricing = linePricing(item);
   const { finalSell, lineTotal, grossProfit, gpPercent, totalCost, calcSell, preDiscountSell, discountTotal } = pricing;
@@ -258,60 +447,67 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
     Part:             'bg-cyan-100 text-cyan-700 border-cyan-200',
   };
 
-  // Quick summary shown in the collapsed chip row
-  const specs = [
-    item.quantity > 1 ? `×${item.quantity}` : null,
-    item.widthMm ? `${item.widthMm}W` : null,
-    item.dropMm  ? `${item.dropMm}D`  : null,
-    item.fabricColour || null,
-    item.control || null,
+  // The collapsed row mirrors the customer's option card — product name, then
+  // the customer-facing description, then the size — so building a quote shows
+  // what the quote will read like without opening the preview. The internals a
+  // customer never sees (fabric code, control) stay in the expanded body.
+  const desc = [item.description, item.customerNotes].filter(Boolean).join(' · ');
+  const meta = [
+    item.widthMm ? `${item.widthMm} × ${item.dropMm || '—'} mm` : null,
+    Number(item.quantity) > 1 ? `${item.quantity} of them` : null,
   ].filter(Boolean).join(' · ');
 
   return (
     <div className={`border rounded-xl overflow-hidden bg-white transition-shadow ${isExpanded ? 'border-amber-300 shadow-sm' : 'border-slate-200'}`}>
       {/* ── Header — always visible, click to expand/collapse ── */}
-      <button
-        type="button"
+      {/* A div, not a button: the remove control lives inside this row, and a
+          button nested in a button is invalid DOM that React rejects. */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
         onClick={onToggle}
-        className={`w-full flex items-center gap-2 px-4 py-3 text-left transition-colors ${isExpanded ? 'bg-amber-50 border-b border-amber-100' : 'bg-slate-50 hover:bg-slate-100'}`}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+        className={`w-full flex items-start gap-3 px-4 py-3 text-left cursor-pointer transition-colors ${isExpanded ? 'bg-amber-50 border-b border-amber-100' : 'bg-white hover:bg-slate-50'}`}
       >
-        {/* Number badge */}
-        <div className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 transition-colors ${isExpanded ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
-          {idx + 1}
-        </div>
-        {/* Title + specs summary */}
+        {/* Title + customer-facing description, as the customer will read it */}
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-slate-800 truncate block">
-            {item.location || <span className="text-slate-400 font-normal">New Item</span>}
-            {item.productNameSnapshot ? <span className="text-slate-500 font-normal"> · {item.productNameSnapshot}</span> : ''}
+          <span className="text-sm font-semibold text-slate-800 block">
+            {item.productNameSnapshot || <span className="text-slate-400 font-normal">New item — no product yet</span>}
           </span>
-          {!isExpanded && specs && (
-            <span className="text-xs text-slate-400 truncate block">{specs}</span>
+          {desc && <span className="text-xs text-slate-500 leading-relaxed block mt-0.5">{desc}</span>}
+          {meta && <span className="text-xs text-slate-400 block mt-0.5">{meta}</span>}
+          {!item.location && (
+            <span className="text-[11px] text-amber-600 block mt-1">No room set — shows under “General”</span>
           )}
         </div>
-        {/* Type badge */}
-        {item.type !== 'Required' && (
+        {/* Type badge — redundant inside a block that already says "choose one"
+            or "optional", so it only appears where it still tells you something. */}
+        {item.type !== 'Required' && !inBlock && (
           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 ${TYPE_COLORS[item.type] || TYPE_COLORS.Required}`}>
             {item.type}
           </span>
         )}
         {/* Line total */}
-        <span className="text-sm font-bold text-slate-800 flex-shrink-0 ml-1">{fmt(lineTotal)}</span>
+        <div className="flex-shrink-0 text-right">
+          <span className="text-sm font-bold text-slate-800 block">{fmt(lineTotal)}</span>
+          {discountTotal > 0 && <span className="text-[10px] text-amber-600 block">−{fmt(discountTotal)}</span>}
+        </div>
         {/* Chevron */}
-        <span className="text-slate-400 flex-shrink-0 ml-1">
+        <span className="text-slate-400 flex-shrink-0">
           {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
         {/* Remove button — stop propagation so it doesn't toggle */}
         {canRemove && (
           <button
             type="button"
-            onClick={e => { e.stopPropagation(); onRemove(idx); }}
+            onClick={e => { e.stopPropagation(); onRemove(item.id); }}
             className="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0 p-1 -mr-1"
           >
             <Trash2 size={14} />
           </button>
           )}
-      </button>
+      </div>
 
       {/* Body — only shown when expanded */}
       {isExpanded && item.type === 'Part' && (
@@ -375,7 +571,7 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
         </div>
         {/* Row 1: Location + Product */}
         <div className="grid grid-cols-2 gap-3">
-          <FieldInput label="Location / Room" value={item.location} onChange={v => set('location', v)} placeholder="e.g. Master Bedroom" />
+          <DeferredInput label="Location / Room" value={item.location} onCommit={v => set('location', v)} placeholder="e.g. Master Bedroom — or Bed 2 A, Bed 2 B" />
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Product</label>
             <PricedItemPicker
@@ -504,6 +700,12 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
                 </div>
               )}
             </div>
+            {/* Curtain cost calculator — the Excel workbook, inline. Shown on
+                every curtain line, measured or not: a line missing its drop is
+                the one that most needs to say so, and hiding the panel there
+                made the whole feature invisible on real quotes. */}
+            {isCurtain && <CurtainCostPanel item={item} set={set} />}
+
             {/* $/m² calculator — shown when item has a per-sqm rate and dimensions are set */}
             {item.pricePerSqm && item.widthMm && item.dropMm && (() => {
               const w = Number(item.widthMm);
@@ -563,17 +765,111 @@ function LineItemCard({ item, idx, productTypes, onChange, onRemove, canRemove, 
 
         {/* Multiple choice group ID if type is Multiple Choice */}
         {item.type === 'Multiple Choice' && (
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Choice Group Name</label>
-            <input
+          <div className="space-y-2">
+            <DeferredInput
+              label="Choice Group Name"
               value={item.choiceGroupId || ''}
-              onChange={e => set('choiceGroupId', e.target.value)}
+              onCommit={v => set('choiceGroupId', v)}
               placeholder="e.g. motor-upgrade (items with same group are shown as alternatives)"
               className="w-full px-3 py-1.5 rounded-lg border border-purple-200 bg-purple-50 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
             />
+            {/* Set on any line in the group to make the whole group compulsory.
+                Without it a customer can accept a quote having answered none of
+                the alternatives, and the order goes to production with the
+                decision still missing. */}
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={item.choiceRequired || false}
+                onChange={e => set('choiceRequired', e.target.checked)}
+                className="mt-0.5 accent-purple-500"
+              />
+              <div>
+                <p className="text-xs font-medium text-slate-700">Customer must choose one from this group</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Blocks acceptance until they pick, and hides the &ldquo;prefer none of these&rdquo; opt-out.</p>
+              </div>
+            </label>
           </div>
         )}
       </div>}
+    </div>
+  );
+}
+
+/**
+ * The customer's quote, full screen, with the send control past the end of it.
+ *
+ * Deliberately not a sticky footer: the send button sits below the quote's own
+ * summary bar, so reaching it means scrolling through everything the customer
+ * will read. That is the whole point of routing the send through here.
+ */
+function SendPreviewOverlay({ quote, recipient, isDraft, saving, onSend, onClose }) {
+
+  // Esc closes — the overlay covers the whole editor, so there has to be a way
+  // out that isn't hunting for the button.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Preview and send quote">
+      <div className="absolute inset-0 overflow-y-auto overscroll-contain">
+        {/* Staff bar — the only chrome over the customer's view */}
+        <div className="sticky top-0 z-20 flex items-center gap-3 bg-slate-900 text-white px-4 py-2.5 text-xs">
+          <Eye size={14} className="flex-shrink-0 opacity-70" />
+          <span className="flex-1 min-w-0 truncate">
+            This is what {recipient || 'the customer'} will see — scroll to the bottom to send it.
+          </span>
+          <button type="button" onClick={onClose}
+            className="flex-shrink-0 rounded-full p-1 hover:bg-white/10 transition-colors" title="Close preview (Esc)">
+            <X size={14} />
+          </button>
+        </div>
+
+        <CustomerQuotePage
+          previewQuote={quote}
+          footer={
+            <div className="bg-slate-900 px-5 py-10">
+              <div className="mx-auto w-full max-w-[880px]">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-400">
+                  End of the customer&rsquo;s view
+                </p>
+                <h2 className="mt-3 text-2xl font-light tracking-tight text-white">
+                  {isDraft ? 'Send this quote?' : 'Re-send this quote?'}
+                </h2>
+                <p className="mt-2.5 max-w-[52ch] text-sm leading-relaxed text-slate-300">
+                  {recipient
+                    ? <>Everything above goes to <span className="text-white">{recipient}</span> as a link they can open, choose their options on, and accept.</>
+                    : <>This customer has no email address on file, so there is nowhere to send it. Add one on the customer record first.</>}
+                  {!isDraft && ' They will see this version in place of the one they already have.'}
+                </p>
+                <div className="mt-7 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={onSend}
+                    disabled={saving || !recipient}
+                    className="flex items-center gap-2 rounded-full bg-white px-7 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                    {saving ? 'Sending…' : isDraft ? 'Send to customer' : 'Re-send to customer'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    disabled={saving}
+                    className="rounded-full border border-white/25 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:opacity-40"
+                  >
+                    Back to editing
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -622,7 +918,9 @@ export default function QuoteBuilder() {
     // Import line items from measure sheet using msItemToQuoteLine for proper desc + tracking
     let lineItems = [];
     if (ms?.lineItems?.length) {
-      lineItems = ms.lineItems.map((li, i) => msItemToQuoteLine(li, i));
+      const curtainRates = getCurtainRates();
+      const fabricLib   = getPricedItems();
+      lineItems = ms.lineItems.map((li, i) => msItemToQuoteLine(li, i, curtainRates, fabricLib));
     }
 
     const expiry = new Date();
@@ -651,6 +949,9 @@ export default function QuoteBuilder() {
       sentAt: null, viewedAt: null, acceptedAt: null, declinedAt: null,
       acceptedBy: null,
       lineItems,
+      // Attached on purpose from the Quote Details section — never inherited,
+      // because a snapshot belongs to the quote that was priced against it.
+      planSnapshot: null,
       activity: [],
       comments: [],
       createdAt: new Date().toISOString(),
@@ -665,6 +966,9 @@ export default function QuoteBuilder() {
   const sendUnconfirmedRef      = useRef(false);
   const [saved, setSaved]       = useState(false);
   const [errors, setErrors]     = useState({});
+  // The quote snapshot being previewed before sending. Null when the overlay
+  // is closed — sending is only reachable from inside it.
+  const [sendPreview, setSendPreview] = useState(null);
   const [showSavedItems, setShowSavedItems] = useState(false);
   const [itemLibSearch, setItemLibSearch]   = useState('');
   const [showTemplates, setShowTemplates]   = useState(false);
@@ -674,6 +978,7 @@ export default function QuoteBuilder() {
   const [toast, setToast]           = useState(null);
   const [msSelection, setMsSelection] = useState(new Set());
   const [showMsImport, setShowMsImport] = useState(false);
+  const [planBusy, setPlanBusy]     = useState(false);
 
   // Collapsed line items — start all collapsed on edit, start the first item
   // expanded on a brand-new quote (so the user sees the form immediately).
@@ -713,12 +1018,88 @@ export default function QuoteBuilder() {
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
-  const setLineItem = (idx, field, value) => {
-    setForm(f => {
-      const items = [...f.lineItems];
-      items[idx] = { ...items[idx], [field]: value };
-      return { ...f, lineItems: items };
+  // ── Plan takeoff attachment ───────────────────────────────────────────────
+  // Rendered to images and stored with the quote rather than linked live: the
+  // customer page is anonymous (it can't read the private plan bucket), and a
+  // quote should keep showing the plan it was priced against.
+  const jobTakeoff = form.jobId ? getTakeoffByJob(form.jobId) : null;
+
+  const attachPlan = async () => {
+    if (!jobTakeoff) return;
+    setPlanBusy(true);
+    try {
+      const previous = form.planSnapshot;
+      const snapshot = await captureQuotePlan(jobTakeoff, form.id, {
+        showSizes: form.planSnapshot?.showSizes ?? true,
+        capturedBy: form.salesperson || '',
+      });
+      set('planSnapshot', snapshot);
+      // Only bin the old images once the new ones are safely uploaded.
+      if (previous) removeQuotePlan(previous);
+      showToast('success', `Plan attached — ${snapshot.pages.length} page${snapshot.pages.length === 1 ? '' : 's'}, ${snapshot.schedule.length} openings.`);
+    } catch (e) {
+      console.error('[quote] attach plan', e);
+      showToast('error', e?.message || 'Could not attach the plan.');
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+
+  const detachPlan = () => {
+    const previous = form.planSnapshot;
+    set('planSnapshot', null);
+    if (previous) removeQuotePlan(previous);
+    showToast('success', 'Plan removed from this quote.');
+  };
+
+  // Keyed by id, not index: the list is grouped by room for display, so its
+  // on-screen order no longer matches the array and an index taken from the
+  // rendering would edit or delete a different line entirely.
+  const setLineItem = (itemId, field, value) => {
+    setForm(f => ({
+      ...f,
+      lineItems: f.lineItems.map(li => li.id === itemId ? { ...li, [field]: value } : li),
+    }));
+  };
+
+  // Cost every curtain line at once — the answer for a quote that already
+  // exists (built before the calculator, or whose measurements have changed).
+  // Lines the calculator can't fully price are counted and named rather than
+  // part-costed, so nothing is silently under-quoted.
+  const costAllCurtains = () => {
+    const rates = getCurtainRates();
+    const pricedItemsForFabric = getPricedItems();
+    let costed = 0;
+    const blocked = [];
+
+    // Computed OUTSIDE the setForm updater: a functional updater can be invoked
+    // later (and twice under StrictMode), so counting inside it would double-
+    // count and leave the toast reading the tallies before they were filled.
+    const nextLineItems = form.lineItems.map(li => {
+      const result = autoCostCurtainLine(li, rates, pricedItemsForFabric);
+      if (!result) return li;                       // not a curtain
+      if (result.blocked) {
+        blocked.push(li.location || li.description || 'Unnamed line');
+        return li;
+      }
+      costed++;
+      return {
+        ...li,
+        unitCostPrice:          result.unitCostPrice,
+        labourCost:             result.labourCost,
+        curtainFabricPricePerM: li.curtainFabricPricePerM || result.curtainFabricPricePerM,
+      };
     });
+
+    setForm(f => ({ ...f, lineItems: nextLineItems }));
+
+    if (costed === 0 && blocked.length === 0) {
+      showToast('info', 'No curtain lines with a width and drop to cost.');
+    } else if (blocked.length) {
+      showToast('info', `Costed ${costed} curtain${costed === 1 ? '' : 's'}. ${blocked.length} need${blocked.length === 1 ? 's' : ''} a heading or track first: ${blocked.slice(0, 3).join(', ')}${blocked.length > 3 ? '…' : ''}`);
+    } else {
+      showToast('success', `Costed ${costed} curtain line${costed === 1 ? '' : 's'} from their measurements.`);
+    }
   };
 
   const addPartItem = (preset = {}) => {
@@ -734,8 +1115,8 @@ export default function QuoteBuilder() {
     expandItem(newItem.id); // auto-expand the new item so it's ready to fill in
   };
 
-  const removeLineItem = (idx) => {
-    setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }));
+  const removeLineItem = (itemId) => {
+    setForm(f => ({ ...f, lineItems: f.lineItems.filter(li => li.id !== itemId) }));
   };
 
   const addSavedItem = (si) => {
@@ -830,10 +1211,12 @@ export default function QuoteBuilder() {
 
   const addSelectedFromMs = () => {
     if (msSelection.size === 0) return;
+    const curtainRates = getCurtainRates();
+    const fabricLib   = getPricedItems();
     const newLines = [];
     msItems.forEach(msLi => {
       if (!msSelection.has(msLi.id)) return;
-      newLines.push(msItemToQuoteLine(msLi, form.lineItems.length + newLines.length));
+      newLines.push(msItemToQuoteLine(msLi, form.lineItems.length + newLines.length, curtainRates, fabricLib));
     });
     setForm(f => ({ ...f, lineItems: [...f.lineItems, ...newLines] }));
     setMsSelection(new Set());
@@ -920,6 +1303,7 @@ export default function QuoteBuilder() {
       // The quote is saved and still a Draft — nothing went to the customer,
       // so say that plainly rather than implying it might have.
       showToast('error', `Quote saved as a draft — not sent. ${err.message}`);
+      setSendPreview(null);
       const savedId = err.quote?.id || form.id;
       if (savedId) setTimeout(() => navigate(`/quotes/${savedId}`), 1400);
       return;
@@ -932,10 +1316,30 @@ export default function QuoteBuilder() {
           ? `Quote ${q.quoteNumber} sent to ${email}!`
           : `Quote ${q.quoteNumber} updated and re-sent to ${email}!`;
       showToast(sendUnconfirmedRef.current ? 'error' : 'success', msg);
+      setSendPreview(null);
       setTimeout(() => navigate(`/quotes/${q.id}`), 900);
     } else {
       showToast('error', 'Could not save or send. Please fix errors and try again.');
     }
+  };
+
+  /**
+   * Sending goes through the customer's own view first.
+   *
+   * The old button saved and sent in one click from the top of a long editing
+   * form, which meant the last thing anyone looked at before it left was the
+   * form — not the quote. This opens what the customer will actually receive,
+   * and puts the send control past the end of it, so the quote gets read on
+   * the way out.
+   */
+  const openSendPreview = () => {
+    if (!validate()) {
+      showToast('error', 'Fix the errors above before previewing.');
+      return;
+    }
+    // A snapshot of the form as it stands — unsaved edits included, and
+    // nothing is written or sent until Send is pressed at the bottom.
+    setSendPreview({ ...form, lineItems: form.lineItems.map(li => ({ ...li })) });
   };
 
   const handlePreview = async () => {
@@ -979,6 +1383,18 @@ export default function QuoteBuilder() {
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto overflow-x-hidden">
+
+      {/* Preview & send — the customer's view with the send control past its end */}
+      {sendPreview && (
+        <SendPreviewOverlay
+          quote={sendPreview}
+          recipient={getCustomer(sendPreview.customerId)?.email || ''}
+          isDraft={isDraft}
+          saving={saving}
+          onSend={handleSaveAndSend}
+          onClose={() => setSendPreview(null)}
+        />
+      )}
 
       {/* Toast notification */}
       {toast && (
@@ -1028,13 +1444,13 @@ export default function QuoteBuilder() {
           </button>
           <button
             type="button"
-            onClick={handleSaveAndSend}
+            onClick={openSendPreview}
             disabled={saving}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold px-3 sm:px-4 py-2 rounded-lg transition-colors"
-            title={isDraft ? 'Save & Send' : 'Save & Re-send'}
+            title={isDraft ? 'Preview & Send' : 'Preview & Re-send'}
           >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            <span className="hidden sm:inline">{isDraft ? 'Save & Send' : 'Save & Re-send'}</span>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+            <span className="hidden sm:inline">{isDraft ? 'Preview & Send' : 'Preview & Re-send'}</span>
           </button>
         </div>
       </div>
@@ -1183,6 +1599,15 @@ export default function QuoteBuilder() {
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
                 />
               </div>
+
+              <PlanAttachment
+                takeoff={jobTakeoff}
+                snapshot={form.planSnapshot}
+                busy={planBusy}
+                onAttach={attachPlan}
+                onDetach={detachPlan}
+                onToggleSizes={(v) => set('planSnapshot', { ...form.planSnapshot, showSizes: v })}
+              />
             </div>
           </Section>
 
@@ -1397,6 +1822,16 @@ export default function QuoteBuilder() {
                     </div>
                   )}
                 </div>
+                {form.lineItems.some(li => isCurtainProduct(li.productNameSnapshot)) && (
+                  <button
+                    type="button"
+                    onClick={costAllCurtains}
+                    title="Cost every curtain line from its width, drop, heading and track"
+                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-700 transition-colors"
+                  >
+                    <Calculator size={12} /> Cost Curtains
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={addLineItem}
@@ -1421,18 +1856,61 @@ export default function QuoteBuilder() {
                   <p className="text-sm text-slate-400">No items yet. Add a line item or import from a saved item.</p>
                 </div>
               ) : (
-                form.lineItems.map((item, idx) => (
-                  <LineItemCard
-                    key={item.id}
-                    item={item}
-                    idx={idx}
-                    productTypes={productTypes}
-                    onChange={setLineItem}
-                    onRemove={removeLineItem}
-                    canRemove={form.lineItems.length > 0}
-                    isExpanded={expandedItems.has(item.id)}
-                    onToggle={() => toggleItem(item.id)}
-                  />
+                quoteSections(form.lineItems).map(({ room, entries }) => (
+                  <section key={room} className="space-y-3">
+                    {/* Room subheading — the same one the customer sees */}
+                    <div className="flex items-baseline justify-between gap-3 pt-1">
+                      <h4 className="text-base font-semibold text-slate-800">{room}</h4>
+                      <span className="text-[11px] text-slate-400">
+                        {entries.length} item{entries.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <hr className="border-slate-100" />
+                    {entries.map(entry => (
+                      <div key={entry.key} className="flex items-start gap-2.5">
+                        {/* A / B / C — the window reference, read straight out
+                            of the location the same way the customer page and
+                            the purchase order read it. */}
+                        {entry.ref && (
+                          <span className="flex-shrink-0 w-6 h-6 mt-2 rounded-full border border-slate-200 bg-white text-[11px] font-medium text-slate-600 flex items-center justify-center">
+                            {entry.ref}
+                          </span>
+                        )}
+                        <div className="flex-1 min-w-0 space-y-2.5">
+                          {entry.blocks.map(block => (
+                            <div key={block.key} className="space-y-1.5">
+                              {block.eyebrow && (
+                                <div className="flex items-center gap-2">
+                                  <span className={`block w-3.5 h-0.5 flex-shrink-0 ${block.kind === 'choice' ? 'bg-purple-400' : 'bg-amber-400'}`} />
+                                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                                    {block.eyebrow}
+                                    {block.kind === 'choice' && block.required && ' · required'}
+                                  </span>
+                                </div>
+                              )}
+                              <div className={block.kind === 'choice'
+                                ? 'space-y-2 rounded-xl border border-purple-100 bg-purple-50/40 p-2.5'
+                                : 'space-y-2'}>
+                                {block.items.map(item => (
+                                  <LineItemCard
+                                    key={item.id}
+                                    item={item}
+                                    productTypes={productTypes}
+                                    onChange={setLineItem}
+                                    onRemove={removeLineItem}
+                                    canRemove={form.lineItems.length > 0}
+                                    isExpanded={expandedItems.has(item.id)}
+                                    onToggle={() => toggleItem(item.id)}
+                                    inBlock={!!block.eyebrow}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </section>
                 ))
               )}
 
@@ -1661,12 +2139,12 @@ export default function QuoteBuilder() {
             <div className="mt-5 space-y-2">
               <button
                 type="button"
-                onClick={handleSaveAndSend}
+                onClick={openSendPreview}
                 disabled={saving}
                 className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
               >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                {isDraft ? 'Save & Send' : 'Save & Re-send'}
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+                {isDraft ? 'Preview & Send' : 'Preview & Re-send'}
               </button>
               <button
                 type="button"

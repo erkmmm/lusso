@@ -17,6 +17,7 @@ import ResetPassword from './pages/ResetPassword';
 import Layout from './components/Layout';
 import ThemeBackground from './components/ThemeBackground';
 import Dashboard from './pages/Dashboard';
+import Today from './pages/Today';
 import Jobs from './pages/Jobs';
 import JobProfile from './pages/JobProfile';
 import JobTakeoff from './pages/JobTakeoff';
@@ -40,6 +41,8 @@ import ImportContacts from './pages/ImportContacts';
 import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
 import ImportSupplierPDF from './pages/ImportSupplierPDF';
+import ImportTrackPrices from './pages/ImportTrackPrices';
+import ImportHub from './pages/ImportHub';
 import Employees from './pages/Employees';
 import EmployeeProfile from './pages/EmployeeProfile';
 import QuoteFromJob from './pages/QuoteFromJob';
@@ -196,13 +199,25 @@ function AppRoutes() {
         // Retry any writes still queued from a flaky connection (no-op if none).
         await flushPending();
         // Probe max(updated_at) on a few core tables only (single row each).
-        const POLL_TABLES = ['jobs', 'quotes', 'customers'];
+        // `notifications` is watched on created_at: it has no updated_at column,
+        // and its rows are inserted by the server (quote opened/accepted, inbound
+        // comms, installer responses). Nothing local changes when one lands, so
+        // while this list was jobs/quotes/customers only, a new notification
+        // never triggered a re-hydrate and the bell sat still until a full
+        // reload — or until something unrelated happened to change too.
+        const POLL_TABLES = [
+          { table: 'jobs',          col: 'updated_at' },
+          { table: 'quotes',        col: 'updated_at' },
+          { table: 'customers',     col: 'updated_at' },
+          { table: 'notifications', col: 'created_at' },
+        ];
         const results = await Promise.all(
-          POLL_TABLES.map(t =>
-            supabase.from(t).select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle()
+          POLL_TABLES.map(({ table, col }) =>
+            supabase.from(table).select(col).order(col, { ascending: false }).limit(1).maybeSingle()
+              .then(r => ({ ...r, col }))
           )
         );
-        const latest = results.map(r => r.data?.updated_at).filter(Boolean).sort().pop() ?? null;
+        const latest = results.map(r => r.data?.[r.col]).filter(Boolean).sort().pop() ?? null;
 
         if (!lastSeenRef.current) {
           lastSeenRef.current = latest; // baseline only
@@ -303,6 +318,7 @@ function AppRoutes() {
             another page (the previous page stayed mounted until a refresh). */}
         <Route element={<Layout />}>
               <Route path="/"                           element={<Dashboard />} />
+              <Route path="/today"                      element={<Today />} />
               <Route path="/jobs"                       element={<Jobs />} />
               <Route path="/jobs/new"                   element={<NewJob />} />
               <Route path="/jobs/:id"                   element={<JobProfile />} />
@@ -323,6 +339,8 @@ function AppRoutes() {
               <Route path="/import-history"             element={<ImportHistory />} />
               <Route path="/priced-items"               element={<PricedItems />} />
               <Route path="/priced-items/import-pdf"   element={<ImportSupplierPDF />} />
+              <Route path="/imports"                    element={<ImportHub />} />
+              <Route path="/curtain-rates/import"        element={<ImportTrackPrices />} />
               {/* Quotes list is merged into Projects — quotes live inside a project now. */}
               <Route path="/quotes"                     element={<Navigate to="/jobs" replace />} />
               <Route path="/quotes/import"                     element={<ImportQuotes />} />
