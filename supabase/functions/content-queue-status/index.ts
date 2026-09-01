@@ -24,7 +24,9 @@ const json = (b: unknown, s = 200) =>
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
 
-  const token = Deno.env.get("SEO_REPO_TOKEN")
+  // Trimmed: a secret pasted with a trailing newline is indistinguishable from
+  // a wrong one at the GitHub end — both come back 401 Bad credentials.
+  const token = Deno.env.get("SEO_REPO_TOKEN")?.trim()
   if (!token) {
     // Say so plainly rather than 500ing: an unconfigured integration and a
     // broken one look identical from the CRM otherwise.
@@ -40,20 +42,35 @@ Deno.serve(async (req: Request) => {
       },
     })
     if (!r.ok) {
-      return json({ ok: false, configured: true, error: `github ${r.status}` }, 200)
+      // Pass GitHub's own words through. "Bad credentials" (a wrong or expired
+      // token) and "Not Found" (a fine-grained token that was never granted
+      // this repo) are the same status code but completely different fixes.
+      const detail = await r.json().catch(() => ({}))
+      return json({
+        ok: false,
+        configured: true,
+        error: `github ${r.status}${detail?.message ? `: ${detail.message}` : ""}`,
+      }, 200)
     }
     const data = await r.json()
 
     // Only commits that actually add a page count as posts — the branch also
     // carries tooling commits, and the drip skips those. Matching that rule
     // here is what stops the CRM reporting a queue deeper than it really is.
+    //
+    // queue.py decides this by looking for an added top-level .html file, which
+    // would be one API call per commit. The compare endpoint's own `files` list
+    // is no substitute: it is capped at 300 and silently truncates. So we go by
+    // the subject line instead — every post reads "... post" or "... service
+    // page", while tooling commits like "Add the unattended batch runner" do
+    // not. Checked against the real branch: 28 either way.
     const posts = (data.commits ?? [])
       .map((c: { sha: string; commit: { message: string; author: { date: string } } }) => ({
         sha: c.sha.slice(0, 7),
         message: c.commit.message.split("\n")[0],
         date: c.commit.author.date,
       }))
-      .filter((c: { message: string }) => /^Add /i.test(c.message))
+      .filter((c: { message: string }) => /\b(post|page)$/i.test(c.message.trim()))
 
     return json({
       ok: true,
