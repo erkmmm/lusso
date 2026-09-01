@@ -170,7 +170,10 @@ export default function Today() {
             waited >= 1 ? `${waited} day${waited === 1 ? '' : 's'} ago` : null,
             draftQuoteJobIds.has(j.id) ? 'draft started' : 'no quote yet'].filter(Boolean).join(' · '),
           urgent: waited != null && waited >= 3,
-          to: `/quotes/new-from-job/${j.id}`,
+          // The project, not straight into a new quote: some of these already
+          // have a draft on the go, and the job is where you can see the
+          // measure sheet and whatever is already started before deciding.
+          to: `/jobs/${j.id}`,
         };
       });
 
