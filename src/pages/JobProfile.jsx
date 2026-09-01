@@ -14,6 +14,7 @@ import ConsultRecordings from '../components/ConsultRecordings';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import {
   getJob, getCustomer, getMeasureSheetsByJob, getActivityByJob,
+  getNotes, isTaskOpen,
   updateJobStatus, saveJob, JOB_STATUSES, getQuotesByJob,
   deleteQuote, deleteJob,
   installProgress,
@@ -28,6 +29,7 @@ import Card from '../components/Card';
 import InstallationSection from '../components/InstallationSection';
 import CalendarEventModal from '../components/CalendarEventModal';
 import JobAIChat from '../components/JobAIChat';
+import NotesFeed from '../components/NotesFeed';
 
 const fmt = (n) => `$${Number(n || 0).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
@@ -49,7 +51,8 @@ const TABS = [
   { id: 'quotes',    label: 'Quotes',           icon: FileText },
   { id: 'measures',  label: 'Measures',         icon: ClipboardList },
   { id: 'consults',  label: 'Consults',         icon: Mic },
-  { id: 'install',   label: 'Install & Notes',  icon: Wrench },
+  { id: 'install',   label: 'Install',          icon: Wrench },
+  { id: 'notes',     label: 'Notes',            icon: StickyNote },
   { id: 'comms',     label: 'Comms',            icon: MessageSquare },
 ];
 
@@ -67,6 +70,7 @@ export default function JobProfile() {
     installProgress(measureSheets.flatMap(ms => ms.lineItems || []));
   const activity     = getActivityByJob(id);
   const quotes       = getQuotesByJob(id).filter(q => !q.deletedAt);
+  const openNotes    = getNotes({ jobId: id }).filter(isTaskOpen).length;
 
   const [activeTab,   setActiveTab]   = useState('overview');
   const [editingNotes,  setEditingNotes]  = useState(false);
@@ -230,7 +234,8 @@ export default function JobProfile() {
           {TABS.map(({ id: tid, label, icon: Icon }) => {
             const count =
               tid === 'quotes'   ? quotes.length :
-              tid === 'measures' ? measureSheets.length : null;
+              tid === 'measures' ? measureSheets.length :
+              tid === 'notes'    ? openNotes : null;
             return (
               <button key={tid} onClick={() => setActiveTab(tid)}
                 className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-1 justify-center ${
@@ -585,15 +590,22 @@ export default function JobProfile() {
         </Card>
       )}
 
-      {/* ── Tab: Install & Notes ──────────────────────────────────────── */}
+      {/* ── Tab: Install ──────────────────────────────────────────────── */}
       {activeTab === 'install' && (
-        <div className="space-y-5">
-          <InstallationSection jobId={id} customer={customer} />
+        <InstallationSection jobId={id} customer={customer} />
+      )}
 
-          {/* Internal notes */}
+      {/* ── Tab: Notes ────────────────────────────────────────────────────
+          Two different things, deliberately stacked. The feed is what happened
+          and what still needs doing; Internal Notes is the standing brief for
+          the job — the bit you want on screen every time, not scrolled past. */}
+      {activeTab === 'notes' && (
+        <div className="space-y-5">
+          <NotesFeed jobId={id} customerId={job.customerId} />
+
           <Card>
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><StickyNote size={15} /> Internal Notes</h2>
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><StickyNote size={15} /> Standing notes</h2>
               <button onClick={() => setEditingNotes(!editingNotes)} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
                 {editingNotes ? <><X size={12} /> Cancel</> : <><Edit3 size={12} /> Edit</>}
               </button>
@@ -606,7 +618,7 @@ export default function JobProfile() {
                     onChange={e => setNotesValue(e.target.value)}
                     rows={5}
                     className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
-                    placeholder="Add internal notes…"
+                    placeholder="Anything true for the whole job — access, site contact, quirks…"
                   />
                   <button onClick={handleSaveNotes}
                     className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -615,12 +627,11 @@ export default function JobProfile() {
                 </div>
               ) : (
                 <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
-                  {job.internalNotes || <span className="text-slate-400 italic">No internal notes yet.</span>}
+                  {job.internalNotes || <span className="text-slate-400 italic">Nothing standing — access details, site contacts and quirks live here.</span>}
                 </p>
               )}
             </div>
           </Card>
-
         </div>
       )}
 

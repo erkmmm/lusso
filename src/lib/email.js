@@ -91,13 +91,18 @@ export async function sendQuoteEmail(quote, customer, emailIntro) {
  * @param {object} job          - job object (for reference number)
  * @param {object} [measureSheet] - the job's measure sheet, so the installer
  *                                  sees exactly what they're installing.
+ * @param {Array<{filename:string, contentBase64:string}>} [photos] - site
+ *   photos the sender chose to include, already fetched and base64'd. They go
+ *   as real attachments rather than links: a signed URL dies in an hour and an
+ *   installer opens the email tomorrow, in a driveway.
  */
-export async function sendInstallerEmail(request, installer, job, measureSheet = null) {
+export async function sendInstallerEmail(request, installer, job, measureSheet = null, photos = []) {
   return post('send-installer', {
     request,
     installer,
     job,
     measureSheet,
+    photos,
     appUrl: window.location.origin,
   });
 }

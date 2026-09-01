@@ -3778,64 +3778,220 @@ export const toggleEmployeeActive = (id) => {
   db.saveEmployee(list[idx]);
 };
 
-// ─── Tasks ────────────────────────────────────────────────────────────────────
+// ─── Notes & to-dos ───────────────────────────────────────────────────────────
+//
+// One record type, two states. A note is something worth remembering — "client
+// wants the tablecloth measured to match the roman blind fabric". Give that same
+// record a due date and it becomes a to-do that Today chases. Nothing is
+// re-created on the way across, so the original wording, author and photos
+// survive the promotion; re-typing a note as a "task" is exactly the friction
+// that keeps people writing on the back of a measure sheet instead.
+//
+// Storage is the `tasks` table, which has existed since the first schema but
+// had no UI and no writer. Its CHECK constraints only ever allowed the
+// lowercase vocabulary below — the app used to speak 'To Do'/'Medium', so the
+// first task anyone created would have been rejected on push and stranded in
+// one browser. The DB's vocabulary wins; legacy values are mapped on read.
 
-export const TASK_STATUSES   = ['To Do', 'In Progress', 'Waiting', 'Completed', 'Cancelled'];
-export const TASK_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
+export const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'cancelled'];
+export const TASK_PRIORITIES = ['low', 'normal', 'high', 'urgent'];
+
+export const TASK_STATUS_LABELS = {
+  pending:     'Open',
+  in_progress: 'In progress',
+  completed:   'Done',
+  cancelled:   'Cancelled',
+};
+
+export const TASK_PRIORITY_LABELS = {
+  low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent',
+};
 
 export const TASK_STATUS_COLORS = {
-  'To Do':       'bg-slate-100 text-slate-600',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  'Waiting':     'bg-amber-100 text-amber-700',
-  'Completed':   'bg-green-100 text-green-700',
-  'Cancelled':   'bg-red-100 text-red-600',
+  pending:     'bg-slate-100 text-slate-600',
+  in_progress: 'bg-blue-100 text-blue-700',
+  completed:   'bg-green-100 text-green-700',
+  cancelled:   'bg-red-100 text-red-600',
 };
 
 export const TASK_PRIORITY_COLORS = {
-  Low:    'bg-slate-100 text-slate-500',
-  Medium: 'bg-blue-100 text-blue-600',
-  High:   'bg-orange-100 text-orange-600',
-  Urgent: 'bg-red-100 text-red-600',
+  low:    'bg-slate-100 text-slate-500',
+  normal: 'bg-slate-100 text-slate-500',
+  high:   'bg-orange-100 text-orange-600',
+  urgent: 'bg-red-100 text-red-600',
+};
+
+// Anything written before the vocabularies were unified. Read-side only: a
+// normalised record is written back the first time it's touched.
+const LEGACY_STATUS = {
+  'To Do': 'pending', 'Waiting': 'pending', 'In Progress': 'in_progress',
+  'Completed': 'completed', 'Done': 'completed', 'Cancelled': 'cancelled',
+};
+const LEGACY_PRIORITY = { Low: 'low', Medium: 'normal', High: 'high', Urgent: 'urgent' };
+
+const normalizeTask = (t) => {
+  if (!t) return t;
+  const status   = LEGACY_STATUS[t.status] || (TASK_STATUSES.includes(t.status) ? t.status : 'pending');
+  const priority = LEGACY_PRIORITY[t.priority] || (TASK_PRIORITIES.includes(t.priority) ? t.priority : 'normal');
+  return {
+    ...t,
+    status,
+    priority,
+    // A record with a due date is a to-do whatever it was stored as — the date
+    // is what makes Today chase it, so the two can never disagree.
+    kind:        t.dueDate ? 'todo' : (t.kind === 'todo' ? 'todo' : 'note'),
+    photoPaths:  Array.isArray(t.photoPaths) ? t.photoPaths : [],
+    description: t.description || '',
+    title:       t.title || '',
+  };
+};
+
+/** First line, trimmed to something a push notification can quote. */
+const summarise = (text) => {
+  const line = String(text || '').trim().split('\n')[0].trim();
+  return line.length > 140 ? `${line.slice(0, 137)}…` : (line || 'Note');
 };
 
 const SEED_TASKS = [
   {
     id: 'task-1',
+    kind: 'todo',
     title: 'Follow up on pending quote',
     description: 'Quote has been sitting for 2 weeks — check in with customer.',
-    customerId: null, jobId: null,
-    assignedEmployeeId: 'emp-1', createdByEmployeeId: null,
-    dueDate: '2026-05-20', priority: 'High', status: 'To Do',
-    notes: '', completedAt: null,
+    customerId: null, jobId: null, quoteId: null,
+    assignedTo: null, authorName: 'Demo',
+    dueDate: '2026-05-20', priority: 'high', status: 'pending',
+    photoPaths: [], completedAt: null,
     createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z',
   },
   {
     id: 'task-2',
-    title: 'Book measure for new enquiry',
-    description: 'Customer called requesting a site measure this week.',
-    customerId: null, jobId: null,
-    assignedEmployeeId: 'emp-2', createdByEmployeeId: null,
-    dueDate: '2026-05-12', priority: 'Urgent', status: 'In Progress',
-    notes: '', completedAt: null,
+    kind: 'note',
+    title: 'Client asked about matching table linen',
+    description: 'Client asked about matching table linen to the roman blind fabric — measure next visit.',
+    customerId: null, jobId: null, quoteId: null,
+    assignedTo: null, authorName: 'Demo',
+    dueDate: null, priority: 'normal', status: 'pending',
+    photoPaths: [], completedAt: null,
     createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z',
   },
 ];
 
-export const getTasks             = () => (get('lusso_tasks') || []).filter(t => !t.deletedAt);
-export const getTask              = (id) => (get('lusso_tasks') || []).find(t => t.id === id);
-export const getTasksByEmployee   = (empId) => getTasks().filter(t => t.assignedEmployeeId === empId);
-export const getTasksByJob        = (jobId) => getTasks().filter(t => t.jobId === jobId);
-export const getTasksByCustomer   = (cId) => getTasks().filter(t => t.customerId === cId);
+export const getTasks           = () => (get('lusso_tasks') || []).filter(t => !t.deletedAt).map(normalizeTask);
+export const getTask            = (id) => { const t = (get('lusso_tasks') || []).find(x => x.id === id); return t ? normalizeTask(t) : undefined; };
+export const getTasksByEmployee = (empId) => getTasks().filter(t => t.assignedTo === empId || t.assignedEmployeeId === empId);
+export const getTasksByJob      = (jobId) => getTasks().filter(t => t.jobId === jobId);
+export const getTasksByCustomer = (cId) => getTasks().filter(t => t.customerId === cId);
+
+export const isTaskOpen = (t) => !t.completedAt && !['completed', 'cancelled'].includes(t.status);
+
+/** Newest first — a feed is read from the top, unlike a chat. */
+const byNewest = (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+
+/**
+ * The feed for one record, or (with no filter) every note in the business.
+ * `jobId` alone deliberately does NOT pull in the customer's other notes: a
+ * note left on the customer belongs to them across every job they ever have.
+ */
+export const getNotes = ({ jobId = null, customerId = null, quoteId = null, measureSheetId = null } = {}) => {
+  const all = getTasks();
+  const scoped = (jobId || customerId || quoteId || measureSheetId)
+    ? all.filter(t =>
+        (jobId && t.jobId === jobId) ||
+        (customerId && t.customerId === customerId) ||
+        (quoteId && t.quoteId === quoteId) ||
+        (measureSheetId && t.measureSheetId === measureSheetId))
+    : all;
+  return scoped.sort(byNewest);
+};
+
+export const getNotesByMeasureSheet = (sheetId) => getNotes({ measureSheetId: sheetId });
 
 export const saveTask = (task) => {
   const list = get('lusso_tasks') || [];
   const now  = new Date().toISOString();
   const idx  = list.findIndex(t => t.id === task.id);
-  const record = { ...task, updatedAt: now };
-  if (idx >= 0) { list[idx] = record; } else { list.push({ ...record, createdAt: now }); }
+  const record = normalizeTask({ ...task, updatedAt: now });
+  if (idx >= 0) { list[idx] = record; } else { list.push({ ...record, createdAt: record.createdAt || now }); }
   set('lusso_tasks', list);
-  db.saveTask(record);
+  db.saveTask(idx >= 0 ? record : { ...record, createdAt: record.createdAt || now });
   return record;
+};
+
+/**
+ * Capture one thing. Text is the only required part — everything else is a
+ * choice the person on site can skip, which is the whole point: a note that
+ * takes three taps to file doesn't get filed.
+ */
+export const addNote = ({
+  text,
+  jobId = null, customerId = null, quoteId = null, measureSheetId = null,
+  dueDate = null, priority = 'normal',
+  assignedTo = null, authorName = '',
+  photoPaths = [],
+  id = null,
+} = {}) => {
+  const body = String(text || '').trim();
+  if (!body) return null;
+  const now = new Date().toISOString();
+  return saveTask({
+    id: id || uuidv4(),
+    kind: dueDate ? 'todo' : 'note',
+    title: summarise(body),
+    description: body,
+    jobId, customerId, quoteId, measureSheetId,
+    assignedTo: assignedTo || null,
+    authorName: authorName || '',
+    dueDate: dueDate || null,
+    priority: TASK_PRIORITIES.includes(priority) ? priority : 'normal',
+    status: 'pending',
+    photoPaths,
+    completedAt: null,
+    createdAt: now,
+  });
+};
+
+/** Edit the text of an existing note, keeping its summary in step. */
+export const updateNoteText = (id, text) => {
+  const t = getTask(id);
+  if (!t) return null;
+  const body = String(text || '').trim();
+  if (!body) return t;
+  return saveTask({ ...t, title: summarise(body), description: body });
+};
+
+/** Set (or clear, with null) the due date — this is what promotes a note to a to-do. */
+export const setNoteDueDate = (id, dueDate) => {
+  const t = getTask(id);
+  if (!t) return null;
+  return saveTask({ ...t, dueDate: dueDate || null, kind: dueDate ? 'todo' : 'note' });
+};
+
+export const setNotePhotos = (id, photoPaths) => {
+  const t = getTask(id);
+  if (!t) return null;
+  return saveTask({ ...t, photoPaths: photoPaths || [] });
+};
+
+/**
+ * Attach every note captured on a measure sheet to the job and customer the
+ * sheet just produced.
+ *
+ * On site a sheet often has neither yet — the customer is created on submit and
+ * the job right after — so a note written while measuring can only be anchored
+ * to the sheet. This is the moment those anchors become real links, which is
+ * what puts an on-site note on the job's Notes tab without anyone re-typing it.
+ * Returns the notes it updated.
+ */
+export const linkNotesToJob = (measureSheetId, { jobId = null, customerId = null } = {}) => {
+  if (!measureSheetId || (!jobId && !customerId)) return [];
+  return getNotes({ measureSheetId })
+    .filter(n => (jobId && n.jobId !== jobId) || (customerId && n.customerId !== customerId))
+    .map(n => saveTask({
+      ...n,
+      jobId:      jobId      || n.jobId      || null,
+      customerId: customerId || n.customerId || null,
+    }));
 };
 
 export const deleteTask = (id) => {
@@ -3848,12 +4004,16 @@ export const deleteTask = (id) => {
   db.saveTask(list[idx]);
 };
 
-export const completeTask = (id) => {
-  const list = get('lusso_tasks') || [];
-  const idx  = list.findIndex(t => t.id === id);
-  if (idx < 0) return;
-  const now  = new Date().toISOString();
-  list[idx]  = { ...list[idx], status: 'Completed', completedAt: now, updatedAt: now };
-  set('lusso_tasks', list);
-  db.saveTask(list[idx]);
+/** Tick / untick. Untick clears completedAt too, or the due sweep stays silent. */
+export const setTaskDone = (id, done = true) => {
+  const t = getTask(id);
+  if (!t) return null;
+  const now = new Date().toISOString();
+  return saveTask({
+    ...t,
+    status:      done ? 'completed' : 'pending',
+    completedAt: done ? now : null,
+  });
 };
+
+export const completeTask = (id) => setTaskDone(id, true);

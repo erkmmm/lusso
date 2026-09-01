@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Phone, Mail, MapPin, Edit3, Save, X, Briefcase,
   MessageSquare, Plus, ChevronRight, Link2, Link2Off,
-  Search, Loader, ExternalLink, Trash2,
+  Search, Loader, ExternalLink, Trash2, StickyNote,
 } from 'lucide-react';
 import OptionsMenu from '../components/OptionsMenu';
 import { format, parseISO } from 'date-fns';
@@ -15,6 +15,7 @@ import AddressAutocomplete from '../components/AddressAutocomplete';
 import { toast } from '../components/ToastContainer';
 import { xeroSearchContacts } from '../lib/xero';
 import CommsTab from '../components/CommsTab';
+import NotesFeed from '../components/NotesFeed';
 
 export default function CustomerProfile() {
   const { id } = useParams();
@@ -238,6 +239,16 @@ export default function CustomerProfile() {
             )}
           </Card>
 
+          {/* Notes & to-dos — anything true about the customer rather than one
+              of their jobs: what they're deciding on, who to talk to, what they
+              asked for that nobody has quoted yet. */}
+          <div>
+            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-3 px-1">
+              <StickyNote size={15} /> Notes & to-dos
+            </h2>
+            <NotesFeed customerId={id} heading="On this customer" />
+          </div>
+
           {/* Communications */}
           <div>
             <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-3 px-1">
@@ -271,7 +282,7 @@ export default function CustomerProfile() {
             <Card>
               <div className="px-5 py-4 border-b border-slate-100">
                 <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                  <MessageSquare size={14} /> Notes
+                  <StickyNote size={14} /> Standing notes
                 </h2>
               </div>
               <div className="p-5">

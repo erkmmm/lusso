@@ -1,12 +1,153 @@
-import { X, Send, Copy, CheckCircle2, ExternalLink } from 'lucide-react';
-import { useState } from 'react';
+import { X, Send, Copy, CheckCircle2, ExternalLink, Camera, Check, ImageOff, Loader } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { format, parseISO, addDays } from 'date-fns';
+import { signPhotos } from '../lib/photoStore';
+
+/**
+ * Every photo on the job's measure sheet, flattened with the line it belongs
+ * to. The filename an installer eventually opens is built here, from the
+ * location and product, rather than being a uuid.
+ */
+function sheetPhotos(measureSheet) {
+  const out = [];
+  (measureSheet?.lineItems || []).forEach((li, i) => {
+    (li.photoPaths || []).forEach((path, n) => {
+      const where = li.location || `Line ${i + 1}`;
+      const what  = li.productNameSnapshot || li.productType || '';
+      out.push({
+        path,
+        label: [where, what].filter(Boolean).join(' · '),
+        filename: `${[where, what].filter(Boolean).join(' - ')}${(li.photoPaths.length > 1) ? ` ${n + 1}` : ''}.jpg`,
+      });
+    });
+  });
+  return out;
+}
+
+/**
+ * Ask before the customer's house goes to a contractor.
+ *
+ * Photos are useful to an installer and are also pictures of someone's home, so
+ * this is a decision rather than a default. Every photo is on screen, full-size
+ * on tap, with its line named — you can see exactly what you're about to send
+ * before you answer, and untick the one frame that shouldn't go.
+ */
+function PhotoAttachments({ photos, selected, setSelected }) {
+  const [urls, setUrls] = useState({});
+  const [signed, setSigned] = useState(false);   // resolved, whatever came back
+  const [zoom, setZoom] = useState(null);
+  const key = photos.map(p => p.path).join('|');
+
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    // `signed` rather than "are there any urls yet": a sign call that comes back
+    // empty is an answer, and spinning forever on it would read as "still
+    // loading" right at the moment someone is deciding whether to send.
+    signPhotos(key.split('|')).then(map => {
+      if (cancelled) return;
+      setUrls(map);
+      setSigned(true);
+    });
+    return () => { cancelled = true; };
+  }, [key]);
+
+  if (!photos.length) return null;
+
+  const all  = selected.size === photos.length;
+  const none = selected.size === 0;
+  const toggle = (path) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(path) ? next.delete(path) : next.add(path);
+    return next;
+  });
+
+  return (
+    <div className="mt-4 border border-amber-200 bg-amber-50/50 rounded-xl p-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+            <Camera size={14} className="text-amber-500" />
+            Include site photos?
+          </p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {photos.length} photo{photos.length !== 1 ? 's' : ''} on this job's measure sheet.
+            Tap one to see it full size before you decide.
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            onClick={() => setSelected(new Set(photos.map(p => p.path)))}
+            className={`text-xs font-medium rounded-lg px-2.5 py-1.5 border transition-colors ${
+              all ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Include all
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className={`text-xs font-medium rounded-lg px-2.5 py-1.5 border transition-colors ${
+              none ? 'bg-slate-700 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            None
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-3 flex-wrap mt-3">
+        {photos.map(p => {
+          const on = selected.has(p.path);
+          return (
+            <div key={p.path} className="w-[104px]">
+              <div className={`relative rounded-lg overflow-hidden border-2 transition-colors ${on ? 'border-amber-500' : 'border-slate-200'}`}>
+                {urls[p.path] ? (
+                  <button type="button" onClick={() => setZoom(urls[p.path])} className="block w-full h-20">
+                    <img src={urls[p.path]} alt={p.label} className="w-full h-full object-cover" />
+                  </button>
+                ) : (
+                  <div className="w-full h-20 bg-slate-100 flex items-center justify-center">
+                    {signed ? <ImageOff size={14} className="text-slate-300" /> : <Loader size={14} className="text-slate-300 animate-spin" />}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggle(p.path)}
+                  aria-label={on ? `Don't send ${p.label}` : `Send ${p.label}`}
+                  className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center border transition-colors ${
+                    on ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white/90 border-slate-300 text-transparent hover:text-slate-300'
+                  }`}
+                >
+                  <Check size={11} />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 leading-tight line-clamp-2">{p.label}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {zoom && (
+        <div className="fixed inset-0 z-[80] bg-black/85 flex items-center justify-center p-4" onClick={() => setZoom(null)}>
+          <img src={zoom} alt="" className="max-h-full max-w-full rounded-lg" />
+          <button aria-label="Close" className="absolute top-4 right-4 text-white/80 hover:text-white"><X size={22} /></button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const PICKUP_NEEDS_LOCATIONS = (type) =>
   ['Pickup from Lusso warehouse', 'Pickup from one supplier', 'Pickup from multiple suppliers'].includes(type);
 
-export default function EmailPreviewModal({ request, installer, job, customer, onSend, onClose, sending = false }) {
+export default function EmailPreviewModal({ request, installer, job, customer, measureSheet, onSend, onClose, sending = false }) {
   const [copied, setCopied] = useState(null);
+
+  // Default to sending them: the installer standing at the window is the person
+  // who needs them most. The decision is still explicit — every photo is on
+  // screen above the Send button, and the button says what it is about to do.
+  const photos = sheetPhotos(measureSheet);
+  const [selected, setSelected] = useState(() => new Set(photos.map(p => p.path)));
 
   const deadline = format(addDays(new Date(), 3), 'EEEE d MMMM yyyy');
   const acceptUrl  = `${window.location.origin}/install-response/${request.secureAcceptToken}`;
@@ -206,6 +347,8 @@ export default function EmailPreviewModal({ request, installer, job, customer, o
               ))}
             </div>
           </div>
+
+          <PhotoAttachments photos={photos} selected={selected} setSelected={setSelected} />
         </div>
 
         {/* Footer actions */}
@@ -214,12 +357,20 @@ export default function EmailPreviewModal({ request, installer, job, customer, o
             Cancel
           </button>
           <button
-            onClick={onSend}
+            onClick={() => onSend(photos.filter(p => selected.has(p.path)).map(({ path, filename }) => ({ path, filename })))}
             disabled={sending}
             className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-white text-sm font-semibold rounded-lg px-5 py-2.5 transition-colors"
           >
             <Send size={15} />
-            {sending ? 'Sending…' : `Send to ${installer?.name?.split(' ')[0]}`}
+            {/* The button says what it is about to do — nobody should have to
+                scroll back up to find out whether photos are going with it. */}
+            {sending
+              ? 'Sending…'
+              : photos.length === 0
+                ? `Send to ${installer?.name?.split(' ')[0]}`
+                : selected.size === 0
+                  ? 'Send without photos'
+                  : `Send with ${selected.size} photo${selected.size === 1 ? '' : 's'}`}
           </button>
         </div>
       </div>

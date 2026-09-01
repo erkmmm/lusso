@@ -16,7 +16,7 @@ import {
   Globe, AlertTriangle, Receipt, Package,
 } from 'lucide-react';
 import {
-  getJobs, getCustomers, getQuotes, getTasks, getCalendarEvents,
+  getJobs, getCustomers, getQuotes, getTasks, isTaskOpen, getCalendarEvents,
   getInstallRequests, getReviewRequests, getDismissedSchedulingIds, getInstallers,
 } from '../store/data';
 import Card from '../components/Card';
@@ -81,10 +81,11 @@ export default function Today() {
         }),
     ];
 
+    // isTaskOpen is the one definition of "still needs doing" — the same one
+    // the notes feed and the SQL due sweep use, so this count, the push and the
+    // list you land on can't disagree.
     const tasksDue = getTasks()
-      .filter(t => !t.completedAt
-        && !['Completed', 'Done', 'Cancelled'].includes(t.status)
-        && t.dueDate && t.dueDate <= todayStr)
+      .filter(t => isTaskOpen(t) && t.dueDate && t.dueDate <= todayStr)
       .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
       .map(t => ({
         id: t.id,
@@ -92,7 +93,7 @@ export default function Today() {
         meta: [t.dueDate < todayStr ? `overdue · due ${dayLabel(t.dueDate)}` : 'due today', t.priority]
           .filter(Boolean).join(' · '),
         urgent: t.dueDate < todayStr,
-        to: t.jobId ? `/jobs/${t.jobId}` : '/',
+        to: t.jobId ? `/jobs/${t.jobId}` : t.customerId ? `/customers/${t.customerId}` : '/notes',
       }));
 
     const awaitingInstaller = reqs
@@ -222,7 +223,7 @@ export default function Today() {
     { key: 'installs',  label: 'Installing today',    hint: 'On site today',                          icon: HardHat,      tone: 'text-teal-600',   items: installsToday },
     { key: 'leads',     label: 'Leads to call',       hint: 'Website enquiries nobody has picked up',  icon: Globe,        tone: 'text-amber-600',  items: leads },
     { key: 'rework',    label: 'Rework',              hint: 'Customer waiting on a fix',               icon: AlertTriangle,tone: 'text-rose-500',   items: rework },
-    { key: 'tasks',     label: 'Tasks due',           hint: 'Due today or already overdue',            icon: Clock,        tone: 'text-orange-500', items: tasksDue },
+    { key: 'tasks',     label: 'To-dos due',          hint: 'Notes you gave a date — due today or overdue',  icon: Clock,        tone: 'text-orange-500', items: tasksDue },
     { key: 'invoice',   label: 'Accepted, not invoiced', hint: 'Work committed, money not asked for',  icon: Receipt,      tone: 'text-green-600',  items: notInvoiced },
     { key: 'installer', label: 'Awaiting installer',  hint: 'Sent over a day ago, still no answer',    icon: CalendarDays, tone: 'text-blue-600',   items: awaitingInstaller },
     { key: 'booking',   label: 'Ready to book',       hint: 'Approved with nothing in the diary',      icon: CalendarDays, tone: 'text-indigo-600', items: needsBooking },

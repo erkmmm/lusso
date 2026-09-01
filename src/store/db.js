@@ -150,13 +150,22 @@ const EXCLUDE_COLUMNS = {
     // No exclusions needed: DB schema designed to match app fields exactly
   ],
   tasks: [
-    // App uses 'assignedEmployeeId' but DB column is 'assigned_to' (UUID FK)
-    // Exclude to avoid column-not-found error; assignment syncs via assigned_to when set
+    // Notes & to-dos live here. kind / photo_paths / author_name ARE real
+    // columns (see supabase/migrations/notes_and_todos.sql) and sync normally.
+    // What's listed below is legacy shape only — records written before the
+    // notes UI existed, which would otherwise fail on column-not-found the
+    // first time someone ticks one off.
+    //
+    // App used 'assignedEmployeeId' (a staff id); the column is assigned_to,
+    // a profiles UUID, which the composer writes directly.
     'assigned_employee_id',
-    // created_by in app may be a display name string, but DB column expects UUID
-    'created_by',
-    // Any other app-only task fields
     'assigned_employee',
+    // created_by expects a UUID; the app records the writer's name in
+    // author_name instead, which is what the feed actually renders.
+    'created_by',
+    // The old seed carried a free-text `notes` field. There is no such column —
+    // the note's own text is title + description.
+    'notes',
   ],
   quotes: [
     // Server-owned: written ONLY by track_quote_event when the customer opens,

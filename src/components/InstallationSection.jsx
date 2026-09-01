@@ -14,6 +14,7 @@ import {
   INSTALL_REQUEST_STATUS_COLORS,
 } from '../store/data';
 import EmailPreviewModal from './EmailPreviewModal';
+import { downloadPhotosAsBase64 } from '../lib/photoStore';
 import Card from './Card';
 import { sendInstallerEmail } from '../lib/email';
 
@@ -137,7 +138,12 @@ export default function InstallationSection({ jobId, customer }) {
   };
 
   const [sendingEmail, setSendingEmail] = useState(false);
-  const handleSendEmail = useCallback(async () => {
+  /**
+   * @param {Array<{path:string, filename:string}>} photos - the site photos the
+   *   sender chose to include, picked in the preview modal. Empty means they
+   *   answered "no", which is a valid answer and sends the email regardless.
+   */
+  const handleSendEmail = useCallback(async (photos = []) => {
     if (!emailModal) return;
     const { request, installer } = emailModal;
     if (!installer?.email) {
@@ -149,11 +155,28 @@ export default function InstallationSection({ jobId, customer }) {
       const job = getJob(request.jobId);
       // Include the measure sheet so the installer sees exactly what to install.
       const sheet = getMeasureSheetByJob(request.jobId);
-      await sendInstallerEmail(request, installer, job, sheet);
+
+      // Photos travel as attachments rather than links: signed URLs last an
+      // hour and an installer opens the email tomorrow. A photo that can't be
+      // fetched is reported rather than silently dropped — the sender decided
+      // to send it, so they get told if it didn't go.
+      let files = [];
+      let missing = 0;
+      if (photos.length) {
+        const res = await downloadPhotosAsBase64(photos);
+        files = res.files;
+        missing = res.failed.length + res.skipped.length;
+      }
+
+      await sendInstallerEmail(request, installer, job, sheet, files);
       sendInstallRequest(request.id, 'Admin');
       setEmailModal(null);
       refresh();
-      alert(`✅ Installation request sent to ${installer.email}`);
+      alert(
+        `✅ Installation request sent to ${installer.email}` +
+        (files.length ? ` with ${files.length} photo${files.length === 1 ? '' : 's'}` : '') +
+        (missing ? `\n⚠️ ${missing} photo${missing === 1 ? '' : 's'} could not be attached (too large or unavailable).` : '')
+      );
     } catch (err) {
       alert(`❌ Failed to send email: ${err.message}`);
     } finally {
@@ -508,6 +531,7 @@ export default function InstallationSection({ jobId, customer }) {
           installer={emailModal.installer}
           job={job}
           customer={customer}
+          measureSheet={measureSheet}
           onSend={handleSendEmail}
           sending={sendingEmail}
           onClose={() => setEmailModal(null)}

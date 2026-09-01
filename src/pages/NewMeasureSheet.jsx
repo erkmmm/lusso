@@ -8,10 +8,11 @@ import {
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Copy, Printer, Maximize2, Minimize2,
+  Copy, Printer, Maximize2, Minimize2, StickyNote,
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
+  getNotes, isTaskOpen, linkNotesToJob,
   getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
   getMsOptions, URGENCY_LEVELS,
   MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers,
@@ -26,6 +27,9 @@ import CheckMeasureControl, { CheckMeasureBanner } from '../components/CheckMeas
 import PricedItemPicker from '../components/PricedItemPicker';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import { toast } from '../components/ToastContainer';
+import NoteDrawer from '../components/NoteDrawer';
+import NotesFeed from '../components/NotesFeed';
+import LinePhotos from '../components/LinePhotos';
 
 // ─── Customer search & duplicate helpers ──────────────────────────────────────
 
@@ -340,7 +344,7 @@ const EMPTY_LINE_ITEM = () => ({
   returnSide: '', motorSide: '', fixing: '', heading: '', attachedLining: false,
   liningFabricColour: '', hem: '', trackColour: '', baseBarColour: '',
   trackBaseBarColour: '', trackType: '',
-  baseBarType: '', chainColour: '', notes: '', sortOrder: 0,
+  baseBarType: '', chainColour: '', notes: '', photoPaths: [], sortOrder: 0,
 });
 
 const EMPTY_SHEET = () => ({
@@ -418,11 +422,12 @@ export default function NewMeasureSheet() {
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [savedAt,        setSavedAt]        = useState(null);
+  const [notesOpen,      setNotesOpen]      = useState(false);
   const [submitted,      setSubmitted]      = useState(false);
   const [submittedJobId, setSubmittedJobId] = useState(null);
   const [submitting,     setSubmitting]     = useState(false);
   const [errors,         setErrors]         = useState({});
-  const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true });
+  const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true, notes: true });
   const [expandedItems,  setExpandedItems]  = useState(() => new Set(sheet.lineItems.map(li => li.id)));
   const [itemLayout,     setItemLayout]     = useState(() => localStorage.getItem('lusso_ms_layout') === 'table' ? 'table' : 'cards');
   const [tableFull, setTableFull] = useState(false);
@@ -485,6 +490,28 @@ export default function NewMeasureSheet() {
     items[idx] = { ...items[idx], [field]: value };
     return { ...s, lineItems: items };
   });
+
+  /**
+   * Photos on a line, written straight through to storage.
+   *
+   * Everything else on this form can wait for the 60s autosave, because you can
+   * retype a width. A photo is a one-shot capture of a window you are standing
+   * in front of and will not see again, so the sheet is saved the instant one
+   * lands. The base sheet comes from the autosave ref rather than the render
+   * closure: an upload finishes long after the click that started it, and the
+   * closure's copy would be missing every keystroke typed in between.
+   */
+  const setLinePhotos = (itemId, photoPaths) => {
+    const base = autosaveRef.current.sheet;
+    const next = {
+      ...base,
+      lineItems: base.lineItems.map(li => (li.id === itemId ? { ...li, photoPaths } : li)),
+    };
+    autosaveRef.current.sheet = next;   // authoritative for back-to-back uploads
+    setSheet(next);
+    saveMeasureSheet({ ...next, status: next.status || 'Draft' });
+    setSavedAt(new Date());
+  };
 
   // Multi-field patch — check-measuring flips five fields at once, and doing
   // that as five setLineItem calls would drop four of them (each reads the
@@ -580,6 +607,23 @@ export default function NewMeasureSheet() {
   };
 
   // ── Submit ─────────────────────────────────────────────────────────────────
+  // Notes captured on THIS sheet. Read on render so the badge is right the
+  // instant the drawer saves one.
+  const sheetNotes = getNotes({ measureSheetId: sheet.id }).filter(isTaskOpen).length;
+
+  /**
+   * Persist the sheet without a toast.
+   *
+   * A note captured on site is anchored to this sheet's id. If the sheet was
+   * never written, that anchor points at a record that doesn't exist and the
+   * note can never reach the job. So the sheet is saved the moment notes come
+   * into play — opening the drawer, and again on every note saved.
+   */
+  const persistSheetQuietly = () => {
+    saveMeasureSheet({ ...sheet, status: sheet.status || 'Draft' });
+    setSavedAt(new Date());
+  };
+
   const handleSaveDraft = () => {
     saveMeasureSheet({ ...sheet, status: sheet.status || 'Draft' });
     setSavedAt(new Date());
@@ -622,7 +666,15 @@ export default function NewMeasureSheet() {
           status: sheet.status === 'Draft' ? 'Submitted' : sheet.status,
         };
         saveMeasureSheet(updatedSheet);
-        await syncNow([{ table: 'measure_sheets', record: updatedSheet }]);
+        // Anything jotted while measuring now belongs to the job and customer
+        // too, so it turns up on their Notes tab without being re-typed.
+        const relinked = linkNotesToJob(updatedSheet.id, {
+          jobId: updatedSheet.jobId, customerId: customer.id,
+        });
+        await syncNow([
+          { table: 'measure_sheets', record: updatedSheet },
+          ...relinked.map(record => ({ table: 'tasks', record })),
+        ]);
         // Navigate back to wherever this sheet lives
         navigate(updatedSheet.jobId ? `/jobs/${updatedSheet.jobId}` : `/measure-sheets/${updatedSheet.id}`);
         return;
@@ -640,9 +692,13 @@ export default function NewMeasureSheet() {
         finalSheetWithJob = { ...finalSheet, jobId: prelinkedJobId };
         saveMeasureSheet(finalSheetWithJob);
 
+        const relinked = linkNotesToJob(finalSheetWithJob.id, {
+          jobId: prelinkedJobId, customerId: customer.id,
+        });
         await syncNow([
           { table: 'customers',      record: customer },
           { table: 'measure_sheets', record: finalSheetWithJob },
+          ...relinked.map(record => ({ table: 'tasks', record })),
         ], { sequential: true });
       } else {
         // Global create — create a new job from this measure sheet
@@ -650,10 +706,14 @@ export default function NewMeasureSheet() {
         finalSheetWithJob = { ...finalSheet, jobId: job?.id };
         saveMeasureSheet(finalSheetWithJob);
 
+        const relinked = linkNotesToJob(finalSheetWithJob.id, {
+          jobId: job?.id, customerId: customer.id,
+        });
         await syncNow([
           { table: 'customers',      record: customer },
           { table: 'jobs',           record: job },
           { table: 'measure_sheets', record: finalSheetWithJob },
+          ...relinked.map(record => ({ table: 'tasks', record })),
         ], { sequential: true });
       }
 
@@ -1061,6 +1121,8 @@ export default function NewMeasureSheet() {
             {itemLayout === 'table' && !tableFull && (
               <div className="-mx-4 sm:mx-0">
                 <MeasureSheetTable
+                  sheetId={sheet.id}
+                  setLinePhotos={setLinePhotos}
                   lineItems={sheet.lineItems}
                   setLineItem={setLineItem}
                   removeLineItem={removeLineItem}
@@ -1088,6 +1150,16 @@ export default function NewMeasureSheet() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Fullscreen hides the whole sheet, so the notes section
+                        is off screen here and only here. Same feed, brought to
+                        you rather than making you drop out of the table. */}
+                    <button type="button" onClick={() => { persistSheetQuietly(); setNotesOpen(true); }}
+                      className="relative flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+                      <StickyNote size={14} /> Note
+                      {sheetNotes > 0 && (
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full px-1.5">{sheetNotes}</span>
+                      )}
+                    </button>
                     <button type="button" onClick={addLineItem}
                       className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50">
                       <Plus size={14} /> Add line
@@ -1104,6 +1176,8 @@ export default function NewMeasureSheet() {
                 </div>
                 <div className="flex-1 overflow-auto p-3">
                   <MeasureSheetTable
+                    sheetId={sheet.id}
+                    setLinePhotos={setLinePhotos}
                     lineItems={sheet.lineItems}
                     setLineItem={setLineItem}
                     removeLineItem={removeLineItem}
@@ -1251,6 +1325,13 @@ export default function NewMeasureSheet() {
                           onChange={e => setLineItem(idx,'notes',e.target.value)}
                           rows={2} placeholder="Additional notes…" className={inp() + ' resize-none'} />
                       </div>
+
+                      {/* A photo of the opening beats any description of it */}
+                      <LinePhotos
+                        sheetId={sheet.id}
+                        item={item}
+                        onChange={(paths) => setLinePhotos(item.id, paths)}
+                      />
                     </div>
                   )}
                 </div>
@@ -1263,6 +1344,31 @@ export default function NewMeasureSheet() {
             </button>
           </div>
         )}
+      </Section>
+
+      {/* ── SECTION 4: Notes & to-dos ──────────────────────────────────────────
+          Part of the sheet, like every other section. On site you scroll to it
+          and type — no dialog to open, nothing to wait for, and it is still on
+          screen while you work through the openings above it.
+
+          These are NOT sheet fields: each one is its own record, so it can carry
+          a date, a photo and a tick, show up on Today, and follow the job long
+          after this sheet is filed. Until the sheet is submitted they are held
+          against the sheet id and back-filled with the job and customer at
+          submit, so nothing written here can be orphaned. */}
+      <Section
+        title="Notes & to-dos"
+        icon={<StickyNote size={15} />}
+        open={openSections.notes}
+        onToggle={() => toggleSection('notes')}
+      >
+        <NotesFeed
+          measureSheetId={sheet.id}
+          jobId={sheet.jobId || prelinkedJobId || null}
+          customerId={sheet.customerId || selectedCustomer?.id || lockedCustomer?.id || null}
+          onSaved={persistSheetQuietly}
+          heading="On this sheet"
+        />
       </Section>
 
       {/* Sticky action bar — sits above the mobile bottom nav (64px) on small screens */}
@@ -1279,6 +1385,7 @@ export default function NewMeasureSheet() {
             className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50">
             <Save size={15} /> {isEdit ? 'Save' : 'Save Draft'}
           </button>
+
           <div className="flex items-center gap-2 min-w-0 ml-auto">
             {savedAt && <span className="text-xs text-slate-400 hidden sm:block whitespace-nowrap">Saved {savedAt.toLocaleTimeString()}</span>}
             <button onClick={handleSubmit} disabled={submitting}
@@ -1295,6 +1402,15 @@ export default function NewMeasureSheet() {
           </div>
         </div>
       </div>
+
+      <NoteDrawer
+        open={notesOpen}
+        onClose={() => setNotesOpen(false)}
+        onSaved={persistSheetQuietly}
+        measureSheetId={sheet.id}
+        jobId={sheet.jobId || prelinkedJobId || null}
+        customerId={sheet.customerId || selectedCustomer?.id || lockedCustomer?.id || null}
+      />
     </div>
   );
 }

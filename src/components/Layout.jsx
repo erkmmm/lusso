@@ -5,7 +5,7 @@ import {
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, UserCog, Users2, Inbox, ArrowLeft,
-  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, StickyNote, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
@@ -27,6 +27,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/',               label: 'Dashboard', icon: LayoutDashboard, exact: true },
       { to: '/today',          label: 'Today',     icon: ListChecks },
+      { to: '/notes',          label: 'Notes',     icon: StickyNote },
       { to: '/customers', label: 'Customers', icon: Users,     countKey: 'customers' },
       { to: '/jobs',      label: 'Projects',  icon: Briefcase, countKey: 'jobs' },
       { to: '/inbox',     label: 'Inbox',     icon: Inbox },
@@ -63,6 +64,14 @@ const NAV_SECTIONS = [
 // measure sheets and POs are created INSIDE it (pre-filled), so the customer is
 // only ever entered once. There is deliberately no standalone "New Quote".
 const NEW_ACTIONS = [
+  {
+    label: 'Note or to-do',
+    sub:   'Jot anything — add a date and it lands on Today',
+    to:    '/notes?new=1',
+    icon:  StickyNote,
+    color: 'text-slate-600',
+    bg:    'bg-slate-100',
+  },
   {
     label: 'New Project',
     sub:   'Start a job for a customer — quote, measure & order all live inside it',

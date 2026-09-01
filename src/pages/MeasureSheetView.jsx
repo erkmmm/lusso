@@ -2,11 +2,13 @@ import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown } from 'lucide-react';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown, StickyNote } from 'lucide-react';
 import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, duplicateMeasureSheet, createJobFromMeasureSheet } from '../store/data';
 import { exportMeasureSheetToBuz, isRollerBlindItem } from '../lib/buzExport';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
+import NotesFeed from '../components/NotesFeed';
+import LinePhotos from '../components/LinePhotos';
 import StatusBadge from '../components/StatusBadge';
 
 // Date + time, matching the app's 'd MMM yyyy' convention plus a 12h clock.
@@ -510,7 +512,7 @@ export default function MeasureSheetView() {
               <Maximize2 size={13} /> Fullscreen
             </button>
           </div>
-          <MeasureItemsTable items={sheet.lineItems} />
+          <MeasureItemsTable items={sheet.lineItems} sheetId={sheet.id} />
         </Card>
 
         {/* Customer */}
@@ -569,6 +571,20 @@ export default function MeasureSheetView() {
           </Card>
         )}
 
+        {/* Notes captured on this sheet — what was written on site, readable
+            (and addable) back in the office without opening the job. */}
+        <div className="no-print">
+          <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-3 px-1">
+            <StickyNote size={15} /> Notes & to-dos
+          </h2>
+          <NotesFeed
+            measureSheetId={sheet.id}
+            jobId={sheet.jobId || null}
+            customerId={sheet.customerId || null}
+            heading="On this sheet"
+          />
+        </div>
+
         {/* Internal notes */}
         {sheet.internalNotes && (
           <Card>
@@ -600,7 +616,7 @@ export default function MeasureSheetView() {
             </button>
           </div>
           <div className="flex-1 overflow-auto">
-            <MeasureItemsTable items={sheet.lineItems} />
+            <MeasureItemsTable items={sheet.lineItems} sheetId={sheet.id} />
           </div>
         </div>
       )}
@@ -648,7 +664,7 @@ export default function MeasureSheetView() {
 // Full measure-sheet schedule. Every field is its own column (spec columns
 // only appear when at least one item has a value), so all data is visible
 // without expanding rows. Wide sheets scroll horizontally.
-function MeasureItemsTable({ items = [] }) {
+function MeasureItemsTable({ items = [], sheetId = null }) {
   if (!items.length) {
     return <p className="px-5 py-8 text-center text-sm text-slate-400">No items on this sheet.</p>;
   }
@@ -679,6 +695,11 @@ function MeasureItemsTable({ items = [] }) {
     { header: 'Chain Colour',       cell: it => it.chainColour },
     { header: 'Lining',             cell: it => it.attachedLining ? (it.liningFabricColour ? `Yes — ${it.liningFabricColour}` : 'Yes') : null },
     { header: 'Notes', wrap: true,  cell: it => [it.notes || it.installationNotes, it.additionalNotes].filter(Boolean).join(' · ') },
+    // Screen only: signed image URLs are short-lived and a printed sheet full of
+    // photos is nobody's friend at the workroom printer.
+    { header: 'Photos', cell: it => (it.photoPaths?.length
+        ? <div className="no-print"><LinePhotos sheetId={sheetId} item={it} label={null} /></div>
+        : null) },
   ].map(c => ({ align: 'text-left', tone: 'text-slate-600', ...c }))
    .filter(c => items.some(it => { const v = c.cell(it); return v != null && v !== ''; }));
 

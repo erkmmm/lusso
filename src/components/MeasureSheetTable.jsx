@@ -3,6 +3,7 @@ import { Trash2, Copy } from 'lucide-react';
 import { getMsOptions, MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers } from '../store/data';
 import PricedItemPicker from './PricedItemPicker';
 import CheckMeasureControl from './CheckMeasureControl';
+import LinePhotos from './LinePhotos';
 
 // Spreadsheet-style editor for measure-sheet line items. Edits the SAME sheet
 // state (via setLineItem/removeLineItem) as the card layout, so the two stay in
@@ -76,6 +77,10 @@ function Sel({ value, onChange, options }) {
 export default function MeasureSheetTable({
   lineItems, setLineItem, removeLineItem, productTypes, errors = {},
   onConfirmMeasured, onRevertToPlan, addLineItem, copyLineItem,
+  // Photos deliberately sit OUTSIDE the `cols` grid model: fill-down, copy and
+  // paste are all defined over text cells, and a photo is not something you
+  // want dragged into the next four rows. It rides in the actions cell instead.
+  sheetId = null, setLinePhotos = null,
 }) {
   // Only worth a column when the sheet actually has plan-derived lines.
   const hasTakeoffLines = lineItems.some(li => li.source === 'takeoff');
@@ -478,7 +483,7 @@ export default function MeasureSheetTable({
               <HCell min={34}>#</HCell>
               {cols.map(c => <HCell key={c.key} min={c.min} highlight={c.highlight}>{c.label}</HCell>)}
               {hasTakeoffLines && <HCell min={120}>Measure</HCell>}
-              <th className="w-16" />
+              <th className="w-24" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -500,7 +505,15 @@ export default function MeasureSheetTable({
                   </td>
                 )}
 
-                <td className="w-16 text-center whitespace-nowrap">
+                <td className="w-24 text-center whitespace-nowrap">
+                  {setLinePhotos && (
+                    <LinePhotos
+                      compact
+                      sheetId={sheetId}
+                      item={item}
+                      onChange={(paths) => setLinePhotos(item.id, paths)}
+                    />
+                  )}
                   {copyLineItem && (
                     <button type="button" onClick={() => copyLineItem(idx)} tabIndex={-1}
                       title="Duplicate line" className="text-slate-300 hover:text-amber-500 p-1.5">

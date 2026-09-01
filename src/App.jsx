@@ -19,6 +19,7 @@ import Layout from './components/Layout';
 import ThemeBackground from './components/ThemeBackground';
 import Dashboard from './pages/Dashboard';
 import Today from './pages/Today';
+import Notes from './pages/Notes';
 import Jobs from './pages/Jobs';
 import JobProfile from './pages/JobProfile';
 import JobTakeoff from './pages/JobTakeoff';
@@ -321,6 +322,7 @@ function AppRoutes() {
         <Route element={<Layout />}>
               <Route path="/"                           element={<Dashboard />} />
               <Route path="/today"                      element={<Today />} />
+              <Route path="/notes"                      element={<Notes />} />
               <Route path="/jobs"                       element={<Jobs />} />
               <Route path="/jobs/new"                   element={<NewJob />} />
               <Route path="/jobs/:id"                   element={<JobProfile />} />

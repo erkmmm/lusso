@@ -41,7 +41,7 @@ export async function onRequestPost(context) {
     return json(400, { error: 'Invalid JSON in request body' });
   }
 
-  const { request, installer, job, measureSheet } = body || {};
+  const { request, installer, job, measureSheet, photos } = body || {};
 
   if (!request)           return json(400, { error: 'Missing installation request data' });
   if (!installer?.email)  return json(400, { error: 'Installer email address is missing' });
@@ -87,6 +87,24 @@ export async function onRequestPost(context) {
     }),
   } : null;
 
+  // Site photos, chosen line by line in the send dialog. Capped server-side as
+  // well as client-side: an email nobody can receive is worse than one without
+  // pictures.
+  const MAX_ATTACH_BYTES = 12_000_000;
+  let attachments = [];
+  let attachedCount = 0;
+  if (Array.isArray(photos) && photos.length) {
+    let total = 0;
+    for (const p of photos) {
+      if (!p?.contentBase64) continue;
+      const bytes = Math.floor(p.contentBase64.length * 0.75);
+      if (total + bytes > MAX_ATTACH_BYTES) break;
+      total += bytes;
+      attachments.push({ filename: p.filename || 'photo.jpg', content: p.contentBase64 });
+    }
+    attachedCount = attachments.length;
+  }
+
   const content = {
     preheader: `${request.suburb || 'Installation'} · ${proposedDate} · respond by ${deadline}`,
     eyebrow:   'Installation request',
@@ -107,6 +125,9 @@ export async function onRequestPost(context) {
       { label: 'Service required', text: request.serviceRequired },
       { label: 'Product summary',  text: request.productSummary },
       { label: 'Notes',            text: request.installationNotes },
+      ...(attachedCount
+        ? [{ label: 'Site photos', text: `${attachedCount} photo${attachedCount === 1 ? '' : 's'} from the measure are attached to this email.` }]
+        : []),
     ],
     table,
     ctaNote:      `Full address and customer details are shared once you accept. Please respond by ${deadline}.`,
@@ -133,6 +154,7 @@ export async function onRequestPost(context) {
         subject:  `Installation request – ${request.suburb || 'Job'} – ${proposedDate}`,
         html,
         text,
+        ...(attachments.length ? { attachments } : {}),
       }),
     });
 
