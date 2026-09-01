@@ -13,11 +13,12 @@ import { useNavigate } from 'react-router-dom';
 import { format, parseISO, differenceInDays, differenceInHours, isSameDay } from 'date-fns';
 import {
   Sun, HardHat, CalendarDays, Clock, Star, FileText, ChevronRight, CheckCircle2, ListChecks,
-  Globe, AlertTriangle, Receipt, Package,
+  Globe, AlertTriangle, Receipt, Package, Ruler,
 } from 'lucide-react';
 import {
   getJobs, getCustomers, getQuotes, getTasks, isTaskOpen, getCalendarEvents,
   getInstallRequests, getReviewRequests, getDismissedSchedulingIds, getInstallers,
+  getMeasureSheets,
 } from '../store/data';
 import Card from '../components/Card';
 import { supabase } from '../lib/supabase';
@@ -26,12 +27,12 @@ const phoneOf = (c) => c?.mobile || c?.phone || '';
 const dayLabel = (d) => (d ? format(typeof d === 'string' ? parseISO(d) : d, 'd MMM') : '');
 
 export default function Today() {
-  useDataRefresh();
+  const tick = useDataRefresh();
   const navigate = useNavigate();
 
   const {
     installsToday, tasksDue, awaitingInstaller, needsBooking, quotesToChase, reviewReady,
-    rework, notOrdered, notInvoiced,
+    rework, notOrdered, notInvoiced, toQuote,
   } = useMemo(() => {
     const now       = new Date();
     const todayStr  = format(now, 'yyyy-MM-dd');
@@ -42,6 +43,7 @@ export default function Today() {
     const installers= getInstallers();
     const reviews   = getReviewRequests();
     const dismissed = getDismissedSchedulingIds();
+    const sheets    = getMeasureSheets();
     const events    = getCalendarEvents().filter(e => e.eventType === 'install');
 
     const custOf  = (id) => customers.find(c => c.id === id);
@@ -134,6 +136,44 @@ export default function Today() {
         to: `/quotes/${q.id}`,
       }));
 
+    // Measured, and nothing has gone out yet — the gap where a job goes quiet
+    // between the tape measure and the customer hearing a price.
+    //
+    // Keyed on whether a quote was actually SENT, not on whether one exists: a
+    // draft sitting in the builder is exactly the case worth chasing, so it
+    // stays on the list and says so. The job reaches 'Measured' inside
+    // saveMeasureSheet, so a sheet saved on site shows up here immediately.
+    const sentQuoteJobIds = new Set(
+      quotes
+        .filter(q => q.sentAt || ['Sent', 'Viewed', 'Accepted', 'Declined', 'Completed'].includes(q.status))
+        .map(q => q.jobId)
+        .filter(Boolean),
+    );
+    const draftQuoteJobIds = new Set(
+      quotes.filter(q => q.status === 'Draft').map(q => q.jobId).filter(Boolean),
+    );
+    const measuredOn = (jobId) => {
+      const ms = sheets.filter(m => m.jobId === jobId)
+        .map(m => m.measureDate || m.updatedAt || m.createdAt).filter(Boolean).sort();
+      return ms.length ? ms[ms.length - 1] : null;
+    };
+    const toQuote = jobs
+      .filter(j => ['Measured', 'Quote Required'].includes(j.status) && !sentQuoteJobIds.has(j.id))
+      .map(j => ({ job: j, on: measuredOn(j.id) || j.updatedAt }))
+      .sort((a, b) => new Date(a.on || 0) - new Date(b.on || 0))   // longest wait first
+      .map(({ job: j, on }) => {
+        const waited = on ? differenceInDays(now, parseISO(on)) : null;
+        return {
+          id: j.id,
+          title: nameFor(j),
+          meta: [j.jobNumber, on && `measured ${dayLabel(on)}`,
+            waited >= 1 ? `${waited} day${waited === 1 ? '' : 's'} ago` : null,
+            draftQuoteJobIds.has(j.id) ? 'draft started' : 'no quote yet'].filter(Boolean).join(' · '),
+          urgent: waited != null && waited >= 3,
+          to: `/quotes/new-from-job/${j.id}`,
+        };
+      });
+
     const askedJobIds = new Set(reviews.map(r => r.jobId));
     const reviewReady = jobs
       .map(j => ({ job: j, finishedAt: j.completedAt || j.updatedAt }))
@@ -189,8 +229,13 @@ export default function Today() {
       }));
 
     return { installsToday, tasksDue, awaitingInstaller, needsBooking, quotesToChase, reviewReady,
-             rework, notOrdered, notInvoiced };
-  }, []);
+             rework, notOrdered, notInvoiced, toQuote };
+  // `tick` looks unused to the linter because every list is read straight out
+  // of localStorage rather than from a prop — but it is the whole point: it
+  // changes on 'lusso:data-changed', and without it this memo runs once at
+  // mount and the page never notices anything that happens afterwards.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
 
   // Website leads are the one list that isn't mirrored into localStorage (the
   // Inbox reads them straight from Supabase too), so they load on their own.
@@ -222,6 +267,7 @@ export default function Today() {
   const sections = [
     { key: 'installs',  label: 'Installing today',    hint: 'On site today',                          icon: HardHat,      tone: 'text-teal-600',   items: installsToday },
     { key: 'leads',     label: 'Leads to call',       hint: 'Website enquiries nobody has picked up',  icon: Globe,        tone: 'text-amber-600',  items: leads },
+    { key: 'toquote',   label: 'To quote',            hint: 'Measured, nothing sent to the customer yet', icon: Ruler,    tone: 'text-cyan-600',   items: toQuote },
     { key: 'rework',    label: 'Rework',              hint: 'Customer waiting on a fix',               icon: AlertTriangle,tone: 'text-rose-500',   items: rework },
     { key: 'tasks',     label: 'To-dos due',          hint: 'Notes you gave a date — due today or overdue',  icon: Clock,        tone: 'text-orange-500', items: tasksDue },
     { key: 'invoice',   label: 'Accepted, not invoiced', hint: 'Work committed, money not asked for',  icon: Receipt,      tone: 'text-green-600',  items: notInvoiced },
