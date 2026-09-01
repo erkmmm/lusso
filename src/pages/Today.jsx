@@ -21,6 +21,7 @@ import {
   getMeasureSheets,
 } from '../store/data';
 import Card from '../components/Card';
+import ContentQueueCard from '../components/ContentQueueCard';
 import { supabase } from '../lib/supabase';
 
 const phoneOf = (c) => c?.mobile || c?.phone || '';
@@ -294,6 +295,8 @@ export default function Today() {
             `${total} thing${total === 1 ? '' : 's'} want${total === 1 ? 's' : ''} your attention`}
         </p>
       </div>
+
+      <ContentQueueCard />
 
       {sections.length === 0 ? (
         <Card className="px-5 py-12 text-center">
