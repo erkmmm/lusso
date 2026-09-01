@@ -24,9 +24,12 @@ const json = (b: unknown, s = 200) =>
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
 
-  // Trimmed: a secret pasted with a trailing newline is indistinguishable from
-  // a wrong one at the GitHub end — both come back 401 Bad credentials.
-  const token = Deno.env.get("SEO_REPO_TOKEN")?.trim()
+  // A secret is almost never wrong in an interesting way — it is wrapped in the
+  // quotes a shell kept, or carries the newline a paste added. Both are
+  // indistinguishable from a genuinely wrong token at GitHub's end: all three
+  // come back 401 Bad credentials.
+  const rawToken = Deno.env.get("SEO_REPO_TOKEN")
+  const token = rawToken?.trim().replace(/^['"]|['"]$/g, "")
   if (!token) {
     // Say so plainly rather than 500ing: an unconfigured integration and a
     // broken one look identical from the CRM otherwise.
@@ -46,10 +49,22 @@ Deno.serve(async (req: Request) => {
       // token) and "Not Found" (a fine-grained token that was never granted
       // this repo) are the same status code but completely different fixes.
       const detail = await r.json().catch(() => ({}))
+      // Describe the secret's SHAPE, never its value. A real GitHub token is
+      // ~40 chars for a classic `ghp_` and 80-plus for a `github_pat_`; a
+      // length far off that, or a missing prefix, says the paste was truncated
+      // or the wrong string entirely — which no amount of re-reading the docs
+      // would have told anyone.
+      const shape = {
+        length: token?.length ?? 0,
+        prefix: token ? `${token.split("_").slice(0, -1).join("_")}_` : null,
+        hadWhitespace: rawToken !== rawToken?.trim(),
+        hadQuotes: /^['"]|['"]$/.test(rawToken?.trim() ?? ""),
+      }
       return json({
         ok: false,
         configured: true,
         error: `github ${r.status}${detail?.message ? `: ${detail.message}` : ""}`,
+        tokenShape: shape,
       }, 200)
     }
     const data = await r.json()
