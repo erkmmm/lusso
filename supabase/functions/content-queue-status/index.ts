@@ -28,7 +28,8 @@ Deno.serve(async (req: Request) => {
   // never implicit — the CRM has to ask for it by name, because it puts a page
   // on the live site and there is no undo short of a revert.
   const body = await req.json().catch(() => ({}))
-  const action = ["publish", "request-run"].includes(body?.action) ? body.action : "status"
+  const action = ["publish", "request-run", "get-schedule", "set-schedule"].includes(body?.action)
+    ? body.action : "status"
   const count = Math.min(Math.max(Number(body?.count) || 1, 1), 4)
 
   // A secret is almost never wrong in an interesting way — it is wrapped in the
@@ -53,6 +54,82 @@ Deno.serve(async (req: Request) => {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
       },
     })
+
+  // The drip's timetable. It lives in the repo rather than here because the
+  // GitHub Action is what reads it, and a schedule stored where the thing it
+  // governs cannot see it is a schedule waiting to be wrong.
+  const SCHEDULE_PATH = "drip-schedule.json"
+  const DEFAULT_SLOTS = [{ hour: 9, count: 2 }, { hour: 14, count: 2 }]
+
+  if (action === "get-schedule") {
+    const r = await gh(`/contents/${SCHEDULE_PATH}?ref=main`)
+    if (r.status === 404) {
+      // Not written yet: report what the workflow falls back to, so the editor
+      // opens showing what is actually happening rather than an empty form.
+      return json({ ok: true, slots: DEFAULT_SLOTS, usingDefault: true })
+    }
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}))
+      return json({ ok: false, error: `github ${r.status}${d?.message ? `: ${d.message}` : ""}` })
+    }
+    const file = await r.json()
+    try {
+      const cfg = JSON.parse(atob(file.content.replace(/\n/g, "")))
+      return json({ ok: true, slots: cfg.slots ?? DEFAULT_SLOTS, sha: file.sha })
+    } catch {
+      return json({ ok: false, error: "drip-schedule.json is not valid JSON" })
+    }
+  }
+
+  if (action === "set-schedule") {
+    // The workflow only wakes between 06:00 and 20:00 AEST, so a slot outside
+    // that would be saved and then silently never fire — worse than refusing it.
+    const raw = Array.isArray(body?.slots) ? body.slots : []
+    const slots = raw
+      .map((s: { hour: unknown; count: unknown }) => ({
+        hour: Math.trunc(Number(s?.hour)),
+        count: Math.trunc(Number(s?.count)),
+      }))
+      .filter((s: { hour: number; count: number }) =>
+        Number.isFinite(s.hour) && s.hour >= 6 && s.hour <= 20 &&
+        Number.isFinite(s.count) && s.count >= 1 && s.count <= 4)
+      .sort((a: { hour: number }, b: { hour: number }) => a.hour - b.hour)
+    // One slot per hour; two entries for 09:00 would make "how many at nine"
+    // depend on array order.
+    const unique = slots.filter((s: { hour: number }, i: number, arr: { hour: number }[]) =>
+      arr.findIndex((x) => x.hour === s.hour) === i)
+
+    if (unique.length === 0) {
+      return json({ ok: false, error: "no valid slots — hours must be 06–20 AEST, counts 1–4" })
+    }
+
+    const current = await gh(`/contents/${SCHEDULE_PATH}?ref=main`)
+    const sha = current.ok ? (await current.json()).sha : undefined
+    const content = JSON.stringify(
+      { timezone: "Australia/Brisbane", slots: unique }, null, 2) + "\n"
+
+    const r = await gh(`/contents/${SCHEDULE_PATH}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        message: "Set the drip publishing times from the CRM",
+        content: btoa(content),
+        branch: "main",
+        ...(sha ? { sha } : {}),
+      }),
+    })
+    if (r.ok) {
+      const perDay = unique.reduce((n: number, s: { count: number }) => n + s.count, 0)
+      return json({ ok: true, slots: unique, perDay })
+    }
+    const d = await r.json().catch(() => ({}))
+    return json({
+      ok: false,
+      error: `github ${r.status}${d?.message ? `: ${d.message}` : ""}`,
+      hint: r.status === 403 || r.status === 404
+        ? "the repo token needs Contents: read and write"
+        : undefined,
+    })
+  }
 
   if (action === "request-run") {
     // The CRM cannot write a page — that needs Claude, which does not run in a

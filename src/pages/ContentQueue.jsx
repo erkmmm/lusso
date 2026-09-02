@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { FileStack, AlertTriangle, RefreshCw, Send, Info, PenLine, Loader2 } from 'lucide-react';
+import { FileStack, AlertTriangle, RefreshCw, Send, Info, PenLine, Loader2, Clock, Plus, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
@@ -21,6 +21,8 @@ export default function ContentQueue() {
   const [state, setState] = useState(() =>
     supabase ? { loading: true } : { loading: false, error: 'offline' });
   const [busy, setBusy] = useState(false);
+  const [sched, setSched] = useState(null);      // null until loaded
+  const [savingSched, setSavingSched] = useState(false);
 
   const apply = (data, error) =>
     setState({ loading: false, ...(error ? { error: error.message } : data) });
@@ -30,8 +32,29 @@ export default function ContentQueue() {
     let cancelled = false;
     supabase.functions.invoke('content-queue-status')
       .then(({ data, error }) => { if (!cancelled) apply(data, error); });
+    supabase.functions.invoke('content-queue-status', { body: { action: 'get-schedule' } })
+      .then(({ data }) => { if (!cancelled && data?.ok) setSched(data.slots); });
     return () => { cancelled = true; };
   }, []);
+
+  const setSlot = (i, field, v) =>
+    setSched(s => s.map((x, j) => (j === i ? { ...x, [field]: Number(v) } : x)));
+  const addSlot = () => setSched(s => [...s, { hour: 12, count: 1 }]);
+  const removeSlot = (i) => setSched(s => s.filter((_, j) => j !== i));
+
+  const saveSchedule = async () => {
+    setSavingSched(true);
+    const { data, error: err } = await supabase.functions.invoke('content-queue-status', {
+      body: { action: 'set-schedule', slots: sched },
+    });
+    setSavingSched(false);
+    if (err || !data?.ok) {
+      const msg = data?.hint ? `${data.error} — ${data.hint}` : (data?.error || err?.message);
+      return toast(`Couldn't save the schedule: ${msg}`, 'error', { duration: 9000 });
+    }
+    setSched(data.slots);
+    toast(`Saved — ${data.perDay} a day. Takes effect once it reaches main.`, 'success');
+  };
 
   const refresh = () => {
     if (!supabase) return;
@@ -211,6 +234,60 @@ export default function ContentQueue() {
           </button>
         )}
       </Card>
+
+      {sched && (
+        <Card className="px-5 py-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+              <Clock size={14} className="text-slate-400" /> Publishing times
+            </h2>
+            <span className="text-xs text-slate-400">
+              {sched.reduce((n, s) => n + (Number(s.count) || 0), 0)} a day · AEST
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            When the drip runs and how many it sends each time. Between 6am and 8pm —
+            outside that the workflow is asleep and a slot would never fire.
+          </p>
+
+          <div className="mt-3 space-y-2">
+            {sched.map((slot, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <select value={slot.hour} onChange={e => setSlot(i, 'hour', e.target.value)}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
+                  {Array.from({ length: 15 }, (_, h) => h + 6).map(h => (
+                    <option key={h} value={h}>
+                      {String(h).padStart(2, '0')}:00
+                    </option>
+                  ))}
+                </select>
+                <select value={slot.count} onChange={e => setSlot(i, 'count', e.target.value)}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
+                  {[1, 2, 3, 4].map(c => (
+                    <option key={c} value={c}>{c} post{c === 1 ? '' : 's'}</option>
+                  ))}
+                </select>
+                <button onClick={() => removeSlot(i)} disabled={sched.length <= 1}
+                  className="text-slate-300 hover:text-rose-500 disabled:opacity-30"
+                  aria-label="Remove this time">
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <button onClick={addSlot} disabled={sched.length >= 8}
+              className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+              <Plus size={12} /> Add a time
+            </button>
+            <button onClick={saveSchedule} disabled={savingSched}
+              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-40">
+              {savingSched ? 'Saving…' : 'Save schedule'}
+            </button>
+          </div>
+        </Card>
+      )}
 
       <Card className="px-5 py-4 bg-slate-50/60">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
