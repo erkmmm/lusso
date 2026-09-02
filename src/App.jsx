@@ -23,6 +23,7 @@ import Notes from './pages/Notes';
 import Jobs from './pages/Jobs';
 import JobProfile from './pages/JobProfile';
 import JobTakeoff from './pages/JobTakeoff';
+import ContentQueue from './pages/ContentQueue';
 import InstallView from './pages/InstallView';
 import Customers from './pages/Customers';
 import CustomerProfile from './pages/CustomerProfile';
@@ -328,6 +329,7 @@ function AppRoutes() {
               <Route path="/jobs/:id"                   element={<JobProfile />} />
               <Route path="/jobs/:id/takeoff"           element={<JobTakeoff />} />
               <Route path="/jobs/:id/install"           element={<InstallView />} />
+              <Route path="/content"                    element={<ContentQueue />} />
               <Route path="/customers"                  element={<Customers />} />
               <Route path="/customers/:id"              element={<CustomerProfile />} />
               <Route path="/measure-sheets"             element={<MeasureSheets />} />

@@ -5,7 +5,7 @@ import {
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, UserCog, Users2, Inbox, ArrowLeft,
-  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, StickyNote, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, StickyNote, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
@@ -43,6 +43,12 @@ const NAV_SECTIONS = [
       // nobody could find it. It's a working tool, not a setting.
       { to: '/priced-items', label: 'Price Library', icon: Tags },
       { to: '/imports',      label: 'Import',        icon: Upload },
+    ],
+  },
+  {
+    label: 'MARKETING',
+    items: [
+      { to: '/content', label: 'Content', icon: FileStack },
     ],
   },
   {
