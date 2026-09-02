@@ -3,16 +3,16 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 // How deep the SEO drip queue is, for the CRM to display.
 //
 // The queue is a git branch in a PRIVATE repo (erkmmm/LussoWebite): posts are
-// committed to `queue`, and a GitHub Action fast-forwards `main` over four of
-// them a day. The branch is the single source of truth — a status table would
-// only ever be a copy that drifts every time the drip fires.
+// committed to `queue`, and a GitHub Action fast-forwards `main` over a few of
+// them a day, on the timetable in drip-schedule.json. The branch is the single
+// source of truth — a status table would only ever be a copy that drifts every
+// time the drip fires.
 //
 // It lives here rather than in the browser because reading a private repo needs
 // a token, and a token in a browser app is a published token. The CRM calls
 // this with the user's own session; the token never leaves the server.
 
 const REPO = "erkmmm/LussoWebite"
-const PER_DAY = 4 // two scheduled runs at COUNT=2 — see drip-publish.yml
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
   // never implicit — the CRM has to ask for it by name, because it puts a page
   // on the live site and there is no undo short of a revert.
   const body = await req.json().catch(() => ({}))
-  const action = ["publish", "request-run", "get-schedule", "set-schedule"].includes(body?.action)
+  const action = ["publish", "request-run", "request-edit", "get-schedule", "set-schedule"].includes(body?.action)
     ? body.action : "status"
   const count = Math.min(Math.max(Number(body?.count) || 1, 1), 4)
 
@@ -60,6 +60,37 @@ Deno.serve(async (req: Request) => {
   // governs cannot see it is a schedule waiting to be wrong.
   const SCHEDULE_PATH = "drip-schedule.json"
   const DEFAULT_SLOTS = [{ hour: 9, count: 2 }, { hour: 14, count: 2 }]
+
+  // How many posts a day the drip actually sends.
+  //
+  // This was a hardcoded 4, which was right on the day it was written and stayed
+  // right only by luck: the workflow now wakes hourly and asks this file whether
+  // the hour is a slot, so editing the timetable from the CRM changed reality
+  // while the constant went on quoting the old figure — and every "in N days" on
+  // the Content page is derived from it. Read what the workflow reads.
+  //
+  // From `main`, because the workflow that runs is main's. And falling back to
+  // the same two slots drip-publish.yml falls back to: two copies of a default
+  // that disagree is how a status page starts lying.
+  const readSlots = async (): Promise<{ hour: number; count: number }[]> => {
+    try {
+      const r = await gh(`/contents/${SCHEDULE_PATH}?ref=main`)
+      if (!r.ok) return DEFAULT_SLOTS
+      const f = await r.json()
+      const cfg = JSON.parse(atob(f.content.replace(/\n/g, "")))
+      const slots = (Array.isArray(cfg?.slots) ? cfg.slots : [])
+        .map((x: { hour: unknown; count: unknown }) => ({
+          hour: Math.trunc(Number(x?.hour)),
+          count: Math.trunc(Number(x?.count)),
+        }))
+        .filter((x: { hour: number; count: number }) =>
+          Number.isFinite(x.hour) && Number.isFinite(x.count) && x.count > 0)
+        .sort((a: { hour: number }, b: { hour: number }) => a.hour - b.hour)
+      return slots.length ? slots : DEFAULT_SLOTS
+    } catch {
+      return DEFAULT_SLOTS
+    }
+  }
 
   if (action === "get-schedule") {
     const r = await gh(`/contents/${SCHEDULE_PATH}?ref=main`)
@@ -129,6 +160,67 @@ Deno.serve(async (req: Request) => {
         ? "the repo token needs Contents: read and write"
         : undefined,
     })
+  }
+
+  if (action === "request-edit") {
+    // Editing a queued page is the same shape of problem as writing one: it
+    // needs Claude, which does not run in a browser. So this leaves a request
+    // the Mac claims, exactly like a top-up — a different label, a different
+    // script, the same relay.
+    //
+    // The page is identified by FILENAME, never by commit sha. Applying an edit
+    // rewrites the commit that added the page, so the sha the CRM was looking at
+    // stops existing the moment the first edit lands. A filename survives that;
+    // a sha would send the second edit hunting for a commit that is gone.
+    const filename = String(body?.filename ?? "")
+    const instruction = String(body?.instruction ?? "").trim()
+    if (!/^[a-z0-9][a-z0-9-]*\.html$/.test(filename)) {
+      return json({ ok: false, error: "a top-level page filename is required" }, 400)
+    }
+    if (instruction.length < 4) {
+      return json({ ok: false, error: "say what should change" }, 400)
+    }
+    if (instruction.length > 4000) {
+      return json({ ok: false, error: "that is too long — keep it under 4000 characters" }, 400)
+    }
+
+    // One open edit per page. Two would race: the first rewrites the commit, and
+    // the second would be working from a tree that no longer exists.
+    const open = await gh("/issues?state=open&labels=edit-request&per_page=100")
+      .then((x) => x.json()).catch(() => [])
+    const existing = Array.isArray(open)
+      ? open.find((i: { title: string }) => i.title === `Edit ${filename}`)
+      : undefined
+    if (existing) {
+      return json({ ok: true, alreadyRequested: true, number: existing.number, filename })
+    }
+
+    const who = body?.requestedBy ? ` by ${String(body.requestedBy).slice(0, 80)}` : ""
+    const r = await gh("/issues", {
+      method: "POST",
+      body: JSON.stringify({
+        title: `Edit ${filename}`,
+        labels: ["edit-request"],
+        // The fenced block is what scripts/edit-requests.py parses; the prose
+        // above it is for whoever opens the issue on GitHub instead.
+        body: `Requested from the CRM${who}, while the page was still in the queue.\n\n`
+          + `\`\`\`json\n${JSON.stringify({ file: filename, instruction }, null, 2)}\n\`\`\`\n\n`
+          + `The Mac amends the queued commit in place and force-pushes the queue, so the `
+          + `page publishes edited rather than publishing twice.`,
+      }),
+    })
+    if (r.status === 201) {
+      const created = await r.json()
+      return json({ ok: true, requested: true, number: created.number, filename })
+    }
+    const detail = await r.json().catch(() => ({}))
+    return json({
+      ok: false,
+      error: `github ${r.status}${detail?.message ? `: ${detail.message}` : ""}`,
+      hint: r.status === 403 || r.status === 404
+        ? "the repo token needs Issues: read and write"
+        : undefined,
+    }, 200)
   }
 
   if (action === "request-run") {
@@ -242,21 +334,53 @@ Deno.serve(async (req: Request) => {
 
     // Cheap enough to fold into the status call, and it is what stops the CRM
     // offering a button that would only ever say "already requested".
-    const requests = await gh("/issues?state=open&labels=run-request")
-      .then((x) => x.json()).catch(() => [])
-    const pendingRun = Array.isArray(requests) && requests.length > 0
-      ? { number: requests[0].number, since: requests[0].created_at,
-          running: (requests[0].labels ?? []).some((l: { name: string }) => l.name === "run-running") }
+    //
+    // One read for both kinds of request rather than one per label: GitHub ANDs
+    // the `labels` filter, so asking for either would be two round trips on the
+    // hot path. The repo carries a handful of issues, so a page of 100 is the
+    // lot. `pull_request` is how a PR is told apart — /issues returns both.
+    type Issue = {
+      number: number; title: string; created_at: string
+      labels?: { name: string }[]; pull_request?: unknown
+    }
+    // Concurrently with the timetable: two independent reads, and making the
+    // status page a round trip slower to report a number is a poor trade.
+    const [raw, slots] = await Promise.all([
+      gh("/issues?state=open&per_page=100").then((x) => x.json()).catch(() => []),
+      readSlots(),
+    ])
+    const perDay = slots.reduce((n, x) => n + x.count, 0) || 1
+    const issues: Issue[] = Array.isArray(raw) ? raw.filter((i: Issue) => !i.pull_request) : []
+    const labelled = (i: Issue, name: string) => (i.labels ?? []).some((l) => l.name === name)
+
+    const runs = issues.filter((i) => labelled(i, "run-request"))
+    const pendingRun = runs.length > 0
+      ? { number: runs[0].number, since: runs[0].created_at, running: labelled(runs[0], "run-running") }
       : null
+
+    // Which queued pages have an edit waiting. Keyed by filename because that is
+    // what survives the amend — see the request-edit branch above. The CRM uses
+    // it to badge the queue list and to stop offering a second edit on a page
+    // that already has one in flight.
+    const editRequests = issues
+      .filter((i) => labelled(i, "edit-request"))
+      .map((i) => ({
+        number: i.number,
+        file: i.title.replace(/^Edit\s+/, ""),
+        since: i.created_at,
+        running: labelled(i, "edit-running"),
+      }))
 
     return json({
       ok: true,
       configured: true,
       pendingRun,
+      editRequests,
       posts: posts.length,
       commits: data.total_commits ?? 0,
-      daysOfDrip: Math.floor(posts.length / PER_DAY),
-      perDay: PER_DAY,
+      daysOfDrip: Math.floor(posts.length / perDay),
+      perDay,
+      slots,
       // `next` for the Today card, which only has room for a few; `all` for the
       // Content page, which shows the whole queue in publishing order. Capped
       // at 100 so a queue nobody has drained cannot bloat the response.
