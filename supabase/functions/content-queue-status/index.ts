@@ -180,7 +180,11 @@ Deno.serve(async (req: Request) => {
       commits: data.total_commits ?? 0,
       daysOfDrip: Math.floor(posts.length / PER_DAY),
       perDay: PER_DAY,
+      // `next` for the Today card, which only has room for a few; `all` for the
+      // Content page, which shows the whole queue in publishing order. Capped
+      // at 100 so a queue nobody has drained cannot bloat the response.
       next: posts.slice(0, 5),
+      all: posts.slice(0, 100),
       checkedAt: new Date().toISOString(),
     })
   } catch (e) {

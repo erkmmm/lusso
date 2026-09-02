@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { FileStack, AlertTriangle, RefreshCw, Send, CheckCircle2, Info, PenLine, Loader2 } from 'lucide-react';
+import { FileStack, AlertTriangle, RefreshCw, Send, Info, PenLine, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
@@ -76,7 +76,8 @@ export default function ContentQueue() {
     }));
   };
 
-  const { loading, ok, configured, posts, commits, daysOfDrip, perDay, next, error, pendingRun } = state;
+  const { loading, ok, configured, posts, commits, daysOfDrip, perDay, next, all, error, pendingRun } = state;
+  const list = all?.length ? all : next;
   const low = ok && daysOfDrip < 2;
 
   return (
@@ -150,17 +151,34 @@ export default function ContentQueue() {
         </Card>
       )}
 
-      {ok && next?.length > 0 && (
+      {ok && list?.length > 0 && (
         <Card className="px-5 py-4">
-          <h2 className="text-sm font-semibold text-slate-800">Next out the door</h2>
-          <ul className="mt-3 space-y-2">
-            {next.map(p => (
-              <li key={p.sha} className="flex items-start gap-2 text-sm text-slate-600">
-                <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0 text-slate-300" />
-                <span>{p.message.replace(/^Add /i, '')}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-800">In the queue</h2>
+            <span className="text-xs text-slate-400">publishing order · {list.length} shown</span>
+          </div>
+          <ol className="mt-3 divide-y divide-slate-100">
+            {list.map((p, i) => {
+              // Which day each one lands on, at the current rate. The queue is
+              // strictly FIFO, so position is a date — which is the thing you
+              // actually want to know when looking at a list this long.
+              const day = Math.floor(i / (perDay || 4));
+              const when = day === 0 ? 'today' : day === 1 ? 'tomorrow' : `in ${day} days`;
+              return (
+                <li key={p.sha} className="flex items-baseline gap-3 py-2">
+                  <span className="w-6 flex-shrink-0 text-right text-xs tabular-nums text-slate-300">
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 text-sm text-slate-700">
+                    {p.message.replace(/^Add /i, '')}
+                  </span>
+                  <span className={`flex-shrink-0 text-xs ${day === 0 ? 'font-medium text-green-600' : 'text-slate-400'}`}>
+                    {when}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
         </Card>
       )}
 
