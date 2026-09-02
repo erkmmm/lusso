@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { FileStack, AlertTriangle, RefreshCw, Send, Info, PenLine, Loader2, Clock, Plus, X } from 'lucide-react';
+import { FileStack, AlertTriangle, RefreshCw, Send, Info, PenLine, Loader2, Clock, Plus, X, Eye } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
@@ -21,6 +21,7 @@ export default function ContentQueue() {
   const [state, setState] = useState(() =>
     supabase ? { loading: true } : { loading: false, error: 'offline' });
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState(null);  // { loading } | { ok, html, ... }
   const [sched, setSched] = useState(null);      // null until loaded
   const [savingSched, setSavingSched] = useState(false);
 
@@ -36,6 +37,27 @@ export default function ContentQueue() {
       .then(({ data }) => { if (!cancelled && data?.ok) setSched(data.slots); });
     return () => { cancelled = true; };
   }, []);
+
+  const openPreview = async (post) => {
+    setPreview({ loading: true, sha: post.sha, message: post.message });
+    const { data, error: err } = await supabase.functions.invoke('content-queue-page', {
+      body: { sha: post.sha },
+    });
+    if (err || !data?.ok) {
+      setPreview(null);
+      return toast(`Couldn't load that page: ${data?.error || err?.message}`, 'error');
+    }
+    setPreview({ ...data, sha: post.sha });
+  };
+
+  // The page has never been published, so its stylesheet, fonts and existing
+  // photos only exist on the live site — a <base> sends every relative path
+  // there. Its own CSP meta has to come out first: inside an iframe
+  // `default-src 'self'` resolves to nothing useful and blocks the lot, so the
+  // page would render as unstyled text.
+  const previewDoc = (html) => html
+    .replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '')
+    .replace(/<head([^>]*)>/i, '<head$1><base href="https://lusso.com.au/">');
 
   const setSlot = (i, field, v) =>
     setSched(s => s.map((x, j) => (j === i ? { ...x, [field]: Number(v) } : x)));
@@ -178,7 +200,7 @@ export default function ContentQueue() {
         <Card className="px-5 py-4">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-sm font-semibold text-slate-800">In the queue</h2>
-            <span className="text-xs text-slate-400">publishing order · {list.length} shown</span>
+            <span className="text-xs text-slate-400">publishing order · tap to read</span>
           </div>
           <ol className="mt-3 divide-y divide-slate-100">
             {list.map((p, i) => {
@@ -188,16 +210,20 @@ export default function ContentQueue() {
               const day = Math.floor(i / (perDay || 4));
               const when = day === 0 ? 'today' : day === 1 ? 'tomorrow' : `in ${day} days`;
               return (
-                <li key={p.sha} className="flex items-baseline gap-3 py-2">
-                  <span className="w-6 flex-shrink-0 text-right text-xs tabular-nums text-slate-300">
-                    {i + 1}
-                  </span>
-                  <span className="min-w-0 flex-1 text-sm text-slate-700">
-                    {p.message.replace(/^Add /i, '')}
-                  </span>
-                  <span className={`flex-shrink-0 text-xs ${day === 0 ? 'font-medium text-green-600' : 'text-slate-400'}`}>
-                    {when}
-                  </span>
+                <li key={p.sha}>
+                  <button onClick={() => openPreview(p)}
+                    className="group flex w-full items-baseline gap-3 py-2 text-left hover:bg-slate-50">
+                    <span className="w-6 flex-shrink-0 text-right text-xs tabular-nums text-slate-300">
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm text-slate-700">
+                      {p.message.replace(/^Add /i, '')}
+                    </span>
+                    <Eye size={13} className="flex-shrink-0 text-slate-200 group-hover:text-slate-400" />
+                    <span className={`flex-shrink-0 text-xs ${day === 0 ? 'font-medium text-green-600' : 'text-slate-400'}`}>
+                      {when}
+                    </span>
+                  </button>
                 </li>
               );
             })}
@@ -287,6 +313,51 @@ export default function ContentQueue() {
             </button>
           </div>
         </Card>
+      )}
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/50 p-3 sm:p-6"
+          onClick={() => setPreview(null)}>
+          <div className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-slate-800">
+                  {preview.title || preview.message?.replace(/^Add /i, '') || 'Loading…'}
+                </p>
+                {preview.description && (
+                  <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{preview.description}</p>
+                )}
+                {preview.filename && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    {preview.filename} · {preview.words?.toLocaleString()} words · not published yet
+                  </p>
+                )}
+              </div>
+              <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-700"
+                aria-label="Close preview">
+                <X size={18} />
+              </button>
+            </div>
+
+            {preview.loading ? (
+              <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Loading…</div>
+            ) : (
+              <>
+                <iframe
+                  title={preview.filename || 'Queued page'}
+                  srcDoc={previewDoc(preview.html)}
+                  sandbox=""
+                  className="flex-1 w-full border-0 bg-white"
+                />
+                <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-400">
+                  Styling comes from the live site. This page&rsquo;s own photos aren&rsquo;t
+                  published yet, so they show as gaps — they&rsquo;ll be there once it goes out.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       <Card className="px-5 py-4 bg-slate-50/60">
