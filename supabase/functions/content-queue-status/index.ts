@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
   // never implicit — the CRM has to ask for it by name, because it puts a page
   // on the live site and there is no undo short of a revert.
   const body = await req.json().catch(() => ({}))
-  const action = body?.action === "publish" ? "publish" : "status"
+  const action = ["publish", "request-run"].includes(body?.action) ? body.action : "status"
   const count = Math.min(Math.max(Number(body?.count) || 1, 1), 4)
 
   // A secret is almost never wrong in an interesting way — it is wrapped in the
@@ -53,6 +53,43 @@ Deno.serve(async (req: Request) => {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
       },
     })
+
+  if (action === "request-run") {
+    // The CRM cannot write a page — that needs Claude, which does not run in a
+    // browser. So this leaves a request where the Mac is watching: an issue
+    // labelled `run-request`, which scripts/run-requests.py claims within a
+    // couple of minutes and reports back on in the same thread.
+    const existing = await gh("/issues?state=open&labels=run-request")
+      .then((x) => x.json()).catch(() => [])
+    if (Array.isArray(existing) && existing.length > 0) {
+      // Two requests would not run twice, they would queue — and the second
+      // would look ignored. Say it is already asked for instead.
+      return json({ ok: true, alreadyRequested: true, number: existing[0].number })
+    }
+    const who = body?.requestedBy ? ` by ${String(body.requestedBy).slice(0, 80)}` : ""
+    const r = await gh("/issues", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "Weekly top-up requested",
+        labels: ["run-request"],
+        body: `Requested from the CRM${who}.\n\nThe Mac picks this up within a couple of `
+          + `minutes if it is awake and logged in, tops the queue back up to 28, and reports `
+          + `here. A full top-up runs for hours.`,
+      }),
+    })
+    if (r.status === 201) {
+      const created = await r.json()
+      return json({ ok: true, requested: true, number: created.number })
+    }
+    const detail = await r.json().catch(() => ({}))
+    return json({
+      ok: false,
+      error: `github ${r.status}${detail?.message ? `: ${detail.message}` : ""}`,
+      hint: r.status === 403 || r.status === 404
+        ? "the repo token needs Issues: read and write"
+        : undefined,
+    }, 200)
+  }
 
   if (action === "publish") {
     // workflow_dispatch is the same door the scheduled run comes through, so a
@@ -126,9 +163,19 @@ Deno.serve(async (req: Request) => {
       }))
       .filter((c: { message: string }) => /\b(post|page)$/i.test(c.message.trim()))
 
+    // Cheap enough to fold into the status call, and it is what stops the CRM
+    // offering a button that would only ever say "already requested".
+    const requests = await gh("/issues?state=open&labels=run-request")
+      .then((x) => x.json()).catch(() => [])
+    const pendingRun = Array.isArray(requests) && requests.length > 0
+      ? { number: requests[0].number, since: requests[0].created_at,
+          running: (requests[0].labels ?? []).some((l: { name: string }) => l.name === "run-running") }
+      : null
+
     return json({
       ok: true,
       configured: true,
+      pendingRun,
       posts: posts.length,
       commits: data.total_commits ?? 0,
       daysOfDrip: Math.floor(posts.length / PER_DAY),

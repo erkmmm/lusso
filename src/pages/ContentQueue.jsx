@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { FileStack, AlertTriangle, RefreshCw, Send, CheckCircle2, Info } from 'lucide-react';
+import { FileStack, AlertTriangle, RefreshCw, Send, CheckCircle2, Info, PenLine, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
@@ -54,7 +54,29 @@ export default function ContentQueue() {
     toast(`Publishing ${count} post${count === 1 ? '' : 's'} — GitHub takes a minute or two`, 'success');
   };
 
-  const { loading, ok, configured, posts, commits, daysOfDrip, perDay, next, error } = state;
+  const requestRun = async () => {
+    setBusy(true);
+    const { data, error: err } = await supabase.functions.invoke('content-queue-status', {
+      body: { action: 'request-run' },
+    });
+    setBusy(false);
+    if (err || !data?.ok) {
+      const msg = data?.hint ? `${data.error} — ${data.hint}` : (data?.error || err?.message);
+      return toast(`Couldn't request a run: ${msg}`, 'error', { duration: 9000 });
+    }
+    toast(data.alreadyRequested
+      ? 'Already requested — the Mac will pick it up'
+      : 'Requested. The Mac picks it up within a couple of minutes.', 'success');
+    // Shown from what we just did, not from a re-read. GitHub takes about a
+    // minute to index a newly labelled issue, so refreshing here would come
+    // back empty and the button would look like it had done nothing.
+    setState(prev => ({
+      ...prev,
+      pendingRun: { number: data.number, since: new Date().toISOString(), running: false },
+    }));
+  };
+
+  const { loading, ok, configured, posts, commits, daysOfDrip, perDay, next, error, pendingRun } = state;
   const low = ok && daysOfDrip < 2;
 
   return (
@@ -142,14 +164,44 @@ export default function ContentQueue() {
         </Card>
       )}
 
+      <Card className="px-5 py-4">
+        <h2 className="text-sm font-semibold text-slate-800">Write more pages</h2>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          Tops the queue back up to a week’s worth. The writing happens on the Mac — a
+          browser has no Claude to run it with — so this leaves a request the Mac picks
+          up within a couple of minutes, then works for hours.
+        </p>
+
+        {pendingRun ? (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <Loader2 size={14} className={`mt-0.5 flex-shrink-0 text-amber-600 ${pendingRun.running ? 'animate-spin' : ''}`} />
+            <div className="text-xs text-amber-800">
+              <p className="font-medium">
+                {pendingRun.running ? 'Running now' : 'Requested — waiting for the Mac'}
+              </p>
+              <p className="mt-0.5 text-amber-700">
+                {pendingRun.running
+                  ? 'Started on the Mac. It reports back when it finishes.'
+                  : 'Picked up within a couple of minutes, if the Mac is awake and logged in.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <button onClick={requestRun} disabled={busy || !ok}
+            className="mt-3 flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-40">
+            <PenLine size={12} /> Request a top-up
+          </button>
+        )}
+      </Card>
+
       <Card className="px-5 py-4 bg-slate-50/60">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-          <Info size={14} className="text-slate-400" /> Writing new pages
+          <Info size={14} className="text-slate-400" /> How this works
         </h2>
         <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
-          New pages can’t be written from here — each one is a long research-and-imagery
-          run that needs Claude on the Mac, not a browser. The Monday task tops the queue
-          back up to a week’s worth. This page is where you watch it drain.
+          Pages are written on the Mac and committed to a queue branch. A GitHub Action
+          publishes {perDay || 4} a day to lusso.com.au. Nothing here is live until the
+          drip sends it — which is why a week’s buffer is the target, not a month’s.
         </p>
       </Card>
     </div>
