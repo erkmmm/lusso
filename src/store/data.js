@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { lsGet, lsSet } from './storage';
+import { lsGet, lsSet, lsVersion } from './storage';
 import { db, batchUpsertCustomers, batchUpsertPricedItems, hydrateFromSupabase } from './db';
 import { supabase } from '../lib/supabase';
 import { removeTakeoffPlans, removeTakeoffPhotos } from '../lib/takeoffStorage';
@@ -1608,17 +1608,35 @@ export const getMsCustomOptions = () => get('lusso_measure_sheet_options') || []
 // Operation Types differ from a Curtain's) — stored on the type as
 // `options[fieldKey]`. When an override is present it wins; otherwise fall back
 // to the global default + custom list.
+//
+// Cached per field, keyed on the custom-options table's write version. A
+// measure sheet in table view calls this once per dropdown per row per render —
+// 100+ times per keystroke on a real sheet — and uncached each call decoded the
+// whole custom-options table from localStorage. The cache also hands back the
+// SAME array reference between writes, so a memoised row doesn't re-render just
+// because its option list was rebuilt.
+const MS_OPT_KEY = 'lusso_measure_sheet_options';
+let _msOptCache = { v: -1, byField: new Map() };
+
 export const getMsOptions = (fieldKey, productType = null) => {
   const override = productType && productType.options && productType.options[fieldKey];
   if (Array.isArray(override)) return override;
+
+  const v = lsVersion(MS_OPT_KEY);
+  if (_msOptCache.v !== v) _msOptCache = { v, byField: new Map() };
+  const cached = _msOptCache.byField.get(fieldKey);
+  if (cached) return cached;
+
   const defaults = MS_DEFAULTS[fieldKey] || [];
-  const seen = new Set(defaults.map(v => String(v).toLowerCase()));
+  const seen = new Set(defaults.map(v2 => String(v2).toLowerCase()));
   const custom = [];
   getMsCustomOptions().filter(o => o.field === fieldKey).forEach(o => {
     const k = String(o.value).toLowerCase();
     if (!seen.has(k)) { seen.add(k); custom.push(o.value); }
   });
-  return [...defaults, ...custom];
+  const merged = [...defaults, ...custom];
+  _msOptCache.byField.set(fieldKey, merged);
+  return merged;
 };
 
 /** True when a product type has an explicit option override for a field. */
@@ -2137,6 +2155,157 @@ export const markAllNotificationsRead = () => {
 };
 
 // ─── Product Types ────────────────────────────────────────────────────────────
+
+// ─── Product reference documents ──────────────────────────────────────────────
+// Supplier spec sheets, install guides, warranty and care docs. The record here
+// is metadata + a storage path; the binary is in the `product-docs` bucket and
+// the extracted text is in its own table (see src/lib/productDocs.js).
+//
+// A document attaches to a PRICED ITEM by preference — a supplier's actual
+// product, e.g. Verosol's Duo Pleated Blind (P201.0) — because two brands of
+// "Pleated Blind" have different maximum widths and different fixings. Attaching
+// to a product TYPE is the fallback, so a line with no priced item still finds
+// something rather than nothing.
+
+const PRODUCT_DOCS_KEY = 'lusso_product_documents';
+
+export const getProductDocuments = () =>
+  (get(PRODUCT_DOCS_KEY) || []).filter(d => !d.deletedAt);
+
+export const getProductDocument = (id) => getProductDocuments().find(d => d.id === id) || null;
+
+/** Documents for one product, priced-item matches first. */
+// ── Scope ────────────────────────────────────────────────────────────────────
+// One spec sheet normally covers a family, not a row: Verosol's P201.0 sheet
+// applies to all 28 "Verosol / Pleated Blind" items in the price library, one
+// per fabric. So a document declares what it applies to:
+//
+//   'item'     → one priced item
+//   'supplier' → every priced item from `supplier`, optionally narrowed to
+//                `category`; a blank category means everything they supply
+//   'type'     → a Lusso product type, for products not in the price library
+//
+// Scope is stored, never inferred — `supplier` is also plain metadata on item-
+// and type-scoped documents, and inferring from it would silently widen them.
+export const DOC_SCOPES = ['item', 'supplier', 'type'];
+
+const eq = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+/** Does one document apply to one priced item? */
+export const docAppliesToPricedItem = (doc, item) => {
+  if (!doc || !item) return false;
+  if (doc.scope === 'item')     return doc.pricedItemId === item.id;
+  if (doc.scope === 'supplier') {
+    if (!eq(doc.supplier, item.supplier)) return false;
+    return !String(doc.category || '').trim() || eq(doc.category, item.category);
+  }
+  return false; // 'type' documents are resolved through the product type, below
+};
+
+/** The priced items a supplier-scoped document covers. Powers the "applies to
+ *  N products" preview on the upload form — an abstraction you can't see the
+ *  reach of is one nobody trusts. */
+export const getPricedItemsInScope = ({ supplier, category }) => {
+  const s = String(supplier || '').trim();
+  if (!s) return [];
+  const c = String(category || '').trim();
+  return getPricedItems().filter(i =>
+    i.isActive !== false && eq(i.supplier, s) && (!c || eq(i.category, c)));
+};
+
+/** Supplier → categories present in the price library, for the scope picker. */
+export const getSupplierCategories = (supplier) => {
+  const s = String(supplier || '').trim();
+  if (!s) return [];
+  const seen = new Map();
+  for (const i of getPricedItems()) {
+    if (!eq(i.supplier, s)) continue;
+    const c = String(i.category || '').trim();
+    if (c && !seen.has(c.toLowerCase())) seen.set(c.toLowerCase(), c);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+};
+
+/** Every document that applies to a given product, by whichever route. */
+export const getProductDocumentsFor = ({ pricedItem = null, productTypeId = null } = {}) =>
+  getProductDocuments().filter(d =>
+    (pricedItem && docAppliesToPricedItem(d, pricedItem)) ||
+    (productTypeId && d.scope === 'type' && d.productTypeId === productTypeId));
+
+/**
+ * Document count per priced item, for the Price Library badges.
+ *
+ * Supplier-scoped documents are indexed by supplier|category first so this stays
+ * one pass over the items rather than items × documents.
+ */
+export const getProductDocumentCounts = () => {
+  const docs = getProductDocuments();
+  const byPricedItem  = {};
+  const byProductType = {};
+  const bySupplierKey = {};   // "supplier|category" and "supplier|" → count
+
+  for (const d of docs) {
+    if (d.scope === 'item' && d.pricedItemId) {
+      byPricedItem[d.pricedItemId] = (byPricedItem[d.pricedItemId] || 0) + 1;
+    } else if (d.scope === 'supplier' && d.supplier) {
+      const k = `${String(d.supplier).trim().toLowerCase()}|${String(d.category || '').trim().toLowerCase()}`;
+      bySupplierKey[k] = (bySupplierKey[k] || 0) + 1;
+    } else if (d.scope === 'type' && d.productTypeId) {
+      byProductType[d.productTypeId] = (byProductType[d.productTypeId] || 0) + 1;
+    }
+  }
+
+  if (Object.keys(bySupplierKey).length) {
+    for (const i of getPricedItems()) {
+      const s = String(i.supplier || '').trim().toLowerCase();
+      if (!s) continue;
+      const n = (bySupplierKey[`${s}|${String(i.category || '').trim().toLowerCase()}`] || 0)
+              + (bySupplierKey[`${s}|`] || 0);
+      if (n) byPricedItem[i.id] = (byPricedItem[i.id] || 0) + n;
+    }
+  }
+  return { byPricedItem, byProductType };
+};
+
+export const saveProductDocument = (doc) => {
+  const all = get(PRODUCT_DOCS_KEY) || [];
+  const now = new Date().toISOString();
+  const idx = all.findIndex(d => d.id === doc.id);
+  const record = idx >= 0
+    ? { ...all[idx], ...doc, updatedAt: now }
+    : { ...doc, id: doc.id || uuidv4(), createdAt: doc.createdAt || now, updatedAt: now };
+  if (idx >= 0) all[idx] = record; else all.push(record);
+  set(PRODUCT_DOCS_KEY, all);
+  db.saveProductDocument(record);
+  return record;
+};
+
+/** Soft delete — the blob and the record both survive, so it can be undone. */
+export const deleteProductDocument = (id) => {
+  const all = get(PRODUCT_DOCS_KEY) || [];
+  const idx = all.findIndex(d => d.id === id);
+  if (idx < 0) return;
+  all[idx] = { ...all[idx], deletedAt: new Date().toISOString() };
+  set(PRODUCT_DOCS_KEY, all);
+  db.deleteProductDocument(id);
+};
+
+export const saveProductDocumentText = (id, content) => db.saveProductDocumentText(id, content);
+export const searchProductDocumentText = (q) => db.searchProductDocumentText(q);
+
+/** Every supplier name we know of, for the upload form's supplier guess. */
+export const getKnownSuppliers = () => {
+  const seen = new Map(); // lower → original casing
+  for (const i of getPricedItems()) {
+    const s = String(i.supplier || '').trim();
+    if (s && !seen.has(s.toLowerCase())) seen.set(s.toLowerCase(), s);
+  }
+  for (const d of getProductDocuments()) {
+    const s = String(d.supplier || '').trim();
+    if (s && !seen.has(s.toLowerCase())) seen.set(s.toLowerCase(), s);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+};
 
 export const getProductTypes = () => (get('lusso_product_types') || []).sort((a, b) => a.sortOrder - b.sortOrder);
 export const getActiveProductTypes = () => getProductTypes().filter(p => p.isActive);

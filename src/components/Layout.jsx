@@ -42,6 +42,9 @@ const NAV_SECTIONS = [
       // The price library was reachable only from a button inside Settings, so
       // nobody could find it. It's a working tool, not a setting.
       { to: '/priced-items', label: 'Price Library', icon: Tags },
+      // Supplier spec sheets and install guides — the answer to "can this
+      // product even do that window?", which used to live in someone's inbox.
+      { to: '/product-docs', label: 'Product Docs',  icon: FileText },
       { to: '/imports',      label: 'Import',        icon: Upload },
     ],
   },

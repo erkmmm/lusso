@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Trash2, Copy } from 'lucide-react';
 import { getMsOptions, MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers } from '../store/data';
 import PricedItemPicker from './PricedItemPicker';
@@ -74,6 +74,158 @@ function Sel({ value, onChange, options }) {
   );
 }
 
+// ── One row, memoised ───────────────────────────────────────────────────────
+// Typing in a cell changes exactly one line item, but the table used to render
+// every row on every keystroke — on a 20-line sheet that's ~300 inputs and
+// selects rebuilt per character, which is most of why the grid felt sluggish on
+// an iPad. So the row is its own memoised component and everything it receives
+// is either a primitive or a stable reference:
+//
+//   • the handlers are useCallback'd here AND in the parent page
+//   • the option lists come back from getMsOptions() as cached arrays
+//   • the selection arrives pre-reduced to per-row numbers (which columns are
+//     selected on THIS row), never the whole {r,c,r2,c2} object — a selection
+//     that moves within one row must not invalidate the other nineteen.
+const Row = memo(function Row({
+  item, idx, cols, productTypes, errors,
+  selC1, selC2, selTop, selBottom, anchorCol, handleCol, previewC1, previewC2,
+  hasTakeoffLines, sheetId, canRemove,
+  setLineItem, removeLineItem, copyLineItem, setLinePhotos,
+  onConfirmMeasured, onRevertToPlan,
+  cellRefs, onCellMouseDown, onCellFocus, onHandleDown,
+}) {
+  const pt = productTypes.find(p => p.id === item.productTypeId) || null;
+  const productHandlers = makeProductSelectHandlers(setLineItem, idx, productTypes);
+
+  const control = (col) => {
+    if (col.type === 'product') {
+      return (
+        <div className="px-1">
+          <PricedItemPicker
+            value={item.productNameSnapshot}
+            productTypes={productTypes}
+            error={!!errors[`item_${idx}_productType`]}
+            typesFirst
+            placeholder="Select product type…"
+            {...productHandlers}
+          />
+        </div>
+      );
+    }
+    if (col.type === 'select') {
+      return <Sel value={item[col.field]} onChange={v => setLineItem(idx, col.field, v)}
+        options={getMsOptions(col.optionKey, pt)} />;
+    }
+    if (col.type === 'bool') {
+      return (
+        <select value={item[col.field] ? 'Yes' : 'No'}
+          onChange={e => setLineItem(idx, col.field, e.target.value === 'Yes')} className={cellSelect}>
+          <option value="No">No</option>
+          <option value="Yes">Yes</option>
+        </select>
+      );
+    }
+    if (col.type === 'number') {
+      return (
+        <input type="number" inputMode="numeric" min="0" value={item[col.field] ?? ''}
+          onChange={e => setLineItem(idx, col.field, e.target.value)}
+          placeholder={col.key === 'quantity' ? '' : 'mm'}
+          className={`${cellInput} no-spin text-right ${col.highlight ? 'font-semibold text-slate-900 bg-amber-50/50 focus:bg-amber-100' : ''}`} />
+      );
+    }
+    const err      = col.key === 'location' && !!errors[`item_${idx}_location`];
+    const disabled = col.key === 'liningFabric' && !item.attachedLining;
+    const ph = {
+      location: 'Room', fabric: 'Fabric / colour', notes: 'Notes',
+      liningFabric: item.attachedLining ? 'Lining fabric' : '—',
+    }[col.key] || '';
+    return (
+      <input value={item[col.field] || ''} disabled={disabled} placeholder={ph}
+        onChange={e => setLineItem(idx, col.field, e.target.value)}
+        className={`${cellInput} disabled:opacity-40 ${err ? 'ring-1 ring-red-300 rounded' : ''}`} />
+    );
+  };
+
+  const gridCell = (c) => {
+    const col      = cols[c];
+    const selected = selC1 >= 0 && c >= selC1 && c <= selC2;
+    const anchor   = c === anchorCol;
+    const preview  = previewC1 >= 0 && c >= previewC1 && c <= previewC2;
+
+    const shadow = [];
+    if (selected) {
+      if (selTop)      shadow.push(`inset 0 2px 0 0 ${SEL_COLOR}`);
+      if (selBottom)   shadow.push(`inset 0 -2px 0 0 ${SEL_COLOR}`);
+      if (c === selC1) shadow.push(`inset 2px 0 0 0 ${SEL_COLOR}`);
+      if (c === selC2) shadow.push(`inset -2px 0 0 0 ${SEL_COLOR}`);
+    } else if (preview) {
+      shadow.push('inset 0 0 0 1px rgb(245 158 11 / 0.5)');
+    }
+
+    return (
+      <td key={col.key}
+        ref={el => { if (el) cellRefs.current.set(`${idx}:${c}`, el); else cellRefs.current.delete(`${idx}:${c}`); }}
+        className={`relative border-r border-slate-100 align-middle ${
+          selected && !anchor ? 'bg-amber-50/50' : preview ? 'bg-amber-50/40' : ''
+        }`}
+        style={{ width: col.w, minWidth: col.min, boxShadow: shadow.join(', ') || undefined }}
+        onMouseDown={e => onCellMouseDown(e, idx, c)}
+        onFocusCapture={() => onCellFocus(idx, c)}
+      >
+        {control(col)}
+        {c === handleCol && (
+          <span onPointerDown={onHandleDown} title="Drag to copy down"
+            className="absolute -bottom-1.5 -right-1.5 p-1.5 z-20 cursor-crosshair"
+            style={{ touchAction: 'none' }}>
+            <span className="block w-2.5 h-2.5 rounded-[2px] bg-amber-500 border border-white shadow-sm" />
+          </span>
+        )}
+      </td>
+    );
+  };
+
+  return (
+    <tr data-row={idx} className="hover:bg-slate-50/40">
+      <td className="border-r border-slate-100 align-middle" style={{ minWidth: 34 }}>
+        <span className="px-2 text-xs text-slate-400 tabular-nums">{idx + 1}</span>
+      </td>
+
+      {cols.map((_, c) => gridCell(c))}
+
+      {hasTakeoffLines && (
+        <td className="border-r border-slate-100 align-middle" style={{ minWidth: 120 }}>
+          <div className="px-1.5">
+            <CheckMeasureControl item={item} compact
+              onConfirm={() => onConfirmMeasured?.(idx)}
+              onRevert={() => onRevertToPlan?.(idx)} />
+          </div>
+        </td>
+      )}
+
+      <td className="w-24 text-center whitespace-nowrap">
+        {setLinePhotos && (
+          <LinePhotos
+            compact
+            sheetId={sheetId}
+            item={item}
+            onChange={(paths) => setLinePhotos(item.id, paths)}
+          />
+        )}
+        {copyLineItem && (
+          <button type="button" onClick={() => copyLineItem(idx)} tabIndex={-1}
+            title="Duplicate line" className="text-slate-300 hover:text-amber-500 p-1.5">
+            <Copy size={14} />
+          </button>
+        )}
+        <button type="button" onClick={() => removeLineItem(idx)} disabled={!canRemove} tabIndex={-1}
+          title="Remove line" className="text-slate-300 hover:text-red-500 disabled:opacity-30 p-1.5">
+          <Trash2 size={14} />
+        </button>
+      </td>
+    </tr>
+  );
+});
+
 export default function MeasureSheetTable({
   lineItems, setLineItem, removeLineItem, productTypes, errors = {},
   onConfirmMeasured, onRevertToPlan, addLineItem, copyLineItem,
@@ -82,16 +234,21 @@ export default function MeasureSheetTable({
   // want dragged into the next four rows. It rides in the actions cell instead.
   sheetId = null, setLinePhotos = null,
 }) {
-  // Only worth a column when the sheet actually has plan-derived lines.
-  const hasTakeoffLines = lineItems.some(li => li.source === 'takeoff');
-  const ptFor = (item) => productTypes.find(p => p.id === item.productTypeId) || null;
-
-  // Union of visible spec keys across all rows → the spec columns to render.
-  const shown = new Set();
-  lineItems.forEach(item => getVisibleSpecKeys(item, ptFor(item)).forEach(k => shown.add(k)));
-  const specCols = MS_SPEC_FIELDS.filter(f => shown.has(f.key)); // canonical order
-  const liningShown = shown.has('lining');
-  const dropdownKeys = specCols.filter(f => f.key !== 'lining').map(f => f.key).join(',');
+  // Which columns the sheet needs. Depends only on the line items, so it is
+  // recomputed when they change — not when the selection moves.
+  const { hasTakeoffLines, liningShown, dropdownKeys } = useMemo(() => {
+    const ptFor = (item) => productTypes.find(p => p.id === item.productTypeId) || null;
+    // Union of visible spec keys across all rows → the spec columns to render.
+    const shown = new Set();
+    lineItems.forEach(item => getVisibleSpecKeys(item, ptFor(item)).forEach(k => shown.add(k)));
+    const specCols = MS_SPEC_FIELDS.filter(f => shown.has(f.key)); // canonical order
+    return {
+      // Only worth a column when the sheet actually has plan-derived lines.
+      hasTakeoffLines: lineItems.some(li => li.source === 'takeoff'),
+      liningShown: shown.has('lining'),
+      dropdownKeys: specCols.filter(f => f.key !== 'lining').map(f => f.key).join(','),
+    };
+  }, [lineItems, productTypes]);
 
   // ── Column model ────────────────────────────────────────────────────────
   // One descriptor per selectable cell, in render order. Everything the grid
@@ -376,101 +533,44 @@ export default function MeasureSheetTable({
   };
 
   // ── Rendering ───────────────────────────────────────────────────────────
-  // These are plain functions, NOT components: a component declared inside the
-  // render would get a fresh identity every pass, remounting every input and
-  // losing focus on each keystroke.
   const n = cur ? norm(cur) : null;
-  const inFillPreview = (r, c) => {
-    if (fillRow === null || !n || c < n.c1 || c > n.c2) return false;
-    return fillRow > n.r2 ? (r > n.r2 && r <= fillRow) : (r < n.r1 && r >= fillRow);
-  };
 
-  const control = (item, idx, col) => {
-    if (col.type === 'product') {
-      return (
-        <div className="px-1">
-          <PricedItemPicker
-            value={item.productNameSnapshot}
-            productTypes={productTypes}
-            error={!!errors[`item_${idx}_productType`]}
-            typesFirst
-            placeholder="Select product type…"
-            {...makeProductSelectHandlers(setLineItem, idx, productTypes)}
-          />
-        </div>
-      );
-    }
-    if (col.type === 'select') {
-      return <Sel value={item[col.field]} onChange={v => setLineItem(idx, col.field, v)}
-        options={getMsOptions(col.optionKey, ptFor(item))} />;
-    }
-    if (col.type === 'bool') {
-      return (
-        <select value={item[col.field] ? 'Yes' : 'No'}
-          onChange={e => setLineItem(idx, col.field, e.target.value === 'Yes')} className={cellSelect}>
-          <option value="No">No</option>
-          <option value="Yes">Yes</option>
-        </select>
-      );
-    }
-    if (col.type === 'number') {
-      return (
-        <input type="number" inputMode="numeric" min="0" value={item[col.field] ?? ''}
-          onChange={e => setLineItem(idx, col.field, e.target.value)}
-          placeholder={col.key === 'quantity' ? '' : 'mm'}
-          className={`${cellInput} no-spin text-right ${col.highlight ? 'font-semibold text-slate-900 bg-amber-50/50 focus:bg-amber-100' : ''}`} />
-      );
-    }
-    const err      = col.key === 'location' && !!errors[`item_${idx}_location`];
-    const disabled = col.key === 'liningFabric' && !item.attachedLining;
-    const ph = {
-      location: 'Room', fabric: 'Fabric / colour', notes: 'Notes',
-      liningFabric: item.attachedLining ? 'Lining fabric' : '—',
-    }[col.key] || '';
-    return (
-      <input value={item[col.field] || ''} disabled={disabled} placeholder={ph}
-        onChange={e => setLineItem(idx, col.field, e.target.value)}
-        className={`${cellInput} disabled:opacity-40 ${err ? 'ring-1 ring-red-300 rounded' : ''}`} />
-    );
-  };
+  // Cell-level interaction handlers, hoisted out of the row so their identity is
+  // stable and the memoised rows aren't invalidated by them.
+  const onCellMouseDown = useCallback((e, r, c) => {
+    if (!e.shiftKey) return;
+    e.preventDefault();
+    setSel(s => (s ? { ...s, r2: r, c2: c } : { r, c, r2: r, c2: c }));
+  }, []);
+  const onCellFocus = useCallback((r, c) => {
+    setSel(s => (s && s.r === r && s.c === c && s.r2 === r && s.c2 === c ? s : { r, c, r2: r, c2: c }));
+  }, []);
 
-  const gridCell = (item, r, c) => {
-    const col      = cols[c];
-    const selected = !!n && r >= n.r1 && r <= n.r2 && c >= n.c1 && c <= n.c2;
-    const anchor   = !!cur && cur.r === r && cur.c === c;
-    const preview  = inFillPreview(r, c);
-    const handle   = selected && r === n.r2 && c === n.c2 && !dragging;
+  // onHandleDown closes over the current selection and the whole fill machinery,
+  // so it can't be useCallback'd directly without going stale. Latest-ref it:
+  // the rows get one identity for the life of the table, the pointer handler
+  // always runs the current logic.
+  const handleDownRef = useRef(onHandleDown);
+  useEffect(() => { handleDownRef.current = onHandleDown; });
+  const stableHandleDown = useCallback((e) => handleDownRef.current(e), []);
 
-    const shadow = [];
-    if (selected) {
-      if (r === n.r1) shadow.push(`inset 0 2px 0 0 ${SEL_COLOR}`);
-      if (r === n.r2) shadow.push(`inset 0 -2px 0 0 ${SEL_COLOR}`);
-      if (c === n.c1) shadow.push(`inset 2px 0 0 0 ${SEL_COLOR}`);
-      if (c === n.c2) shadow.push(`inset -2px 0 0 0 ${SEL_COLOR}`);
-    } else if (preview) {
-      shadow.push('inset 0 0 0 1px rgb(245 158 11 / 0.5)');
-    }
-
-    return (
-      <td key={col.key}
-        ref={el => { if (el) cellRefs.current.set(`${r}:${c}`, el); else cellRefs.current.delete(`${r}:${c}`); }}
-        className={`relative border-r border-slate-100 align-middle ${
-          selected && !anchor ? 'bg-amber-50/50' : preview ? 'bg-amber-50/40' : ''
-        }`}
-        style={{ width: col.w, minWidth: col.min, boxShadow: shadow.join(', ') || undefined }}
-        onMouseDown={e => { if (e.shiftKey) { e.preventDefault(); setSel(s => (s ? { ...s, r2: r, c2: c } : { r, c, r2: r, c2: c })); } }}
-        onFocusCapture={() => setSel(s => (s && s.r === r && s.c === c && s.r2 === r && s.c2 === c ? s : { r, c, r2: r, c2: c }))}
-      >
-        {control(item, r, col)}
-        {handle && (
-          <span onPointerDown={onHandleDown} title="Drag to copy down"
-            className="absolute -bottom-1.5 -right-1.5 p-1.5 z-20 cursor-crosshair"
-            style={{ touchAction: 'none' }}>
-            <span className="block w-2.5 h-2.5 rounded-[2px] bg-amber-500 border border-white shadow-sm" />
-          </span>
-        )}
-      </td>
-    );
+  // Per-row slice of the selection / fill preview, reduced to numbers. -1 means
+  // "nothing on this row", which keeps the memo comparison cheap and stops a
+  // selection change in one row from re-rendering every other row.
+  const rowSel = (r) => {
+    const selected = !!n && r >= n.r1 && r <= n.r2;
+    const inPreview = fillRow !== null && !!n &&
+      (fillRow > n.r2 ? (r > n.r2 && r <= fillRow) : (r < n.r1 && r >= fillRow));
+    return {
+      selC1:      selected ? n.c1 : -1,
+      selC2:      selected ? n.c2 : -1,
+      selTop:     selected && r === n.r1,
+      selBottom:  selected && r === n.r2,
+      anchorCol:  cur && cur.r === r ? cur.c : -1,
+      handleCol:  selected && r === n.r2 && !dragging ? n.c2 : -1,
+      previewC1:  inPreview ? n.c1 : -1,
+      previewC2:  inPreview ? n.c2 : -1,
+    };
   };
 
   return (
@@ -488,44 +588,24 @@ export default function MeasureSheetTable({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {lineItems.map((item, idx) => (
-              <tr key={item.id} data-row={idx} className="hover:bg-slate-50/40">
-                <td className="border-r border-slate-100 align-middle" style={{ minWidth: 34 }}>
-                  <span className="px-2 text-xs text-slate-400 tabular-nums">{idx + 1}</span>
-                </td>
-
-                {cols.map((_, c) => gridCell(item, idx, c))}
-
-                {hasTakeoffLines && (
-                  <td className="border-r border-slate-100 align-middle" style={{ minWidth: 120 }}>
-                    <div className="px-1.5">
-                      <CheckMeasureControl item={item} compact
-                        onConfirm={() => onConfirmMeasured?.(idx)}
-                        onRevert={() => onRevertToPlan?.(idx)} />
-                    </div>
-                  </td>
-                )}
-
-                <td className="w-24 text-center whitespace-nowrap">
-                  {setLinePhotos && (
-                    <LinePhotos
-                      compact
-                      sheetId={sheetId}
-                      item={item}
-                      onChange={(paths) => setLinePhotos(item.id, paths)}
-                    />
-                  )}
-                  {copyLineItem && (
-                    <button type="button" onClick={() => copyLineItem(idx)} tabIndex={-1}
-                      title="Duplicate line" className="text-slate-300 hover:text-amber-500 p-1.5">
-                      <Copy size={14} />
-                    </button>
-                  )}
-                  <button type="button" onClick={() => removeLineItem(idx)} disabled={lineItems.length <= 1} tabIndex={-1}
-                    title="Remove line" className="text-slate-300 hover:text-red-500 disabled:opacity-30 p-1.5">
-                    <Trash2 size={14} />
-                  </button>
-                </td>
-              </tr>
+              <Row
+                key={item.id}
+                item={item} idx={idx} cols={cols} productTypes={productTypes} errors={errors}
+                {...rowSel(idx)}
+                hasTakeoffLines={hasTakeoffLines}
+                sheetId={sheetId}
+                canRemove={rowCount > 1}
+                setLineItem={setLineItem}
+                removeLineItem={removeLineItem}
+                copyLineItem={copyLineItem}
+                setLinePhotos={setLinePhotos}
+                onConfirmMeasured={onConfirmMeasured}
+                onRevertToPlan={onRevertToPlan}
+                cellRefs={cellRefs}
+                onCellMouseDown={onCellMouseDown}
+                onCellFocus={onCellFocus}
+                onHandleDown={stableHandleDown}
+              />
             ))}
           </tbody>
         </table>

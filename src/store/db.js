@@ -76,6 +76,7 @@ const KEYS = {
   measureSheetOptions:  'lusso_measure_sheet_options',
   schedulingDismissals: 'lusso_scheduling_dismissals',
   curtainRates:         'lusso_curtain_rates',
+  productDocuments:     'lusso_product_documents',
 };
 
 // ── Per-table column exclusions ──────────────────────────────────────
@@ -281,6 +282,9 @@ const TABLES = [
   { table: 'measure_sheet_options',  key: KEYS.measureSheetOptions },
   { table: 'scheduling_dismissals',  key: KEYS.schedulingDismissals },
   { table: 'curtain_rates',          key: KEYS.curtainRates },
+  // Metadata only — the PDF lives in Storage, and the extracted text lives in
+  // its own table so it never lands in localStorage (see product_documents.sql).
+  { table: 'product_documents',      key: KEYS.productDocuments },
   // NOTE: 'activity' is intentionally NOT here — it's append-only and synced
   // via a union (see hydrateFromSupabase) so existing local history is never
   // dropped by the "Supabase is authoritative" rule.
@@ -818,6 +822,46 @@ async function softDelete(table, id) {
   if (error) console.error(`[db] softDelete ${table} id=${id} FAILED:`, error.message);
 }
 
+// ── Product document text (searching INSIDE spec sheets) ────────────────────
+// Kept out of the hydrated tables on purpose: a handful of long install manuals
+// would be hundreds of KB of localStorage that no other feature benefits from.
+// So it is written once on upload and only read by an explicit search.
+
+async function saveProductDocumentText(documentId, content) {
+  if (!supabase || !documentId) return;
+  const { error } = await supabase
+    .from('product_document_text')
+    .upsert({ document_id: documentId, content: content || '', updated_at: new Date().toISOString() },
+            { onConflict: 'document_id' });
+  if (error) console.warn('[db] saveProductDocumentText:', error.message);
+}
+
+/**
+ * Document ids whose contents match `q`. Online-only by design — the caller
+ * always has instant local matching on titles, suppliers and codes, and this
+ * merely widens the net when there's signal. Returns [] on any failure so a
+ * search on site degrades to the local results instead of erroring.
+ */
+async function searchProductDocumentText(q) {
+  const term = String(q || '').trim();
+  if (!supabase || term.length < 3) return [];
+  try {
+    const { data, error } = await withTimeout(
+      supabase
+        .from('product_document_text')
+        .select('document_id')
+        .textSearch('tsv', term, { type: 'websearch', config: 'english' })
+        .limit(200),
+      8000,
+    );
+    if (error) throw error;
+    return (data || []).map(r => r.document_id);
+  } catch (e) {
+    console.warn('[db] searchProductDocumentText:', e?.message || e);
+    return [];
+  }
+}
+
 async function restore(table, id) {
   if (!supabase || !id) return;
   const { error } = await supabase
@@ -851,6 +895,13 @@ export const db = {
 
   saveMeasureSheetOption:   (r) => upsert('measure_sheet_options', r),
   deleteMeasureSheetOption: (id) => remove('measure_sheet_options', id),
+
+  // Product reference documents (spec sheets etc). Soft-deleted: a spec sheet
+  // someone removed by accident is worth getting back.
+  saveProductDocument:      (r) => upsert('product_documents', r),
+  deleteProductDocument:    (id) => softDelete('product_documents', id),
+  saveProductDocumentText:  (id, content) => saveProductDocumentText(id, content),
+  searchProductDocumentText: (q) => searchProductDocumentText(q),
 
   // Scheduling-reminder dismissals (kept out of the jobs table so dismissing
   // can never churn or truncate the jobs list)

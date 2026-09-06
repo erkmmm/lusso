@@ -44,6 +44,7 @@ import CustomerQuotePage from './pages/CustomerQuotePage';
 import ImportContacts from './pages/ImportContacts';
 import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
+import ProductDocs from './pages/ProductDocs';
 import ImportSupplierPDF from './pages/ImportSupplierPDF';
 import ImportTrackPrices from './pages/ImportTrackPrices';
 import ImportHub from './pages/ImportHub';
@@ -345,6 +346,7 @@ function AppRoutes() {
               <Route path="/import"                     element={<ImportContacts />} />
               <Route path="/import-history"             element={<ImportHistory />} />
               <Route path="/priced-items"               element={<PricedItems />} />
+              <Route path="/product-docs"               element={<ProductDocs />} />
               <Route path="/priced-items/import-pdf"   element={<ImportSupplierPDF />} />
               <Route path="/imports"                    element={<ImportHub />} />
               <Route path="/curtain-rates/import"        element={<ImportTrackPrices />} />

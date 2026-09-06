@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -347,6 +347,28 @@ const EMPTY_LINE_ITEM = () => ({
   baseBarType: '', chainColour: '', notes: '', photoPaths: [], sortOrder: 0,
 });
 
+// Fields a new line inherits from the line above it.
+//
+// Most windows in a house are the same product with the same hardware — only
+// the room, the width and the drop change — so re-picking a product type and
+// three to seven dropdowns per opening was the bulk of the tapping on site.
+//
+// Deliberately NOT inherited: fabric and lining fabric. Those are the fields
+// most likely to differ room to room and the most expensive to get silently
+// wrong on an order, so they stay blank and have to be filled. Nor are
+// location, width, drop, qty, notes or photos — all per-opening by definition.
+const STICKY_FIELDS = [
+  'productTypeId', 'productNameSnapshot', 'pricedItemId',
+  ...MS_SPEC_FIELDS.map(f => f.itemField), // control, fixing, heading, trackType, attachedLining, …
+];
+
+const lineFromPrevious = (prev) => {
+  const item = EMPTY_LINE_ITEM();
+  if (!prev) return item;
+  STICKY_FIELDS.forEach(f => { if (prev[f] !== undefined) item[f] = prev[f]; });
+  return item;
+};
+
 const EMPTY_SHEET = () => ({
   id: uuidv4(), status: 'Draft', createdAt: new Date().toISOString(),
   customerName: '', phone: '', email: '', siteAddress: '', billingAddress: '',
@@ -367,7 +389,9 @@ export default function NewMeasureSheet() {
   // Active salespeople from Supabase — pending/suspended never appear here
   const { salespeople: staff } = useActiveSalespeople();
   const { displayName = '' } = useProfile() || {};
-  const productTypes     = getActiveProductTypes();
+  // Read once. These all decode a whole table out of localStorage, and this
+  // page re-renders on every keystroke.
+  const productTypes     = useMemo(() => getActiveProductTypes(), []);
   const allCustomers     = useMemo(() => getCustomers(), []);
   const allJobs          = useMemo(() => getJobs(), []);
 
@@ -423,6 +447,7 @@ export default function NewMeasureSheet() {
   // ── UI state ───────────────────────────────────────────────────────────────
   const [savedAt,        setSavedAt]        = useState(null);
   const [notesOpen,      setNotesOpen]      = useState(false);
+  const [notesVersion,   setNotesVersion]   = useState(0); // bumped when a note is written
   const [submitted,      setSubmitted]      = useState(false);
   const [submittedJobId, setSubmittedJobId] = useState(null);
   const [submitting,     setSubmitting]     = useState(false);
@@ -485,11 +510,15 @@ export default function NewMeasureSheet() {
     return next;
   });
 
-  const setLineItem = (idx, field, value) => setSheet(s => {
+  // Every line-item mutation below is written with functional setState and
+  // wrapped in useCallback with no dependencies, so the handler identity never
+  // changes. That's what lets MeasureSheetTable memoise its rows: without it,
+  // a fresh handler on every keystroke would re-render all of them anyway.
+  const setLineItem = useCallback((idx, field, value) => setSheet(s => {
     const items = [...s.lineItems];
     items[idx] = { ...items[idx], [field]: value };
     return { ...s, lineItems: items };
-  });
+  }), []);
 
   /**
    * Photos on a line, written straight through to storage.
@@ -501,7 +530,7 @@ export default function NewMeasureSheet() {
    * closure: an upload finishes long after the click that started it, and the
    * closure's copy would be missing every keystroke typed in between.
    */
-  const setLinePhotos = (itemId, photoPaths) => {
+  const setLinePhotos = useCallback((itemId, photoPaths) => {
     const base = autosaveRef.current.sheet;
     const next = {
       ...base,
@@ -511,49 +540,56 @@ export default function NewMeasureSheet() {
     setSheet(next);
     saveMeasureSheet({ ...next, status: next.status || 'Draft' });
     setSavedAt(new Date());
-  };
-
-  // Multi-field patch — check-measuring flips five fields at once, and doing
-  // that as five setLineItem calls would drop four of them (each reads the
-  // same stale `s.lineItems`).
-  const patchLineItem = (idx, patch) => setSheet(s => {
-    const items = [...s.lineItems];
-    items[idx] = { ...items[idx], ...patch };
-    return { ...s, lineItems: items };
-  });
+  }, []);
 
   // Plan-scaled dimensions stay flagged until confirmed on site. Applied to the
   // form's local state, so it saves with everything else on the sheet.
-  const confirmLineMeasured = (idx) =>
-    patchLineItem(idx, markLineCheckMeasured(sheet.lineItems[idx], { by: displayName }));
-  const revertLineToPlan = (idx) =>
-    patchLineItem(idx, markLinePlanEstimate(sheet.lineItems[idx]));
-  const confirmAllMeasured = () => setSheet(s => ({
+  // Written as one multi-field patch: check-measuring flips five fields at once,
+  // and doing that as five setLineItem calls would drop four of them (each would
+  // read the same stale `s.lineItems`).
+  const confirmLineMeasured = useCallback((idx) => setSheet(s => {
+    const items = [...s.lineItems];
+    items[idx] = { ...items[idx], ...markLineCheckMeasured(items[idx], { by: displayName }) };
+    return { ...s, lineItems: items };
+  }), [displayName]);
+  const revertLineToPlan = useCallback((idx) => setSheet(s => {
+    const items = [...s.lineItems];
+    items[idx] = { ...items[idx], ...markLinePlanEstimate(items[idx]) };
+    return { ...s, lineItems: items };
+  }), []);
+  const confirmAllMeasured = useCallback(() => setSheet(s => ({
     ...s,
     lineItems: s.lineItems.map(li => isPlanEstimate(li) ? markLineCheckMeasured(li, { by: displayName }) : li),
-  }));
+  })), [displayName]);
 
-  const addLineItem = () => {
-    const newItem = EMPTY_LINE_ITEM();
-    setSheet(s => ({ ...s, lineItems: [...s.lineItems, newItem] }));
-    setExpandedItems(prev => new Set([...prev, newItem.id])); // auto-expand specs
-  };
+  // A new line inherits the product and specs of the one above it — see
+  // STICKY_FIELDS. The id is minted out here so the caller can expand the new
+  // card without reading it back out of state.
+  const addLineItem = useCallback(() => {
+    const id = uuidv4();
+    setSheet(s => ({
+      ...s,
+      lineItems: [...s.lineItems, { ...lineFromPrevious(s.lineItems[s.lineItems.length - 1]), id }],
+    }));
+    setExpandedItems(prev => new Set([...prev, id])); // auto-expand specs
+  }, []);
 
-  const copyLineItem = (idx) => {
-    const source = sheet.lineItems[idx];
-    const copy = { ...source, id: uuidv4(), location: source.location ? `${source.location} (copy)` : '' };
+  const copyLineItem = useCallback((idx) => {
+    const id = uuidv4();
     setSheet(s => {
+      const source = s.lineItems[idx];
+      if (!source) return s;
+      const copy = { ...source, id, location: source.location ? `${source.location} (copy)` : '' };
       const items = [...s.lineItems];
       items.splice(idx + 1, 0, copy); // insert right after the source
       return { ...s, lineItems: items };
     });
-    setExpandedItems(prev => new Set([...prev, copy.id])); // auto-expand the copy
-  };
+    setExpandedItems(prev => new Set([...prev, id])); // auto-expand the copy
+  }, []);
 
-  const removeLineItem = (idx) => {
-    if (sheet.lineItems.length <= 1) return;
-    setSheet(s => ({ ...s, lineItems: s.lineItems.filter((_, i) => i !== idx) }));
-  };
+  const removeLineItem = useCallback((idx) => setSheet(s => (
+    s.lineItems.length <= 1 ? s : { ...s, lineItems: s.lineItems.filter((_, i) => i !== idx) }
+  )), []);
 
   // Use existing customer
   const handleUseCustomer = (customer) => {
@@ -607,9 +643,18 @@ export default function NewMeasureSheet() {
   };
 
   // ── Submit ─────────────────────────────────────────────────────────────────
-  // Notes captured on THIS sheet. Read on render so the badge is right the
+  // Notes captured on THIS sheet. getNotes() decodes the entire tasks table, so
+  // it is NOT read on every render — it's recomputed when a note is saved
+  // (every save path here goes through persistSheetQuietly, which bumps
+  // notesVersion) and when the drawer closes. The badge is still right the
   // instant the drawer saves one.
-  const sheetNotes = getNotes({ measureSheetId: sheet.id }).filter(isTaskOpen).length;
+  const sheetNotes = useMemo(
+    () => getNotes({ measureSheetId: sheet.id }).filter(isTaskOpen).length,
+    // notesVersion is a deliberate cache-buster: notes live outside this
+    // component's state, so nothing else here changes when one is written.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sheet.id, notesVersion],
+  );
 
   /**
    * Persist the sheet without a toast.
@@ -622,6 +667,7 @@ export default function NewMeasureSheet() {
   const persistSheetQuietly = () => {
     saveMeasureSheet({ ...sheet, status: sheet.status || 'Draft' });
     setSavedAt(new Date());
+    setNotesVersion(v => v + 1); // a note may have just been written — refresh the badge
   };
 
   const handleSaveDraft = () => {
@@ -764,6 +810,8 @@ export default function NewMeasureSheet() {
 
   const hasErrors   = Object.keys(errors).length > 0;
   const highDuplicate = duplicates.some(d => d.confidence === 'high');
+  const lastLine    = sheet.lineItems[sheet.lineItems.length - 1];
+  const lastLineHasSpecs = !!lastLine?.productTypeId || !!lastLine?.productNameSnapshot;
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-40 lg:pb-24">
@@ -1338,9 +1386,12 @@ export default function NewMeasureSheet() {
               );
             })}
 
+            {/* The new line inherits the last line's product and specs, so say
+                so — silent inheritance is worse than no inheritance. */}
             <button type="button" onClick={addLineItem}
               className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 hover:border-amber-400 text-slate-500 hover:text-amber-600 text-sm font-medium py-3 rounded-xl transition-colors">
               <Plus size={16} /> Add Line Item
+              {lastLineHasSpecs && <span className="text-xs font-normal text-slate-400">· same product &amp; specs</span>}
             </button>
           </div>
         )}
@@ -1405,7 +1456,7 @@ export default function NewMeasureSheet() {
 
       <NoteDrawer
         open={notesOpen}
-        onClose={() => setNotesOpen(false)}
+        onClose={() => { setNotesOpen(false); setNotesVersion(v => v + 1); }}
         onSaved={persistSheetQuietly}
         measureSheetId={sheet.id}
         jobId={sheet.jobId || prelinkedJobId || null}

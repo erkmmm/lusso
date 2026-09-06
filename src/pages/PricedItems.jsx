@@ -12,7 +12,7 @@ import {
 import {
   getPricedItems, savePricedItem, deletePricedItem,
   getPricedItemBatches, createPricedItemBatch, runPricedItemImport,
-  savePricedItemBatch,
+  savePricedItemBatch, getProductDocumentCounts,
 } from '../store/data';
 import { isFabricItem } from '../lib/curtainCalc';
 import Card from '../components/Card';
@@ -287,6 +287,9 @@ export default function PricedItems() {
   const [filterStatus, setFilterStatus] = useState('active');
   const [editItem, setEditItem]         = useState(null); // null | item object (new = no id match)
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  // Spec-sheet counts per item, so the library shows at a glance which products
+  // someone can actually answer questions about.
+  const docCounts = getProductDocumentCounts().byPricedItem;
 
   // Import wizard state
   const [step, setStep]               = useState('upload');
@@ -682,6 +685,19 @@ export default function PricedItems() {
                         </td>
                         <td className="px-3 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => navigate(`/product-docs?q=${encodeURIComponent(p.itemName || '')}`)}
+                              title={docCounts[p.id] ? `${docCounts[p.id]} document(s) — spec sheets, guides` : 'No documents yet — add a spec sheet'}
+                              className={`p-1.5 rounded-lg transition-colors relative ${
+                                docCounts[p.id] ? 'text-amber-500 hover:bg-amber-50' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-600'
+                              }`}>
+                              <FileText size={13}/>
+                              {docCounts[p.id] > 0 && (
+                                <span className="absolute -top-0.5 -right-0.5 text-[9px] font-bold bg-amber-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center">
+                                  {docCounts[p.id]}
+                                </span>
+                              )}
+                            </button>
                             <button onClick={() => setEditItem({ ...p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"><Edit2 size={13}/></button>
                             {deleteConfirm === p.id
                               ? <div className="flex items-center gap-1">

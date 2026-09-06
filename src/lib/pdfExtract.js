@@ -26,3 +26,38 @@ export async function extractPdfText(file) {
 
   return pages.join('\n\n').trim();
 }
+
+/**
+ * Same extraction, but reports the page count and whether the PDF actually
+ * carried a text layer.
+ *
+ * A scanned or flattened PDF returns an empty string here rather than throwing.
+ * Callers must treat that as "this document can't be searched by content", NOT
+ * as a failed upload — the document is still perfectly usable, and saying so is
+ * better than filing something that silently never appears in a search.
+ */
+export async function extractPdfTextAndMeta(file) {
+  if (!file || file.type !== 'application/pdf') {
+    return { text: '', pageCount: 0, hasText: false };
+  }
+  try {
+    const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
+    GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    ).href;
+
+    const pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const pages = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const content = await (await pdf.getPage(i)).getTextContent();
+      pages.push(content.items.map(it => ('str' in it ? it.str : '')).join(' '));
+    }
+    const text = pages.join('\n\n').replace(/[ \t]+/g, ' ').trim();
+    // A few stray characters from a logo isn't a text layer.
+    return { text, pageCount: pdf.numPages, hasText: text.length >= 40 };
+  } catch (e) {
+    console.warn('[productDocs] text extraction failed:', e?.message || e);
+    return { text: '', pageCount: 0, hasText: false };
+  }
+}

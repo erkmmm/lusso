@@ -9,7 +9,7 @@
  *   placeholder     string
  *   error           bool
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, Package, Tag } from 'lucide-react';
 import { getPricedItems } from '../store/data';
@@ -50,22 +50,32 @@ export default function PricedItemPicker({
     });
   };
 
-  const allItems = getPricedItems().filter(i => i.isActive !== false);
+  // Read the price library only while the dropdown is open. This picker renders
+  // once per measure-sheet line, and getPricedItems() decodes the entire priced
+  // items table out of localStorage — doing that on every render of every
+  // closed picker made typing on a 20-line sheet crawl.
+  const allItems = useMemo(
+    () => (open ? getPricedItems().filter(i => i.isActive !== false) : []),
+    [open],
+  );
 
   // Filter by query
   const q = query.trim().toLowerCase();
-  const matchedItems = q
-    ? allItems.filter(i =>
-        (i.itemName    || '').toLowerCase().includes(q) ||
-        (i.category    || '').toLowerCase().includes(q) ||
-        (i.sku         || '').toLowerCase().includes(q) ||
-        (i.description || '').toLowerCase().includes(q) ||
-        (i.supplier    || '').toLowerCase().includes(q)
-      )
-    : allItems;
+  const matchedItems = useMemo(() => (
+    q
+      ? allItems.filter(i =>
+          (i.itemName    || '').toLowerCase().includes(q) ||
+          (i.category    || '').toLowerCase().includes(q) ||
+          (i.sku         || '').toLowerCase().includes(q) ||
+          (i.description || '').toLowerCase().includes(q) ||
+          (i.supplier    || '').toLowerCase().includes(q)
+        )
+      : allItems
+  ), [allItems, q]);
 
-  const matchedTypes = productTypes.filter(pt =>
-    !q || pt.name.toLowerCase().includes(q)
+  const matchedTypes = useMemo(
+    () => productTypes.filter(pt => !q || pt.name.toLowerCase().includes(q)),
+    [productTypes, q],
   );
 
   // Close on outside click — the dropdown is portalled out of `ref`, so check

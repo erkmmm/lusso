@@ -68,7 +68,7 @@ export async function initDurableStore() {
     for (const [key, raw] of Object.entries(all)) {
       if (typeof key !== 'string' || !key.startsWith('lusso_') || typeof raw !== 'string') continue;
       if (localStorage.getItem(key) == null) {
-        try { localStorage.setItem(key, raw); restored++; } catch { /* full — cloud will refill */ }
+        try { localStorage.setItem(key, raw); lsBumpVersion(key); restored++; } catch { /* full — cloud will refill */ }
       }
     }
     if (restored) console.info(`[storage] restored ${restored} key(s) from the durable IndexedDB backup (localStorage had been evicted)`);
@@ -115,6 +115,17 @@ function writeLocal(key, payload) {
   }
 }
 
+// ── Write versions ───────────────────────────────────────────────────────────
+// A monotonic counter per key, bumped on every write. Readers that want to
+// cache a decoded value can hold the version it was decoded at and rebuild only
+// when it moves — decoding is the expensive part (LZ decompress + JSON.parse of
+// a whole table), and some of these tables are read once per dropdown per
+// render. Not a cross-tab signal: like every other read in the app, it only
+// tracks writes made by this tab.
+const _versions = new Map();
+export const lsVersion = (key) => _versions.get(key) || 0;
+export const lsBumpVersion = (key) => _versions.set(key, (_versions.get(key) || 0) + 1);
+
 /** Read + decode a value (synchronous). Null when absent. Fail-safe on corruption. */
 export function lsGet(key) {
   const raw = localStorage.getItem(key);
@@ -145,6 +156,7 @@ export function lsSet(key, value) {
     console.error(`[storage] '${key}' failed to encode:`, e?.message || e);
     return false;
   }
+  lsBumpVersion(key);
   const ok = writeLocal(key, payload);
   idbPut(key, payload); // durable, large-quota, eviction-resistant backup (raw payload string)
   return ok;
