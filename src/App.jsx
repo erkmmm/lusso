@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import { initStore } from './store/data';
 import { hydrateFromSupabase, flushPending } from './store/db';
@@ -46,6 +46,39 @@ import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
 import ProductDocs from './pages/ProductDocs';
 import SheetRecovery from './pages/SheetRecovery';
+
+/**
+ * `/measure-sheets/new` and `/measure-sheets/:id/edit` used to render the SAME
+ * component. React then reconciles the two routes as one element, reuses the
+ * instance, and — verified with a diagnostic — keeps serving the OLD route
+ * match: after navigating to /edit, useParams().id was still undefined and the
+ * page went on rendering the previous sheet. An existing measure sheet showed
+ * as one blank line. A sheet that LOOKS lost is how a house gets re-measured.
+ *
+ * Two defences, because this one is expensive to get wrong:
+ *   1. the two routes are DISTINCT component types, so React must unmount one
+ *      and mount the other rather than reusing an instance across the change;
+ *   2. the sheet id is read from useLocation() — which is always current — and
+ *      passed down explicitly, so the page never depends on a route match that
+ *      might be stale, and the key forces a real remount when it changes.
+ */
+function useSheetRoute() {
+  const { pathname, search } = useLocation();
+  const m = pathname.match(/^\/measure-sheets\/([^/]+)\/edit\/?$/);
+  const sheetId = m && m[1] !== 'new' ? m[1] : null;
+  return { sheetId, search, key: sheetId ? `edit:${sheetId}` : `new:${search}` };
+}
+
+function EditMeasureSheetRoute() {
+  const { sheetId, search, key } = useSheetRoute();
+  return <NewMeasureSheet key={key} routeSheetId={sheetId} routeSearch={search} />;
+}
+
+function NewMeasureSheetRoute() {
+  const { sheetId, search, key } = useSheetRoute();
+  return <NewMeasureSheet key={key} routeSheetId={sheetId} routeSearch={search} />;
+}
+
 import ImportSupplierPDF from './pages/ImportSupplierPDF';
 import ImportTrackPrices from './pages/ImportTrackPrices';
 import ImportHub from './pages/ImportHub';
@@ -335,11 +368,11 @@ function AppRoutes() {
               <Route path="/customers"                  element={<Customers />} />
               <Route path="/customers/:id"              element={<CustomerProfile />} />
               <Route path="/measure-sheets"             element={<MeasureSheets />} />
-              <Route path="/measure-sheets/new"         element={<NewMeasureSheet />} />
+              <Route path="/measure-sheets/new"         element={<NewMeasureSheetRoute />} />
               <Route path="/measure-sheets/import"      element={<ImportMeasureSheet />} />
               <Route path="/measure-sheets/:id"         element={<MeasureSheetView />} />
               <Route path="/measure-sheets/:id/purchase-order" element={<PurchaseOrder />} />
-              <Route path="/measure-sheets/:id/edit"    element={<NewMeasureSheet />} />
+              <Route path="/measure-sheets/:id/edit"    element={<EditMeasureSheetRoute />} />
               <Route path="/measure-sheets/recover"     element={<SheetRecovery />} />
               <Route path="/installers"                 element={<Installers />} />
               <Route path="/installers/:id"             element={<InstallerProfile />} />

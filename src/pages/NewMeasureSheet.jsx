@@ -17,7 +17,7 @@ import {
   getMsOptions, URGENCY_LEVELS,
   MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers,
   isPlanEstimate, markLineCheckMeasured, markLinePlanEstimate,
-  buildLimitsResolver, getProductDocument, sheetContentScore,
+  buildLimitsResolver, getProductDocument, sheetContentScore, getMeasureSheets,
 } from '../store/data';
 import { evaluateLine } from '../lib/productLimits';
 import { syncNow } from '../store/db';
@@ -454,9 +454,18 @@ const clearDraftPin = (customerId, jobId) => {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function NewMeasureSheet() {
-  const { id }           = useParams();
-  const [searchParams]   = useSearchParams();
+/**
+ * `routeSheetId` / `routeSearch` come from useLocation() in App.jsx and are the
+ * authoritative answer to "which sheet is this page for". useParams and
+ * useSearchParams are kept only as a fallback: React Router was verifiably
+ * handing this component a STALE match when navigating between the new and edit
+ * routes, which made an existing sheet render as one blank line.
+ */
+export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch = undefined }) {
+  const { id: paramId }  = useParams();
+  const [searchParamsHook] = useSearchParams();
+  const id = routeSheetId !== undefined ? routeSheetId : paramId;
+  const searchParams = routeSearch !== undefined ? new URLSearchParams(routeSearch) : searchParamsHook;
   const navigate         = useNavigate();
   const isEdit           = Boolean(id && id !== 'new');
   // Active salespeople from Supabase — pending/suspended never appear here
@@ -474,9 +483,23 @@ export default function NewMeasureSheet() {
   // Pre-linking from customer or job workspace
   const prelinkedCustomerId = searchParams.get('customerId') || null;
   const prelinkedJobId      = searchParams.get('jobId')      || null;
-  const prelinkedCustomer   = prelinkedCustomerId ? getCustomer(prelinkedCustomerId) : null;
+  // Memoised on the ID, not recomputed per render.
+  //
+  // getCustomer() does a .find() over a freshly parsed table, so it returned a
+  // NEW OBJECT on every render. That object was a dependency of the duplicate-
+  // detection effect below, and the effect set state — so it re-ran forever:
+  // render → new object → effect → setState → render. React hit "Maximum update
+  // depth exceeded", stopped committing, and the whole app froze with the router
+  // stuck on whatever page was last rendered.
+  //
+  // It fired on the ordinary path for starting a measure sheet (opening one from
+  // a customer or a job), which is the worst place in this app for the UI to
+  // stop reflecting what someone is typing.
+  const prelinkedCustomer = useMemo(
+    () => (prelinkedCustomerId ? getCustomer(prelinkedCustomerId) : null), [prelinkedCustomerId]);
   // When coming from a job page, read the job so we can pre-fill its details
-  const prelinkedJob        = prelinkedJobId ? getJob(prelinkedJobId) : null;
+  const prelinkedJob = useMemo(
+    () => (prelinkedJobId ? getJob(prelinkedJobId) : null), [prelinkedJobId]);
 
   // ── Sheet state ────────────────────────────────────────────────────────────
   // Decided once, purely, before any state exists — see the draft-pin note above.
@@ -575,6 +598,31 @@ export default function NewMeasureSheet() {
   }, [sheet.lineItems, limitsFor]);
   const limitErrorCount = Object.values(limitIssues).flat().filter(r => r.severity === 'error').length;
 
+  /**
+   * An unfinished sheet for this same customer that ISN'T the one on screen.
+   *
+   * The sessionStorage pin resumes automatically after a reload or a tab
+   * restore — but if iOS kills the whole app (rather than backgrounding it),
+   * sessionStorage goes with it and the pin can't help. The measured sheet is
+   * still saved; the danger is that it is invisible, so you start again and
+   * believe the work is gone. This makes it impossible to miss.
+   */
+  const orphanDraft = useMemo(() => {
+    if (isEdit) return null;
+    const cid = prelinkedCustomerId || sheet.customerId;
+    if (!cid) return null;
+    const week = Date.now() - 7 * 24 * 3600 * 1000;
+    // Only ever surfaced when the OTHER draft holds more than what's on screen.
+    // That covers resuming an empty pin as well as a cold start, and it stays
+    // quiet whenever this sheet is already the best copy — so it is a warning,
+    // not a nag.
+    const mine = sheetContentScore(sheet);
+    return getMeasureSheets()
+      .filter(s => s.id !== sheet.id && s.customerId === cid && s.status === 'Draft' && !s.deletedAt)
+      .filter(s => sheetContentScore(s) > mine && new Date(s.updatedAt || 0).getTime() > week)
+      .sort((a, b) => sheetContentScore(b) - sheetContentScore(a))[0] || null;
+  }, [isEdit, prelinkedCustomerId, sheet]);
+
   // ── Derived: search results & customer jobs ────────────────────────────────
   const searchResults = useMemo(() =>
     searchCustomers(customerSearch, allCustomers),
@@ -584,13 +632,18 @@ export default function NewMeasureSheet() {
 
   // ── Real-time duplicate detection (new customer mode) ─────────────────────
   useEffect(() => {
-    if (customerMode !== 'new' || prelinkedCustomer) { setDuplicates([]); return; }
+    // Clearing keeps the SAME array when it is already empty, so this can never
+    // schedule a render that only re-triggers itself. Depends on the id, never
+    // on the customer object — see the note above prelinkedCustomer.
+    const clear = () => setDuplicates(d => (d.length ? [] : d));
+    if (customerMode !== 'new' || prelinkedCustomerId) { clear(); return; }
     const { customerName, phone, email, siteAddress } = sheet;
-    if (!customerName.trim() && !phone.trim() && !email.trim()) { setDuplicates([]); return; }
+    if (!customerName.trim() && !phone.trim() && !email.trim()) { clear(); return; }
     const matches = findDuplicates(customerName, phone, email, siteAddress, allCustomers);
     setDuplicates(matches);
     if (matches.length === 0) setDuplicateDismissed(false);
-  }, [sheet.customerName, sheet.phone, sheet.email, sheet.siteAddress, customerMode, allCustomers, prelinkedCustomer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheet.customerName, sheet.phone, sheet.email, sheet.siteAddress, customerMode, allCustomers, prelinkedCustomerId]);
 
   // ── Auto-save ──────────────────────────────────────────────────────────────
   // This used to be a blind 60-second interval with no flush on leaving the
@@ -623,6 +676,9 @@ export default function NewMeasureSheet() {
   const flushSave = useCallback((reason = 'auto') => {
     const { sheet: s, submitted: done } = autosaveRef.current;
     if (done || !s?.id) return;
+    // Opening the page and backing out shouldn't leave an empty draft behind.
+    // Only skip when there is nothing to lose: no content AND nothing stored.
+    if (sheetContentScore(s) === 0 && !getMeasureSheet(s.id)) return;
     try {
       saveMeasureSheet({ ...s, status: s.status || 'Draft' }, // never downgrade a Submitted sheet
         { allowShrink: allowShrinkRef.current });
@@ -1041,6 +1097,28 @@ export default function NewMeasureSheet() {
             for this customer in this tab — {sheet.lineItems.length} line{sheet.lineItems.length !== 1 ? 's' : ''} so far,
             not a new one.
           </p>
+        </div>
+      )}
+
+      {/* The sessionStorage pin can't survive the whole app being killed. This
+          can — an unfinished sheet for the same customer is never left where
+          you have to go looking for it. */}
+      {orphanDraft && (
+        <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3">
+          <AlertTriangle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-amber-900">
+              <strong>You already have an unfinished measure sheet for this customer</strong> —
+              {' '}{orphanDraft.lineItems.length} line{orphanDraft.lineItems.length !== 1 ? 's' : ''},
+              last saved {new Date(orphanDraft.updatedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.
+              {' '}This page is a new, empty one.
+            </p>
+            <button type="button"
+              onClick={() => navigate(`/measure-sheets/${orphanDraft.id}/edit`)}
+              className="mt-1.5 text-xs font-semibold text-amber-800 underline decoration-amber-400 hover:text-amber-900">
+              Open that one instead →
+            </button>
+          </div>
         </div>
       )}
 
