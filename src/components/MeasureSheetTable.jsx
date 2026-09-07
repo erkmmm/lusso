@@ -4,6 +4,7 @@ import { getMsOptions, MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHand
 import PricedItemPicker from './PricedItemPicker';
 import CheckMeasureControl from './CheckMeasureControl';
 import LinePhotos from './LinePhotos';
+import LineLimitWarnings from './LineLimitWarnings';
 
 // Spreadsheet-style editor for measure-sheet line items. Edits the SAME sheet
 // state (via setLineItem/removeLineItem) as the card layout, so the two stay in
@@ -87,13 +88,20 @@ function Sel({ value, onChange, options }) {
 //     selected on THIS row), never the whole {r,c,r2,c2} object — a selection
 //     that moves within one row must not invalidate the other nineteen.
 const Row = memo(function Row({
-  item, idx, cols, productTypes, errors,
+  item, idx, cols, productTypes, errors, issues,
   selC1, selC2, selTop, selBottom, anchorCol, handleCol, previewC1, previewC2,
   hasTakeoffLines, sheetId, canRemove,
   setLineItem, removeLineItem, copyLineItem, setLinePhotos,
-  onConfirmMeasured, onRevertToPlan,
+  onConfirmMeasured, onRevertToPlan, onOpenLimitDoc,
   cellRefs, onCellMouseDown, onCellFocus, onHandleDown,
 }) {
+  // Worst severity per measured field, so the offending cell can say so itself.
+  const issueBy = {};
+  for (const r of issues || []) {
+    if (r.field !== 'width' && r.field !== 'drop') continue;
+    const k = r.field === 'width' ? 'widthMm' : 'dropMm';
+    if (r.severity === 'error' || !issueBy[k]) issueBy[k] = r.severity;
+  }
   const pt = productTypes.find(p => p.id === item.productTypeId) || null;
   const productHandlers = makeProductSelectHandlers(setLineItem, idx, productTypes);
 
@@ -148,6 +156,7 @@ const Row = memo(function Row({
 
   const gridCell = (c) => {
     const col      = cols[c];
+    const breach   = issueBy[col.key];
     const selected = selC1 >= 0 && c >= selC1 && c <= selC2;
     const anchor   = c === anchorCol;
     const preview  = previewC1 >= 0 && c >= previewC1 && c <= previewC2;
@@ -166,7 +175,8 @@ const Row = memo(function Row({
       <td key={col.key}
         ref={el => { if (el) cellRefs.current.set(`${idx}:${c}`, el); else cellRefs.current.delete(`${idx}:${c}`); }}
         className={`relative border-r border-slate-100 align-middle ${
-          selected && !anchor ? 'bg-amber-50/50' : preview ? 'bg-amber-50/40' : ''
+          breach === 'error' ? 'bg-red-50' : breach === 'warning' ? 'bg-amber-100/60'
+            : selected && !anchor ? 'bg-amber-50/50' : preview ? 'bg-amber-50/40' : ''
         }`}
         style={{ width: col.w, minWidth: col.min, boxShadow: shadow.join(', ') || undefined }}
         onMouseDown={e => onCellMouseDown(e, idx, c)}
@@ -203,6 +213,12 @@ const Row = memo(function Row({
       )}
 
       <td className="w-24 text-center whitespace-nowrap">
+        {issues?.length > 0 && (
+          <span className="inline-block mr-0.5 align-middle"
+            onClick={() => onOpenLimitDoc?.(issues[0].source?.id)} role="presentation">
+            <LineLimitWarnings compact results={issues} />
+          </span>
+        )}
         {setLinePhotos && (
           <LinePhotos
             compact
@@ -229,6 +245,8 @@ const Row = memo(function Row({
 export default function MeasureSheetTable({
   lineItems, setLineItem, removeLineItem, productTypes, errors = {},
   onConfirmMeasured, onRevertToPlan, addLineItem, copyLineItem,
+  // Spec-sheet breaches per line id — see src/lib/productLimits.js.
+  limitIssues = {}, onOpenLimitDoc = null,
   // Photos deliberately sit OUTSIDE the `cols` grid model: fill-down, copy and
   // paste are all defined over text cells, and a photo is not something you
   // want dragged into the next four rows. It rides in the actions cell instead.
@@ -591,6 +609,8 @@ export default function MeasureSheetTable({
               <Row
                 key={item.id}
                 item={item} idx={idx} cols={cols} productTypes={productTypes} errors={errors}
+                issues={limitIssues[item.id]}
+                onOpenLimitDoc={onOpenLimitDoc}
                 {...rowSel(idx)}
                 hasTakeoffLines={hasTakeoffLines}
                 sheetId={sheetId}

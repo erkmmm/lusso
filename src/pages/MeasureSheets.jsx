@@ -1,7 +1,7 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle, Upload, Copy } from 'lucide-react';
+import { ClipboardList, Search, X, Trash2, CheckSquare, Square, AlertTriangle, Upload, Copy, History } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import {
   getMeasureSheets, getMeasureSheetsFiltered, getCustomers, getJobs, getQuotes,
@@ -161,6 +161,15 @@ export default function MeasureSheets() {
               </button>
             )
           )}
+          {/* Findable BEFORE you need it — someone whose sheet just came back
+              empty should not have to be told this page exists. */}
+          <button
+            onClick={() => navigate('/measure-sheets/recover')}
+            title="Earlier versions of every sheet saved on this device"
+            className="flex items-center gap-2 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
+          >
+            <History size={15} /> Recover
+          </button>
           <button
             onClick={() => navigate('/measure-sheets/import')}
             className="flex items-center gap-2 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"

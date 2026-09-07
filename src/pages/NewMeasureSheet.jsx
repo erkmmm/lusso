@@ -17,7 +17,9 @@ import {
   getMsOptions, URGENCY_LEVELS,
   MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers,
   isPlanEstimate, markLineCheckMeasured, markLinePlanEstimate,
+  buildLimitsResolver, getProductDocument, sheetContentScore,
 } from '../store/data';
+import { evaluateLine } from '../lib/productLimits';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
@@ -30,6 +32,8 @@ import { toast } from '../components/ToastContainer';
 import NoteDrawer from '../components/NoteDrawer';
 import NotesFeed from '../components/NotesFeed';
 import LinePhotos from '../components/LinePhotos';
+import LineLimitWarnings from '../components/LineLimitWarnings';
+import ProductDocViewer from '../components/ProductDocViewer';
 
 // ─── Customer search & duplicate helpers ──────────────────────────────────────
 
@@ -315,6 +319,38 @@ function LiningBlock({ item, idx, setLineItem }) {
   );
 }
 
+/**
+ * Whether what's on screen is on disk — said out loud, always.
+ *
+ * The old UI showed a bare "Auto-saved 3:42:01 pm" and nothing else, so a sheet
+ * that had never been written looked identical to one that had. After a house
+ * was lost, silence is not an acceptable state for this to be in.
+ */
+function SaveState({ dirty, error, savedAt }) {
+  if (error) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600">
+        <AlertCircle size={12} /> Not saved — don&apos;t close this
+      </span>
+    );
+  }
+  if (dirty) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-amber-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> Saving…
+      </span>
+    );
+  }
+  if (savedAt) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-green-600">
+        <CheckCircle2 size={12} /> Saved {savedAt.toLocaleTimeString()}
+      </span>
+    );
+  }
+  return <span className="text-xs text-slate-400">Not saved yet</span>;
+}
+
 function Section({ title, icon, open, onToggle, children }) {
   return (
     <Card>
@@ -336,6 +372,9 @@ const inputCls = (error) =>
 const inp = () => 'w-full border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400';
 
 // ─── Line item defaults ───────────────────────────────────────────────────────
+
+// Stable empty object — a fresh {} each render would change every consumer's props.
+const EMPTY_ISSUES = {};
 
 const EMPTY_LINE_ITEM = () => ({
   id: uuidv4(), location: '', productTypeId: '', productNameSnapshot: '',
@@ -393,6 +432,9 @@ export default function NewMeasureSheet() {
   // page re-renders on every keystroke.
   const productTypes     = useMemo(() => getActiveProductTypes(), []);
   const allCustomers     = useMemo(() => getCustomers(), []);
+  // Built once — it reads two whole tables. After this, checking a line is pure
+  // computation, so it can run for every line on every keystroke.
+  const limitsFor        = useMemo(() => buildLimitsResolver(), []);
   const allJobs          = useMemo(() => getJobs(), []);
 
   // Pre-linking from customer or job workspace
@@ -448,6 +490,9 @@ export default function NewMeasureSheet() {
   const [savedAt,        setSavedAt]        = useState(null);
   const [notesOpen,      setNotesOpen]      = useState(false);
   const [notesVersion,   setNotesVersion]   = useState(0); // bumped when a note is written
+  const [limitDocId,     setLimitDocId]     = useState(null); // spec sheet opened from a warning
+  const [dirty,          setDirty]          = useState(false); // on screen but not yet on disk
+  const [saveError,      setSaveError]      = useState(false);
   const [submitted,      setSubmitted]      = useState(false);
   const [submittedJobId, setSubmittedJobId] = useState(null);
   const [submitting,     setSubmitting]     = useState(false);
@@ -457,6 +502,29 @@ export default function NewMeasureSheet() {
   const [itemLayout,     setItemLayout]     = useState(() => localStorage.getItem('lusso_ms_layout') === 'table' ? 'table' : 'cards');
   const [tableFull, setTableFull] = useState(false);
   const chooseLayout = (l) => { setItemLayout(l); localStorage.setItem('lusso_ms_layout', l); if (l !== 'table') setTableFull(false); };
+
+  // What each line breaches, keyed by line id.
+  //
+  // Results are cached per line against a signature of the fields the check
+  // actually reads, so an unchanged line hands back the SAME array reference.
+  // That matters more than the arithmetic: a fresh array every keystroke would
+  // change every memoised table row's props and re-render all of them, undoing
+  // the work that made this page fast.
+  const limitCache = useRef(new Map());
+  const limitIssues = useMemo(() => {
+    if (!limitsFor) return EMPTY_ISSUES;
+    const cache = limitCache.current;
+    const out = {};
+    for (const li of sheet.lineItems) {
+      const sig = limitsFor.signature(li);
+      const hit = cache.get(li.id);
+      const res = hit && hit.sig === sig ? hit.res : evaluateLine(li, limitsFor.docsFor(li));
+      if (!hit || hit.sig !== sig) cache.set(li.id, { sig, res });
+      if (res.length) out[li.id] = res;
+    }
+    return out;
+  }, [sheet.lineItems, limitsFor]);
+  const limitErrorCount = Object.values(limitIssues).flat().filter(r => r.severity === 'error').length;
 
   // ── Derived: search results & customer jobs ────────────────────────────────
   const searchResults = useMemo(() =>
@@ -476,20 +544,77 @@ export default function NewMeasureSheet() {
   }, [sheet.customerName, sheet.phone, sheet.email, sheet.siteAddress, customerMode, allCustomers, prelinkedCustomer]);
 
   // ── Auto-save ──────────────────────────────────────────────────────────────
-  // Keep the latest sheet + submitted flag in a ref so the interval can read
-  // them without being torn down and recreated on every keystroke (which used
-  // to reset the 60s timer so it effectively never fired while typing on site).
+  // This used to be a blind 60-second interval with no flush on leaving the
+  // page. On 2026-09-07 that lost a measured house: iOS reclaimed the tab, the
+  // in-memory sheet went with it, and nothing had been written since the last
+  // tick. So now:
+  //
+  //   • a save fires ~2s after you stop typing, not up to 60s later
+  //   • it ALSO fires the instant the page is hidden or unloaded — which is
+  //     exactly the moment iOS takes the tab away, and the only chance to write
+  //   • a slow 30s heartbeat still runs as a backstop
+  //   • `dirty` is tracked so the app can say, out loud, whether what is on
+  //     screen is on disk
   const autosaveRef = useRef({ sheet, submitted: false });
   useEffect(() => { autosaveRef.current.sheet = sheet; }, [sheet]);
   useEffect(() => { autosaveRef.current.submitted = submitted; }, [submitted]);
-  useEffect(() => {
-    const t = setInterval(() => {
-      const { sheet: s, submitted: done } = autosaveRef.current;
-      if (done) return;                       // stop once the sheet is finalised
-      saveMeasureSheet({ ...s, status: s.status || 'Draft' }); // preserve status (don't downgrade a Submitted sheet)
+
+  // Set when the user deliberately removes lines, so the content guard in
+  // saveMeasureSheet lets that one write through. Anything the user did NOT
+  // explicitly ask for still has to survive the guard.
+  const allowShrinkRef = useRef(false);
+
+  const flushSave = useCallback((reason = 'auto') => {
+    const { sheet: s, submitted: done } = autosaveRef.current;
+    if (done || !s?.id) return;
+    try {
+      saveMeasureSheet({ ...s, status: s.status || 'Draft' }, // never downgrade a Submitted sheet
+        { allowShrink: allowShrinkRef.current });
+      allowShrinkRef.current = false;
       setSavedAt(new Date());
-    }, 60000);
-    return () => clearInterval(t);
+      setDirty(false);
+      setSaveError(false);
+    } catch (e) {
+      console.error(`[measure-sheet] save failed (${reason}):`, e);
+      setSaveError(true);
+    }
+  }, []);
+
+  // Debounced on change.
+  useEffect(() => {
+    if (submitted) return;
+    setDirty(true);
+    const t = setTimeout(() => flushSave('debounce'), 2000);
+    return () => clearTimeout(t);
+  }, [sheet, submitted, flushSave]);
+
+  // Backstop heartbeat, and — the important one — a write the moment the page
+  // is backgrounded, hidden or torn down. pagehide covers iOS, where
+  // beforeunload does not fire reliably.
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === 'hidden') flushSave('hidden'); };
+    const onPageHide = () => flushSave('pagehide');
+    const beat = setInterval(() => flushSave('heartbeat'), 30000);
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      clearInterval(beat);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+      flushSave('unmount');   // navigating away inside the app also writes
+    };
+  }, [flushSave]);
+
+  // If a save is ever refused for destroying content, say so loudly rather than
+  // letting the user believe their work is filed.
+  useEffect(() => {
+    const onBlocked = (e) => {
+      if (e.detail?.id !== autosaveRef.current.sheet?.id) return;
+      setSaveError(true);
+      toast('This sheet looks emptier than the saved copy — the saved one was kept.');
+    };
+    window.addEventListener('lusso:save-blocked', onBlocked);
+    return () => window.removeEventListener('lusso:save-blocked', onBlocked);
   }, []);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -587,9 +712,12 @@ export default function NewMeasureSheet() {
     setExpandedItems(prev => new Set([...prev, id])); // auto-expand the copy
   }, []);
 
-  const removeLineItem = useCallback((idx) => setSheet(s => (
-    s.lineItems.length <= 1 ? s : { ...s, lineItems: s.lineItems.filter((_, i) => i !== idx) }
-  )), []);
+  const removeLineItem = useCallback((idx) => {
+    allowShrinkRef.current = true;   // a deliberate delete may legitimately shrink the sheet
+    setSheet(s => (
+      s.lineItems.length <= 1 ? s : { ...s, lineItems: s.lineItems.filter((_, i) => i !== idx) }
+    ));
+  }, []);
 
   // Use existing customer
   const handleUseCustomer = (customer) => {
@@ -671,8 +799,23 @@ export default function NewMeasureSheet() {
   };
 
   const handleSaveDraft = () => {
-    saveMeasureSheet({ ...sheet, status: sheet.status || 'Draft' });
+    const before = sheetContentScore(getMeasureSheet(sheet.id) || {});
+    saveMeasureSheet({ ...sheet, status: sheet.status || 'Draft' },
+      { allowShrink: allowShrinkRef.current });
+    allowShrinkRef.current = false;
+    const after = sheetContentScore(getMeasureSheet(sheet.id) || {});
+    const mine  = sheetContentScore(sheet);
+    // If the guard kept the stored copy, saying "saved" would be a lie — and a
+    // lie of exactly the kind that let a measured house look filed when it
+    // wasn't.
+    if (mine < after && after > 0 && before === after) {
+      setSaveError(true);
+      toast('Not saved — this sheet has less in it than the saved copy, so the saved one was kept.');
+      return;
+    }
     setSavedAt(new Date());
+    setDirty(false);
+    setSaveError(false);
     toast('Measure sheet saved');
   };
 
@@ -826,7 +969,7 @@ export default function NewMeasureSheet() {
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${sheet.status === 'Submitted' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
               {sheet.status}
             </span>
-            {savedAt && <span className="text-xs text-slate-400">Auto-saved {savedAt.toLocaleTimeString()}</span>}
+            <SaveState dirty={dirty} error={saveError} savedAt={savedAt} />
           </div>
         </div>
       </div>
@@ -1145,6 +1288,18 @@ export default function NewMeasureSheet() {
                 saved, not when the purchase order refuses to send. */}
             <CheckMeasureBanner lineItems={sheet.lineItems} onConfirmAll={confirmAllMeasured} />
 
+            {/* On a twenty-line sheet a breach on line 14 is off screen. Say it
+                once at the top, with the count. */}
+            {limitErrorCount > 0 && (
+              <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-red-700">
+                  <strong>{limitErrorCount} line{limitErrorCount !== 1 ? 's are' : ' is'} outside what the supplier will make.</strong>{' '}
+                  The measurements are saved either way — but the order will come back unless they're split or changed.
+                </p>
+              </div>
+            )}
+
             {/* Layout switch — card view (default) or spreadsheet table */}
             <div className="flex justify-end items-center gap-2">
               {itemLayout === 'table' && (
@@ -1170,6 +1325,8 @@ export default function NewMeasureSheet() {
               <div className="-mx-4 sm:mx-0">
                 <MeasureSheetTable
                   sheetId={sheet.id}
+                  limitIssues={limitIssues}
+                  onOpenLimitDoc={setLimitDocId}
                   setLinePhotos={setLinePhotos}
                   lineItems={sheet.lineItems}
                   setLineItem={setLineItem}
@@ -1225,6 +1382,8 @@ export default function NewMeasureSheet() {
                 <div className="flex-1 overflow-auto p-3">
                   <MeasureSheetTable
                     sheetId={sheet.id}
+                    limitIssues={limitIssues}
+                    onOpenLimitDoc={setLimitDocId}
                     setLinePhotos={setLinePhotos}
                     lineItems={sheet.lineItems}
                     setLineItem={setLineItem}
@@ -1320,6 +1479,15 @@ export default function NewMeasureSheet() {
                       </div>
                     </div>
                   </div>
+
+                  {/* What the supplier's spec sheet says about what was just
+                      measured — under the fields it refers to, while the tape
+                      is still in your hand. */}
+                  {limitIssues[item.id] && (
+                    <div className="px-4 pb-1">
+                      <LineLimitWarnings results={limitIssues[item.id]} onOpenDoc={setLimitDocId} />
+                    </div>
+                  )}
 
                   {/* Specs toggle */}
                   <div className="px-4 pb-3">
@@ -1438,7 +1606,7 @@ export default function NewMeasureSheet() {
           </button>
 
           <div className="flex items-center gap-2 min-w-0 ml-auto">
-            {savedAt && <span className="text-xs text-slate-400 hidden sm:block whitespace-nowrap">Saved {savedAt.toLocaleTimeString()}</span>}
+            <span className="hidden sm:block"><SaveState dirty={dirty} error={saveError} savedAt={savedAt} /></span>
             <button onClick={handleSubmit} disabled={submitting}
               className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors whitespace-nowrap">
               {submitting
@@ -1453,6 +1621,11 @@ export default function NewMeasureSheet() {
           </div>
         </div>
       </div>
+
+      {limitDocId && (() => {
+        const d = getProductDocument(limitDocId);
+        return d ? <ProductDocViewer key={d.id} doc={d} onClose={() => setLimitDocId(null)} /> : null;
+      })()}
 
       <NoteDrawer
         open={notesOpen}

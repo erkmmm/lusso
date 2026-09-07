@@ -136,3 +136,24 @@ alter table public.product_documents
   add constraint product_documents_scope_check check (scope in ('item', 'supplier', 'type'));
 
 notify pgrst, 'reload schema';
+
+-- ── Structured limits (applied 2026-09-07) ──────────────────────────────────
+-- The numbers on the spec sheet, as data, so a measured opening is checked the
+-- moment it is typed. Kept ON the document because that is where the numbers
+-- come from: scope already decides which products a sheet covers, so limits
+-- inherit that matching, and every warning can name and open its source.
+--
+--   { "widthMm": {"min":300,"max":3400}, "dropMm": {"min":200,"max":3200},
+--     "maxAreaM2": 10,
+--     "checks": [ { "severity":"error"|"warning",
+--                   "when": {"spec":"control","is":"Cord Lock"} | null,
+--                   "widthMm": {"max":2900} | {"over":2200},
+--                   "message": "..." } ] }
+--
+-- severity separates "the supplier will reject this" from "allowed, but the
+-- customer must be told" — the fabric-join case, which causes complaints
+-- precisely because nobody knows to ask about it.
+alter table public.product_documents
+  add column if not exists limits jsonb;
+
+notify pgrst, 'reload schema';

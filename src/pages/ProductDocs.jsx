@@ -23,6 +23,7 @@ import {
   getPricedItems, getActiveProductTypes, getPricedItemsInScope,
 } from '../store/data';
 import { DOC_TYPES, docTypeLabel } from '../lib/productDocs';
+import { summariseLimits } from '../lib/productLimits';
 import Card from '../components/Card';
 import ProductDocUpload from '../components/ProductDocUpload';
 import ProductDocViewer from '../components/ProductDocViewer';
@@ -49,6 +50,12 @@ function DocRow({ doc, onOpen }) {
           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${TYPE_STYLE[doc.docType] || TYPE_STYLE.other}`}>
             {docTypeLabel(doc.docType)}
           </span>
+          {summariseLimits(doc.limits) && (
+            <span title="These limits are checked against every measured line"
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-teal-50 text-teal-700 border-teal-200">
+              {summariseLimits(doc.limits)}
+            </span>
+          )}
           {!doc.hasText && (
             <span title="No text layer — findable by its details, not its contents"
               className="text-[10px] text-slate-400 border border-slate-200 rounded-full px-1.5 py-0.5">

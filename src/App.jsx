@@ -45,6 +45,7 @@ import ImportContacts from './pages/ImportContacts';
 import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
 import ProductDocs from './pages/ProductDocs';
+import SheetRecovery from './pages/SheetRecovery';
 import ImportSupplierPDF from './pages/ImportSupplierPDF';
 import ImportTrackPrices from './pages/ImportTrackPrices';
 import ImportHub from './pages/ImportHub';
@@ -339,6 +340,7 @@ function AppRoutes() {
               <Route path="/measure-sheets/:id"         element={<MeasureSheetView />} />
               <Route path="/measure-sheets/:id/purchase-order" element={<PurchaseOrder />} />
               <Route path="/measure-sheets/:id/edit"    element={<NewMeasureSheet />} />
+              <Route path="/measure-sheets/recover"     element={<SheetRecovery />} />
               <Route path="/installers"                 element={<Installers />} />
               <Route path="/installers/:id"             element={<InstallerProfile />} />
               <Route path="/calendar"                   element={<InstallationCalendar />} />

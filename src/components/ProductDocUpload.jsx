@@ -14,12 +14,13 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, UploadCloud, FileText, Loader2, AlertTriangle, Info, Check } from 'lucide-react';
+import { X, UploadCloud, FileText, Loader2, AlertTriangle, Info, Check, Ruler, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import {
   getKnownSuppliers, saveProductDocument, saveProductDocumentText, getActiveProductTypes,
-  getPricedItemsInScope, getSupplierCategories,
+  getPricedItemsInScope, getSupplierCategories, MS_SPEC_FIELDS,
 } from '../store/data';
+import { hasLimits } from '../lib/productLimits';
 import {
   DOC_TYPES, uploadProductDoc, parseDocFileName, parseDocText,
   guessSupplier, mergeDocSuggestions,
@@ -54,6 +55,52 @@ export default function ProductDocUpload({ onClose, onSaved, editDoc = null, pre
   });
   const inputRef = useRef(null);
   const productTypes = useMemo(() => getActiveProductTypes(), []);
+
+  const [limits, setLimits] = useState(() => ({
+    widthMm:   { min: '', max: '', ...(editDoc?.limits?.widthMm || {}) },
+    dropMm:    { min: '', max: '', ...(editDoc?.limits?.dropMm  || {}) },
+    maxAreaM2: editDoc?.limits?.maxAreaM2 ?? '',
+    checks:    editDoc?.limits?.checks || [],
+  }));
+  const [limitsOpen, setLimitsOpen] = useState(() => !!editDoc?.limits);
+  // Blank means "the sheet doesn't state this", NOT zero — a 0 maximum would
+  // reject every line ever measured. So empty fields are dropped entirely.
+  const cleanLimits = (l) => {
+    const n = (v) => (v === '' || v === null || v === undefined ? undefined : Number(v));
+    const bounds = (b) => {
+      const o = {};
+      if (n(b?.min) !== undefined && !Number.isNaN(n(b.min))) o.min = n(b.min);
+      if (n(b?.max) !== undefined && !Number.isNaN(n(b.max))) o.max = n(b.max);
+      return Object.keys(o).length ? o : undefined;
+    };
+    const out = {};
+    const w = bounds(l.widthMm); if (w) out.widthMm = w;
+    const d = bounds(l.dropMm);  if (d) out.dropMm  = d;
+    const a = n(l.maxAreaM2);    if (a !== undefined && !Number.isNaN(a)) out.maxAreaM2 = a;
+    const checks = (l.checks || []).map(c => {
+      const key = c.severity === 'error' ? 'max' : 'over';
+      const v = n(c.widthMm?.[key]);
+      if (v === undefined || Number.isNaN(v)) return null; // a rule with no number does nothing
+      return {
+        severity: c.severity === 'error' ? 'error' : 'warning',
+        when: c.when?.spec && String(c.when.is || '').trim()
+          ? { spec: c.when.spec, is: String(c.when.is).trim() } : null,
+        widthMm: { [key]: v },
+        message: String(c.message || '').trim() || undefined,
+      };
+    }).filter(Boolean);
+    if (checks.length) out.checks = checks;
+    return out;
+  };
+
+  const setBound = (f, k, v) => setLimits(l => ({ ...l, [f]: { ...l[f], [k]: v } }));
+  const setCheck = (i, patch) => setLimits(l => ({
+    ...l, checks: l.checks.map((c, n) => (n === i ? { ...c, ...patch } : c)),
+  }));
+  const addCheck = () => setLimits(l => ({
+    ...l, checks: [...l.checks, { severity: 'warning', when: null, widthMm: { over: '' }, message: '' }],
+  }));
+  const removeCheck = (i) => setLimits(l => ({ ...l, checks: l.checks.filter((_, n) => n !== i) }));
 
   // What a supplier-scoped document would cover, recomputed as they type.
   const supplierCategories = useMemo(() => getSupplierCategories(form.supplier), [form.supplier]);
@@ -124,6 +171,7 @@ export default function ProductDocUpload({ onClose, onSaved, editDoc = null, pre
         // half-claim a second scope after someone switches tabs mid-edit.
         pricedItemId:  form.scope === 'item' ? form.pricedItemId  : null,
         productTypeId: form.scope === 'type' ? form.productTypeId : null,
+        limits: hasLimits(cleanLimits(limits)) ? cleanLimits(limits) : null,
         filePath,
         fileName:  file ? file.name : form.fileName,
         fileSize:  file ? file.size : form.fileSize,
@@ -357,6 +405,98 @@ export default function ProductDocUpload({ onClose, onSaved, editDoc = null, pre
                   placeholder="October 2017" className={field} />
               </div>
             </div>
+          </div>
+
+          {/* ── Limits ─────────────────────────────────────────────────────
+              The numbers off the spec sheet, so a measured opening can be
+              checked against them the moment it's typed rather than when the
+              supplier rejects the order. Optional — a document with no limits
+              is still a perfectly good document. */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button type="button" onClick={() => setLimitsOpen(o => !o)}
+              className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left hover:bg-slate-50">
+              <Ruler size={14} className="text-slate-400" />
+              <span className="text-sm font-medium text-slate-700">Size limits</span>
+              <span className="text-xs text-slate-400">
+                {hasLimits(cleanLimits(limits)) ? 'set — warns on the measure sheet' : 'optional'}
+              </span>
+              <span className="ml-auto text-slate-400">
+                {limitsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+              </span>
+            </button>
+
+            {limitsOpen && (
+              <div className="border-t border-slate-100 p-3.5 space-y-3 bg-slate-50/40">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  {[['widthMm', 'min', 'Width min'], ['widthMm', 'max', 'Width max'],
+                    ['dropMm', 'min', 'Drop min'],  ['dropMm', 'max', 'Drop max']].map(([f, k, text]) => (
+                    <div key={`${f}${k}`}>
+                      <label className="block text-[11px] text-slate-400 mb-1">{text}</label>
+                      <input type="number" inputMode="numeric" min="0" value={limits[f][k] ?? ''}
+                        onChange={e => setBound(f, k, e.target.value)}
+                        placeholder="mm" className={`${field} no-spin text-right`} />
+                    </div>
+                  ))}
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Max area</label>
+                    <input type="number" inputMode="decimal" min="0" step="0.1" value={limits.maxAreaM2 ?? ''}
+                      onChange={e => setLimits(l => ({ ...l, maxAreaM2: e.target.value }))}
+                      placeholder="m²" className={`${field} no-spin text-right`} />
+                  </div>
+                </div>
+
+                {/* Extra rules: a conditional cap, or an advisory threshold. */}
+                {limits.checks.map((c, i) => (
+                  <div key={i} className="border border-slate-200 rounded-lg p-2.5 bg-white space-y-2">
+                    <div className="flex items-center gap-2">
+                      <select value={c.severity} onChange={e => setCheck(i, { severity: e.target.value })}
+                        className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white">
+                        <option value="error">Won&apos;t be made</option>
+                        <option value="warning">Allowed — tell the customer</option>
+                      </select>
+                      <span className="text-xs text-slate-400">when</span>
+                      <select value={c.when?.spec || ''}
+                        onChange={e => setCheck(i, { when: e.target.value ? { spec: e.target.value, is: c.when?.is || '' } : null })}
+                        className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white">
+                        <option value="">any line</option>
+                        {MS_SPEC_FIELDS.filter(f => f.key !== 'lining').map(f => (
+                          <option key={f.key} value={f.itemField}>{f.label} is…</option>
+                        ))}
+                      </select>
+                      {c.when?.spec && (
+                        <input value={c.when.is || ''} placeholder="value"
+                          onChange={e => setCheck(i, { when: { ...c.when, is: e.target.value } })}
+                          className="text-xs border border-slate-200 rounded-md px-2 py-1 w-28" />
+                      )}
+                      <button type="button" onClick={() => removeCheck(i)}
+                        className="ml-auto text-slate-300 hover:text-red-500 p-1"><Trash2 size={13} /></button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-400">and width is over</span>
+                      <input type="number" inputMode="numeric" min="0"
+                        value={c.severity === 'error' ? (c.widthMm?.max ?? '') : (c.widthMm?.over ?? '')}
+                        onChange={e => setCheck(i, { widthMm: c.severity === 'error'
+                          ? { max: e.target.value } : { over: e.target.value } })}
+                        placeholder="mm" className="text-xs border border-slate-200 rounded-md px-2 py-1 w-24 text-right no-spin" />
+                      <input value={c.message || ''} onChange={e => setCheck(i, { message: e.target.value })}
+                        placeholder="What to say — e.g. fabric is joined with a centre overlap"
+                        className="flex-1 min-w-[200px] text-xs border border-slate-200 rounded-md px-2 py-1" />
+                    </div>
+                  </div>
+                ))}
+
+                <button type="button" onClick={addCheck}
+                  className="flex items-center gap-1.5 text-xs font-medium text-amber-600 hover:text-amber-700">
+                  <Plus size={13} /> Add a rule
+                </button>
+                <p className="text-[11px] text-slate-400">
+                  Leave anything blank that the sheet doesn&apos;t state. Blank means &ldquo;no limit given&rdquo;, never zero.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2">
               <label className={label}>Notes</label>
               <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}

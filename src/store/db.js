@@ -294,6 +294,26 @@ const TABLES = [
 
 const TABLE_TO_KEY = Object.fromEntries(TABLES.map(t => [t.table, t.key]));
 
+// How much irreplaceable field work a record holds, per table. Only tables where
+// a record can be emptied in a way nobody could retype are listed — a measure
+// sheet is a person standing in a house with a tape measure; a settings row is
+// not. Used by SAFETY GUARD 3 in hydrateFromSupabase.
+const contentGuard = {
+  measure_sheets: (row) => {
+    let n = 0;
+    for (const li of row?.lineItems || row?.line_items || []) {
+      if (String(li.location || '').trim())     n++;
+      if (String(li.widthMm ?? li.width_mm ?? '').toString().trim()) n++;
+      if (String(li.dropMm  ?? li.drop_mm  ?? '').toString().trim()) n++;
+      if (String(li.fabricColour ?? li.fabric_colour ?? '').trim()) n++;
+      if (li.productTypeId || li.product_type_id || li.pricedItemId || li.priced_item_id) n++;
+      if ((li.photoPaths || li.photo_paths || []).length) n += 2;
+    }
+    return n;
+  },
+  takeoffs: (row) => (row?.windowItems || row?.window_items || []).length,
+};
+
 // ── Pending-sync outbox ───────────────────────────────────────────────────────
 // When a write to Supabase fails (e.g. a flaky on-site connection), the record
 // still lives in localStorage but is NOT on the server. We record it here so:
@@ -484,6 +504,32 @@ export async function hydrateFromSupabase() {
         const localRow = localById.get(sbRow.id);
         if (!localRow) return sbRow;
         if (pend.has(sbRow.id)) return localRow;
+
+        // SAFETY GUARD 3 (record level): the two guards above compare ROW
+        // COUNTS, so they catch "every sheet vanished" but not "this sheet's
+        // contents vanished" — the row count is identical either way. On
+        // 2026-09-07 a measure sheet went from a measured house to one blank
+        // line, and because the blank version carried a newer updatedAt it won
+        // here and propagated to every device.
+        //
+        // Newest-wins is right for edits and wrong for erasure. So a server row
+        // that holds materially LESS measured content than the local copy never
+        // replaces it, regardless of timestamps. The local copy keeps its own
+        // updatedAt, so it is still the newer record and flushPending/the next
+        // save pushes it back up — the good version wins the race instead of
+        // losing it.
+        if (contentGuard[table]) {
+          const sbScore  = contentGuard[table](sbRow);
+          const locScore = contentGuard[table](localRow);
+          if (locScore > 0 && sbScore < locScore / 3) {
+            console.warn(
+              `[db] hydrate ${table} ${sbRow.id}: server copy has far less content ` +
+              `(${sbScore} vs ${locScore} local) — keeping local, not overwriting.`,
+            );
+            return { ...localRow, ...serverLifecycle(table, sbRow) };
+          }
+        }
+
         const sbMs = new Date(sbRow.updatedAt || 0).getTime();
         const locMs = new Date(localRow.updatedAt || 0).getTime();
         if (locMs <= sbMs) return sbRow;

@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { lsGet, lsSet, lsVersion } from './storage';
+import { recordSheetVersion } from '../lib/sheetJournal';
 import { db, batchUpsertCustomers, batchUpsertPricedItems, hydrateFromSupabase } from './db';
 import { supabase } from '../lib/supabase';
 import { removeTakeoffPlans, removeTakeoffPhotos } from '../lib/takeoffStorage';
@@ -887,18 +888,81 @@ export const bulkDeleteMeasureSheets = (ids, deletedBy = 'Admin') => {
   ids.forEach(id => deleteMeasureSheet(id, deletedBy));
 };
 
-export const saveMeasureSheet = (sheet) => {
+/**
+ * Would this write destroy measured work?
+ *
+ * True when the incoming sheet has meaningfully LESS in it than the copy already
+ * stored — a house of line items collapsing to one blank row. That is never
+ * something a person does by accident-free intent; it is what a lost tab, a
+ * remounted page or a stale closure looks like from here.
+ *
+ * On 2026-09-07 exactly that wrote a blank sheet over a measured house, and
+ * because hydration resolves by newest-wins, the blank version then became the
+ * truth on every device. Deleting lines deliberately still works — it goes
+ * through `allowShrink`, which only the explicit delete/clear paths set.
+ */
+const wouldDestroyContent = (incoming, stored) => {
+  if (!stored) return false;
+  const storedScore   = sheetContentScore(stored);
+  const incomingScore = sheetContentScore(incoming);
+  if (storedScore === 0) return false;                      // nothing to lose
+  // Losing more than two thirds of the measured content, or dropping to a
+  // single empty line, is treated as data loss rather than an edit.
+  const collapsedToBlank = incomingScore === 0 && storedScore > 0;
+  return collapsedToBlank || incomingScore < storedScore / 3;
+};
+
+/** Filled-in measurement fields across a sheet. Cheap proxy for "real work". */
+export const sheetContentScore = (sheet) => {
+  let n = 0;
+  for (const li of sheet?.lineItems || []) {
+    if (String(li.location || '').trim())     n++;
+    if (String(li.widthMm  || '').trim())     n++;
+    if (String(li.dropMm   || '').trim())     n++;
+    if (String(li.fabricColour || '').trim()) n++;
+    if (li.productTypeId || li.pricedItemId)  n++;
+    if ((li.photoPaths || []).length)         n += 2;
+  }
+  return n;
+};
+
+/**
+ * @param {object}  sheet
+ * @param {object}  opts
+ * @param {boolean} opts.allowShrink  the user really did delete lines — set ONLY
+ *                                    by explicit delete/clear actions.
+ */
+export const saveMeasureSheet = (sheet, { allowShrink = false } = {}) => {
   const sheets = getMeasureSheets();
   const idx = sheets.findIndex(s => s.id === sheet.id);
-  const now = new Date().toISOString();
-  if (idx >= 0) {
-    sheets[idx] = { ...sheet, createdAt: sheet.createdAt || now, updatedAt: now };
-  } else {
-    sheets.push({ ...sheet, createdAt: sheet.createdAt || now, updatedAt: now });
+  const stored = idx >= 0 ? sheets[idx] : null;
+
+  // Snapshot BOTH sides before anything is overwritten, so even a refused write
+  // — and even the state that tried to cause it — is recoverable.
+  if (stored) recordSheetVersion(stored, 'before-save');
+
+  if (!allowShrink && wouldDestroyContent(sheet, stored)) {
+    recordSheetVersion(sheet, 'refused-write');
+    console.error(
+      `[data] REFUSED to save measure sheet ${sheet.id}: it would drop content ` +
+      `${sheetContentScore(stored)} → ${sheetContentScore(sheet)}. Kept the stored copy.`,
+    );
+    try {
+      window.dispatchEvent(new CustomEvent('lusso:save-blocked', {
+        detail: { id: sheet.id, storedScore: sheetContentScore(stored), incomingScore: sheetContentScore(sheet) },
+      }));
+    } catch { /* SSR */ }
+    return stored;   // the caller gets the surviving copy, not the empty one
   }
+
+  const now = new Date().toISOString();
+  const record = { ...sheet, createdAt: sheet.createdAt || now, updatedAt: now };
+  if (idx >= 0) sheets[idx] = record; else sheets.push(record);
   set('lusso_measure_sheets', sheets);
-  db.saveMeasureSheet(sheets[sheets.findIndex(s => s.id === sheet.id)]);
+  recordSheetVersion(record, 'saved');
+  db.saveMeasureSheet(record);
   advanceJobStatus(sheet.jobId, 'Measured', sheet.measurer || 'System');
+  return record;
 };
 
 // Clone a measure sheet into a fresh Draft — same customer, job link, specs and
@@ -2292,6 +2356,61 @@ export const deleteProductDocument = (id) => {
 
 export const saveProductDocumentText = (id, content) => db.saveProductDocumentText(id, content);
 export const searchProductDocumentText = (q) => db.searchProductDocumentText(q);
+
+/**
+ * A snapshot for checking measure-sheet lines against supplier limits.
+ *
+ * Built ONCE per page (it reads two whole tables out of localStorage) and then
+ * queried per line per render. The measure sheet re-renders on every keystroke,
+ * so nothing in the returned resolver is allowed to touch storage again — that
+ * is exactly the cost that made this page unusable before.
+ *
+ * Returns null when no document states any limits, so the caller can skip the
+ * whole feature rather than pay for it.
+ */
+export const buildLimitsResolver = () => {
+  const docs = getProductDocuments().filter(d => d.limits);
+  if (!docs.length) return null;
+
+  // Which line-item fields any condition reads. The caller uses this to tell
+  // when a line's result can be reused, so editing a Location doesn't recompute
+  // (and re-render) every row's warnings.
+  const specFields = [...new Set(
+    docs.flatMap(d => (d.limits.checks || []).map(c => c.when?.spec).filter(Boolean)),
+  )];
+
+  const items = new Map(getPricedItems().map(i => [i.id, i]));
+  const bySupplier = docs.filter(d => d.scope === 'supplier');
+  const byItem = new Map();
+  const byType = new Map();
+  for (const d of docs) {
+    if (d.scope === 'item' && d.pricedItemId) {
+      byItem.set(d.pricedItemId, [...(byItem.get(d.pricedItemId) || []), d]);
+    } else if (d.scope === 'type' && d.productTypeId) {
+      byType.set(d.productTypeId, [...(byType.get(d.productTypeId) || []), d]);
+    }
+  }
+
+  // line → the documents whose scope covers it.
+  const docsFor = (line) => {
+    if (!line) return [];
+    const out = [];
+    const item = line.pricedItemId ? items.get(line.pricedItemId) : null;
+    if (item) {
+      out.push(...(byItem.get(item.id) || []));
+      for (const d of bySupplier) if (docAppliesToPricedItem(d, item)) out.push(d);
+    }
+    if (line.productTypeId) out.push(...(byType.get(line.productTypeId) || []));
+    return out;
+  };
+
+  // Everything a line's result depends on, as one cheap string.
+  const signature = (line) =>
+    [line.widthMm, line.dropMm, line.pricedItemId, line.productTypeId,
+      ...specFields.map(f => line[f])].join('\u0001');
+
+  return { docsFor, signature };
+};
 
 /** Every supplier name we know of, for the upload form's supplier guess. */
 export const getKnownSuppliers = () => {
