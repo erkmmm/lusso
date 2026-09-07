@@ -1255,7 +1255,10 @@ export const applyTakeoffToMeasureSheet = (takeoff) => {
     }
   }
 
-  saveMeasureSheet({ ...sheet, lineItems: kept });
+  // allowShrink: this deliberately drops takeoff rows whose group no longer
+  // exists on the plan, which can legitimately be most of the sheet. Without it
+  // the content guard would refuse a re-sync after a big plan change.
+  saveMeasureSheet({ ...sheet, lineItems: kept }, { allowShrink: true });
 };
 
 // ─── Check measure ──────────────────────────────────────────────────────────

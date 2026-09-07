@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Copy, Printer, Maximize2, Minimize2, StickyNote,
+  Copy, Printer, Maximize2, Minimize2, StickyNote, History,
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
@@ -418,6 +418,40 @@ const EMPTY_SHEET = () => ({
   lineItems: [EMPTY_LINE_ITEM()],
 });
 
+/**
+ * A new sheet must RESUME, not restart.
+ *
+ * `/measure-sheets/new` used to mint a fresh uuid on every mount. So when iOS
+ * reclaimed the tab mid-job and the page came back, it came back as a DIFFERENT
+ * sheet — blank, with a new id. The measured one still existed under the old
+ * id, invisible, while the measurer kept typing into an empty replacement and
+ * pressed Save on that. It is why the database holds two sheets for the same
+ * customer and address, both with one blank line.
+ *
+ * So the draft id is pinned in sessionStorage, keyed by what the sheet is for.
+ * sessionStorage survives a reload and an iOS tab restore, and dies with the
+ * tab — which is exactly the lifetime of "this piece of work".
+ */
+const draftKey = (customerId, jobId) => `lusso_ms_draft:${jobId || customerId || 'blank'}`;
+
+const resumeDraftId = (customerId, jobId) => {
+  try {
+    const prior = sessionStorage.getItem(draftKey(customerId, jobId));
+    if (!prior) return null;
+    const existing = getMeasureSheet(prior);
+    // Only resume something still in progress — never re-open a submitted sheet.
+    return existing && existing.status === 'Draft' && !existing.deletedAt ? existing : null;
+  } catch { return null; }
+};
+
+const pinDraftId = (customerId, jobId, sheetId) => {
+  try { sessionStorage.setItem(draftKey(customerId, jobId), sheetId); } catch { /* private mode */ }
+};
+
+const clearDraftPin = (customerId, jobId) => {
+  try { sessionStorage.removeItem(draftKey(customerId, jobId)); } catch { /* ignore */ }
+};
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function NewMeasureSheet() {
@@ -445,8 +479,23 @@ export default function NewMeasureSheet() {
   const prelinkedJob        = prelinkedJobId ? getJob(prelinkedJobId) : null;
 
   // ── Sheet state ────────────────────────────────────────────────────────────
-  const [sheet, setSheet] = useState(() => {
-    if (isEdit) return getMeasureSheet(id) || EMPTY_SHEET();
+  // Decided once, purely, before any state exists — see the draft-pin note above.
+  const initial = useMemo(() => {
+    if (isEdit) return { sheet: getMeasureSheet(id) || EMPTY_SHEET(), resumed: false };
+
+    // Reload, tab restore, or coming back to this customer in the same tab:
+    // pick the in-progress sheet back up rather than starting a second one.
+    const prior = resumeDraftId(prelinkedCustomerId, prelinkedJobId);
+    if (prior) return { sheet: prior, resumed: true };
+
+    return { sheet: buildNewSheet(), resumed: false };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const resumed = initial.resumed;
+
+  const [sheet, setSheet] = useState(initial.sheet);
+
+  function buildNewSheet() {
     if (prelinkedCustomer) {
       return {
         ...EMPTY_SHEET(),
@@ -469,7 +518,7 @@ export default function NewMeasureSheet() {
       };
     }
     return EMPTY_SHEET();
-  });
+  }
 
   // In edit mode, lock the customer from the existing sheet record so it
   // can't be accidentally lost. This takes precedence over prelinkedCustomer.
@@ -555,6 +604,13 @@ export default function NewMeasureSheet() {
   //   • a slow 30s heartbeat still runs as a backstop
   //   • `dirty` is tracked so the app can say, out loud, whether what is on
   //     screen is on disk
+  // Pin this draft to the tab so a reload or an iOS tab restore comes back to
+  // THIS sheet instead of silently starting a second, empty one.
+  useEffect(() => {
+    if (isEdit || !sheet?.id) return;
+    pinDraftId(prelinkedCustomerId, prelinkedJobId, sheet.id);
+  }, [isEdit, sheet?.id, prelinkedCustomerId, prelinkedJobId]);
+
   const autosaveRef = useRef({ sheet, submitted: false });
   useEffect(() => { autosaveRef.current.sheet = sheet; }, [sheet]);
   useEffect(() => { autosaveRef.current.submitted = submitted; }, [submitted]);
@@ -907,6 +963,7 @@ export default function NewMeasureSheet() {
       }
 
       setSheet(finalSheet);
+      clearDraftPin(prelinkedCustomerId, prelinkedJobId); // this piece of work is done
       setSubmittedJobId(prelinkedJobId || job?.id || null);
       setSubmitted(true);
     } catch (err) {
@@ -973,6 +1030,19 @@ export default function NewMeasureSheet() {
           </div>
         </div>
       </div>
+
+      {/* Picking work back up should be visible, not silent — the whole failure
+          was a page that looked new when it wasn't (and vice versa). */}
+      {resumed && (
+        <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+          <History size={15} className="text-blue-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-800">
+            <strong>Picked up where you left off.</strong> This is the measure sheet you already started
+            for this customer in this tab — {sheet.lineItems.length} line{sheet.lineItems.length !== 1 ? 's' : ''} so far,
+            not a new one.
+          </p>
+        </div>
+      )}
 
       {/* Consult recorder — only when this sheet is linked to a job */}
       {(prelinkedJobId || sheet?.jobId) && (
