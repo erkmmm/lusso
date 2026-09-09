@@ -640,43 +640,87 @@ export const saveCustomer = (customer) => {
 
 export const getJobs = () => (get('lusso_jobs') || []).filter(j => !j.deletedAt);
 
+/**
+ * Hide a job and everything hanging off it. Nothing is destroyed.
+ *
+ * This used to soft-delete the job locally and hard-DELETE it from Supabase.
+ * Because measure_sheets, installations, job_ai_messages and job_transcripts
+ * all reference jobs ON DELETE CASCADE, that took the measure sheets with it —
+ * the record of a site visit someone drove to, gone, with no way back and (the
+ * audit trigger being a no-op at the time) no trace that it had ever existed.
+ *
+ * Everything is a soft delete now. Hydration filters on deleted_at, so the job
+ * and its children disappear from the app exactly as before; the difference is
+ * that the rows are still there when someone says "I didn't mean that".
+ */
 export const deleteJob = (id, deletedBy = 'Admin') => {
   const all = get('lusso_jobs') || [];
   const idx = all.findIndex(j => j.id === id);
   if (idx < 0) return;
   const now = new Date().toISOString();
 
-  // ── Delete children from Supabase BEFORE the job ─────────────────────
-  // FK constraints would block the job DELETE if children still exist.
-  // Deleting children first also fires Realtime DELETE events on other devices.
+  const markDeleted = (rec) => ({ ...rec, deletedAt: now, deletedBy, updatedAt: now });
 
-  // Measure sheets → cascade delete from Supabase, remove from local
+  // Measure sheets → soft-delete both sides. They travel with the job so they
+  // come back with it, rather than being cascaded into nothing.
   const allSheets = get('lusso_measure_sheets') || [];
-  const linkedSheets = allSheets.filter(s => s.jobId === id);
-  linkedSheets.forEach(s => db.deleteMeasureSheet(s.id));
-  set('lusso_measure_sheets', allSheets.filter(s => s.jobId !== id));
+  set('lusso_measure_sheets', allSheets.map(s => {
+    if (s.jobId !== id || s.deletedAt) return s;
+    const hidden = markDeleted(s);
+    db.saveMeasureSheet(hidden);
+    return hidden;
+  }));
 
-  // Quotes → unlink locally (DB FK ON DELETE SET NULL handles the DB side automatically)
-  // Quotes are financial records — never delete them when a job is deleted.
-  const allQuotes = get('lusso_quotes') || [];
-  const updatedQuotes = allQuotes.map(q =>
-    q.jobId === id && !q.deletedAt ? { ...q, jobId: null, updatedAt: now } : q
-  );
-  set('lusso_quotes', updatedQuotes);
-
-  // Install requests → delete from Supabase and local
+  // Install requests → same.
   const reqs = get('lusso_install_requests') || [];
-  const linkedReqs = reqs.filter(r => r.jobId === id);
-  linkedReqs.forEach(r => db.deleteInstallRequest(r.id));
-  set('lusso_install_requests', reqs.filter(r => r.jobId !== id));
+  set('lusso_install_requests', reqs.map(r => {
+    if (r.jobId !== id || r.deletedAt) return r;
+    const hidden = markDeleted(r);
+    db.saveInstallRequest(hidden);
+    return hidden;
+  }));
 
-  // ── Soft-delete the job locally ───────────────────────────────────────
-  all[idx] = { ...all[idx], deletedAt: now, deletedBy, updatedAt: now };
+  // Quotes are deliberately left alone, still pointing at the job. They used to
+  // be unlinked here to stay ahead of the FK's ON DELETE SET NULL — but with
+  // nothing being hard-deleted that no longer fires, so nulling jobId locally
+  // would only diverge from the server and be undone by the next hydration.
+  // A hidden job keeps its quotes, and restoring it restores the thread.
+
+  const hiddenJob = markDeleted(all[idx]);
+  all[idx] = hiddenJob;
   set('lusso_jobs', all);
+  db.saveJob(hiddenJob);   // carries deleted_at to the server; no row is removed
+};
 
-  // ── Hard-delete the job from Supabase ─────────────────────────────────
-  // Children are already gone so FK constraints won't block this.
-  db.deleteJob(id);
+/** Bring back a job hidden by deleteJob(), along with its sheets and bookings. */
+export const restoreJob = (id) => {
+  const clear = (rec) => ({ ...rec, deletedAt: null, deletedBy: null, updatedAt: new Date().toISOString() });
+
+  const all = get('lusso_jobs') || [];
+  const idx = all.findIndex(j => j.id === id);
+  if (idx < 0) return null;
+  const job = clear(all[idx]);
+  all[idx] = job;
+  set('lusso_jobs', all);
+  db.saveJob(job);
+
+  const allSheets = get('lusso_measure_sheets') || [];
+  set('lusso_measure_sheets', allSheets.map(s => {
+    if (s.jobId !== id || !s.deletedAt) return s;
+    const back = clear(s);
+    db.saveMeasureSheet(back);
+    return back;
+  }));
+
+  const reqs = get('lusso_install_requests') || [];
+  set('lusso_install_requests', reqs.map(r => {
+    if (r.jobId !== id || !r.deletedAt) return r;
+    const back = clear(r);
+    db.saveInstallRequest(back);
+    return back;
+  }));
+
+  return job;
 };
 
 export const bulkDeleteJobs = (ids, deletedBy = 'Admin') => {
@@ -1472,6 +1516,117 @@ export const deletePoPreset = (id) => {
   db.deletePoMessagePreset(id);
 };
 
+// ─── Purchase order history ───────────────────────────────────────────────────
+// Every PO that leaves the building is kept, with a frozen snapshot of the
+// document that went out. The measure sheet behind it goes on changing; this
+// doesn't — so "what was actually on the PO we sent" always has an answer, and
+// a past order can be re-opened, edited and re-issued as a new revision.
+
+const PO_KEY = 'lusso_purchase_orders';
+
+export const getPurchaseOrders = () =>
+  (get(PO_KEY) || [])
+    .filter(po => !po.deletedAt)
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+export const getPurchaseOrder = (id) =>
+  (get(PO_KEY) || []).find(po => po.id === id && !po.deletedAt) || null;
+
+export const getPurchaseOrdersBySheet = (measureSheetId) =>
+  getPurchaseOrders().filter(po => po.measureSheetId === measureSheetId);
+
+export const getPurchaseOrdersByJob = (jobId) =>
+  getPurchaseOrders().filter(po => po.jobId === jobId);
+
+// PO numbers are sequential across the business (PO-0001, PO-0002…), so a
+// supplier and the office are always talking about the same piece of paper.
+const nextPoNumber = () => {
+  const highest = (get(PO_KEY) || []).reduce((max, po) => {
+    const n = parseInt(String(po.poNumber || '').replace(/[^0-9]/g, ''), 10);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  return `PO-${String(highest + 1).padStart(4, '0')}`;
+};
+
+/**
+ * Record (or update) an issued purchase order.
+ *
+ * Passing an `id` updates that order in place and bumps its revision — that's
+ * a re-issue of the same PO after an edit. Without one, a new PO is created
+ * and given the next number.
+ */
+export const savePurchaseOrder = ({ id, status, sentAt, ...fields }) => {
+  const orders = get(PO_KEY) || [];
+  const now = new Date().toISOString();
+  const idx = id ? orders.findIndex(po => po.id === id) : -1;
+
+  let record;
+  if (idx >= 0) {
+    const prev = orders[idx];
+    // The document only counts as re-issued when it actually changed. Printing
+    // a copy of what was just sent is the same order, not revision 2.
+    const changed = JSON.stringify(prev.snapshot || {}) !== JSON.stringify(fields.snapshot || {});
+    // Archive what we're about to overwrite. The revision counter used to be
+    // the only thing that survived a re-issue — the row was written back in
+    // place and `snapshot` replaced, so "rev 3" described a document whose
+    // earlier versions no longer existed anywhere. What the supplier was
+    // originally asked for is the whole point of keeping revisions.
+    const history = Array.isArray(prev.revisions) ? prev.revisions : [];
+    record = {
+      ...prev,
+      ...fields,
+      revisions: changed
+        ? [...history, {
+            revision:     prev.revision || 1,
+            snapshot:     prev.snapshot ?? null,
+            itemCount:    prev.itemCount ?? null,
+            recipient:    prev.recipient ?? null,
+            subject:      prev.subject ?? null,
+            message:      prev.message ?? null,
+            dateRequired: prev.dateRequired ?? null,
+            extraNotes:   prev.extraNotes ?? null,
+            sentAt:       prev.sentAt ?? null,
+            supersededAt: now,
+          }]
+        : history,
+      // A confirmed send is the strongest thing that can happen to a PO — once
+      // it has been sent, re-printing the same order doesn't undo that.
+      status: prev.status === 'sent' ? 'sent' : (status || prev.status),
+      sentAt: sentAt || prev.sentAt || null,
+      revision: (prev.revision || 1) + (changed ? 1 : 0),
+      deletedAt: null,
+      updatedAt: now,
+    };
+    orders[idx] = record;
+  } else {
+    record = {
+      id: uuidv4(),
+      poNumber: nextPoNumber(),
+      revision: 1,
+      revisions: [],          // filled on the first re-issue, not before
+      status: status || 'exported',
+      sentAt: sentAt || null,
+      ...fields,
+      createdAt: now,
+      updatedAt: now,
+    };
+    orders.unshift(record);
+  }
+
+  set(PO_KEY, orders);
+  db.savePurchaseOrder(record);
+  return record;
+};
+
+export const deletePurchaseOrder = (id) => {
+  const orders = get(PO_KEY) || [];
+  const idx = orders.findIndex(po => po.id === id);
+  if (idx < 0) return;
+  orders[idx] = { ...orders[idx], deletedAt: new Date().toISOString() };
+  set(PO_KEY, orders);
+  db.deletePurchaseOrder(id);
+};
+
 // ─── Suppliers (saved supplier list for purchase orders) ──────────────────────
 export const getSuppliers = () =>
   (get('lusso_suppliers') || [])
@@ -2008,9 +2163,25 @@ export const getInstallRequest = (id) => getInstallRequests().find(r => r.id ===
 export const getInstallRequestsByJob = (jobId) => getInstallRequests().filter(r => r.jobId === jobId);
 export const getInstallRequestsByInstaller = (installerId) => getInstallRequests().filter(r => r.installerId === installerId);
 
-export const getInstallRequestByToken = (token) => {
-  const all = getInstallRequests();
-  return all.find(r => r.secureAcceptToken === token || r.secureDeclineToken === token) || null;
+/**
+ * Look up an install request from a response link.
+ *
+ * This reads the SERVER, not localStorage, and that is the entire fix: the
+ * installer opening the link has never signed in, so their browser holds no
+ * copy of anything. The old version searched local state and therefore
+ * resolved only on a staff machine that already had the record — the link was
+ * "Link Not Found" on the one device it exists for.
+ *
+ * The RPC is SECURITY DEFINER and returns only what the installer is owed
+ * before they commit: area, date, work, pickup. The site address and the
+ * customer's contact details are deliberately not in it — the page promises
+ * those come after acceptance.
+ */
+export const getInstallRequestByToken = async (token) => {
+  if (!token || !supabase) return null;
+  const { data, error } = await supabase.rpc('get_install_request_by_token', { p_token: token });
+  if (error) { console.error('[install] token lookup failed:', error.message); return null; }
+  return data || null;
 };
 
 export const saveInstallRequest = (req) => {
@@ -2076,52 +2247,55 @@ export const sendInstallRequest = (reqId, user = 'System') => {
   return list[idx];
 };
 
-export const respondToInstallRequest = (token, _action, comment = '') => {
+/**
+ * Record an installer's answer to a response link.
+ *
+ * Every decision here is the server's, for the same reason the lookup moved:
+ * this runs in a browser that has never signed in, so it holds no copy of the
+ * request to check against and no permission to write to the table. The RPC
+ * decides which action the token means, whether the link has expired, and
+ * whether it has already been answered — none of which a caller can influence.
+ *
+ * Returns the same shapes the page already handles:
+ *   null                    — token not recognised
+ *   { expired: true }       — link past its deadline
+ *   { status, ... }         — the recorded response
+ */
+export const respondToInstallRequest = async (token, _action, comment = '') => {
+  if (!token || !supabase) return null;
+
+  const { data, error } = await supabase.rpc('respond_to_install_request', {
+    p_token: token,
+    p_comment: comment || '',
+  });
+  if (error) { console.error('[install] response failed:', error.message); return null; }
+
+  if (!data?.ok) {
+    if (data?.error === 'expired') return { expired: true };
+    return null;                                   // not_found
+  }
+
+  // Keep any staff browser that happens to hold this request in step, so the
+  // scheduler's screen doesn't sit on a stale "Sent" until the next hydration.
   const list = getInstallRequests();
   const idx = list.findIndex(r => r.secureAcceptToken === token || r.secureDeclineToken === token);
-  if (idx < 0) return null;
-  const req = list[idx];
-  if (req.status === 'Accepted' || req.status === 'Declined') return req; // already responded
-
-  // Expiry: a stale link must not work forever (the email advertises a deadline).
-  if (req.tokenExpiresAt && new Date() > new Date(req.tokenExpiresAt)) {
-    return { ...req, expired: true };
+  if (idx >= 0) {
+    list[idx] = {
+      ...list[idx],
+      status: data.status,
+      respondedAt: new Date().toISOString(),
+      responseComment: comment || list[idx].responseComment,
+    };
+    set('lusso_install_requests', list);
   }
 
-  // The ACTION is bound to the token that was used — the accept link accepts,
-  // the decline link declines. We never trust a caller-supplied action, so the
-  // two links can't be used interchangeably.
-  const isAccept = req.secureAcceptToken === token;
-  const now = new Date().toISOString();
-  const newStatus = isAccept ? 'Accepted' : 'Declined';
+  // Both of the side effects that used to run here now happen server-side, in
+  // the one place that can be trusted to run them exactly once:
+  //   · the job advances (forward-only) inside respond_to_install_request();
+  //   · the staff notification is raised by the installations_notify trigger,
+  //     which also pushes it to phones (see push_notifications.sql).
 
-  list[idx] = { ...req, status: newStatus, respondedAt: now, responseComment: comment, updatedAt: now };
-  set('lusso_install_requests', list);
-  // Sync response to Supabase so all devices see the updated status immediately.
-  db.saveInstallRequest(list[idx]);
-
-  // Update job status if accepted
-  if (isAccept) {
-    // Forward-only: an installer accepting an old link must not drag a job that
-    // has already moved on (Installed/Completed) back to "Installation Booked".
-    advanceJobStatus(req.jobId, 'Installation Booked', 'Installer Portal');
-  }
-
-  // Add activity
-  const installer = getInstaller(req.installerId);
-  addActivity({
-    jobId: req.jobId,
-    type: isAccept ? 'install_accepted' : 'install_declined',
-    message: `${installer?.name || 'Installer'} ${isAccept ? 'accepted' : 'declined'} the installation request`,
-    user: installer?.name || 'Installer',
-  });
-
-  // The notification is raised by the `installations_notify` DB trigger, not
-  // here: this runs in the installer's own browser, which may not be allowed to
-  // write notifications at all, and doing it server-side also means it gets
-  // pushed to staff devices exactly once (see push_notifications.sql).
-
-  return list[idx];
+  return { status: data.status, alreadyResponded: !!data.alreadyResponded, responseComment: comment };
 };
 
 // ─── Notifications ────────────────────────────────────────────────────────────

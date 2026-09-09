@@ -5,7 +5,7 @@ import {
   CheckCircle2, XCircle, Calendar, Clock, Wrench, Package,
   MapPin, MessageSquare, Loader, Truck,
 } from 'lucide-react';
-import { getInstallRequestByToken, respondToInstallRequest, getInstaller, getJob, getCustomer } from '../store/data';
+import { getInstallRequestByToken, respondToInstallRequest } from '../store/data';
 
 const PICKUP_NEEDS_LOCATIONS = (type) =>
   ['Pickup from Lusso warehouse', 'Pickup from one supplier', 'Pickup from multiple suppliers'].includes(type);
@@ -14,37 +14,71 @@ export default function InstallResponse() {
   const { token } = useParams();
 
   // The action is fixed by WHICH link (token) was used — accept vs decline —
-  // not chosen on the page. (Legacy tok-accept-/tok-decline- links still work.)
-  const isAcceptToken  = token?.startsWith('acc-') || token?.startsWith('tok-accept-');
-  const isDeclineToken = token?.startsWith('dec-') || token?.startsWith('tok-decline-');
-  const selectedAction = isAcceptToken ? 'accept' : isDeclineToken ? 'decline' : null;
+  // not chosen on the page. The server tells us which column the token matched,
+  // so the answer doesn't depend on the link's spelling; the prefix test is only
+  // a fallback for rendering before the fetch lands and for legacy
+  // tok-accept-/tok-decline- links.
+  const tokenPrefixAction =
+    token?.startsWith('acc-') || token?.startsWith('tok-accept-')  ? 'accept'
+    : token?.startsWith('dec-') || token?.startsWith('tok-decline-') ? 'decline'
+    : null;
 
-  const [request, setRequest]   = useState(() => getInstallRequestByToken(token));
+  const [request, setRequest]   = useState(null);
+  const [loading, setLoading]   = useState(true);
   const [comment, setComment]   = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone]         = useState(false);
   const [expired, setExpired]   = useState(false);
   const [action, setAction]     = useState(null); // 'accept' | 'decline'
 
-  const installer = request ? getInstaller(request.installerId) : null;
-  const job       = request ? getJob(request.jobId) : null;
-  const customer  = job ? getCustomer(job.customerId) : null;
+  // The installer has never signed in, so there is nothing in this browser to
+  // read — the request has to come from the server, which is why this is a
+  // fetch and not a synchronous localStorage lookup.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const found = await getInstallRequestByToken(token);
+      if (!live) return;
+      setRequest(found);
+      // An answered link is answered, whether or not the deadline has since
+      // passed — "you already accepted this" is the more useful thing to say.
+      const answered = found?.status === 'Accepted' || found?.status === 'Declined';
+      if (found?.expired && !answered) setExpired(true);
+      setLoading(false);
+    })();
+    return () => { live = false; };
+  }, [token]);
 
+  const selectedAction = request?.action || tokenPrefixAction;
+
+  const installerFirstName = request?.installerFirstName || '';
   const alreadyResponded = request?.status === 'Accepted' || request?.status === 'Declined';
   const hasPickup = request && PICKUP_NEEDS_LOCATIONS(request.pickupType);
 
-  const handleSubmit = () => {
-    if (!selectedAction || !request) return;
+  const handleSubmit = async () => {
+    if (!selectedAction || !request || submitting) return;
     setSubmitting(true);
-    setTimeout(() => {
-      const updated = respondToInstallRequest(token, selectedAction, comment);
-      if (updated?.expired) { setExpired(true); setSubmitting(false); return; }
-      setRequest(updated);
-      setAction(selectedAction);
-      setDone(true);
-      setSubmitting(false);
-    }, 800);
+    const updated = await respondToInstallRequest(token, selectedAction, comment);
+    if (!updated)          { setSubmitting(false); setRequest(null); return; }
+    if (updated.expired)   { setExpired(true); setSubmitting(false); return; }
+    setRequest({ ...request, ...updated });
+    setAction(updated.status === 'Accepted' ? 'accept' : 'decline');
+    setDone(true);
+    setSubmitting(false);
   };
+
+  // Loading: the fetch is the only thing standing between the installer and the
+  // job, so say so rather than flashing "Link Not Found" while it's in flight.
+  if (loading) {
+    return (
+      <ResponseShell>
+        <div className="text-center py-16">
+          <Loader size={32} className="text-amber-500 mx-auto mb-4 animate-spin" />
+          <p className="text-slate-500 text-sm">Loading your installation request…</p>
+        </div>
+      </ResponseShell>
+    );
+  }
 
   // Token not found
   if (!request) {
@@ -135,7 +169,7 @@ export default function InstallResponse() {
         <div>
           <h2 className="text-xl font-bold text-slate-900">Installation Request</h2>
           <p className="text-slate-500 text-sm mt-1">
-            Hi {installer?.name?.split(' ')[0]}, Lusso has a job that may suit your schedule. Please review and respond below.
+            Hi{installerFirstName ? ` ${installerFirstName}` : ' there'}, Lusso has a job that may suit your schedule. Please review and respond below.
           </p>
         </div>
 

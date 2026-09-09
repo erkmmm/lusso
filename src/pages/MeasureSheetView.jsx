@@ -2,14 +2,16 @@ import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown, StickyNote } from 'lucide-react';
-import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, duplicateMeasureSheet, createJobFromMeasureSheet } from '../store/data';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown, StickyNote, History } from 'lucide-react';
+import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, duplicateMeasureSheet, createJobFromMeasureSheet, getPurchaseOrdersBySheet } from '../store/data';
 import { exportMeasureSheetToBuz, isRollerBlindItem } from '../lib/buzExport';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
 import NotesFeed from '../components/NotesFeed';
 import LinePhotos from '../components/LinePhotos';
 import StatusBadge from '../components/StatusBadge';
+import PoHistoryList from '../components/PoHistoryList';
+import { isCurtainLine } from '../lib/poDocument';
 
 // Date + time, matching the app's 'd MMM yyyy' convention plus a 12h clock.
 const fmtDateTime = (dateStr) => {
@@ -258,6 +260,7 @@ export default function MeasureSheetView() {
   const job      = sheet?.jobId ? getJob(sheet.jobId) : null; // read directly
   const quotes   = getQuotes();
   const isLinked = quotes.some(q => q.measureSheetId === id) || Boolean(sheet?.jobId);
+  const purchaseOrders = getPurchaseOrdersBySheet(id);
 
   const customerJobs = sheet?.customerId
     ? getJobs().filter(j => j.customerId === sheet.customerId && j.id !== sheet.jobId)
@@ -399,7 +402,7 @@ export default function MeasureSheetView() {
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
               <Edit3 size={13} /> Edit
             </button>
-            {sheet.lineItems?.some(it => (it.productNameSnapshot || it.productType || '').toLowerCase().includes('curt')) && (
+            {sheet.lineItems?.some(isCurtainLine) && (
               <button onClick={() => navigate(`/measure-sheets/${id}/purchase-order`)}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 no-print">
                 <ClipboardList size={13} /> Generate Purchase Order
@@ -514,6 +517,19 @@ export default function MeasureSheetView() {
           </div>
           <MeasureItemsTable items={sheet.lineItems} sheetId={sheet.id} />
         </Card>
+
+        {/* Purchase orders placed off this sheet */}
+        {purchaseOrders.length > 0 && (
+          <Card>
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                <History size={15} /> Purchase Orders ({purchaseOrders.length})
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">What was ordered, and exactly what the supplier was sent.</p>
+            </div>
+            <PoHistoryList orders={purchaseOrders} />
+          </Card>
+        )}
 
         {/* Customer */}
         <Card>

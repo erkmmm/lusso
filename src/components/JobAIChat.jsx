@@ -138,6 +138,10 @@ export default function JobAIChat({ jobId }) {
         const { extractPdfText } = await import('../lib/pdfExtract');
         text = await extractPdfText(file);
         if (!text.trim()) throw new Error('Could not extract text from this PDF. It may be a scanned image — try a text-based PDF.');
+      } else if (['xlsx', 'xls', 'xlsm', 'ods'].includes(ext)) {
+        const { extractSheetText } = await import('../lib/sheetExtract');
+        text = await extractSheetText(file, { maxChars: 48000 });
+        if (!text.trim()) throw new Error('This spreadsheet appears to be empty — no cell data to read.');
       } else {
         try { text = await file.text(); } catch { text = `[Binary file: ${file.name}]`; }
       }
@@ -149,7 +153,9 @@ export default function JobAIChat({ jobId }) {
         .insert({
           job_id: jobId,
           filename: file.name,
-          content: text.slice(0, 50000),
+          // Stored whole — see the same note in Settings.jsx. The prompt
+          // builder budgets these at read time.
+          content: text,
           file_type: ext,
           created_by: session.user.id,
         })
@@ -173,7 +179,7 @@ export default function JobAIChat({ jobId }) {
 
   const fileTypeIcon = (ft) => {
     if (ft === 'pdf') return '📄';
-    if (ft === 'csv') return '📊';
+    if (['csv', 'xlsx', 'xls', 'xlsm', 'ods'].includes(ft)) return '📊';
     if (['md', 'txt'].includes(ft)) return '📝';
     return '📎';
   };
@@ -309,7 +315,7 @@ export default function JobAIChat({ jobId }) {
                 </button>
               </div>
               <input ref={fileRef} type="file" className="hidden"
-                accept=".txt,.md,.csv,.json,.html,.xml,.pdf"
+                accept=".txt,.md,.csv,.json,.html,.xml,.pdf,.xlsx,.xls,.xlsm,.ods"
                 onChange={handleFileChange} />
               {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
               {knowledge.length === 0 ? (

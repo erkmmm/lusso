@@ -2192,7 +2192,8 @@ function AIKnowledgeSection() {
   const [dragOver, setDragOver]       = useState(false);
   const fileRef = useRef(null);
 
-  const ACCEPT_EXTS = ['txt', 'md', 'csv', 'json', 'html', 'xml', 'pdf'];
+  const ACCEPT_EXTS = ['txt', 'md', 'csv', 'json', 'html', 'xml', 'pdf', 'xlsx', 'xls', 'xlsm', 'ods'];
+  const SHEET_EXTS  = ['xlsx', 'xls', 'xlsm', 'ods'];
 
   useEffect(() => {
     if (!supabase) return;
@@ -2206,7 +2207,7 @@ function AIKnowledgeSection() {
 
   const fileTypeIcon = (ft) => {
     if (ft === 'pdf') return '📄';
-    if (ft === 'csv') return '📊';
+    if (['csv', 'xlsx', 'xls', 'xlsm', 'ods'].includes(ft)) return '📊';
     if (['md', 'txt'].includes(ft)) return '📝';
     return '📎';
   };
@@ -2219,6 +2220,10 @@ function AIKnowledgeSection() {
       const { extractPdfText } = await import('../lib/pdfExtract');
       text = await extractPdfText(file);
       if (!text.trim()) throw new Error('Could not extract text from this PDF. It may be a scanned image — try a text-based PDF.');
+    } else if (SHEET_EXTS.includes(ext)) {
+      const { extractSheetText } = await import('../lib/sheetExtract');
+      text = await extractSheetText(file);
+      if (!text.trim()) throw new Error('This spreadsheet appears to be empty — no cell data to read.');
     } else {
       try { text = await file.text(); } catch { text = `[Binary file: ${file.name}]`; }
     }
@@ -2227,7 +2232,11 @@ function AIKnowledgeSection() {
       .from('ai_global_knowledge')
       .insert({
         filename: file.name,
-        content: text.slice(0, 80000),
+        // Stored whole. An 80k cap silently guillotined the back half of every
+        // supplier price list — including the fabric/colour-code tables that
+        // live at the end — so the assistant genuinely could not look them up.
+        // The prompt builder does its own budgeting when it loads these.
+        content: text,
         file_type: ext,
         created_by: session.user.id,
       })
@@ -2244,7 +2253,7 @@ function AIKnowledgeSection() {
     const accepted = files.filter(f => ACCEPT_EXTS.includes(f.name.split('.').pop().toLowerCase()));
     const rejected = files.length - accepted.length;
     if (!accepted.length) {
-      setUploadError('Unsupported file type. Use PDF, TXT, MD, CSV, JSON, HTML or XML.');
+      setUploadError('Unsupported file type. Use PDF, XLSX, XLS, CSV, TXT, MD, JSON, HTML or XML.');
       return;
     }
     setUploading(true);
@@ -2314,7 +2323,7 @@ function AIKnowledgeSection() {
           {uploading ? 'Uploading…' : 'Upload'}
         </button>
         <input ref={fileRef} type="file" multiple className="hidden"
-          accept=".txt,.md,.csv,.json,.html,.xml,.pdf"
+          accept=".txt,.md,.csv,.json,.html,.xml,.pdf,.xlsx,.xls,.xlsm,.ods"
           onChange={handleFileChange} />
       </div>
 
@@ -2333,7 +2342,7 @@ function AIKnowledgeSection() {
             <Upload size={26} className="mb-3 text-slate-300" />
             <p className="text-sm font-medium text-slate-600">Drag &amp; drop files here, or click to browse</p>
             <p className="text-xs text-slate-400 mt-1 max-w-xs">Your product catalogue, pricing sheet, or any reference material every job assistant should know about.</p>
-            <p className="text-[11px] text-slate-300 mt-2">PDF, TXT, MD, CSV, JSON, HTML, XML</p>
+            <p className="text-[11px] text-slate-300 mt-2">PDF, XLSX, XLS, CSV, TXT, MD, JSON, HTML, XML</p>
           </button>
         </div>
       ) : (
@@ -2387,7 +2396,7 @@ function AIKnowledgeSection() {
       <div className="absolute inset-0 z-10 rounded-xl border-2 border-dashed border-violet-400 bg-violet-50/90 backdrop-blur-[1px] flex flex-col items-center justify-center pointer-events-none">
         <Upload size={30} className="text-violet-500 mb-2" />
         <p className="text-sm font-semibold text-violet-700">Drop to add to the knowledge base</p>
-        <p className="text-xs text-violet-500 mt-0.5">PDF, TXT, MD, CSV, JSON, HTML, XML</p>
+        <p className="text-xs text-violet-500 mt-0.5">PDF, XLSX, XLS, CSV, TXT, MD, JSON, HTML, XML</p>
       </div>
     )}
     </div>

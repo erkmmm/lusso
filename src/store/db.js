@@ -27,7 +27,18 @@ const toCamel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 // all-caps acronym loses its case on the way back (includesGST → includes_gst →
 // includesGst), so map those explicitly in BOTH directions. Add any future
 // acronym-tailed field here.
-const FIELD_TO_DB   = { includesGST: 'includes_gst' };
+// The install-request tokens and date are the same idea under two names: the
+// app calls them secureAcceptToken / secureDeclineToken / proposedDate, the
+// table calls them accept_token / decline_token / scheduled_date. Left to the
+// generic converter they became secure_accept_token and proposed_date — columns
+// that don't exist — so they were stripped on every write and the installer's
+// response link had no token to match on.
+const FIELD_TO_DB   = {
+  includesGST:        'includes_gst',
+  secureAcceptToken:  'accept_token',
+  secureDeclineToken: 'decline_token',
+  proposedDate:       'scheduled_date',
+};
 const FIELD_FROM_DB = Object.fromEntries(Object.entries(FIELD_TO_DB).map(([camel, snake]) => [snake, camel]));
 
 function toDb(obj) {
@@ -116,14 +127,12 @@ const EXCLUDE_COLUMNS = {
     //             service_areas, services_offered — all written normally now
   ],
   installations: [
-    // DB only has: id, job_id, installer_id, scheduled_date, scheduled_time,
-    //              duration_hours, status, accept_token, responded_at, notes,
-    //              created_at, updated_at, deleted_at
-    'access_notes', 'arrival_time', 'deleted_by', 'assigned_salesperson',
-    'created_by', 'expected_duration', 'installation_notes',
-    'parking_notes', 'pickup_locations', 'pickup_type', 'product_summary',
-    'reveal_full_details', 'secure_accept_token', 'secure_decline_token',
-    'site_notes', 'suburb',
+    // Nothing. Every field an install request carries is a real column now —
+    // see supabase/migrations/installer_response_public_access.sql. Stripping
+    // them is what left installations empty and the installer's accept link
+    // matching against tokens that had never been written: the whole record
+    // lived in the scheduler's own browser, so the link only resolved there.
+    // The two tokens and proposedDate are renamed, not dropped — see FIELD_TO_DB.
   ],
   notifications: ['install_request_id'],
   product_types: [
@@ -277,6 +286,7 @@ const TABLES = [
   { table: 'tasks',                  key: KEYS.tasks },
   { table: 'po_message_presets',     key: 'lusso_po_message_presets' },
   { table: 'suppliers',              key: 'lusso_suppliers' },
+  { table: 'purchase_orders',        key: 'lusso_purchase_orders' },
   { table: 'takeoffs',               key: KEYS.takeoffs },
   { table: 'review_requests',        key: KEYS.reviewRequests },
   { table: 'measure_sheet_options',  key: KEYS.measureSheetOptions },
@@ -923,13 +933,20 @@ export const db = {
   deleteCustomer:     (id) => softDelete('customers', id),
   restoreCustomer:    (id) => restore('customers', id),
 
-  // Jobs
+  // Jobs — soft delete. A hard DELETE here was unrecoverable and took more with
+  // it than the job: measure_sheets, installations, job_ai_messages and
+  // job_transcripts all reference jobs ON DELETE CASCADE, so removing a job
+  // destroyed the measure sheets under it. Hydration already filters on
+  // deleted_at, so a soft-deleted job disappears from the app just the same.
   saveJob:            (r) => upsert('jobs', r),
-  deleteJob:          (id) => remove('jobs', id),
+  deleteJob:          (id) => softDelete('jobs', id),
+  restoreJob:         (id) => restore('jobs', id),
 
-  // Measure sheets
+  // Measure sheets — soft delete, for the same reason: a sheet is the record of
+  // a site visit someone drove to, and it should outlive a mis-click.
   saveMeasureSheet:   (r) => upsert('measure_sheets', r),
-  deleteMeasureSheet: (id) => remove('measure_sheets', id),
+  deleteMeasureSheet: (id) => softDelete('measure_sheets', id),
+  restoreMeasureSheet:(id) => restore('measure_sheets', id),
 
   // Takeoffs (PDF plan markups — metadata only; the PDF lives in Storage)
   saveTakeoff:        (r) => upsert('takeoffs', r),
@@ -1020,6 +1037,10 @@ export const db = {
   // Suppliers (saved supplier list for purchase orders)
   saveSupplier:          (r)  => upsert('suppliers', r),
   deleteSupplier:        (id) => softDelete('suppliers', id),
+
+  // Issued purchase orders (history — each row carries the sent document)
+  savePurchaseOrder:     (r)  => upsert('purchase_orders', r),
+  deletePurchaseOrder:   (id) => softDelete('purchase_orders', id),
 };
 
 // ── Batch upsert for bulk imports ────────────────────────────────────────────

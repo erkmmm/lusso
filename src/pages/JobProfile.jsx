@@ -7,7 +7,7 @@ import {
   Calendar, ClipboardList, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, HardHat, Plus, Upload,
-  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal, CheckSquare,
+  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal, CheckSquare, PackageCheck,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import ConsultRecordings from '../components/ConsultRecordings';
@@ -17,7 +17,7 @@ import {
   getNotes, isTaskOpen,
   updateJobStatus, saveJob, JOB_STATUSES, getQuotesByJob,
   deleteQuote, deleteJob,
-  installProgress,
+  installProgress, getPurchaseOrdersByJob,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -30,6 +30,9 @@ import InstallationSection from '../components/InstallationSection';
 import CalendarEventModal from '../components/CalendarEventModal';
 import JobAIChat from '../components/JobAIChat';
 import NotesFeed from '../components/NotesFeed';
+import PoHistoryList from '../components/PoHistoryList';
+import EmptyState from '../components/EmptyState';
+import { isCurtainLine } from '../lib/poDocument';
 
 const fmt = (n) => `$${Number(n || 0).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
@@ -50,6 +53,7 @@ const TABS = [
   { id: 'overview',  label: 'Overview',        icon: Briefcase },
   { id: 'quotes',    label: 'Quotes',           icon: FileText },
   { id: 'measures',  label: 'Measures',         icon: ClipboardList },
+  { id: 'orders',    label: 'Orders',           icon: PackageCheck },
   { id: 'consults',  label: 'Consults',         icon: Mic },
   { id: 'install',   label: 'Install',          icon: Wrench },
   { id: 'notes',     label: 'Notes',            icon: StickyNote },
@@ -64,6 +68,12 @@ export default function JobProfile() {
   const job          = getJob(id);
   const customer     = getCustomer(job?.customerId);
   const measureSheets = getMeasureSheetsByJob(id);
+  const jobPurchaseOrders = getPurchaseOrdersByJob(id);
+  // Orders are raised from a sheet, so the "New Purchase Order" shortcut needs
+  // one with curtains on it — the most recently edited, since that's the live one.
+  const curtainSheet = measureSheets
+    .filter(ms => (ms.lineItems || []).some(isCurtainLine))
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))[0];
   // Install-day progress across every line on this job's sheets, so the button
   // can say how far through it is without opening the view.
   const { done: installDone, total: installTotal } =
@@ -235,6 +245,7 @@ export default function JobProfile() {
             const count =
               tid === 'quotes'   ? quotes.length :
               tid === 'measures' ? measureSheets.length :
+              tid === 'orders'   ? jobPurchaseOrders.length :
               tid === 'notes'    ? openNotes : null;
             return (
               <button key={tid} onClick={() => setActiveTab(tid)}
@@ -586,6 +597,50 @@ export default function JobProfile() {
                 </div>
               ))}
             </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── Tab: Orders ───────────────────────────────────────────────────
+          What has been ordered for this project and what the supplier was
+          actually sent. Orders are raised from a measure sheet, so the empty
+          state points back there rather than offering a dead button. */}
+      {activeTab === 'orders' && (
+        <Card className="overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                <PackageCheck size={15} /> Purchase Orders
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {jobPurchaseOrders.length > 0
+                  ? 'Open one to see exactly what the supplier was sent, or to edit and re-issue it.'
+                  : 'Every order sent, printed or downloaded for this project is kept here.'}
+              </p>
+            </div>
+            {curtainSheet && (
+              <button onClick={() => navigate(`/measure-sheets/${curtainSheet.id}/purchase-order`)}
+                className="flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+                <Plus size={12} /> New Purchase Order
+              </button>
+            )}
+          </div>
+          {jobPurchaseOrders.length > 0 ? (
+            <PoHistoryList orders={jobPurchaseOrders} />
+          ) : (
+            <EmptyState
+              icon={PackageCheck}
+              title="No purchase orders yet"
+              description={curtainSheet
+                ? 'Raise one from the measure sheet — every copy that goes out is recorded here.'
+                : 'Purchase orders are raised from a measure sheet with curtains on it.'}
+              action={
+                <button onClick={() => setActiveTab('measures')}
+                  className="bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+                  Go to measure sheets
+                </button>
+              }
+            />
           )}
         </Card>
       )}

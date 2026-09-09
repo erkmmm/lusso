@@ -1,79 +1,30 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { format, addDays, parseISO } from 'date-fns';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { format, addDays } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
-import * as XLSX from 'xlsx';
-import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown, Ruler, AlertTriangle } from 'lucide-react';
+import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown, Ruler, AlertTriangle, History } from 'lucide-react';
 import {
   getMeasureSheet, getCustomer, getJob,
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
+  getPurchaseOrder, getPurchaseOrdersBySheet, savePurchaseOrder,
   addActivity, advanceJobStatus, orderGate,
 } from '../store/data';
-import { getLogoDataUrl, LOGO_ASPECT } from '../lib/brandLogo';
 import { useProfile } from '../contexts/UserProfileContext';
 import { sendPurchaseOrder } from '../lib/email';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
+import PoPreview from '../components/PoPreview';
+import PoHistoryList from '../components/PoHistoryList';
+import {
+  PO_HEADERS, MOTOR_HEADER, rowCells, buildPoSnapshot, isCurtainLine,
+  wandIsEmpty, remoteIsEmpty,
+  buildPoPdfBase64, downloadPoPdf, exportPoXlsx, printPoNode, poFileBase,
+} from '../lib/poDocument';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const RECIPIENT_KEY = 'lusso_po_recipient';
 
-// Uint8Array → base64 (chunked to avoid call-stack limits on large PDFs).
-function bytesToBase64(bytes) {
-  let bin = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  }
-  return btoa(bin);
-}
-
-// ── Field helpers ─────────────────────────────────────────────────────────────
-const isCurtain = (item) => {
-  const s = (item.productNameSnapshot || item.productType || '').toLowerCase();
-  // Curtain-family products for the workroom PO. Broadened beyond "curt" so
-  // sheers/drapery (which never contain "curt") aren't silently excluded.
-  return s.includes('curt') || s.includes('sheer') || s.includes('drape');
-};
-
-const lining = (item) =>
-  item.attachedLining ? (item.liningFabricColour || 'Yes') : 'Disabled';
-
-// Column headers in the exact order of the example PO, with Motor side appended.
-const PO_HEADERS = [
-  '#', 'Location', 'Product', 'Quantity', 'Fabric', 'Width', 'x', 'Drop',
-  'Control', 'Return side (L/R)', 'Operation type', 'Fixing', 'Heading',
-  'Linning', 'Hem', 'Track color', 'Motor side (L/R)',
-];
-
-// Build the cells for one curtain row (motorSide overrides the stored value).
-function rowCells(item, i, motorSide) {
-  return [
-    i + 1,
-    item.location || '',
-    'Curt',
-    item.quantity || 1,
-    item.fabricColour || '',
-    item.widthMm || item.width || '',
-    'x',
-    item.dropMm || item.drop || '',
-    item.control || '',
-    item.returnSide || item.controlSide || '',
-    item.trackType || '',
-    item.fixing || item.mountType || '',
-    item.heading || '',
-    lining(item),
-    item.hem || '',
-    item.trackColour || item.trackBaseBarColour || '',
-    motorSide || '',
-  ];
-}
-
-// ── Accessory helpers (blank entries / fields are omitted from the PO) ─────────
-const wandIsEmpty   = (w) => !w.qty && !w.colour && !w.length;
-const remoteIsEmpty = (r) => !r.qty && !r.type && !r.colour;
-const wandLabel     = (w) => [w.qty ? `${w.qty} ×` : '', w.colour, w.length ? `${w.length}mm` : ''].filter(Boolean).join(' ');
-
+// ── Wand rules ────────────────────────────────────────────────────────────────
 // Wands required per curtain, keyed by Control code. Most specific code first
 // so "C/O F/R" isn't caught by "C/O" or "F/R".
 // Keys are letters-only so every notation matches: FR / F/R, C/O-FR / C/O F/R,
@@ -94,7 +45,6 @@ function wandsForOp(op) {
   for (const r of WAND_RULES) if (k.includes(r.code)) return r.wands; // tolerant of extra text
   return 0;
 }
-const remoteLabel   = (r) => [r.qty ? `${r.qty} ×` : '', r.type, r.colour].filter(Boolean).join(' ');
 
 // ── Motor side vs stack side ─────────────────────────────────────────────────
 // A one-way draw curtain stacks on its control side, and the motor belongs at
@@ -117,26 +67,42 @@ const SIDE_WORD = { L: 'left', R: 'right' };
 
 export default function PurchaseOrder() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const { displayName = '' } = useProfile() || {};
 
   const sheet = getMeasureSheet(id);
   const customer = sheet ? getCustomer(sheet.customerId) : null;
   const job = sheet?.jobId ? getJob(sheet.jobId) : null;
 
-  const dateOrdered = format(new Date(), 'dd/MM/yyyy');
+  // ?po=<id> re-opens an order that has already gone out — every input is
+  // restored from the copy that was sent, so the edit starts from the document
+  // the supplier is holding rather than from a blank order.
+  const reopenedId = searchParams.get('po') || null;
+  const reopened = reopenedId ? getPurchaseOrder(reopenedId) : null;
+  const reopenedSnap = reopened?.snapshot || null;
+
+  // A re-issue keeps the date the order was first placed — it is the same PO
+  // under the same number, not a new one.
+  const dateOrdered = reopened?.dateOrdered || format(new Date(), 'dd/MM/yyyy');
   const jobNumber = job?.jobNumber || '';
   const customerName = customer?.name || '';
-  const fileBase = `Curtain PO - ${jobNumber || customerName || 'sheet'}`.replace(/[\\/:*?"<>|]/g, '');
   const defaultMessage = `Hi,\n\nPlease find attached the curtain purchase order${jobNumber ? ` for job ${jobNumber}` : ''}${customerName ? ` (${customerName})` : ''}.\n\nThanks,\nLusso`;
 
   // React Compiler memoizes these — a manual useMemo can't be preserved once
   // the derived objects flow into other hooks, so leave them as plain derivations.
-  const allCurtains = (sheet?.lineItems || []).filter(isCurtain).map((it, i) => ({ ...it, _key: it.id || `idx-${i}` }));
+  const allCurtains = (sheet?.lineItems || []).filter(isCurtainLine).map((it, i) => ({ ...it, _key: it.id || `idx-${i}` }));
 
   // Which line items go on THIS order — some curtains may go to a different
   // supplier, or the customer didn't proceed with all of them. Excluded by
   // key, so a fresh order includes everything by default.
-  const [excludedKeys, setExcludedKeys] = useState(() => new Set());
+  const [excludedKeys, setExcludedKeys] = useState(() => {
+    // Re-opened order: keep exactly the lines that were on it.
+    if (reopenedSnap?.lineKeys?.length) {
+      const on = new Set(reopenedSnap.lineKeys);
+      return new Set(allCurtains.filter(c => !on.has(c._key)).map(c => c._key));
+    }
+    return new Set();
+  });
   const curtains = allCurtains.filter(c => !excludedKeys.has(c._key));
   const toggleCurtain = (key) => setExcludedKeys(prev => {
     const next = new Set(prev);
@@ -177,6 +143,7 @@ export default function PurchaseOrder() {
   const startNextPO = () => {
     // Keep only the not-yet-ordered curtains selected.
     setExcludedKeys(new Set(orderedKeys));
+    setPoId(null); // a genuinely different order — files as its own PO
     setRecipient('');
     setNextDismissed(true); // those items are now selected — hide the prompt until the next order
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -184,12 +151,24 @@ export default function PurchaseOrder() {
   };
 
   // Per-order inputs
-  const [dateRequired, setDateRequired] = useState('');
-  const [extraNotes, setExtraNotes] = useState('');
+  const [dateRequired, setDateRequired] = useState(reopened?.dateRequired || '');
+  const [extraNotes, setExtraNotes] = useState(reopened?.extraNotes || '');
+
+  // The order this page is writing to. Set once the PO has been issued (or on
+  // re-open), so a second action on the same order updates that history entry
+  // instead of filing a duplicate.
+  const [poId, setPoId] = useState(reopenedId);
+  const [history, setHistory] = useState(() => getPurchaseOrdersBySheet(id));
+  const issued = poId ? history.find(po => po.id === poId) : null;
+
+  // A line that was on the original order but has since been deleted from the
+  // measure sheet can't be rebuilt here — say so rather than quietly dropping it.
+  const missingLines = (reopenedSnap?.lineKeys || [])
+    .filter(k => !allCurtains.some(c => c._key === k)).length;
 
   // Repeatable accessory entries (hidden until added; blanks omitted from PO).
-  const [wands, setWands] = useState([]);     // { id, qty, colour, length }
-  const [remotes, setRemotes] = useState([]); // { id, qty, type, colour }
+  const [wands, setWands] = useState(() => (reopenedSnap?.wands || []).map(w => ({ id: uuidv4(), ...w })));     // { id, qty, colour, length }
+  const [remotes, setRemotes] = useState(() => (reopenedSnap?.remotes || []).map(r => ({ id: uuidv4(), ...r }))); // { id, qty, type, colour }
   const addWand    = () => setWands(w => [...w, { id: uuidv4(), qty: '', colour: '', length: '' }]);
   const updateWand = (id, f, v) => setWands(w => w.map(x => x.id === id ? { ...x, [f]: v } : x));
   const removeWand = (id) => setWands(w => w.filter(x => x.id !== id));
@@ -218,12 +197,13 @@ export default function PurchaseOrder() {
   const updateRemote = (id, f, v) => setRemotes(r => r.map(x => x.id === id ? { ...x, [f]: v } : x));
   const removeRemote = (id) => setRemotes(r => r.filter(x => x.id !== id));
 
-  const [recipient, setRecipient] = useState(() => localStorage.getItem(RECIPIENT_KEY) || '');
+  const [recipient, setRecipient] = useState(() => reopened?.recipient || localStorage.getItem(RECIPIENT_KEY) || '');
   const [sending, setSending] = useState(false);
   const [presets, setPresets] = useState(() => getPoPresets());
   // Body initialises from the remembered recipient's preset (or the default),
   // then auto-fills on recipient change via applyRecipient() — stays editable.
   const [message, setMessage] = useState(() => {
+    if (reopened?.message) return reopened.message;
     const preset = getPoPresetForEmail(localStorage.getItem(RECIPIENT_KEY) || '');
     return preset ? preset.message : defaultMessage;
   });
@@ -235,28 +215,24 @@ export default function PurchaseOrder() {
     if (preset) setMessage(preset.message);
   };
 
-  // dateRequired is stored as 'YYYY-MM-DD' (from the date picker) or the literal
-  // 'ASAP'. This is what actually prints on the PO — dates shown AU-style.
-  const dateRequiredDisplay =
-    !dateRequired ? '' :
-    dateRequired === 'ASAP' ? 'ASAP' :
-    (() => { try { return format(parseISO(dateRequired), 'dd/MM/yyyy'); } catch { return dateRequired; } })();
-
 
   // Per-line motor side, keyed by item id (defaults to the stored motorSide).
   const [motorSides, setMotorSides] = useState(() => {
     const init = {};
     allCurtains.forEach((it) => { init[it._key] = it.motorSide || ''; });
-    return init;
+    return { ...init, ...(reopenedSnap?.motorSides || {}) };
   });
   const motorFor = (it) => motorSides[it._key] ?? '';
   const setMotor = (it, v) => setMotorSides(m => ({ ...m, [it._key]: v }));
 
   // Motorised tracks are the exception, so the Motor side column is off by
   // default and only added when this order actually has motors. Remembered.
-  const [motorised, setMotorised] = useState(() => localStorage.getItem('lusso_po_motorised') === 'true');
-  const [motorOpen, setMotorOpen] = useState(() => localStorage.getItem('lusso_po_motorised') === 'true');
+  const [motorised, setMotorised] = useState(() =>
+    reopenedSnap ? !!reopenedSnap.motorised : localStorage.getItem('lusso_po_motorised') === 'true');
+  const [motorOpen, setMotorOpen] = useState(() =>
+    reopenedSnap ? !!reopenedSnap.motorised : localStorage.getItem('lusso_po_motorised') === 'true');
   const [curtainsOpen, setCurtainsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const toggleMotorised = () => setMotorised(v => { const n = !v; localStorage.setItem('lusso_po_motorised', String(n)); return n; });
 
   // Accessory reminder: the pending action sits here while the prompt is up,
@@ -277,7 +253,7 @@ export default function PurchaseOrder() {
   // never be dropped from the PO output.
   const hasMotorData = curtains.some(it => String(motorFor(it) || '').trim() !== '');
   const showMotor = motorised || hasMotorData;
-  const headers = showMotor ? PO_HEADERS : PO_HEADERS.filter(h => h !== 'Motor side (L/R)');
+  const headers = showMotor ? PO_HEADERS : PO_HEADERS.filter(h => h !== MOTOR_HEADER);
   const rows = curtains.map((it, i) => {
     const cells = rowCells(it, i, motorFor(it));
     return showMotor ? cells : cells.slice(0, -1);
@@ -307,7 +283,6 @@ export default function PurchaseOrder() {
   // Only entries with at least one filled field reach the PO.
   const liveWands = wands.filter(w => !wandIsEmpty(w));
   const liveRemotes = remotes.filter(r => !remoteIsEmpty(r));
-  const hasAccessories = liveWands.length > 0 || liveRemotes.length > 0;
 
   // ── Accessory reminder ────────────────────────────────────────────────────
   // The accessories are the easiest thing to forget, and a missing one means a
@@ -342,135 +317,75 @@ export default function PurchaseOrder() {
     });
   };
 
-  // ── XLSX export — mirrors the example PO cell positions ────────────────────
-  const handleExport = () => {
-    const FOOTER = 'Should you have any questions please call 0755284006 or email info@lusso.com.au - Adress 3 Crinum Cres Southport';
-    const at = (index, value) => { const r = []; r[index] = value; return r; };
+  // ── The document itself ────────────────────────────────────────────────────
+  // One frozen object holding both the PO as it prints and the inputs behind
+  // it. Everything downstream — preview, PDF, XLSX, email, history — reads
+  // this, so the stored copy of a sent order is the order that was sent.
+  const snapshot = buildPoSnapshot({
+    jobNumber, customerName, dateOrdered, dateRequired,
+    headers, rows, showMotor, motorised,
+    wands, remotes, extraNotes,
+    lineKeys: curtains.map(c => c._key),
+    motorSides,
+    recipient: recipient.trim(),
+    message,
+  });
 
-    const aoa = [];
-    // Title (col 4, matching the example)
-    aoa.push(at(4, 'Lusso Curtain PO sheet'));
-    // Header labels + values (cols mirror the example header block)
-    const lbl = []; lbl[5] = 'Job #'; lbl[7] = 'Customer'; lbl[9] = 'Date ordered'; lbl[11] = 'Date required'; lbl[14] = 'Page #';
-    aoa.push(lbl);
-    const val = []; val[5] = jobNumber; val[7] = customerName; val[9] = dateOrdered; val[11] = dateRequiredDisplay; val[14] = 1;
-    aoa.push(val);
-    aoa.push([]);
-    // Column header row — '#' is the blank leading cell, then headers in col 1+
-    aoa.push(['', ...headers.slice(1)]);
-    // Data rows
-    rows.forEach(r => aoa.push(r));
-    aoa.push([]);
-    // Per-order accessories — only populated entries; section omitted if empty.
-    if (hasAccessories) {
-      aoa.push(['', 'Order accessories']);
-      liveWands.forEach(w => aoa.push(['', 'Wand', w.qty, w.colour, w.length ? `${w.length}mm` : '']));
-      liveRemotes.forEach(r => aoa.push(['', 'Remote', r.qty, r.type, r.colour]));
-      aoa.push([]);
-    }
-    // Extra notes — omitted if blank
-    if (extraNotes.trim()) {
-      aoa.push(['', 'Extra notes']);
-      aoa.push(['', extraNotes]);
-      aoa.push([]);
-    }
-    aoa.push(['', 'Special instructions']);
-    aoa.push(['', FOOTER]);
+  const subject = `Curtain Purchase Order${jobNumber ? ` – ${jobNumber}` : customerName ? ` – ${customerName}` : ''}`;
 
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Curtain PO');
-    XLSX.writeFile(wb, `${fileBase}.xlsx`);
+  /**
+   * File the order in the PO history.
+   *
+   * The first outgoing action on an order creates the entry; anything after
+   * that (a re-print, a re-send, a re-issue after editing) updates the same
+   * one, so the history holds orders rather than button presses.
+   */
+  const recordPo = (status, extra = {}) => {
+    try {
+      const record = savePurchaseOrder({
+        id: poId || undefined,
+        status,
+        jobId: sheet?.jobId || null,
+        measureSheetId: id,
+        customerId: sheet?.customerId || null,
+        customerName, jobNumber,
+        recipient: recipient.trim(),
+        subject,
+        message,
+        dateOrdered,
+        dateRequired,
+        extraNotes,
+        itemCount: rows.length,
+        snapshot,
+        createdBy: displayName || 'Someone',
+        ...extra,
+      });
+      setPoId(record.id);
+      setHistory(getPurchaseOrdersBySheet(id));
+      return record;
+    } catch (e) {
+      // History is a record, not a gate — a PO must still go out if it fails.
+      console.error('[PO] could not file the order in history', e);
+      return null;
+    }
   };
 
-  // ── Print (hidden-iframe, reliable in tab + installed PWA) ─────────────────
-  const handlePrint = () => {
-    const node = document.getElementById('po-print');
-    if (!node) { window.print(); return; }
-    const prev = document.getElementById('__po_print_frame');
-    if (prev) prev.remove();
-    const iframe = document.createElement('iframe');
-    iframe.id = '__po_print_frame';
-    iframe.setAttribute('aria-hidden', 'true');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-    document.body.appendChild(iframe);
-    const cw = iframe.contentWindow;
-    cw.document.open();
-    cw.document.write(
-      '<!doctype html><html><head><meta charset="utf-8"><title>Curtain PO</title>' +
-      '<style>@page{margin:10mm} html,body{margin:0;padding:0;font-family:Arial,sans-serif;font-size:11px;color:#000}' +
-      'table{width:100%;border-collapse:collapse} th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;white-space:nowrap}' +
-      'thead th{background:#f2f2f2}</style></head><body>' + node.innerHTML + '</body></html>'
-    );
-    cw.document.close();
-    const cleanup = () => { const f = document.getElementById('__po_print_frame'); if (f) f.remove(); };
-    const run = () => { try { cw.focus(); cw.onafterprint = cleanup; cw.print(); } catch { window.print(); cleanup(); } setTimeout(cleanup, 60000); };
-    if (cw.document.readyState === 'complete') setTimeout(run, 50);
-    else iframe.onload = () => setTimeout(run, 50);
+  const handleExport = () => {
+    exportPoXlsx(snapshot);
+    recordPo('exported');
     markOrdered();
   };
 
-  // ── PDF (same PO data as the XLSX export) — used for download + email ──────
-  const buildPdfDoc = async () => {
-    const { jsPDF } = await import('jspdf');
-    const autoTable = (await import('jspdf-autotable')).default;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-
-    // Larger type throughout — the workroom teams read this on paper, so the
-    // table is the biggest font that still fits all columns on landscape A4.
-    const logo = await getLogoDataUrl();
-    if (logo) {
-      doc.addImage(logo, 'PNG', 24, 24, 22 * LOGO_ASPECT, 22);
-    } else {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20);
-      doc.text('LUSSO', 24, 42);
-    }
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(90);
-    doc.text('Curtain Purchase Order', 24, 60);
-
-    doc.setFontSize(11); doc.setTextColor(60);
-    [
-      [jobNumber && `Job #: ${jobNumber}`, customerName && `Customer: ${customerName}`].filter(Boolean).join('    '),
-      [`Date ordered: ${dateOrdered}`, dateRequiredDisplay && `Required: ${dateRequiredDisplay}`].filter(Boolean).join('    '),
-    ].filter(Boolean).forEach((line, i) => doc.text(line, pageW - 24, 42 + i * 15, { align: 'right' }));
-
-    autoTable(doc, {
-      head: [headers],
-      body: rows.map(r => r.map(c => (c === '' || c == null ? '' : String(c)))),
-      startY: 78,
-      margin: { left: 24, right: 24 },
-      styles: { fontSize: 10, cellPadding: 4, overflow: 'linebreak', valign: 'middle' },
-      headStyles: { fillColor: [241, 241, 241], textColor: [40, 40, 40], fontStyle: 'bold', fontSize: 9 },
-    });
-
-    let y = (doc.lastAutoTable?.finalY || 78) + 24;
-    doc.setFontSize(11); doc.setTextColor(40);
-    if (hasAccessories) {
-      doc.setFont('helvetica', 'bold'); doc.text('Order accessories', 24, y); y += 16;
-      doc.setFont('helvetica', 'normal');
-      liveWands.forEach(w => { doc.text(`Wand: ${wandLabel(w)}`, 24, y); y += 15; });
-      liveRemotes.forEach(r => { doc.text(`Remote: ${remoteLabel(r)}`, 24, y); y += 15; });
-      y += 8;
-    }
-    if (extraNotes.trim()) {
-      doc.setFont('helvetica', 'bold'); doc.text('Extra notes', 24, y); y += 16;
-      doc.setFont('helvetica', 'normal');
-      doc.text(doc.splitTextToSize(extraNotes, pageW - 48), 24, y);
-    }
-    doc.setFontSize(9.5); doc.setTextColor(140);
-    doc.text('Should you have any questions please call 0755284006 or email info@lusso.com.au — Address 3 Crinum Cres Southport', 24, pageH - 24);
-
-    return doc;
+  const handlePrint = () => {
+    printPoNode('po-print');
+    recordPo('printed');
+    markOrdered();
   };
-
-  // Email needs the PDF as base64; download writes the file to the device.
-  const buildPdfBase64 = async () => bytesToBase64(new Uint8Array((await buildPdfDoc()).output('arraybuffer')));
 
   const handleDownloadPdf = async () => {
     try {
-      (await buildPdfDoc()).save(`${fileBase}.pdf`);
+      await downloadPoPdf(snapshot);
+      recordPo('downloaded');
       markOrdered();
     } catch (e) {
       console.error('[PO] PDF download failed', e);
@@ -484,12 +399,12 @@ export default function PurchaseOrder() {
     if (!curtains.length) { toast('No curtains to send.', 'error'); return; }
     setSending(true);
     try {
-      const contentBase64 = await buildPdfBase64();
+      const contentBase64 = await buildPoPdfBase64(snapshot);
       const result = await sendPurchaseOrder({
         to,
-        subject: `Curtain Purchase Order${jobNumber ? ` – ${jobNumber}` : customerName ? ` – ${customerName}` : ''}`,
+        subject,
         message: (message || '').trim() || defaultMessage,
-        filename: `${fileBase}.pdf`,
+        filename: `${poFileBase(snapshot)}.pdf`,
         contentBase64,
         jobId: sheet?.jobId,   // so the send is logged against the job
       });
@@ -499,11 +414,12 @@ export default function PurchaseOrder() {
       if (result?.unconfirmed) {
         toast(`Sent to ${to}, but delivery wasn't confirmed — the job status was left unchanged.`, 'error');
       } else {
+        const record = recordPo('sent', { recipient: to, sentAt: new Date().toISOString() });
         if (sheet.jobId) {
           addActivity({
             jobId: sheet.jobId,
             type: 'po_sent',
-            message: `Curtain PO sent to ${to}`,
+            message: `Curtain PO${record?.poNumber ? ` ${record.poNumber}` : ''} sent to ${to}`,
             user: displayName || 'System',
           });
           advanceJobStatus(sheet.jobId, 'Ordered', displayName || 'System');
@@ -552,6 +468,56 @@ export default function PurchaseOrder() {
         </p>
         <p className="text-xs text-slate-400 mt-1.5">Review the order below — send, print or download it at the bottom.</p>
       </Card>
+
+      {/* Re-issuing an order that has already gone out */}
+      {issued && (
+        <div className="rounded-xl px-4 py-3 border bg-amber-50 border-amber-200 flex items-start gap-3">
+          <History size={18} className="text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">
+              Editing {issued.poNumber || 'a purchase order'} that has already gone out
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              {issued.status === 'sent' && issued.recipient ? `Sent to ${issued.recipient}. ` : ''}
+              Send or download it again to re-issue — any change makes it revision {(issued.revision || 1) + 1},
+              and the supplier will need the new copy.
+            </p>
+            {missingLines > 0 && (
+              <p className="text-xs text-orange-700 font-medium mt-1">
+                {missingLines} curtain{missingLines === 1 ? '' : 's'} on the original order {missingLines === 1 ? 'is' : 'are'} no
+                longer on the measure sheet, so {missingLines === 1 ? "it isn't" : "they aren't"} on this one. The copy that
+                went out still shows {missingLines === 1 ? 'it' : 'them'}.
+              </p>
+            )}
+            <Link to={`/purchase-orders/${issued.id}`} className="text-xs font-medium text-amber-700 hover:underline mt-1 inline-block">
+              See the copy that went out
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Orders already placed off this sheet */}
+      {history.length > 0 && (
+        <Card>
+          <button type="button" onClick={() => setHistoryOpen(o => !o)} aria-expanded={historyOpen}
+            className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left hover:bg-slate-50/60 transition-colors">
+            <div className="min-w-0">
+              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                <History size={15} className="text-slate-400" /> Purchase order history
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {history.length} order{history.length !== 1 ? 's' : ''} placed off this sheet — open one to see exactly what was sent, or to edit and re-issue it.
+              </p>
+            </div>
+            <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {historyOpen && (
+            <div className="border-t border-slate-100">
+              <PoHistoryList orders={history} currentId={poId} />
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Check-measure gate — the last stop before size errors become scrap */}
       {gate.blocked && (
@@ -846,73 +812,7 @@ export default function PurchaseOrder() {
 
           {/* PO preview (printed/exported layout) */}
           <Card>
-            <div id="po-print" className="p-5">
-              {/* Header block */}
-              <div className="flex items-start justify-between border-b-2 border-amber-500 pb-3 mb-4">
-                <div>
-                  <div className="text-lg font-bold text-amber-700">LUSSO</div>
-                  <div className="text-xs text-slate-500">Curtain Purchase Order</div>
-                </div>
-                <div className="text-right text-xs text-slate-600 space-y-0.5">
-                  {(jobNumber || customerName) && (
-                    <div>
-                      {jobNumber && <><span className="text-slate-400">Job #:</span> {jobNumber}</>}
-                      {jobNumber && customerName && ' · '}
-                      {customerName && <><span className="text-slate-400">Customer:</span> {customerName}</>}
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-slate-400">Date ordered:</span> {dateOrdered}
-                    {dateRequiredDisplay && <> · <span className="text-slate-400">Required:</span> {dateRequiredDisplay}</>}
-                  </div>
-                </div>
-              </div>
-
-              {/* Line items table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50">
-                      {headers.map(h => (
-                        <th key={h} className="border border-slate-200 px-2 py-1.5 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, ri) => (
-                      <tr key={ri} className={clashRows.has(ri) ? 'bg-orange-50' : ''}>
-                        {r.map((cell, ci) => (
-                          <td key={ci} className="border border-slate-200 px-2 py-1.5 text-slate-700 whitespace-nowrap">{cell === '' || cell == null ? '' : cell}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Per-order accessories + notes — populated entries only */}
-              {(hasAccessories || extraNotes.trim()) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 text-xs">
-                  {hasAccessories && (
-                    <div>
-                      <div className="font-semibold text-slate-700 mb-1">Order accessories</div>
-                      {liveWands.map(w => <div key={w.id} className="text-slate-600">Wand: {wandLabel(w)}</div>)}
-                      {liveRemotes.map(r => <div key={r.id} className="text-slate-600">Remote: {remoteLabel(r)}</div>)}
-                    </div>
-                  )}
-                  {extraNotes.trim() && (
-                    <div>
-                      <div className="font-semibold text-slate-700 mb-1">Extra notes</div>
-                      <div className="text-slate-600 whitespace-pre-wrap">{extraNotes}</div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <p className="text-[11px] text-slate-400 mt-4 pt-3 border-t border-slate-100">
-                Should you have any questions please call 0755284006 or email info@lusso.com.au — Address 3 Crinum Cres Southport
-              </p>
-            </div>
+            <PoPreview snapshot={snapshot} id="po-print" highlightRows={clashRows} />
           </Card>
 
           {/* ── Order details + send — at the bottom, after reviewing the PO ── */}
