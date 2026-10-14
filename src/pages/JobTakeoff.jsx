@@ -34,6 +34,7 @@ import { buildClientSchedule } from '../lib/clientSchedule';
 import ClientSchedule, { ClientPins, ClientScheduleTray } from '../components/takeoff/ClientView';
 import { buildRateCard, estimateTakeoff } from '../lib/planEstimate';
 import Overlay from '../components/takeoff/Overlay';
+import Tip from '../components/Tip';
 import ItemPanel from '../components/takeoff/ItemPanel';
 import RoomPicker from '../components/takeoff/RoomPicker';
 import {
@@ -1800,7 +1801,11 @@ export default function JobTakeoff() {
               {/* The same takeoff, read two ways: the marked-up drawing you work
                   on, and the numbered schedule you turn the screen around and
                   show the customer. */}
-              <button
+              <Tip title={clientView ? "Back to your markup" : "Client view"} hint="P" placement="bottom"
+                body={clientView
+                  ? "Returns to the working plan, where you can draw and edit."
+                  : "The same plan presented for the customer — colour-coded windows and a schedule, with the working dimensions and anything unresolved kept out of sight. Read-only, so you can hand them the screen."}>
+                <button
                 onClick={() => { setClientView(v => !v); cancelDraft(); setClientPick(null); }}
                 title={clientView ? 'Back to the working markup' : 'Show this as the customer sees it'}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -1813,6 +1818,7 @@ export default function JobTakeoff() {
                   clientView ? 'border-white/40 text-white/80' : 'border-slate-200 text-slate-400'
                 }`}>P</kbd>
               </button>
+              </Tip>
               <span
                 className={`text-[11px] items-center gap-1 ${clientView ? 'hidden' : 'flex'} ${offlineReady ? 'text-green-600' : 'text-slate-400'}`}
                 title={offlineReady ? 'This plan is saved on this device for on-site use' : 'Not yet saved for offline use'}
@@ -1883,34 +1889,58 @@ export default function JobTakeoff() {
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-100 bg-white overflow-x-auto">
               {!clientView && (
                 <>
-                  <IconBtn onClick={undo} disabled={!historyCounts.past} title="Undo (⌘Z)"><Undo2 size={17} /></IconBtn>
-                  <IconBtn onClick={redo} disabled={!historyCounts.future} title="Redo (⇧⌘Z)"><Redo2 size={17} /></IconBtn>
+                  <IconBtn onClick={undo} disabled={!historyCounts.past} title="Undo (⌘Z)"
+                    tip="Undo" hint="⌘Z"
+                    tipBody="Steps back through everything you've drawn on this plan — points, whole measurements, deletes.">
+                    <Undo2 size={17} /></IconBtn>
+                  <IconBtn onClick={redo} disabled={!historyCounts.future} title="Redo (⇧⌘Z)"
+                    tip="Redo" hint="⇧⌘Z" tipBody="Puts back what you just undid.">
+                    <Redo2 size={17} /></IconBtn>
                   <div className="w-px h-5 bg-slate-200 mx-1" />
-                  <IconBtn onClick={() => setSnapOn(v => !v)} active={snapOn} title={`${snapOn ? 'Snapping on — endpoints and linework' : 'Snapping off'} (G)`}><Magnet size={17} /></IconBtn>
-                  <IconBtn onClick={() => setOrthoOn(v => !v)} active={orthoOn} title="Lock to horizontal / vertical (O, or hold Shift)">
+                  <IconBtn onClick={() => setSnapOn(v => !v)} active={snapOn}
+                    title={`${snapOn ? 'Snapping on — endpoints and linework' : 'Snapping off'} (G)`}
+                    tip={snapOn ? 'Snapping — on' : 'Snapping — off'} hint="G"
+                    tipBody="Pulls each point onto the nearest thing worth landing on: the end of a measurement you've already drawn, or the plan's own linework — a wall face, a jamb. Turn it off if the drawing is busy and it keeps grabbing the wrong line.">
+                    <Magnet size={17} /></IconBtn>
+                  <IconBtn onClick={() => setOrthoOn(v => !v)} active={orthoOn}
+                    title="Lock to horizontal / vertical (O, or hold Shift)"
+                    tip={orthoOn ? 'Straight lines — on' : 'Straight lines — off'} hint="O"
+                    tipBody="Forces every line dead horizontal or vertical, so a window you drag across comes out square instead of a degree off. Hold Shift for a one-off instead of leaving it on.">
                     <span className="text-[11px] font-bold px-0.5">90°</span>
                   </IconBtn>
                   <div className="w-px h-5 bg-slate-200 mx-1" />
                 </>
               )}
 
-              <button onClick={() => zoomButton(1 / ZOOM_STEP)} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Zoom out (−)"><ZoomOut size={17} /></button>
+              <Tip title="Zoom out" hint="−" placement="bottom" body="Pinch on a tablet, or scroll with a mouse — both work from any tool.">
+                <button onClick={() => zoomButton(1 / ZOOM_STEP)} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Zoom out (−)"><ZoomOut size={17} /></button>
+              </Tip>
               <span className="text-xs text-slate-500 tabular-nums w-12 text-center">{Math.round(view.scale * 100)}%</span>
-              <button onClick={() => zoomButton(ZOOM_STEP)} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Zoom in (+)"><ZoomIn size={17} /></button>
-              <button onClick={() => fitPage()} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Fit page (F)"><Maximize2 size={17} /></button>
+              <Tip title="Zoom in" hint="+" placement="bottom" body="Zoom right in before placing a point — snapping works in screen distance, so it gets more precise the closer you are.">
+                <button onClick={() => zoomButton(ZOOM_STEP)} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Zoom in (+)"><ZoomIn size={17} /></button>
+              </Tip>
+              <Tip title="Fit the page" hint="F" placement="bottom" body="Brings the whole sheet back on screen when you've zoomed or panned off into a corner.">
+                <button onClick={() => fitPage()} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Fit page (F)"><Maximize2 size={17} /></button>
+              </Tip>
 
               {/* Rotate the sheet. Plans arrive in whatever orientation the
                   drawing office set the page up in, and you cannot measure a
                   window you are reading sideways. Nothing already marked up
                   moves — see src/lib/planRotate.js. */}
               <div className="w-px h-5 bg-slate-200 mx-1" />
-              <button onClick={() => rotatePage(-1)}
-                className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600"
-                title="Rotate left (Shift+R)"><RotateCcw size={17} /></button>
-              <button onClick={() => rotatePage(1)}
-                className={`w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 ${
-                  rotation ? 'text-amber-600' : 'text-slate-600'}`}
-                title={`Rotate right (R) — ${rotationLabel(rotation)}`}><RotateCw size={17} /></button>
+              <Tip title="Rotate left" hint="⇧R" placement="bottom"
+                body="Turns the sheet a quarter turn anticlockwise. Nothing you've measured moves — every mark stays on its window.">
+                <button onClick={() => rotatePage(-1)}
+                  className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600"
+                  title="Rotate left (Shift+R)"><RotateCcw size={17} /></button>
+              </Tip>
+              <Tip title="Rotate right" hint="R" placement="bottom"
+                body="For a plan drawn sideways on the sheet. It turns the view only — measurements stay exactly where they were put, and it's saved per page.">
+                <button onClick={() => rotatePage(1)}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 ${
+                    rotation ? 'text-amber-600' : 'text-slate-600'}`}
+                  title={`Rotate right (R) — ${rotationLabel(rotation)}`}><RotateCw size={17} /></button>
+              </Tip>
               {rotation !== 0 && (
                 <button onClick={() => setPageRotation(0)}
                   className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 tabular-nums px-1"
@@ -1920,10 +1950,14 @@ export default function JobTakeoff() {
               {pageCount > 1 && (
                 <>
                   <div className="w-px h-5 bg-slate-200 mx-1" />
-                  <button disabled={pageNumber <= 1} onClick={() => setPageNumber(p => Math.max(1, p - 1))} title="Previous page ([)" className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronLeft size={17} /></button>
+                  <Tip title="Previous sheet" hint="[" placement="bottom" body="Scale and rotation are remembered per sheet, so moving between them doesn't disturb either.">
+                    <button disabled={pageNumber <= 1} onClick={() => setPageNumber(p => Math.max(1, p - 1))} title="Previous page ([)" className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronLeft size={17} /></button>
+                  </Tip>
                   {/* keyed: a remount keeps the typed draft in step with the chevrons */}
                   <PageJump key={pageNumber} pageNumber={pageNumber} pageCount={pageCount} onGo={setPageNumber} />
-                  <button disabled={pageNumber >= pageCount} onClick={() => setPageNumber(p => Math.min(pageCount, p + 1))} title="Next page (])" className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronRight size={17} /></button>
+                  <Tip title="Next sheet" hint="]" placement="bottom" body="Only the sheets you've actually measured on are exported, so a 40-page plan set is fine to page through.">
+                    <button disabled={pageNumber >= pageCount} onClick={() => setPageNumber(p => Math.min(pageCount, p + 1))} title="Next page (])" className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600 disabled:opacity-30"><ChevronRight size={17} /></button>
+                  </Tip>
                 </>
               )}
 
@@ -2273,12 +2307,36 @@ export default function JobTakeoff() {
  * seven glyphs — and the key rides in the corner rather than a tooltip, which
  * is the difference between a shortcut people discover and one they don't.
  */
+/**
+ * What each tool is for, in the words someone measuring a house would use.
+ *
+ * Deliberately NOT a restatement of the label — "Measure: measures things" helps
+ * nobody. Each one answers "when would I reach for this instead of the one next
+ * to it", which is the only question a tool rail actually raises.
+ */
+const TOOL_HELP = {
+  Pan: 'Move around the plan without drawing anything. A two-finger drag and the scroll wheel do this from any tool, so you rarely need to switch to it.',
+  Window: 'The main one. Drag across an opening and it becomes a line on the schedule, with the room name picked up off the plan for you.',
+  Measure: "A loose dimension that isn't a window — a wall run, a drop, anything you just want the number for. It stays off the schedule.",
+  Bay: 'Trace a bay or a splayed corner facet by facet. Every leg is measured, and the total is the real track length rather than the straight line across the front.',
+  Curve: 'A bow or curved window. Tap the two ends, then drag the handle in the middle to bend it to the shape of the glass — or type an exact radius in the panel.',
+  Count: "Drop numbered pins to count repeats — how many of the same window on a floor. Works with no scale set, so it's useful the moment a plan lands.",
+  Scale: 'Tell the plan how big it really is, by tracing something of a known length or picking the drawing scale. Nothing can be measured until this is set.',
+};
+
 function ToolBtn({ active, onClick, icon: Icon, label, disabled, hint }) {
   return (
+    <Tip
+      title={label}
+      hint={hint}
+      body={disabled
+        ? 'Set the scale first — this tool needs to know how big the plan is.'
+        : TOOL_HELP[label]}
+      placement="right"
+    >
     <button
       onClick={onClick}
       disabled={disabled}
-      title={disabled ? 'Set the scale first' : `${label}${hint ? ` (${hint})` : ''}`}
       className={`relative w-12 py-1.5 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors disabled:opacity-40 flex-shrink-0 ${
         active ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-100'
       }`}
@@ -2293,11 +2351,14 @@ function ToolBtn({ active, onClick, icon: Icon, label, disabled, hint }) {
         </kbd>
       )}
     </button>
+    </Tip>
   );
 }
 
-function IconBtn({ active, disabled, onClick, title, children }) {
-  return (
+// The view-bar buttons take the same treatment: `title` for the mouse-over
+// nicety, `tip`/`tipBody` for the explanation that a finger can also reach.
+function IconBtn({ active, disabled, onClick, title, tip, tipBody, hint, children }) {
+  const btn = (
     <button
       onClick={onClick}
       disabled={disabled}
@@ -2309,6 +2370,7 @@ function IconBtn({ active, disabled, onClick, title, children }) {
       {children}
     </button>
   );
+  return tip ? <Tip title={tip} body={tipBody} hint={hint} placement="bottom">{btn}</Tip> : btn;
 }
 
 function MenuItem({ icon: Icon, children, onClick, disabled, danger, hint }) {
