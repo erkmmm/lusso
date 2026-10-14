@@ -33,23 +33,34 @@ export async function loadPdf(arrayBuffer) {
   return await getDocument({ data }).promise;
 }
 
-/** Base (scale 1.0) dimensions of a page, in CSS px / user units. */
+/**
+ * Base (scale 1.0) dimensions of a page, in CSS px / user units.
+ *
+ * Deliberately UNROTATED. Takeoff geometry is stored in this space and must stay
+ * independent of how the page happens to be turned on screen — see
+ * src/lib/planRotate.js. Callers that need the displayed size apply
+ * rotatedSize() themselves, so there is exactly one notion of "stored".
+ */
 export async function getPageBaseSize(pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
-  const vp = page.getViewport({ scale: 1 });
+  const vp = page.getViewport({ scale: 1, rotation: 0 });
   return { width: vp.width, height: vp.height };
 }
 
 /**
  * Render a page into a canvas at `scale` (base→render multiplier).
  * `dpr` adds device-pixel-ratio crispness without affecting the CSS box.
+ * `rotation` is a clockwise quarter turn (0/90/180/270) for display only.
  * The returned canvas has CSS size base*scale and backing store base*scale*dpr.
  * Cancellable via the returned `cancel()` (pdf.js render tasks can be aborted).
  */
-export async function renderPageToCanvas(pdf, pageNumber, scale, canvas, dpr = 1) {
+export async function renderPageToCanvas(pdf, pageNumber, scale, canvas, dpr = 1, rotation = 0) {
   const page = await pdf.getPage(pageNumber);
-  const viewport = page.getViewport({ scale: scale * dpr });
-  const cssVp = page.getViewport({ scale });
+  // pdf.js rotation is clockwise and ADDS to any rotation baked into the page
+  // itself, which is what we want: a sheet already flagged landscape keeps
+  // rendering as it always did, and this turns it from there.
+  const viewport = page.getViewport({ scale: scale * dpr, rotation });
+  const cssVp = page.getViewport({ scale, rotation });
 
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);

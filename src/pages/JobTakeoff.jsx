@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  Upload, Ruler, Crosshair, Hand, ZoomIn, ZoomOut, Maximize2,
+  Upload, Ruler, Crosshair, Hand, ZoomIn, ZoomOut, Maximize2, RotateCw, RotateCcw,
   ChevronLeft, ChevronRight, Trash2, FileText, Loader2, AlertTriangle,
   Target, RefreshCw, Undo2, Redo2, Magnet, Square, Hash, MoreHorizontal,
   Copy, Download, History, CloudOff, CheckCircle2, DoorOpen, WifiOff,
@@ -20,6 +20,7 @@ import {
   removeTakeoffPhotos, isPlanCached,
 } from '../lib/takeoffStorage';
 import { loadPdf, getPageBaseSize, renderPageToCanvas } from '../lib/pdfRender';
+import { normRotation, nextRotation, rotatedSize, pageToView, viewToPage, rotationLabel } from '../lib/planRotate';
 import { extractPageText, nearestRooms, suggestLabel, printedDimensionFor } from '../lib/planText';
 import { nextRoomLabel } from '../lib/roomNaming';
 import {
@@ -141,6 +142,9 @@ export default function JobTakeoff() {
   // The key handler is bound once; a ref keeps it aware of the page count
   // without re-binding on every render.
   const pageCountRef = useRef(1);
+  // Same reason as pageCountRef: the key handler is bound once, so it reaches
+  // the current rotate action through a ref rather than a stale closure.
+  const rotatePageRef = useRef(() => {});
   const [busy, setBusy] = useState('');                   // long-running label
   const [photoBusyId, setPhotoBusyId] = useState(null);
 
@@ -260,17 +264,35 @@ export default function JobTakeoff() {
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); };
   }, []);
 
+  // ── Rotation ────────────────────────────────────────────────────────────
+  // A VIEW setting, stored per page alongside the scale. It never rewrites a
+  // single stored point: measurements stay in the page's own unrotated
+  // coordinates and are transformed on the way to the screen, so a plan can be
+  // turned at any time — before or after it is marked up — and every mark stays
+  // on the window it was put on. See src/lib/planRotate.js.
+  //
+  // Declared here, above the render and fit effects that depend on it, rather
+  // than down with the other page settings.
+  const rotation = normRotation(
+    (takeoff?.pages || []).find(p => p.pageNumber === pageNumber)?.rotation,
+  );
+
+  // The page as DISPLAYED. Everything on screen — fitting, panning, the raster
+  // cap — works in this size; only stored geometry uses pageBaseSize.
+  const viewSize = useMemo(
+    () => (pageBaseSize ? rotatedSize(pageBaseSize, rotation) : null),
+    [pageBaseSize, rotation],
+  );
+
   // ── Page base size whenever pdf/page changes ────────────────────────────
   useEffect(() => {
     if (!pdf) return;
     let alive = true;
     getPageBaseSize(pdf, pageNumber).then(size => {
       if (!alive) return;
-      setPageBaseSize(size);
-      fitPage(size);
+      setPageBaseSize(size);   // the fit happens below, once the rotation is known
     });
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdf, pageNumber]);
 
   // ── Mine the page's text layer (room names, printed dimensions) ─────────
@@ -286,9 +308,9 @@ export default function JobTakeoff() {
   // ── Render the page to canvas on raster/page change ─────────────────────
   useEffect(() => {
     if (!pdf || !canvasRef.current || !pageBaseSize) return;
-    renderPageToCanvas(pdf, pageNumber, rasterScale, canvasRef.current, DPR)
+    renderPageToCanvas(pdf, pageNumber, rasterScale, canvasRef.current, DPR, rotation)
       .catch(e => console.error('[takeoff] render', e));
-  }, [pdf, pageNumber, rasterScale, pageBaseSize]);
+  }, [pdf, pageNumber, rasterScale, pageBaseSize, rotation]);
 
   // raster cap for the current page so the backing store stays bounded, by long
   // edge and by area — a phone that can't allocate the canvas renders nothing.
@@ -300,6 +322,33 @@ export default function JobTakeoff() {
     return Math.max(1, Math.min(byEdge, byArea));
   }, [pageBaseSize]);
 
+  // Fit once per page AND per rotation — a sheet turned 90° no longer fits the
+  // stage the way it did, and leaving it half off screen would make the button
+  // feel broken. Fitting again on every render would instead throw away the
+  // zoom someone just set, so the key below makes it exactly once each.
+  //
+  // Driven by a ResizeObserver rather than by the render, because the stage is
+  // a flex child that has no useful size on the first pass: fitting against a
+  // 31px box put the whole plan in the corner at 5%.
+  const fittedKey = useRef(null);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !viewSize) return;
+    const key = `${pageNumber}:${rotation}:${Math.round(viewSize.width)}x${Math.round(viewSize.height)}`;
+    const tryFit = () => {
+      const r = stage.getBoundingClientRect();
+      if (r.width < 80 || r.height < 80) return;   // not laid out yet
+      if (fittedKey.current === key) return;
+      fittedKey.current = key;
+      fitPage(viewSize);
+    };
+    tryFit();
+    const ro = new ResizeObserver(tryFit);
+    ro.observe(stage);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewSize?.width, viewSize?.height, pageNumber, rotation]);
+
   const scheduleRaster = useCallback((scale) => {
     if (rasterTimer.current) clearTimeout(rasterTimer.current);
     rasterTimer.current = setTimeout(() => {
@@ -308,7 +357,7 @@ export default function JobTakeoff() {
   }, [maxRaster]);
 
   // ── Fit page into the stage, centered ───────────────────────────────────
-  function fitPage(size = pageBaseSize) {
+  function fitPage(size = viewSize) {
     const stage = stageRef.current;
     if (!stage || !size) return;
     const rect = stage.getBoundingClientRect();
@@ -399,20 +448,39 @@ export default function JobTakeoff() {
 
   const curScale = pageScale(pageNumber);
 
+  const setPageRotation = useCallback((deg) => {
+    const t = takeoffRef.current;
+    if (!t) return;
+    const next = normRotation(deg);
+    const pages = [...(t.pages || [])];
+    const idx = pages.findIndex(p => p.pageNumber === pageNumber);
+    // Upsert: a page can be rotated before any scale has been set on it.
+    if (idx >= 0) pages[idx] = { ...pages[idx], rotation: next };
+    else pages.push({ pageNumber, rotation: next, pxPerMm: null, scaleLabel: '', calLine: null });
+    persist({ ...t, pages });
+  }, [pageNumber, persist]);
+
+  const rotatePage = useCallback((dir) => setPageRotation(nextRotation(rotation, dir)), [rotation, setPageRotation]);
+  useEffect(() => { rotatePageRef.current = rotatePage; }, [rotatePage]);
+
   // ── Coordinate conversion ───────────────────────────────────────────────
+  // screen → stored. Undo the pan/zoom to get a point on the DISPLAYED page,
+  // then undo the rotation to get the point as it is stored.
   const screenToBase = useCallback((clientX, clientY) => {
     const rect = stageRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
-    return {
+    const v = {
       x: (clientX - rect.left - view.tx) / view.scale,
       y: (clientY - rect.top - view.ty) / view.scale,
     };
-  }, [view]);
+    return pageBaseSize ? viewToPage(v, rotation, pageBaseSize) : v;
+  }, [view, rotation, pageBaseSize]);
 
-  const baseToScreen = useCallback((p) => ({
-    x: p.x * view.scale + view.tx,
-    y: p.y * view.scale + view.ty,
-  }), [view]);
+  // stored → screen. Rotate into the displayed page, then apply pan/zoom.
+  const baseToScreen = useCallback((p) => {
+    const v = pageBaseSize ? pageToView(p, rotation, pageBaseSize) : p;
+    return { x: v.x * view.scale + view.tx, y: v.y * view.scale + view.ty };
+  }, [view, rotation, pageBaseSize]);
 
   const pageMeasurements = useMemo(
     () => (takeoff?.measurements || []).filter(m => m.pageNumber === pageNumber),
@@ -1576,6 +1644,9 @@ export default function JobTakeoff() {
       // View controls work in both views — a client is being shown the plan on
       // this same screen, and zooming is the first thing anyone reaches for.
       if (k === 'f') { e.preventDefault(); fitPage(); return; }
+      // R turns the sheet; Shift+R turns it back. Same key, both directions,
+      // so there is nothing to remember.
+      if (k === 'r') { e.preventDefault(); rotatePageRef.current(e.shiftKey ? -1 : 1); return; }
       if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomButton(ZOOM_STEP); return; }
       if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomButton(1 / ZOOM_STEP); return; }
       if (e.key === '[') { e.preventDefault(); setPageNumber(p => Math.max(1, p - 1)); return; }
@@ -1827,6 +1898,24 @@ export default function JobTakeoff() {
               <span className="text-xs text-slate-500 tabular-nums w-12 text-center">{Math.round(view.scale * 100)}%</span>
               <button onClick={() => zoomButton(ZOOM_STEP)} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Zoom in (+)"><ZoomIn size={17} /></button>
               <button onClick={() => fitPage()} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600" title="Fit page (F)"><Maximize2 size={17} /></button>
+
+              {/* Rotate the sheet. Plans arrive in whatever orientation the
+                  drawing office set the page up in, and you cannot measure a
+                  window you are reading sideways. Nothing already marked up
+                  moves — see src/lib/planRotate.js. */}
+              <div className="w-px h-5 bg-slate-200 mx-1" />
+              <button onClick={() => rotatePage(-1)}
+                className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-600"
+                title="Rotate left (Shift+R)"><RotateCcw size={17} /></button>
+              <button onClick={() => rotatePage(1)}
+                className={`w-10 h-10 rounded-lg flex items-center justify-center hover:bg-slate-100 ${
+                  rotation ? 'text-amber-600' : 'text-slate-600'}`}
+                title={`Rotate right (R) — ${rotationLabel(rotation)}`}><RotateCw size={17} /></button>
+              {rotation !== 0 && (
+                <button onClick={() => setPageRotation(0)}
+                  className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 tabular-nums px-1"
+                  title="Back to the original orientation">{rotation}°</button>
+              )}
 
               {pageCount > 1 && (
                 <>
@@ -2259,6 +2348,7 @@ function ShortcutsDialog({ onClose }) {
     ]],
     ['View', [
       ['+ / −', 'Zoom in / out'], ['F', 'Fit page'],
+      ['R / Shift+R', 'Rotate the plan right / left'],
       ['[ / ]', 'Previous / next page'], ['P', 'Client view'],
       ['Pinch', 'Zoom the plan'], ['Two-finger drag', 'Pan the plan'],
     ]],

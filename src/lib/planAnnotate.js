@@ -11,6 +11,31 @@
  * us cheaply and it guarantees the export looks exactly like the screen.
  */
 import { loadPdf, getPageBaseSize, renderPageToCanvas } from './pdfRender';
+import { normRotation, rotatedSize, pageToView } from './planRotate';
+
+/**
+ * Rotate a page's markup into the orientation the plan is being exported in.
+ *
+ * Done ONCE here, on copies, rather than inside the drawing code: the draw
+ * functions keep receiving plain coordinates and never learn about rotation, and
+ * — the reason it is done this way — labels are still drawn upright instead of
+ * turning on their side with the sheet, which is how the takeoff screen shows
+ * them. An exported plan should look like the plan that was marked up.
+ */
+function rotateMarkup({ measurements = [], markers = [], items = [] }, rotation, base) {
+  if (!normRotation(rotation)) return { measurements, markers, items };
+  const P = (p) => pageToView(p, rotation, base);
+  return {
+    items,   // items carry no page geometry of their own
+    markers: markers.map(k => ({ ...k, ...P(k) })),
+    measurements: measurements.map(m => (
+      m.points?.length
+        ? { ...m, points: m.points.map(P) }
+        : { ...m, ...(() => { const a = P({ x: m.x1, y: m.y1 }), b = P({ x: m.x2, y: m.y2 });
+                              return { x1: a.x, y1: a.y, x2: b.x, y2: b.y }; })() }
+    )),
+  };
+}
 import { pointsOf, arcMetrics, arcMidpoint } from './takeoffGeometry';
 
 const RENDER_SCALE = 2;            // 144 DPI — legible when printed at A3
@@ -164,20 +189,23 @@ export async function buildAnnotatedPlan(planBuffer, takeoff, meta = {}) {
 
   for (const pn of pageNumbers) {
     const base = await getPageBaseSize(pdf, pn);
+    // Export the sheet the way it was worked on, not the way it was filed.
+    const rotation = normRotation((takeoff?.pages || []).find(p => p.pageNumber === pn)?.rotation);
+    const outSize = rotatedSize(base, rotation);
     const scale = Math.min(
       RENDER_SCALE,
       MAX_CANVAS_EDGE / Math.max(base.width, base.height)
     );
-    await renderPageToCanvas(pdf, pn, scale, canvas, 1);
+    await renderPageToCanvas(pdf, pn, scale, canvas, 1, rotation);
     const ctx = canvas.getContext('2d');
-    drawOverlay(ctx, scale, {
+    drawOverlay(ctx, scale, rotateMarkup({
       measurements: measurements.filter(m => m.pageNumber === pn),
       markers: markers.filter(k => k.pageNumber === pn),
       items,
-    });
+    }, rotation, base));
 
-    const orientation = base.width >= base.height ? 'landscape' : 'portrait';
-    const format = [base.width, base.height];
+    const orientation = outSize.width >= outSize.height ? 'landscape' : 'portrait';
+    const format = [outSize.width, outSize.height];
     if (!doc) doc = new jsPDF({ unit: 'pt', orientation, format });
     else doc.addPage(format, orientation);
 
@@ -411,13 +439,19 @@ export async function buildClientPlan(planBuffer, takeoff, schedule, meta = {}) 
 
   for (const pn of pageNumbers) {
     const base = await getPageBaseSize(pdf, pn);
+    const rotation = normRotation((takeoff?.pages || []).find(p => p.pageNumber === pn)?.rotation);
+    const outSize = rotatedSize(base, rotation);
     const scale = Math.min(RENDER_SCALE, MAX_CANVAS_EDGE / Math.max(base.width, base.height));
-    await renderPageToCanvas(pdf, pn, scale, canvas, 1);
-    drawRuns(canvas.getContext('2d'), scale, entries.filter(e => e.pageNumber === pn), palette);
+    await renderPageToCanvas(pdf, pn, scale, canvas, 1, rotation);
+    const rotated = rotation
+      ? entries.map(e => ({ ...e, points: e.points?.map(pt => pageToView(pt, rotation, base)) ?? e.points,
+                            ...(e.x != null ? pageToView({ x: e.x, y: e.y }, rotation, base) : {}) }))
+      : entries;
+    drawRuns(canvas.getContext('2d'), scale, rotated.filter(e => e.pageNumber === pn), palette);
 
-    const orientation = base.width >= base.height ? 'landscape' : 'portrait';
-    if (!doc) doc = new jsPDF({ unit: 'pt', orientation, format: [base.width, base.height] });
-    else doc.addPage([base.width, base.height], orientation);
+    const orientation = outSize.width >= outSize.height ? 'landscape' : 'portrait';
+    if (!doc) doc = new jsPDF({ unit: 'pt', orientation, format: [outSize.width, outSize.height] });
+    else doc.addPage([outSize.width, outSize.height], orientation);
     doc.addImage(canvas.toDataURL('image/jpeg', 0.86), 'JPEG', 0, 0, base.width, base.height);
   }
 
