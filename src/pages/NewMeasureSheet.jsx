@@ -282,6 +282,78 @@ function SpecSelect({ label, value, onChange, options }) {
 // Renders one spec dropdown by its schema key (skips the special 'lining' key,
 // which is rendered by LiningBlock). Keeps the item field ↔ option list wiring
 // in one place (e.g. Operation Type stores to `trackType`).
+// The collapsed form of a line item — what you see when you're reading the
+// sheet rather than filling one opening in. It has to answer the two questions
+// you actually have while scrolling ("which room is this?" and "what did I put
+// down?") without being opened, because opening twenty cards to find line 6 is
+// the problem it exists to solve.
+//
+// An unfinished line says so. On a twenty-line sheet the gap you left in the
+// back bedroom is invisible until the order bounces, so a line missing a room,
+// a product or a size carries a dot here.
+function LineSummary({ item, idx, open, issues, onToggle }) {
+  const size = item.widthMm && item.dropMm
+    ? `${item.widthMm} × ${item.dropMm}`
+    : item.widthMm || item.dropMm
+      ? `${item.widthMm || '—'} × ${item.dropMm || '—'}`
+      : null;
+  const incomplete = !item.location || !item.productTypeId || !item.widthMm || !item.dropMm;
+  const worst = issues?.some(r => r.severity === 'error') ? 'error'
+    : issues?.length ? 'warning' : null;
+
+  return (
+    <button type="button" onClick={onToggle}
+      aria-expanded={open}
+      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-amber-50/60 transition-colors">
+      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
+        open ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'
+      }`}>{idx + 1}</span>
+
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-1.5">
+          <span className={`text-sm font-semibold truncate ${item.location ? 'text-slate-800' : 'text-slate-300 italic font-normal'}`}>
+            {item.location || 'No room yet'}
+          </span>
+          {worst && (
+            <span title={worst === 'error' ? 'Outside what the supplier will make' : 'Close to the supplier limit'}
+              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${worst === 'error' ? 'bg-red-500' : 'bg-amber-400'}`} />
+          )}
+          {!worst && incomplete && (
+            <span title="This line is not finished" className="w-1.5 h-1.5 rounded-full bg-slate-300 flex-shrink-0" />
+          )}
+        </span>
+        <span className="block text-xs text-slate-400 truncate">
+          {[item.productNameSnapshot, item.fabricColour].filter(Boolean).join(' · ') || 'No product yet'}
+        </span>
+      </span>
+
+      <span className="flex-shrink-0 text-right">
+        <span className={`block text-sm tabular-nums ${size ? 'text-slate-700 font-medium' : 'text-slate-300'}`}>
+          {size || 'no size'}
+        </span>
+        {Number(item.quantity) > 1 && <span className="block text-xs text-slate-400">× {item.quantity}</span>}
+      </span>
+
+      {/* A static chip, NOT CheckMeasureControl: that renders a confirm BUTTON,
+          and a button inside this button is both invalid markup and a dead
+          click. Confirming still happens on the open card, where the real
+          control lives. */}
+      {item.source === 'takeoff' && (
+        <span className={`flex-shrink-0 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+          isPlanEstimate(item)
+            ? 'border-amber-300 bg-amber-50 text-amber-700'
+            : 'border-green-200 bg-green-50 text-green-700'
+        }`}>
+          {isPlanEstimate(item) ? 'Plan' : 'Measured'}
+        </span>
+      )}
+      {open
+        ? <ChevronUp size={15} className="text-slate-400 flex-shrink-0" />
+        : <ChevronDown size={15} className="text-slate-300 flex-shrink-0" />}
+    </button>
+  );
+}
+
 function SpecField({ specKey, item, idx, setLineItem, productType }) {
   const f = MS_SPEC_FIELDS.find(s => s.key === specKey);
   if (!f || f.key === 'lining') return null;
@@ -605,6 +677,17 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   const [errors,         setErrors]         = useState({});
   const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true, notes: true });
   const [expandedItems,  setExpandedItems]  = useState(() => new Set(sheet.lineItems.map(li => li.id)));
+  // Which cards are open as a full editor. A fully-expanded card is ~340px, so
+  // a twenty-line sheet was seven thousand pixels of scrolling with nothing to
+  // navigate by — you could not tell which opening you were in, and going back
+  // to fix line 6 meant scrolling past it twice. Collapsed, a line is one row
+  // that states the room, the product and the size, so the sheet is a list you
+  // can read at a glance and the list IS the index.
+  //
+  // A sheet you've just opened starts collapsed (that's the review case); a
+  // brand-new sheet opens its one line, because there's nothing to review.
+  const [openCards, setOpenCards] = useState(
+    () => new Set(sheet.lineItems.length === 1 ? sheet.lineItems.map(li => li.id) : []));
   const [itemLayout,     setItemLayout]     = useState(() => localStorage.getItem('lusso_ms_layout') === 'table' ? 'table' : 'cards');
   const [tableFull, setTableFull] = useState(false);
   // 100dvh + safe-area insets + a locked page behind it. A bare `fixed inset-0`
@@ -775,6 +858,41 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
     return next;
   });
 
+  // Bring a card's top edge to the top of the page scroller. Opening a card
+  // that's half off screen and leaving it there is how you lose your place.
+  //
+  // The scroll has to happen AFTER React has committed the new layout, not in
+  // the click handler: stepping to the next opening also COLLAPSES the current
+  // one, which removes several hundred pixels above the target. Measuring
+  // before that reflow lands you nowhere near the card. So the handler only
+  // records what to scroll to, and the effect below does it once the DOM is
+  // the shape the user is about to see.
+  const pendingScrollRef = useRef(null);
+  const scrollCardIntoView = (iid) => { pendingScrollRef.current = iid; };
+
+  useEffect(() => {
+    const iid = pendingScrollRef.current;
+    if (!iid) return;
+    pendingScrollRef.current = null;
+    document.querySelector(`[data-line-card="${iid}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [openCards]);
+
+  const toggleCard = (iid) => setOpenCards(prev => {
+    const next = new Set(prev);
+    if (next.has(iid)) next.delete(iid);
+    else { next.add(iid); scrollCardIntoView(iid); }
+    return next;
+  });
+
+  // Step to the next opening without touching the scrollbar: close this one,
+  // open that one, put it at the top. The measure flow is one window at a time.
+  const openOnly = (iid) => { setOpenCards(new Set([iid])); scrollCardIntoView(iid); };
+
+  const allCardsOpen = sheet.lineItems.length > 0 && sheet.lineItems.every(li => openCards.has(li.id));
+  const toggleAllCards = () =>
+    setOpenCards(allCardsOpen ? new Set() : new Set(sheet.lineItems.map(li => li.id)));
+
   // Per-item "Other specifications" reveal (the specs a product type doesn't
   // normally use — always reachable so nothing is ever truly hidden).
   const [otherSpecsOpen, setOtherSpecsOpen] = useState(() => new Set());
@@ -846,6 +964,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       lineItems: [...s.lineItems, { ...lineFromPrevious(s.lineItems[s.lineItems.length - 1]), id }],
     }));
     setExpandedItems(prev => new Set([...prev, id])); // auto-expand specs
+    setOpenCards(new Set([id]));                       // and it's the only one open
   }, []);
 
   const copyLineItem = useCallback((idx) => {
@@ -859,6 +978,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       return { ...s, lineItems: items };
     });
     setExpandedItems(prev => new Set([...prev, id])); // auto-expand the copy
+    setOpenCards(new Set([id]));
   }, []);
 
   const removeLineItem = useCallback((idx) => {
@@ -1487,6 +1607,15 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
 
             {/* Layout switch — card view (default) or spreadsheet table */}
             <div className="flex justify-end items-center gap-2">
+              {/* With everything collapsed the sheet is a readable list; this is
+                  how you get back to that after opening a few. */}
+              {itemLayout === 'cards' && sheet.lineItems.length > 1 && (
+                <button type="button" onClick={toggleAllCards}
+                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                  {allCardsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  {allCardsOpen ? 'Collapse all' : 'Expand all'}
+                </button>
+              )}
               {itemLayout === 'table' && (
                 <button type="button" onClick={() => setTableFull(true)}
                   className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
@@ -1603,13 +1732,34 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
               const liningVisible = visibleSpecs.includes('lining');
               const hiddenSpecs   = MS_SPEC_FIELDS.filter(f => !visibleSpecs.includes(f.key));
               const otherOpen     = otherSpecsOpen.has(item.id);
+              const cardOpen      = openCards.has(item.id);
+              const nextItem      = sheet.lineItems[idx + 1];
               return (
-                <div key={item.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                /* NOT overflow-hidden: the header below is sticky, and an
+                   overflow-hidden ancestor becomes its scroll container, which
+                   silently kills the stickiness. Corners are rounded on the
+                   children instead. */
+                <div key={item.id} data-line-card={item.id}
+                  className={`border rounded-xl bg-white scroll-mt-2 ${
+                    cardOpen ? 'border-amber-300 shadow-sm' : 'border-slate-200'
+                  }`}>
+                  {/* Collapsed: the whole card is this one row. */}
+                  {!cardOpen && (
+                    <LineSummary item={item} idx={idx} open={false}
+                      issues={limitIssues[item.id]} onToggle={() => toggleCard(item.id)} />
+                  )}
+
+                  {cardOpen && <>
+                  {/* Open: the summary becomes a sticky title bar, so however
+                      far you scroll into this opening's fields you can still
+                      see which room you're in — the thing that was missing. */}
+                  <div className="sticky top-0 z-20 bg-amber-50/95 backdrop-blur-sm border-b border-amber-200 rounded-t-xl">
+                    <LineSummary item={item} idx={idx} open
+                      issues={limitIssues[item.id]} onToggle={() => toggleCard(item.id)} />
+                  </div>
+
                   {/* Item header */}
-                  <div className="bg-amber-50 border-b border-slate-100 px-4 py-3 flex items-start gap-2">
-                    <span className="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-1">
-                      {idx + 1}
-                    </span>
+                  <div className="border-b border-slate-100 px-4 py-3 flex items-start gap-2">
                     <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Location *</label>
@@ -1745,6 +1895,30 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                       />
                     </div>
                   )}
+
+                  {/* Step straight to the next opening — closes this card,
+                      opens that one and puts it at the top. Walking a house
+                      window by window shouldn't involve the scrollbar at all,
+                      and this is what stops you sailing past the one you
+                      wanted. The last line offers a new one instead. */}
+                  <div className="border-t border-slate-100 px-3 py-2 flex items-center justify-between gap-2">
+                    <button type="button" onClick={() => toggleCard(item.id)}
+                      className="text-xs font-medium text-slate-400 hover:text-slate-600 px-2 py-1.5">
+                      Collapse
+                    </button>
+                    {nextItem ? (
+                      <button type="button" onClick={() => openOnly(nextItem.id)}
+                        className="flex items-center gap-1 text-xs font-semibold text-amber-600 hover:text-amber-700 px-2 py-1.5">
+                        Next: {nextItem.location || `line ${idx + 2}`} <ChevronDown size={13} />
+                      </button>
+                    ) : (
+                      <button type="button" onClick={addLineItem}
+                        className="flex items-center gap-1 text-xs font-semibold text-amber-600 hover:text-amber-700 px-2 py-1.5">
+                        <Plus size={13} /> Add next opening
+                      </button>
+                    )}
+                  </div>
+                  </>}
                 </div>
               );
             })}
