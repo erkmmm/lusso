@@ -613,7 +613,12 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         {/* ── Options ────────────────────────────────────────────────────── */}
         <div style={{ ...container, padding: '34px 22px 0' }}>
           <div style={{ borderTop: `2px solid ${T.bronze}`, paddingTop: 16, maxWidth: '60ch' }}>
-            <h2 style={{ margin: 0, fontWeight: 300, fontSize: 21, letterSpacing: '-0.3px', color: T.ink }}>Your options</h2>
+            {/* Only call this section "options" when there is something to
+                choose. On a quote with no optionals and no alternatives, "Your
+                options" promised a decision the page never offered. */}
+            <h2 style={{ margin: 0, fontWeight: 300, fontSize: 21, letterSpacing: '-0.3px', color: T.ink }}>
+              {hasOptions ? 'Your options' : 'What we\u2019ve quoted'}
+            </h2>
             <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.7, color: T.graphite }}>
               Everything below is quoted for your rooms.{hasOptions ? ' Toggle the pieces you want, or choose between treatments where we have offered alternatives — your total updates as you go.' : ''}{quote.includesGST ? ' Prices exclude GST.' : ''}
             </p>
@@ -708,7 +713,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           </section>
 
           {/* Terms & Conditions */}
-          {(termsText || settings.termsAttachmentUrl) && (
+          {(termsText || settings.termsAttachmentUrl || settings.termsUrl || settings.privacyUrl) && (
             <section style={{ marginTop: 34 }}>
               <Eyebrow>Terms and conditions</Eyebrow>
               {termsText && <p style={{ margin: '14px 0 0', fontSize: 14, lineHeight: 1.7, maxWidth: '60ch', whiteSpace: 'pre-wrap' }}>{termsText}</p>}
@@ -717,6 +722,31 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 14, padding: '12px 16px', border: `0.5px solid ${T.mist}`, borderRadius: 6, background: T.paperPure, fontSize: 13.5, color: T.ink, textDecoration: 'none' }}>
                   {settings.termsAttachmentLabel || 'Download full Terms & Conditions'} <span aria-hidden="true">↗</span>
                 </a>
+              )}
+
+              {/* The published terms and privacy policy. Someone being asked to
+                  accept a quote and hand over their details should be able to
+                  read both without going looking for them. Each link is only
+                  rendered when a URL is set, so this can never point at a page
+                  that isn't there. */}
+              {(settings.termsUrl || settings.privacyUrl) && (
+                <p style={{ margin: '16px 0 0', fontSize: 12.5, lineHeight: 1.7, color: T.graphite }}>
+                  By accepting you agree to our{' '}
+                  {settings.termsUrl && (
+                    <a href={settings.termsUrl} target="_blank" rel="noreferrer"
+                      style={{ color: T.bronze, textDecoration: 'underline', textUnderlineOffset: 2 }}>
+                      Terms &amp; Conditions
+                    </a>
+                  )}
+                  {settings.termsUrl && settings.privacyUrl && ', and to our '}
+                  {settings.privacyUrl && (
+                    <a href={settings.privacyUrl} target="_blank" rel="noreferrer"
+                      style={{ color: T.bronze, textDecoration: 'underline', textUnderlineOffset: 2 }}>
+                      Privacy Policy
+                    </a>
+                  )}
+                  {settings.privacyUrl ? ' describing how we handle your information.' : '.'}
+                </p>
               )}
             </section>
           )}

@@ -3113,6 +3113,11 @@ const DEFAULT_QUOTE_SETTINGS = {
   // Optional link to a full Terms & Conditions document (PDF/web). Blank hides the link.
   termsAttachmentUrl: '',
   termsAttachmentLabel: 'Download full Terms & Conditions',
+  // The published legal pages, linked from every customer quote. Defaults point
+  // at the live site; editable in Settings so they can move without a deploy.
+  // Blank hides the link rather than rendering one that 404s.
+  termsUrl: 'https://lusso.com.au/terms.html',
+  privacyUrl: 'https://lusso.com.au/privacy.html',
   // Payment options shown on the customer quote. These are the live account
   // details — they must match the ones on the Xero invoice, or a customer who
   // pays off the quote pays into a different account than the invoice states.
@@ -3613,7 +3618,28 @@ export const deleteQuoteTemplate = (id) => set('lusso_quote_templates', getQuote
 
 // ─── Quote Settings ───────────────────────────────────────────────────────────
 
-export const getQuoteSettings = () => get('lusso_quote_settings') || DEFAULT_QUOTE_SETTINGS;
+/**
+ * Saved settings, with the defaults filling any gap.
+ *
+ * This used to be `saved || DEFAULTS` — the saved row wholesale, or the
+ * defaults wholesale. Once settings had been saved once (every real install),
+ * any field ADDED to DEFAULT_QUOTE_SETTINGS afterwards was simply absent
+ * forever, because the saved object had no key for it. New settings silently
+ * did nothing, which is how the terms and privacy links failed to appear.
+ *
+ * Merging means a key the user has deliberately cleared stays cleared (the
+ * saved empty string wins), while a key they have never seen picks up its
+ * default. paymentDetails is merged one level deeper for the same reason.
+ */
+export const getQuoteSettings = () => {
+  const saved = get('lusso_quote_settings');
+  if (!saved) return DEFAULT_QUOTE_SETTINGS;
+  return {
+    ...DEFAULT_QUOTE_SETTINGS,
+    ...saved,
+    paymentDetails: { ...(DEFAULT_QUOTE_SETTINGS.paymentDetails || {}), ...(saved.paymentDetails || {}) },
+  };
+};
 
 /**
  * The link a customer follows to READ our Google reviews.

@@ -1206,7 +1206,23 @@ function QuoteDefaultsSection() {
               <input value={s.termsAttachmentLabel ?? ''} onChange={e => set('termsAttachmentLabel', e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
             </div>
+            {/* Linked from the bottom of every customer quote, next to Accept.
+                Clear one to drop that link rather than publish a dead one. */}
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Terms &amp; Conditions page</label>
+              <input value={s.termsUrl ?? ''} onChange={e => set('termsUrl', e.target.value)} placeholder="https://lusso.com.au/terms.html"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Privacy Policy page</label>
+              <input value={s.privacyUrl ?? ''} onChange={e => set('privacyUrl', e.target.value)} placeholder="https://lusso.com.au/privacy.html"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
           </div>
+          <p className="text-[11px] text-slate-400">
+            Both appear under Terms and conditions on the customer&apos;s quote, as
+            &ldquo;By accepting you agree to our Terms &amp; Conditions, and to our Privacy Policy&rdquo;.
+          </p>
         </div>
       </Card>
 
