@@ -1236,12 +1236,26 @@ export const applyTakeoffToMeasureSheet = (takeoff) => {
 
   if (!sheet) {
     const job = getJob(takeoff.jobId);
+    const customerId = takeoff.customerId || job?.customerId || null;
+    // Carry the customer's details onto the sheet, not just the id.
+    //
+    // A sheet generated from a takeoff used to arrive with customerId only, so
+    // every list and document that renders the sheet's own customerName showed
+    // "Unknown Customer" on a job that plainly had one — and the site address
+    // and measure date were blank on the printed sheet.
+    const customer = customerId ? getCustomer(customerId) : null;
     sheet = {
       id: uuidv4(),
       jobId: takeoff.jobId,
-      customerId: takeoff.customerId || job?.customerId || null,
+      customerId,
+      customerName: customer?.name || job?.customerName || '',
+      phone:        customer?.phone || '',
+      email:        customer?.email || '',
+      siteAddress:  job?.address || customer?.address || '',
+      billingAddress: customer?.billingAddress || '',
+      preferredContact: customer?.preferredContact || 'Any',
       status: 'Draft',
-      measureDate: null,
+      measureDate: new Date().toISOString().slice(0, 10),
       measurer: job?.assignedStaff || '',
       lineItems: [],
     };
