@@ -528,6 +528,15 @@ export async function hydrateFromSupabase() {
         // updatedAt, so it is still the newer record and flushPending/the next
         // save pushes it back up — the good version wins the race instead of
         // losing it.
+        // Marking a notification read is a one-way action, and `notifications`
+        // has no updated_at — so the newest-wins test below compares 0 to 0 and
+        // hands it to the server every time, resurrecting the badge. Read state
+        // is therefore sticky: once read on this device, a server row saying
+        // otherwise is stale, not newer.
+        if (table === 'notifications' && localRow.isRead && !sbRow.isRead) {
+          return { ...sbRow, isRead: true };
+        }
+
         if (contentGuard[table]) {
           const sbScore  = contentGuard[table](sbRow);
           const locScore = contentGuard[table](localRow);
@@ -918,6 +927,32 @@ async function searchProductDocumentText(q) {
   }
 }
 
+/**
+ * Mark every unread notification read, in ONE statement.
+ *
+ * This used to be one upsert per notification — 124 parallel writes on a real
+ * account, each with its own timeout and write-ahead bookkeeping. Enough of
+ * them failed or never settled that the server stayed unread, and because
+ * `notifications` has no updated_at column the hydration merge below resolved
+ * 0 <= 0 in the SERVER's favour and put the badge straight back. Pressing
+ * "mark all as read" appeared to do nothing.
+ *
+ * A single UPDATE either works or doesn't, and can't half-finish.
+ */
+async function markAllNotificationsReadRemote() {
+  if (!supabase) return { ok: false, reason: 'offline' };
+  try {
+    const { error } = await withTimeout(
+      supabase.from('notifications').update({ is_read: true }).eq('is_read', false),
+    );
+    if (error) { console.warn('[db] markAllNotificationsRead:', error.message); return { ok: false, reason: error.message }; }
+    return { ok: true };
+  } catch (e) {
+    console.warn('[db] markAllNotificationsRead:', e?.message || e);
+    return { ok: false, reason: e?.message || 'failed' };
+  }
+}
+
 async function restore(table, id) {
   if (!supabase || !id) return;
   const { error } = await supabase
@@ -1013,6 +1048,7 @@ export const db = {
 
   // Notifications
   saveNotification:     (r) => upsert('notifications', r),
+  markAllNotificationsRead: () => markAllNotificationsReadRemote(),
   deleteNotification:   (id) => remove('notifications', id),
 
   // Employees

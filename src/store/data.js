@@ -2400,13 +2400,27 @@ export const markNotificationRead = (id) => {
   db.saveNotification(list[idx]);
 };
 
-export const markAllNotificationsRead = () => {
+/**
+ * Mark the lot read.
+ *
+ * The local list is updated immediately so the badge clears the moment you
+ * press it, and the server is told in ONE statement rather than one write per
+ * notification. The old version fired an upsert per row — 124 of them on a real
+ * account — and enough never landed that the server stayed unread; the next
+ * hydrate then put the badge straight back, so the button looked broken.
+ *
+ * Returns a promise resolving to { ok } so the caller can say so if the server
+ * refused. Local state is kept read either way: the person has seen them, and
+ * the sticky-read rule in hydrateFromSupabase stops a stale server row undoing
+ * that.
+ */
+export const markAllNotificationsRead = async () => {
   const list = getNotifications();
-  const changed = list.filter(n => !n.isRead).map(n => ({ ...n, isRead: true }));
-  if (!changed.length) return;
-  const byId = new Map(changed.map(n => [n.id, n]));
-  set('lusso_notifications', list.map(n => byId.get(n.id) || n));
-  changed.forEach(n => db.saveNotification(n));
+  if (!list.some(n => !n.isRead)) return { ok: true, changed: 0 };
+  const changed = list.filter(n => !n.isRead).length;
+  set('lusso_notifications', list.map(n => (n.isRead ? n : { ...n, isRead: true })));
+  const res = await db.markAllNotificationsRead();
+  return { ...res, changed };
 };
 
 // ─── Product Types ────────────────────────────────────────────────────────────

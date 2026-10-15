@@ -331,9 +331,15 @@ export default function Layout() {
     navigate(notificationLink(n));
   };
 
-  const handleMarkAllRead = () => {
-    markAllNotificationsRead();
+  const handleMarkAllRead = async () => {
+    setNotifs(getNotifications().map(n => (n.isRead ? n : { ...n, isRead: true }))); // clears the badge now
+    const res = await markAllNotificationsRead();
     setNotifs(getNotifications());
+    // Say so rather than letting them come back on the next device — the old
+    // silent failure is exactly why this looked like it did nothing.
+    if (res && res.ok === false) {
+      toast('Marked read on this device, but we couldn\u2019t reach the server — they may come back.', 'error');
+    }
   };
 
   // Close both menus and navigate
