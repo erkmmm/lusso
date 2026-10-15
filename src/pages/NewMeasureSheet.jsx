@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
+import useFullscreenPane from '../hooks/useFullscreenPane';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -8,7 +9,7 @@ import {
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Copy, Printer, Maximize2, Minimize2, StickyNote, History,
+  Copy, Printer, Maximize2, Minimize2, StickyNote, History, RotateCcw,
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
@@ -364,6 +365,39 @@ function Section({ title, icon, open, onToggle, children }) {
   );
 }
 
+// Shown only in the fullscreen grid, only on a narrow screen held upright, and
+// only until it's dismissed for the session. The grid is 8-15 columns wide; a
+// phone in portrait gives it 390px. Turning the phone is the fix, and nobody
+// thinks of it while they're up a ladder.
+function LandscapeHint() {
+  const [portrait, setPortrait] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 700 && window.innerHeight > window.innerWidth);
+  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('lusso_ms_rotate_hint') === '1');
+
+  useEffect(() => {
+    const on = () => setPortrait(window.innerWidth < 700 && window.innerHeight > window.innerWidth);
+    window.addEventListener('resize', on);
+    window.addEventListener('orientationchange', on);
+    return () => {
+      window.removeEventListener('resize', on);
+      window.removeEventListener('orientationchange', on);
+    };
+  }, []);
+
+  if (!portrait || dismissed) return null;
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200 flex-shrink-0">
+      <RotateCcw size={13} className="text-amber-600 flex-shrink-0" />
+      <p className="text-[11px] text-amber-800 flex-1">Turn the phone sideways — the grid gets about twice the columns.</p>
+      <button type="button" aria-label="Dismiss"
+        onClick={() => { sessionStorage.setItem('lusso_ms_rotate_hint', '1'); setDismissed(true); }}
+        className="text-amber-500 hover:text-amber-700 p-0.5 flex-shrink-0">
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
 const inputCls = (error) =>
   `w-full border rounded-lg text-sm px-3 py-2.5 focus:outline-none focus:ring-2 transition-colors ${
     error ? 'border-red-300 focus:ring-red-300 bg-red-50' : 'border-slate-200 focus:ring-amber-400 bg-white'
@@ -573,6 +607,9 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   const [expandedItems,  setExpandedItems]  = useState(() => new Set(sheet.lineItems.map(li => li.id)));
   const [itemLayout,     setItemLayout]     = useState(() => localStorage.getItem('lusso_ms_layout') === 'table' ? 'table' : 'cards');
   const [tableFull, setTableFull] = useState(false);
+  // 100dvh + safe-area insets + a locked page behind it. A bare `fixed inset-0`
+  // is not fullscreen on a phone — see the hook.
+  useFullscreenPane(tableFull);
   const chooseLayout = (l) => { setItemLayout(l); localStorage.setItem('lusso_ms_layout', l); if (l !== 'table') setTableFull(false); };
 
   // What each line breaches, keyed by line id.
@@ -1493,57 +1530,67 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                 Portalled to <body> so it clears the app header/sidebar, which
                 live in an overflow-hidden column that would otherwise trap it. */}
             {itemLayout === 'table' && tableFull && createPortal(
-              <div className="fixed inset-0 z-[60] bg-white flex flex-col">
-                <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 flex-shrink-0">
+              <div className="fullscreen-pane fixed inset-0 z-[60] bg-white flex flex-col">
+                {/* Header. On a phone the labels go and the icons stay — four
+                    labelled buttons wrapped onto two rows and ate a third of
+                    the grid. */}
+                <div className="flex items-center justify-between gap-2 px-3 py-2 [@media(max-height:560px)]:py-1 border-b border-slate-200 flex-shrink-0">
                   <div className="min-w-0">
-                    <h2 className="font-semibold text-slate-800 text-sm truncate">Line items — table</h2>
-                    <p className="text-xs text-slate-400 truncate">
-                      {sheet.customerName || 'Measure sheet'} · {sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''}
+                    <h2 className="font-semibold text-slate-800 text-sm truncate">
+                      {sheet.customerName || 'Measure sheet'}
+                    </h2>
+                    {/* A phone on its side has 375px of height. The subtitle is
+                        the first thing to go. */}
+                    <p className="text-xs text-slate-400 truncate [@media(max-height:560px)]:hidden">
+                      {sheet.lineItems.length} item{sheet.lineItems.length !== 1 ? 's' : ''}
                       {savedAt && <span className="text-green-600"> · Saved {savedAt.toLocaleTimeString()}</span>}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
                     {/* Fullscreen hides the whole sheet, so the notes section
                         is off screen here and only here. Same feed, brought to
                         you rather than making you drop out of the table. */}
                     <button type="button" onClick={() => { persistSheetQuietly(); setNotesOpen(true); }}
-                      className="relative flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
-                      <StickyNote size={14} /> Note
+                      title="Notes & to-dos"
+                      className="relative flex items-center gap-1.5 text-xs font-medium px-2.5 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+                      <StickyNote size={14} /> <span className="hidden sm:inline">Note</span>
                       {sheetNotes > 0 && (
                         <span className="text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full px-1.5">{sheetNotes}</span>
                       )}
                     </button>
-                    <button type="button" onClick={addLineItem}
-                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50">
-                      <Plus size={14} /> Add line
-                    </button>
-                    <button type="button" onClick={handleSaveDraft}
-                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white">
-                      <Save size={13} /> Save
+                    <button type="button" onClick={handleSaveDraft} title="Save draft"
+                      className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white">
+                      <Save size={13} /> <span className="hidden sm:inline">Save</span>
                     </button>
                     <button type="button" onClick={() => { handleSaveDraft(); setTableFull(false); }}
-                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white">
-                      <Minimize2 size={13} /> Done
+                      title="Save and leave fullscreen"
+                      className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white">
+                      <Minimize2 size={13} /> <span className="hidden sm:inline">Done</span>
                     </button>
                   </div>
                 </div>
-                <div className="flex-1 overflow-auto p-3">
-                  <MeasureSheetTable
-                    sheetId={sheet.id}
-                    limitIssues={limitIssues}
-                    onOpenLimitDoc={setLimitDocId}
-                    setLinePhotos={setLinePhotos}
-                    lineItems={sheet.lineItems}
-                    setLineItem={setLineItem}
-                    removeLineItem={removeLineItem}
-                    addLineItem={addLineItem}
-                    copyLineItem={copyLineItem}
-                    productTypes={productTypes}
-                    errors={errors}
-                    onConfirmMeasured={confirmLineMeasured}
-                    onRevertToPlan={revertLineToPlan}
-                  />
-                </div>
+
+                {/* A grid this wide wants the long edge of the screen. Say so
+                    once, where it's actionable, instead of letting someone
+                    fight a 390px-wide spreadsheet. */}
+                <LandscapeHint />
+
+                <MeasureSheetTable
+                  fill
+                  sheetId={sheet.id}
+                  limitIssues={limitIssues}
+                  onOpenLimitDoc={setLimitDocId}
+                  setLinePhotos={setLinePhotos}
+                  lineItems={sheet.lineItems}
+                  setLineItem={setLineItem}
+                  removeLineItem={removeLineItem}
+                  addLineItem={addLineItem}
+                  copyLineItem={copyLineItem}
+                  productTypes={productTypes}
+                  errors={errors}
+                  onConfirmMeasured={confirmLineMeasured}
+                  onRevertToPlan={revertLineToPlan}
+                />
               </div>,
               document.body
             )}
@@ -1703,12 +1750,14 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
             })}
 
             {/* The new line inherits the last line's product and specs, so say
-                so — silent inheritance is worse than no inheritance. */}
-            <button type="button" onClick={addLineItem}
+                so — silent inheritance is worse than no inheritance. The grid
+                carries its own add button pinned under the rows, so this one is
+                the card layout's. */}
+            {itemLayout === 'cards' && <button type="button" onClick={addLineItem}
               className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 hover:border-amber-400 text-slate-500 hover:text-amber-600 text-sm font-medium py-3 rounded-xl transition-colors">
               <Plus size={16} /> Add Line Item
               {lastLineHasSpecs && <span className="text-xs font-normal text-slate-400">· same product &amp; specs</span>}
-            </button>
+            </button>}
           </div>
         )}
       </Section>

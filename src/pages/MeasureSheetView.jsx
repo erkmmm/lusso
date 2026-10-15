@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown, StickyNote, History } from 'lucide-react';
+import useFullscreenPane from '../hooks/useFullscreenPane';
 import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, duplicateMeasureSheet, createJobFromMeasureSheet, getPurchaseOrdersBySheet } from '../store/data';
 import { exportMeasureSheetToBuz, isRollerBlindItem } from '../lib/buzExport';
 import { toast } from '../components/ToastContainer';
@@ -255,6 +256,8 @@ export default function MeasureSheetView() {
   const [linkJobId,    setLinkJobId]    = useState('');
   const [showJobPanel, setShowJobPanel] = useState(false);
   const [tableFull,    setTableFull]    = useState(false);
+  // Real fullscreen: 100dvh, safe-area insets, page behind it locked.
+  useFullscreenPane(tableFull);
   const sheet    = getMeasureSheet(id);
   const customer = sheet ? getCustomer(sheet.customerId) : null;
   const job      = sheet?.jobId ? getJob(sheet.jobId) : null; // read directly
@@ -618,7 +621,7 @@ export default function MeasureSheetView() {
 
       {/* Fullscreen schedule — best in landscape; fills the viewport for wide sheets */}
       {tableFull && (
-        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+        <div className="fullscreen-pane fixed inset-0 z-50 bg-white flex flex-col">
           <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 flex-shrink-0">
             <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2 min-w-0">
               <ClipboardList size={15} className="flex-shrink-0" />
@@ -631,9 +634,10 @@ export default function MeasureSheetView() {
               <X size={15} /> Done
             </button>
           </div>
-          <div className="flex-1 overflow-auto">
-            <MeasureItemsTable items={sheet.lineItems} sheetId={sheet.id} />
-          </div>
+          {/* The table owns the scrolling — nesting its horizontal scroller
+              inside a second `overflow-auto` here is what used to make a
+              sideways swipe land in the wrong box and killed sticky columns. */}
+          <MeasureItemsTable items={sheet.lineItems} sheetId={sheet.id} fill />
         </div>
       )}
 
@@ -679,8 +683,15 @@ export default function MeasureSheetView() {
 
 // Full measure-sheet schedule. Every field is its own column (spec columns
 // only appear when at least one item has a value), so all data is visible
-// without expanding rows. Wide sheets scroll horizontally.
-function MeasureItemsTable({ items = [], sheetId = null }) {
+// without expanding rows.
+//
+// Wide sheets scroll sideways, so the header row and the `#` + Location columns
+// are sticky: reading a drop out of the far-right column is useless if you've
+// lost which room and which column you're looking at. That needs ONE scroll
+// container owning both axes (`.ms-scroll`) — nesting a horizontal scroller
+// inside a vertical one makes sticky impossible and the swipe unpredictable.
+// `fill` = take the height we're given (fullscreen pane) rather than cap it.
+function MeasureItemsTable({ items = [], sheetId = null, fill = false }) {
   if (!items.length) {
     return <p className="px-5 py-8 text-center text-sm text-slate-400">No items on this sheet.</p>;
   }
@@ -721,26 +732,55 @@ function MeasureItemsTable({ items = [], sheetId = null }) {
 
   const cols = [...baseCols, ...specCols];
 
+  // Columns 0 and 1 are `#` and Location — the pinned pair. NUM_W has to be a
+  // width the `#` column can ACTUALLY render at: Location is pinned at
+  // `left: NUM_W`, so if padding forces the row-number cell wider than that,
+  // Location parks on top of it and eats the line number. Hence the narrow
+  // padding override on column 0 below.
+  const NUM_W = 36;
+  const LOC_W = 140;
+  const pinStyle = (ci) =>
+    ci === 0 ? { left: 0, width: NUM_W, minWidth: NUM_W }
+    : ci === 1 ? { left: NUM_W, width: LOC_W, minWidth: LOC_W }
+    : undefined;
+
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-xs">
+    <div className={`ms-scroll ${fill ? 'flex-1 min-h-0' : 'max-h-[70vh]'} print:overflow-visible print:max-h-none`}>
+      <table className="border-separate border-spacing-0 min-w-full text-xs">
         <thead>
-          <tr className="bg-slate-50 border-b border-slate-100">
+          <tr>
             {cols.map((c, ci) => (
-              <th key={ci} className={`px-3 py-2.5 font-medium text-slate-500 whitespace-nowrap ${c.align}`}>{c.header}</th>
+              <th key={ci} style={pinStyle(ci)}
+                className={`sticky top-0 bg-slate-50 border-b border-slate-200 ${
+                  ci === 0 ? 'px-1 text-center' : 'px-3'
+                } py-2.5 font-medium text-slate-500 whitespace-nowrap ${c.align} ${
+                  ci < 2 ? 'sticky z-30 overflow-hidden text-ellipsis' : 'z-20'
+                } ${ci === 1 ? 'ms-pin-edge' : ''}`}>
+                {c.header}
+              </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-50">
+        <tbody>
           {items.map((item, i) => (
-            <tr key={item.id || i} className="hover:bg-slate-50 transition-colors">
+            <tr key={item.id || i} className="group">
               {cols.map((c, ci) => {
                 const v = c.cell(item, i);
                 const display = (v === null || v === undefined || v === '') ? '—' : v;
+                // Pinned cells have to be opaque or the row slides visibly
+                // underneath them as you scroll sideways.
+                const pinned = ci < 2;
                 return (
                   <td
                     key={ci}
-                    className={`px-3 py-2.5 align-top ${c.align} ${c.tone} ${c.mono ? 'font-mono' : ''} ${c.wrap ? 'whitespace-pre-wrap min-w-[180px] max-w-[280px]' : 'whitespace-nowrap'}`}
+                    style={pinStyle(ci)}
+                    className={`relative ${ci === 0 ? 'px-1 text-center' : 'px-3'} py-2.5 align-top border-b border-slate-100 ${c.align} ${c.tone} ${
+                      c.mono ? 'font-mono' : ''
+                    } ${c.wrap ? 'whitespace-pre-wrap min-w-[180px] max-w-[280px]' : 'whitespace-nowrap'} ${
+                      // A long room name must stop at the pinned edge, not run
+                      // out over the columns scrolling underneath it.
+                      pinned ? 'sticky z-10 bg-white overflow-hidden text-ellipsis' : 'group-hover:bg-slate-50'
+                    } ${ci === 1 ? 'ms-pin-edge' : ''}`}
                   >
                     {display}
                   </td>

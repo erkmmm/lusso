@@ -1433,3 +1433,59 @@ button:not(:disabled):active {
 .article-preview table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .article-preview th, .article-preview td { border: 1px solid rgb(226 232 240); padding: 0.4rem 0.6rem; text-align: left; }
 .article-preview th { background: rgb(248 250 252); font-weight: 600; }
+
+/* ── Fullscreen panes (measure-sheet grid, sheet schedule) ────────────────
+   A `fixed inset-0` overlay is NOT fullscreen on a phone. 100vh is the tall
+   viewport, so Safari's collapsing toolbar covers the bottom of the pane, and
+   because the app ships `apple-mobile-web-app-status-bar-style=black-
+   translucent` the top of the pane sits underneath the iOS status bar once
+   it's installed to the Home Screen. Both show up as "it's not properly
+   fullscreen". 100dvh tracks the toolbar; the safe-area insets keep the header
+   below the notch and the last table row above the home indicator.
+
+   Paired with useFullscreenPane(), which locks the page behind it. */
+.fullscreen-pane {
+  height: 100vh;             /* fallback for anything without dvh */
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  overscroll-behavior: contain;
+}
+
+/* ── Measure-sheet grid ───────────────────────────────────────────────────
+   ONE scroll container, both axes. The grid used to nest an `overflow-x-auto`
+   inside the pane's `overflow-auto`, which meant a sideways swipe landed in
+   whichever box happened to catch it — the single biggest reason the table
+   felt unstable — and made `position: sticky` impossible, because the two axes
+   belonged to two different scrollers. */
+.ms-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* Pinned column shadow. Lives on ::after rather than box-shadow because the
+   cells already use box-shadow to draw the selection outline. */
+.ms-pin-edge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  right: -10px;
+  width: 10px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  background: linear-gradient(to right, rgb(15 23 42 / 0.13), transparent);
+}
+.ms-scrolled-x .ms-pin-edge::after { opacity: 1; }
+
+/* iOS zooms the whole viewport when you focus an input under 16px, which on a
+   grid cell means the page lurches sideways and you lose your place — the
+   "jumps around" feeling. Only touch devices pay the extra two pixels. */
+@media (pointer: coarse) {
+  .ms-cell-input { font-size: 16px; }
+}
