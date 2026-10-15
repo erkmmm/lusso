@@ -470,6 +470,37 @@ function LandscapeHint() {
   );
 }
 
+// ─── Which layout a device gets before anyone has chosen one ─────────────────
+//
+// The grid wants width. On an iPad it shows a dozen columns at once and beats
+// cards comfortably; on a phone it is a handful of columns dragged along behind
+// a pinned room name, and the card list wins. So the default follows the
+// device rather than making every measurer fix it by hand.
+//
+// Measured on the SHORTER edge, so a phone held sideways is still a phone — an
+// iPhone in landscape is over 900px wide and would otherwise be read as a
+// tablet. The smallest iPad's short edge is 744; the largest phone's is ~440.
+const TABLET_MIN_EDGE = 600;
+
+const deviceDefaultLayout = () => {
+  if (typeof window === 'undefined') return 'cards';
+  return Math.min(window.innerWidth, window.innerHeight) >= TABLET_MIN_EDGE ? 'table' : 'cards';
+};
+
+// The v1 key stored a value on every render path, so "chose cards" and "never
+// chose" were the same string and a device default could never apply. v2 is
+// written ONLY when someone flips the switch themselves; absent means "not my
+// call, use the device's". A deliberate choice still sticks on that device.
+const LAYOUT_KEY = 'lusso_ms_layout_v2';
+
+const readLayout = () => {
+  try {
+    const saved = localStorage.getItem(LAYOUT_KEY);
+    if (saved === 'table' || saved === 'cards') return saved;
+  } catch { /* private mode */ }
+  return deviceDefaultLayout();
+};
+
 const inputCls = (error) =>
   `w-full border rounded-lg text-sm px-3 py-2.5 focus:outline-none focus:ring-2 transition-colors ${
     error ? 'border-red-300 focus:ring-red-300 bg-red-50' : 'border-slate-200 focus:ring-amber-400 bg-white'
@@ -688,12 +719,17 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   // brand-new sheet opens its one line, because there's nothing to review.
   const [openCards, setOpenCards] = useState(
     () => new Set(sheet.lineItems.length === 1 ? sheet.lineItems.map(li => li.id) : []));
-  const [itemLayout,     setItemLayout]     = useState(() => localStorage.getItem('lusso_ms_layout') === 'table' ? 'table' : 'cards');
+  const [itemLayout,     setItemLayout]     = useState(readLayout);
   const [tableFull, setTableFull] = useState(false);
   // 100dvh + safe-area insets + a locked page behind it. A bare `fixed inset-0`
   // is not fullscreen on a phone — see the hook.
   useFullscreenPane(tableFull);
-  const chooseLayout = (l) => { setItemLayout(l); localStorage.setItem('lusso_ms_layout', l); if (l !== 'table') setTableFull(false); };
+  // Only an explicit switch is remembered — see LAYOUT_KEY.
+  const chooseLayout = (l) => {
+    setItemLayout(l);
+    try { localStorage.setItem(LAYOUT_KEY, l); } catch { /* private mode */ }
+    if (l !== 'table') setTableFull(false);
+  };
 
   // What each line breaches, keyed by line id.
   //
