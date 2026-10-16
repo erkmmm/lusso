@@ -13,6 +13,7 @@ import {
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
+import StickyActionBar from '../components/StickyActionBar';
 import { autoCostCurtainLine } from '../lib/curtainCalc';
 
 // Convert a measure-sheet line item → snapshot quote line item
@@ -354,7 +355,7 @@ export default function QuoteFromJob() {
       )}
 
       {/* Sticky action bar */}
-      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-20 lg:pl-72">
+      <StickyActionBar>
         {error && (
           <p className="text-xs text-red-600 flex items-center gap-1 mb-2 justify-center">
             <AlertCircle size={12} /> {error}
@@ -378,7 +379,7 @@ export default function QuoteFromJob() {
             }
           </button>
         </div>
-      </div>
+      </StickyActionBar>
     </div>
   );
 }

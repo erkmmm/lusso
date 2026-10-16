@@ -35,6 +35,7 @@ import NotesFeed from '../components/NotesFeed';
 import LinePhotos from '../components/LinePhotos';
 import LineLimitWarnings from '../components/LineLimitWarnings';
 import ProductDocViewer from '../components/ProductDocViewer';
+import StickyActionBar from '../components/StickyActionBar';
 
 // ─── Customer search & duplicate helpers ──────────────────────────────────────
 
@@ -1998,7 +1999,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       </Section>
 
       {/* Sticky action bar — sits above the mobile bottom nav (64px) on small screens */}
-      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-20 lg:pl-72">
+      <StickyActionBar>
         {errors._submit && (
           <p className="text-xs text-red-600 text-center mb-2 flex items-center justify-center gap-1">
             <AlertCircle size={12} /> {errors._submit}
@@ -2027,7 +2028,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
             </button>
           </div>
         </div>
-      </div>
+      </StickyActionBar>
 
       {limitDocId && (() => {
         const d = getProductDocument(limitDocId);
