@@ -19,7 +19,6 @@ import Layout from './components/Layout';
 import ThemeBackground from './components/ThemeBackground';
 import Dashboard from './pages/Dashboard';
 import Today from './pages/Today';
-import Notes from './pages/Notes';
 import Jobs from './pages/Jobs';
 import JobProfile from './pages/JobProfile';
 import JobTakeoff from './pages/JobTakeoff';
@@ -361,7 +360,6 @@ function AppRoutes() {
         <Route element={<Layout />}>
               <Route path="/"                           element={<Dashboard />} />
               <Route path="/today"                      element={<Today />} />
-              <Route path="/notes"                      element={<Notes />} />
               <Route path="/jobs"                       element={<Jobs />} />
               <Route path="/jobs/new"                   element={<NewJob />} />
               <Route path="/jobs/:id"                   element={<JobProfile />} />
@@ -393,6 +391,10 @@ function AppRoutes() {
               <Route path="/curtain-rates/import"        element={<ImportTrackPrices />} />
               {/* Quotes list is merged into Projects — quotes live inside a project now. */}
               <Route path="/quotes"                     element={<Navigate to="/jobs" replace />} />
+              {/* The global notes page is gone: a note belongs to the measure sheet
+                  or job it is about and is read there. Old bookmarks and any push
+                  written before the link fix land on Today, which lists what's due. */}
+              <Route path="/notes"                      element={<Navigate to="/today" replace />} />
               <Route path="/quotes/import"                     element={<ImportQuotes />} />
               <Route path="/quotes/new"                        element={<QuoteBuilder />} />
               <Route path="/quotes/new-from-job/:jobId"        element={<QuoteFromJob />} />

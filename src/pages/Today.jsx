@@ -96,7 +96,13 @@ export default function Today() {
         meta: [t.dueDate < todayStr ? `overdue · due ${dayLabel(t.dueDate)}` : 'due today', t.priority]
           .filter(Boolean).join(' · '),
         urgent: t.dueDate < todayStr,
-        to: t.jobId ? `/jobs/${t.jobId}` : t.customerId ? `/customers/${t.customerId}` : '/notes',
+        // Land on the record the note is about. There is no global notes
+        // page to fall back to any more — and landing there was never much
+        // use when the note was written against a specific measure sheet.
+        to: t.jobId ? `/jobs/${t.jobId}`
+          : t.measureSheetId ? `/measure-sheets/${t.measureSheetId}`
+          : t.customerId ? `/customers/${t.customerId}`
+          : '/today',
       }));
 
     const awaitingInstaller = reqs

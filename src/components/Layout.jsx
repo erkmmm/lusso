@@ -5,7 +5,7 @@ import {
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, UserCog, Users2, Inbox, ArrowLeft,
-  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, StickyNote, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
@@ -27,7 +27,6 @@ const NAV_SECTIONS = [
     items: [
       { to: '/',               label: 'Dashboard', icon: LayoutDashboard, exact: true },
       { to: '/today',          label: 'Today',     icon: ListChecks },
-      { to: '/notes',          label: 'Notes',     icon: StickyNote },
       { to: '/customers', label: 'Customers', icon: Users,     countKey: 'customers' },
       { to: '/jobs',      label: 'Projects',  icon: Briefcase, countKey: 'jobs' },
       { to: '/inbox',     label: 'Inbox',     icon: Inbox },
@@ -71,16 +70,10 @@ const NAV_SECTIONS = [
 // ── + New actions ─────────────────────────────────────────────────────────────
 // One front door. A project is the whole piece of work for a customer; quotes,
 // measure sheets and POs are created INSIDE it (pre-filled), so the customer is
-// only ever entered once. There is deliberately no standalone "New Quote".
+// only ever entered once. There is deliberately no standalone "New Quote", and
+// for the same reason no standalone note: a note belongs to the measure sheet
+// or job it is about, and is written there, where it will actually be read.
 const NEW_ACTIONS = [
-  {
-    label: 'Note or to-do',
-    sub:   'Jot anything — add a date and it lands on Today',
-    to:    '/notes?new=1',
-    icon:  StickyNote,
-    color: 'text-slate-600',
-    bg:    'bg-slate-100',
-  },
   {
     label: 'New Project',
     sub:   'Start a job for a customer — quote, measure & order all live inside it',
