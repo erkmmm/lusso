@@ -359,15 +359,24 @@ export default function PricedItems() {
   // thing), so the edit step is the point; and nothing is saved until you say
   // so, which keeps a mis-tap from littering the price list.
   //
-  // Everything carries over except the id. The name gets a "(copy)" so that if
-  // you do save it unchanged it is obvious rather than silently a twin, and
-  // the form header reads "Add New Item" on its own, because the new id
-  // matches nothing in the list yet.
+  // Everything carries over except the id, the name and the code. The name
+  // gets a "(copy)" so that if you do save it unchanged it is obvious rather
+  // than silently a twin, and the form header reads "Add New Item" on its own,
+  // because the new id matches nothing in the list yet.
+  //
+  // The code is cleared because a duplicate is a DIFFERENT product — the next
+  // colourway, the wider track — and two rows sharing one supplier code is how
+  // the wrong thing gets ordered. Nothing enforces uniqueness, so an empty box
+  // asking to be filled is the only prompt there is. `sku` has to go with it:
+  // it is an app-only alias that falls back into item_code on save, so leaving
+  // it would quietly put the original code straight back.
   const handleDuplicateItem = (item) => {
     setEditItem({
       ...item,
       id: uuidv4(),
       itemName: `${item.itemName || 'Item'} (copy)`,
+      itemCode: '',
+      sku: '',
       source: 'Manual',          // it is hand-made now, whatever the original was
       createdAt: undefined,      // savePricedItem stamps these for a new row
       updatedAt: undefined,
