@@ -1854,24 +1854,51 @@ export const getMsCustomOptions = () => get('lusso_measure_sheet_options') || []
 const MS_OPT_KEY = 'lusso_measure_sheet_options';
 let _msOptCache = { v: -1, byField: new Map() };
 
-export const getMsOptions = (fieldKey, productType = null) => {
-  const override = productType && productType.options && productType.options[fieldKey];
-  if (Array.isArray(override)) return override;
+/** Does a custom option apply to this product type? No scope = every type. */
+const msOptionAppliesTo = (option, productType) => {
+  const ids = option.productTypeIds;
+  if (!Array.isArray(ids) || ids.length === 0) return true;
+  // Nothing picked yet — show everything rather than an empty dropdown.
+  if (!productType) return true;
+  return ids.includes(productType.id);
+};
 
+/**
+ * The options for one measure-sheet dropdown.
+ *
+ * A product type's `options` override REPLACES the built-in defaults — that is
+ * the point of it: a roller blind should offer its motors, not curtain tracks.
+ * It used to replace the custom options added in Settings too, and return
+ * before they were ever looked at. Since Curtain and Roller Blind both override
+ * operationType, adding a track in Settings did nothing at all on the two
+ * products where track and motor options actually matter, while Settings said
+ * "your additions apply to every measure sheet". That is the bug this fixes:
+ * the override narrows the BUILT-INS, and anything added by hand is then
+ * merged on top — on the types it was scoped to.
+ */
+export const getMsOptions = (fieldKey, productType = null) => {
+  // The result now depends on the product type, so the cache has to key on it.
+  // Keyed on fieldKey alone, one product's list was served to every other.
+  const cacheKey = `${fieldKey}|${productType?.id || ''}`;
   const v = lsVersion(MS_OPT_KEY);
   if (_msOptCache.v !== v) _msOptCache = { v, byField: new Map() };
-  const cached = _msOptCache.byField.get(fieldKey);
+  const cached = _msOptCache.byField.get(cacheKey);
   if (cached) return cached;
 
-  const defaults = MS_DEFAULTS[fieldKey] || [];
-  const seen = new Set(defaults.map(v2 => String(v2).toLowerCase()));
+  const override = productType && productType.options && productType.options[fieldKey];
+  const base = Array.isArray(override) ? override : (MS_DEFAULTS[fieldKey] || []);
+
+  const seen = new Set(base.map(v2 => String(v2).toLowerCase()));
   const custom = [];
-  getMsCustomOptions().filter(o => o.field === fieldKey).forEach(o => {
-    const k = String(o.value).toLowerCase();
-    if (!seen.has(k)) { seen.add(k); custom.push(o.value); }
-  });
-  const merged = [...defaults, ...custom];
-  _msOptCache.byField.set(fieldKey, merged);
+  getMsCustomOptions()
+    .filter(o => o.field === fieldKey && msOptionAppliesTo(o, productType))
+    .forEach(o => {
+      const k = String(o.value).toLowerCase();
+      if (!seen.has(k)) { seen.add(k); custom.push(o.value); }
+    });
+
+  const merged = [...base, ...custom];
+  _msOptCache.byField.set(cacheKey, merged);
   return merged;
 };
 
@@ -1879,13 +1906,35 @@ export const getMsOptions = (fieldKey, productType = null) => {
 export const hasTypeOptionOverride = (productType, fieldKey) =>
   Array.isArray(productType?.options?.[fieldKey]);
 
-export const addMsOption = (fieldKey, value) => {
+/**
+ * `productTypeIds`: which products offer this option. Empty = all of them.
+ * The duplicate check runs against the UNSCOPED list, because two rows with the
+ * same text would be indistinguishable in the dropdown however they're scoped.
+ */
+export const addMsOption = (fieldKey, value, productTypeIds = []) => {
   const v = String(value || '').trim();
   if (!v || !MS_DEFAULTS[fieldKey]) return null;
-  if (getMsOptions(fieldKey).some(o => String(o).toLowerCase() === v.toLowerCase())) return null; // already exists
-  const row = { id: uuidv4(), field: fieldKey, value: v, createdAt: new Date().toISOString() };
+  if (getMsCustomOptions().some(o => o.field === fieldKey && String(o.value).toLowerCase() === v.toLowerCase())) return null;
+  if ((MS_DEFAULTS[fieldKey] || []).some(o => String(o).toLowerCase() === v.toLowerCase())) return null;
+  const row = {
+    id: uuidv4(), field: fieldKey, value: v,
+    productTypeIds: Array.isArray(productTypeIds) ? productTypeIds : [],
+    createdAt: new Date().toISOString(),
+  };
   const all = get('lusso_measure_sheet_options') || [];
   all.push(row);
+  set('lusso_measure_sheet_options', all);
+  db.saveMeasureSheetOption(row);
+  return row;
+};
+
+/** Re-scope an existing option. [] = every product type. */
+export const setMsOptionScope = (id, productTypeIds) => {
+  const all = get('lusso_measure_sheet_options') || [];
+  const idx = all.findIndex(o => o.id === id);
+  if (idx < 0) return null;
+  const row = { ...all[idx], productTypeIds: Array.isArray(productTypeIds) ? productTypeIds : [] };
+  all[idx] = row;
   set('lusso_measure_sheet_options', all);
   db.saveMeasureSheetOption(row);
   return row;
