@@ -7,7 +7,7 @@ import {
   XCircle, SkipForward, RefreshCw, Download, History, ArrowRight,
   Info, X, Loader2, Library, Plus, Search, Edit2, Trash2,
   ToggleLeft, ToggleRight, DollarSign, Tag, ChevronDown, Cloud, CloudOff, Sparkles,
-  CheckSquare, Square, Layers,
+  CheckSquare, Square, Layers, Copy,
 } from 'lucide-react';
 import {
   getPricedItems, savePricedItem, deletePricedItem,
@@ -351,6 +351,27 @@ export default function PricedItems() {
     });
     reload();
     setEditItem(null);
+  };
+
+  // Duplicate — opens the form pre-filled with a copy rather than writing one
+  // straight to the list. A duplicate always exists to be changed (the next
+  // colourway, the wider track, the other supplier's version of the same
+  // thing), so the edit step is the point; and nothing is saved until you say
+  // so, which keeps a mis-tap from littering the price list.
+  //
+  // Everything carries over except the id. The name gets a "(copy)" so that if
+  // you do save it unchanged it is obvious rather than silently a twin, and
+  // the form header reads "Add New Item" on its own, because the new id
+  // matches nothing in the list yet.
+  const handleDuplicateItem = (item) => {
+    setEditItem({
+      ...item,
+      id: uuidv4(),
+      itemName: `${item.itemName || 'Item'} (copy)`,
+      source: 'Manual',          // it is hand-made now, whatever the original was
+      createdAt: undefined,      // savePricedItem stamps these for a new row
+      updatedAt: undefined,
+    });
   };
 
   const handleToggleActive = (id) => {
@@ -698,7 +719,8 @@ export default function PricedItems() {
                                 </span>
                               )}
                             </button>
-                            <button onClick={() => setEditItem({ ...p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"><Edit2 size={13}/></button>
+                            <button onClick={() => setEditItem({ ...p })} title="Edit" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"><Edit2 size={13}/></button>
+                            <button onClick={() => handleDuplicateItem(p)} title="Duplicate — opens a copy to edit" className="p-1.5 rounded-lg hover:bg-amber-50 text-slate-400 hover:text-amber-600 transition-colors"><Copy size={13}/></button>
                             {deleteConfirm === p.id
                               ? <div className="flex items-center gap-1">
                                   <span className="text-xs text-red-500">Delete?</span>

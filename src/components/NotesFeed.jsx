@@ -4,7 +4,8 @@
  * The measure sheet holds what a window needs. This holds everything else: the
  * table linen the client wants matched to the roman blind fabric, the gate code,
  * the "she'll decide on the sheer after the floors go down". One composer, one
- * feed, mounted on a job, on a customer, and globally at /notes.
+ * feed, mounted on the measure sheet, job or customer the note is about.
+ * There is deliberately no global feed: a note is read where it applies.
  *
  * A note with no due date is a note. Give it a date and the SAME record becomes
  * a to-do that Today chases — no re-typing, no second concept to learn. That is
@@ -16,13 +17,13 @@
  * in the background. On one bar of signal in a driveway, the note is already
  * safe before the photo has left the phone.
  */
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO, formatDistanceToNow, addDays } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import {
   StickyNote, Camera, CalendarClock, Check, Trash2, X, Loader,
-  Briefcase, User, AlertTriangle, ImageOff, ChevronDown, Link2, Search,
+  Briefcase, User, AlertTriangle, ImageOff, ChevronDown,
 } from 'lucide-react';
 import Card from './Card';
 import { toast } from './ToastContainer';
@@ -31,7 +32,7 @@ import { useProfile } from '../contexts/UserProfileContext';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import {
   addNote, getNotes, setTaskDone, deleteTask, setNotePhotos, setNoteDueDate,
-  isTaskOpen, getJobs, getCustomers, TASK_PRIORITY_COLORS,
+  isTaskOpen, TASK_PRIORITY_COLORS,
 } from '../store/data';
 import { noteDraftKey, readNoteDraft, writeNoteDraft, clearNoteDraft } from '../lib/noteDraft';
 import { uploadNotePhoto, signNotePhotos, deleteNotePhotos } from '../lib/photoStore';
@@ -64,7 +65,6 @@ export default function NotesFeed({
   customerId = null,
   quoteId = null,
   measureSheetId = null,
-  scope = 'record',        // 'record' → this job/customer. 'all' → everything, with a link picker.
   autoFocus = false,
   onSaved = null,          // fires after a note is written — used by the measure
                            // sheet to persist the sheet the note is anchored to
@@ -77,7 +77,6 @@ export default function NotesFeed({
   // another tab hydrating) has to re-render it.
   useDataRefresh();
   const { salespeople } = useActiveSalespeople();
-  const global = scope === 'all';
 
   // ── Composer ───────────────────────────────────────────────────────────────
   // Whatever was half-typed here last time is the composer's starting state, so
@@ -90,8 +89,6 @@ export default function NotesFeed({
   const [urgent,   setUrgent]   = useState(!!draftSeed.urgent);
   const [assignee, setAssignee] = useState('');
   const [files,    setFiles]    = useState([]);      // File[] awaiting upload
-  const [link,     setLink]     = useState(null);    // { type, id, label } — global composer only
-  const [linkQuery,setLinkQuery]= useState('');
   const [saving,   setSaving]   = useState(false);
 
   const textRef  = useRef(null);
@@ -115,15 +112,9 @@ export default function NotesFeed({
   const [uploading,setUploading]= useState({});      // note id → count still uploading
   const [lightbox, setLightbox] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [query,    setQuery]    = useState('');
 
-  const all = getNotes(global ? {} : { jobId, customerId, quoteId, measureSheetId });
-  // Search only exists on the global page: a job's own feed is short enough to
-  // read, and a filter box on it would just be another empty control.
-  const q = query.trim().toLowerCase();
-  const notes = q
-    ? all.filter(n => `${n.description || ''} ${n.title || ''} ${n.authorName || ''}`.toLowerCase().includes(q))
-    : all;
+  // One record's feed is short enough to read, so there is no search box.
+  const notes = getNotes({ jobId, customerId, quoteId, measureSheetId });
   const open  = notes.filter(isTaskOpen);
   const done  = notes.filter(n => !isTaskOpen(n));
 
@@ -159,27 +150,10 @@ export default function NotesFeed({
     el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
   };
 
-  // ── Link picker (global composer) ──────────────────────────────────────────
-  const linkOptions = useMemo(() => {
-    const q = linkQuery.trim().toLowerCase();
-    if (q.length < 2) return [];
-    const customers = getCustomers();
-    const nameOf = (cid) => customers.find(c => c.id === cid)?.name || 'Customer';
-    const jobs = getJobs()
-      .filter(j => `${j.jobNumber || ''} ${nameOf(j.customerId)} ${j.siteAddress || ''}`.toLowerCase().includes(q))
-      .slice(0, 5)
-      .map(j => ({ type: 'job', id: j.id, customerId: j.customerId, label: `${j.jobNumber || 'Job'} · ${nameOf(j.customerId)}` }));
-    const people = customers
-      .filter(c => `${c.name || ''} ${c.email || ''} ${c.mobile || ''}`.toLowerCase().includes(q))
-      .slice(0, 5)
-      .map(c => ({ type: 'customer', id: c.id, label: c.name || 'Customer' }));
-    return [...jobs, ...people];
-  }, [linkQuery]);
-
   const resetComposer = () => {
     clearNoteDraft(draftKey);
     setText(''); setDue(''); setUrgent(false); setAssignee('');
-    setFiles([]); setLink(null); setLinkQuery('');
+    setFiles([]);
     if (fileRef.current) fileRef.current.value = '';
     if (textRef.current) textRef.current.style.height = 'auto';
   };
@@ -192,16 +166,11 @@ export default function NotesFeed({
     // The id is minted here so the photos can be filed under it while the note
     // itself is already saved and visible.
     const id = uuidv4();
-    const target = global
-      ? { jobId: link?.type === 'job' ? link.id : null,
-          customerId: link?.type === 'customer' ? link.id : (link?.customerId ?? null) }
-      : { jobId, customerId, measureSheetId };
-
     const saved = addNote({
       id,
       text: body,
-      ...target,
-      quoteId: global ? null : quoteId,
+      jobId, customerId, measureSheetId,
+      quoteId,
       dueDate: due || null,
       priority: urgent ? 'urgent' : 'normal',
       assignedTo: assignee || null,
@@ -279,44 +248,6 @@ export default function NotesFeed({
             </div>
           )}
 
-          {/* Link picker — only when composing away from a record */}
-          {global && (
-            <div className="mt-2">
-              {link ? (
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-100 text-slate-600 rounded-full pl-2.5 pr-1.5 py-1">
-                  <Link2 size={11} /> {link.label}
-                  <button onClick={() => setLink(null)} aria-label="Unlink" className="text-slate-400 hover:text-slate-700">
-                    <X size={11} />
-                  </button>
-                </span>
-              ) : (
-                <div className="relative">
-                  <input
-                    value={linkQuery}
-                    onChange={(e) => setLinkQuery(e.target.value)}
-                    placeholder="Link to a project or customer (optional)"
-                    className="w-full text-xs text-slate-600 placeholder:text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200 focus:border-slate-300 focus:outline-none"
-                  />
-                  {linkOptions.length > 0 && (
-                    <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-lg border border-slate-200 shadow-lg overflow-hidden">
-                      {linkOptions.map(o => (
-                        <button
-                          key={`${o.type}-${o.id}`}
-                          onClick={() => { setLink(o); setLinkQuery(''); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
-                        >
-                          {o.type === 'job'
-                            ? <Briefcase size={12} className="text-amber-500 flex-shrink-0" />
-                            : <User size={12} className="text-blue-500 flex-shrink-0" />}
-                          <span className="truncate text-slate-700">{o.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Controls — everything past the text is optional */}
@@ -408,7 +339,7 @@ export default function NotesFeed({
       </Card>
 
       {/* ── Feed ──────────────────────────────────────────────────────────── */}
-      {all.length === 0 ? (
+      {notes.length === 0 ? (
         <div className="text-center py-8">
           <StickyNote size={22} className="text-slate-300 mx-auto" />
           <p className="text-sm text-slate-500 mt-2">Nothing noted yet</p>
@@ -423,25 +354,8 @@ export default function NotesFeed({
             <h3 className="text-sm font-semibold text-slate-800">
               {heading} <span className="text-slate-400 font-normal">· {open.length} open</span>
             </h3>
-            {global && (
-              <>
-                <div className="flex-1" />
-                <div className="relative">
-                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search notes"
-                    className="text-xs bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-2 py-1.5 w-36 sm:w-52 focus:outline-none focus:border-slate-300"
-                  />
-                </div>
-              </>
-            )}
           </div>
 
-          {notes.length === 0 && (
-            <p className="px-4 py-6 text-center text-xs text-slate-400">No notes match “{query}”.</p>
-          )}
 
           <div className="divide-y divide-slate-50">
             {open.map(n => (
