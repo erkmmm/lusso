@@ -1562,24 +1562,43 @@ const nextPoNumber = () => {
   return `PO-${String(highest + 1).padStart(4, '0')}`;
 };
 
+/** The statuses that mean a document actually went out to a supplier. */
+export const PO_ISSUED_STATUSES = ['sent', 'printed', 'downloaded', 'exported'];
+const isIssuedStatus = (s) => PO_ISSUED_STATUSES.includes(s);
+
 /**
- * Record (or update) an issued purchase order.
+ * Record (or update) a purchase order.
  *
  * Passing an `id` updates that order in place and bumps its revision — that's
  * a re-issue of the same PO after an edit. Without one, a new PO is created
  * and given the next number.
+ *
+ * `status: 'draft'` is the exception and deliberately touches very little. A
+ * draft is work in progress, not a document a supplier is holding, so it:
+ *   • writes `draftSnapshot` and leaves `snapshot` alone — `snapshot` is the
+ *     record of what was actually issued, and overwriting it would destroy the
+ *     only copy of what the supplier was really asked for
+ *   • never bumps the revision — revisions count re-issues, not keystrokes
+ *   • never downgrades an order that has already gone out
+ * Issuing promotes the draft: `snapshot` is written and `draftSnapshot` cleared.
  */
 export const savePurchaseOrder = ({ id, status, sentAt, ...fields }) => {
   const orders = get(PO_KEY) || [];
   const now = new Date().toISOString();
   const idx = id ? orders.findIndex(po => po.id === id) : -1;
+  const saving = status === 'draft';
 
   let record;
   if (idx >= 0) {
     const prev = orders[idx];
     // The document only counts as re-issued when it actually changed. Printing
-    // a copy of what was just sent is the same order, not revision 2.
-    const changed = JSON.stringify(prev.snapshot || {}) !== JSON.stringify(fields.snapshot || {});
+    // a copy of what was just sent is the same order, not revision 2. A draft
+    // save is never a re-issue however much it changed.
+    // Nor is the FIRST issue of a draft a revision: with no previous snapshot
+    // there is nothing to have revised, and comparing against {} would hand
+    // revision 2 to a document no supplier has ever seen.
+    const changed = !saving && !!prev.snapshot &&
+      JSON.stringify(prev.snapshot) !== JSON.stringify(fields.snapshot || {});
     // Archive what we're about to overwrite. The revision counter used to be
     // the only thing that survived a re-issue — the row was written back in
     // place and `snapshot` replaced, so "rev 3" described a document whose
@@ -1589,6 +1608,10 @@ export const savePurchaseOrder = ({ id, status, sentAt, ...fields }) => {
     record = {
       ...prev,
       ...fields,
+      // A draft leaves the issued document untouched; issuing replaces it and
+      // clears the draft it came from.
+      snapshot:      saving ? (prev.snapshot ?? null) : (fields.snapshot ?? prev.snapshot ?? null),
+      draftSnapshot: saving ? (fields.draftSnapshot ?? null) : null,
       revisions: changed
         ? [...history, {
             revision:     prev.revision || 1,
@@ -1604,8 +1627,12 @@ export const savePurchaseOrder = ({ id, status, sentAt, ...fields }) => {
           }]
         : history,
       // A confirmed send is the strongest thing that can happen to a PO — once
-      // it has been sent, re-printing the same order doesn't undo that.
-      status: prev.status === 'sent' ? 'sent' : (status || prev.status),
+      // it has been sent, re-printing the same order doesn't undo that. Nor
+      // does saving a draft take an order that has already gone out and call
+      // it unissued again.
+      status: prev.status === 'sent' ? 'sent'
+            : (saving && isIssuedStatus(prev.status)) ? prev.status
+            : (status || prev.status),
       sentAt: sentAt || prev.sentAt || null,
       revision: (prev.revision || 1) + (changed ? 1 : 0),
       deletedAt: null,
@@ -1621,6 +1648,8 @@ export const savePurchaseOrder = ({ id, status, sentAt, ...fields }) => {
       status: status || 'exported',
       sentAt: sentAt || null,
       ...fields,
+      snapshot:      saving ? null : (fields.snapshot ?? null),
+      draftSnapshot: saving ? (fields.draftSnapshot ?? null) : null,
       createdAt: now,
       updatedAt: now,
     };

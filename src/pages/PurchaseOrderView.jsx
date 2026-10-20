@@ -18,7 +18,7 @@ import Card from '../components/Card';
 import PoPreview from '../components/PoPreview';
 
 const STATUS_LABEL = {
-  sent: 'Sent', printed: 'Printed', downloaded: 'Downloaded', exported: 'Exported',
+  draft: 'Draft', sent: 'Sent', printed: 'Printed', downloaded: 'Downloaded', exported: 'Exported',
 };
 
 const when = (iso) => {
@@ -42,7 +42,9 @@ export default function PurchaseOrderView() {
     );
   }
 
-  const snap = po.snapshot || {};
+  // A draft has never been issued, so it has no `snapshot` yet — show the work
+  // in progress rather than an empty document.
+  const snap = po.snapshot || po.draftSnapshot || {};
   const job = po.jobId ? getJob(po.jobId) : null;
   const customer = po.customerId ? getCustomer(po.customerId) : null;
   // The sheet can be gone (deleted, or never synced to this device) — the PO

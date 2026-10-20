@@ -4,9 +4,12 @@
  */
 import { Link } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { FileText, Send, Printer, Download, ChevronRight } from 'lucide-react';
+import { FileText, Send, Printer, Download, ChevronRight, PencilLine } from 'lucide-react';
 
 const STATUS = {
+  // A draft has not gone anywhere yet — amber so it reads as unfinished work
+  // rather than a document someone is waiting on.
+  draft:      { label: 'Draft',      icon: PencilLine, cls: 'bg-amber-100 text-amber-700' },
   sent:       { label: 'Sent',       icon: Send,     cls: 'bg-emerald-100 text-emerald-700' },
   printed:    { label: 'Printed',    icon: Printer,  cls: 'bg-slate-100 text-slate-600' },
   downloaded: { label: 'Downloaded', icon: FileText, cls: 'bg-slate-100 text-slate-600' },
@@ -48,7 +51,7 @@ export default function PoHistoryList({
                   <span className="text-slate-500 font-normal"> · {po.customerName || po.snapshot?.customerName}</span>
                 )}
                 {showContext && po.jobNumber && <span className="text-slate-400 font-normal"> · {po.jobNumber}</span>}
-                <span className="text-slate-400 font-normal"> · {po.itemCount || po.snapshot?.rows?.length || 0} curtain{(po.itemCount || 0) === 1 ? '' : 's'}</span>
+                <span className="text-slate-400 font-normal"> · {po.itemCount || po.snapshot?.rows?.length || po.draftSnapshot?.rows?.length || 0} curtain{(po.itemCount || 0) === 1 ? '' : 's'}</span>
                 {(po.revision || 1) > 1 && <span className="text-slate-400 font-normal"> · rev {po.revision}</span>}
                 {isCurrent && <span className="ml-2 text-[11px] font-semibold text-amber-600">editing</span>}
               </span>

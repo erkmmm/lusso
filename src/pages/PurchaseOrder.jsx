@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { format, addDays } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown, Ruler, AlertTriangle, History } from 'lucide-react';
 import {
-  getMeasureSheet, getCustomer, getJob,
+  getMeasureSheet, saveMeasureSheet, getActiveProductTypes, getCustomer, getJob,
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
   getPurchaseOrder, getPurchaseOrdersBySheet, savePurchaseOrder,
   addActivity, advanceJobStatus, orderGate,
@@ -15,6 +15,7 @@ import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
 import PoPreview from '../components/PoPreview';
 import PoHistoryList from '../components/PoHistoryList';
+import MeasureSheetTable from '../components/MeasureSheetTable';
 import {
   PO_HEADERS, MOTOR_HEADER, rowCells, buildPoSnapshot, isCurtainLine,
   wandIsEmpty, remoteIsEmpty,
@@ -70,16 +71,25 @@ export default function PurchaseOrder() {
   const [searchParams] = useSearchParams();
   const { displayName = '' } = useProfile() || {};
 
-  const sheet = getMeasureSheet(id);
+  // ── The measure sheet, editable from here ─────────────────────────────────
+  // Held in state rather than read fresh each render, because this page now
+  // edits it. Everything downstream — the curtain list, the rows, the preview —
+  // derives from this, so a correction made here shows up on the PO instantly
+  // AND lands on the sheet itself. Fixing a width used to mean leaving the
+  // half-built order, editing the sheet, and coming back to start again.
+  const [sheet, setSheet] = useState(() => getMeasureSheet(id));
+  const productTypes = getActiveProductTypes();
   const customer = sheet ? getCustomer(sheet.customerId) : null;
   const job = sheet?.jobId ? getJob(sheet.jobId) : null;
 
-  // ?po=<id> re-opens an order that has already gone out — every input is
-  // restored from the copy that was sent, so the edit starts from the document
-  // the supplier is holding rather than from a blank order.
+  // ?po=<id> re-opens a saved order — a draft you left, or one that has already
+  // gone out. Every input is restored from the stored copy, so the edit starts
+  // from the document you had rather than from a blank order.
   const reopenedId = searchParams.get('po') || null;
   const reopened = reopenedId ? getPurchaseOrder(reopenedId) : null;
-  const reopenedSnap = reopened?.snapshot || null;
+  // A saved draft is where you left off; `snapshot` is the last document that
+  // actually went out. Prefer the draft — that's the whole point of saving one.
+  const reopenedSnap = reopened?.draftSnapshot || reopened?.snapshot || null;
 
   // A re-issue keeps the date the order was first placed — it is the same PO
   // under the same number, not a new one.
@@ -216,13 +226,67 @@ export default function PurchaseOrder() {
   };
 
 
+  // ── Writing the sheet back ────────────────────────────────────────────────
+  // Debounced, like the measure sheet page: a width is typed a digit at a time
+  // and each one must not be a write. The latest sheet rides in a ref so the
+  // timer always flushes what is on screen now, and a pending edit is flushed
+  // on unmount so navigating away cannot lose it.
+  const sheetRef = useRef(sheet);
+  useEffect(() => { sheetRef.current = sheet; }, [sheet]);
+  const flushRef = useRef(null);          // the pending timer
+  const shrinkRef = useRef(false);        // a deliberate delete may shrink the sheet
+
+  const persistSheet = useCallback(() => {
+    const next = sheetRef.current;
+    if (!next?.id) return;
+    try {
+      saveMeasureSheet(next, { allowShrink: shrinkRef.current });
+      shrinkRef.current = false;
+    } catch (e) {
+      console.error('[PO] could not save the measure sheet', e);
+      toast('Could not save that change to the measure sheet.', 'error');
+    }
+  }, []);
+
+  const queueSheetSave = useCallback(() => {
+    if (flushRef.current) clearTimeout(flushRef.current);
+    flushRef.current = setTimeout(() => { flushRef.current = null; persistSheet(); }, 800);
+  }, [persistSheet]);
+
+  useEffect(() => () => {
+    // Unmount: flush anything still waiting rather than dropping it.
+    if (flushRef.current) { clearTimeout(flushRef.current); persistSheet(); }
+  }, [persistSheet]);
+
+  // MeasureSheetTable addresses lines by index into the array it was given, so
+  // it is handed the WHOLE sheet, not just the curtains. Filtering would mean
+  // translating every index back, and getting that wrong edits the wrong line.
+  const setLineItem = useCallback((idx, field, value) => {
+    setSheet(prev => {
+      if (!prev?.lineItems?.[idx]) return prev;
+      const lineItems = prev.lineItems.map((li, i) => (i === idx ? { ...li, [field]: value } : li));
+      return { ...prev, lineItems };
+    });
+    queueSheetSave();
+  }, [queueSheetSave]);
+
+  const removeLineItem = useCallback((idx) => {
+    shrinkRef.current = true;   // asked for, so the content guard should allow it
+    setSheet(prev => (
+      !prev?.lineItems || prev.lineItems.length <= 1
+        ? prev
+        : { ...prev, lineItems: prev.lineItems.filter((_, i) => i !== idx) }
+    ));
+    queueSheetSave();
+  }, [queueSheetSave]);
+
   // Per-line motor side, keyed by item id (defaults to the stored motorSide).
-  const [motorSides, setMotorSides] = useState(() => {
-    const init = {};
-    allCurtains.forEach((it) => { init[it._key] = it.motorSide || ''; });
-    return { ...init, ...(reopenedSnap?.motorSides || {}) };
-  });
-  const motorFor = (it) => motorSides[it._key] ?? '';
+  // Only the per-ORDER overrides are stored here; the sheet's own motorSide is
+  // the fallback. Seeding this with every line's value (as it used to) froze a
+  // copy at mount, so a motor side corrected in the sheet editor below would
+  // never reach the PO.
+  const [motorSides, setMotorSides] = useState(() => ({ ...(reopenedSnap?.motorSides || {}) }));
+  const motorFor = (it) => motorSides[it._key] ?? it.motorSide ?? '';
   const setMotor = (it, v) => setMotorSides(m => ({ ...m, [it._key]: v }));
 
   // Motorised tracks are the exception, so the Motor side column is off by
@@ -232,6 +296,7 @@ export default function PurchaseOrder() {
   const [motorOpen, setMotorOpen] = useState(() =>
     reopenedSnap ? !!reopenedSnap.motorised : localStorage.getItem('lusso_po_motorised') === 'true');
   const [curtainsOpen, setCurtainsOpen] = useState(false);
+  const [sheetEditOpen, setSheetEditOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const toggleMotorised = () => setMotorised(v => { const n = !v; localStorage.setItem('lusso_po_motorised', String(n)); return n; });
 
@@ -341,6 +406,7 @@ export default function PurchaseOrder() {
    * one, so the history holds orders rather than button presses.
    */
   const recordPo = (status, extra = {}) => {
+    const asDraft = status === 'draft';
     try {
       const record = savePurchaseOrder({
         id: poId || undefined,
@@ -356,7 +422,9 @@ export default function PurchaseOrder() {
         dateRequired,
         extraNotes,
         itemCount: rows.length,
-        snapshot,
+        // A draft files the work in progress and leaves the issued document
+        // alone; issuing writes the document and clears the draft.
+        ...(asDraft ? { draftSnapshot: snapshot } : { snapshot }),
         createdBy: displayName || 'Someone',
         ...extra,
       });
@@ -368,6 +436,19 @@ export default function PurchaseOrder() {
       console.error('[PO] could not file the order in history', e);
       return null;
     }
+  };
+
+  /**
+   * Keep the order without issuing it.
+   *
+   * Deliberately skips the check-measure gate and the accessory reminder: both
+   * exist to stop a BAD ORDER going out, and nothing goes out here. Blocking a
+   * save behind them would just mean the work is lost instead.
+   */
+  const handleSaveDraft = () => {
+    const record = recordPo('draft');
+    if (!record) { toast('Could not save the draft.', 'error'); return; }
+    toast(`Saved — ${record.poNumber} is in the order history.`);
   };
 
   const handleExport = () => {
@@ -469,28 +550,39 @@ export default function PurchaseOrder() {
         <p className="text-xs text-slate-400 mt-1.5">Review the order below — send, print or download it at the bottom.</p>
       </Card>
 
-      {/* Re-issuing an order that has already gone out */}
+      {/* Picking a saved order back up. A draft has not gone anywhere, so it
+          must not be dressed up as a re-issue — saying "the supplier will need
+          the new copy" about a document no supplier has ever seen is how you
+          get a needless phone call. */}
       {issued && (
-        <div className="rounded-xl px-4 py-3 border bg-amber-50 border-amber-200 flex items-start gap-3">
-          <History size={18} className="text-amber-500 mt-0.5 flex-shrink-0" />
+        <div className={`rounded-xl px-4 py-3 border flex items-start gap-3 ${
+          issued.status === 'draft' ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-200'
+        }`}>
+          <History size={18} className={`mt-0.5 flex-shrink-0 ${issued.status === 'draft' ? 'text-slate-400' : 'text-amber-500'}`} />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-amber-800">
-              Editing {issued.poNumber || 'a purchase order'} that has already gone out
+            <p className={`text-sm font-semibold ${issued.status === 'draft' ? 'text-slate-700' : 'text-amber-800'}`}>
+              {issued.status === 'draft'
+                ? `Picking up ${issued.poNumber || 'a saved draft'} — not sent yet`
+                : `Editing ${issued.poNumber || 'a purchase order'} that has already gone out`}
             </p>
-            <p className="text-xs text-amber-700 mt-0.5">
-              {issued.status === 'sent' && issued.recipient ? `Sent to ${issued.recipient}. ` : ''}
-              Send or download it again to re-issue — any change makes it revision {(issued.revision || 1) + 1},
-              and the supplier will need the new copy.
+            <p className={`text-xs mt-0.5 ${issued.status === 'draft' ? 'text-slate-500' : 'text-amber-700'}`}>
+              {issued.status === 'draft'
+                ? 'Saved but never issued. Keep editing and save again, or send it when it\'s ready.'
+                : <>
+                    {issued.status === 'sent' && issued.recipient ? `Sent to ${issued.recipient}. ` : ''}
+                    Send or download it again to re-issue — any change makes it revision {(issued.revision || 1) + 1},
+                    and the supplier will need the new copy.
+                  </>}
             </p>
             {missingLines > 0 && (
               <p className="text-xs text-orange-700 font-medium mt-1">
-                {missingLines} curtain{missingLines === 1 ? '' : 's'} on the original order {missingLines === 1 ? 'is' : 'are'} no
-                longer on the measure sheet, so {missingLines === 1 ? "it isn't" : "they aren't"} on this one. The copy that
-                went out still shows {missingLines === 1 ? 'it' : 'them'}.
+                {missingLines} curtain{missingLines === 1 ? '' : 's'} on the saved order {missingLines === 1 ? 'is' : 'are'} no
+                longer on the measure sheet, so {missingLines === 1 ? "it isn't" : "they aren't"} on this one.
+                {issued.status === 'draft' ? '' : ` The copy that went out still shows ${missingLines === 1 ? 'it' : 'them'}.`}
               </p>
             )}
             <Link to={`/purchase-orders/${issued.id}`} className="text-xs font-medium text-amber-700 hover:underline mt-1 inline-block">
-              See the copy that went out
+              {issued.status === 'draft' ? 'Open the saved order' : 'See the copy that went out'}
             </Link>
           </div>
         </div>
@@ -610,7 +702,52 @@ export default function PurchaseOrder() {
       )}
 
       {allCurtains.length === 0 ? (
-        <Card><p className="p-8 text-center text-sm text-slate-400">This measure sheet has no curtain items to order.</p></Card>
+        <>
+          <Card><p className="p-8 text-center text-sm text-slate-400">
+            This measure sheet has no curtain items to order.
+            <span className="block mt-1 text-xs text-slate-400">
+              A line only reaches a curtain PO once its product says curtain, sheer or drape — set it below.
+            </span>
+          </p></Card>
+          {/* The editor belongs here MORE than anywhere: a sheet with no
+              curtain lines is usually a sheet whose products were never set,
+              and this is the only way to fix that without leaving. */}
+          <div className="mt-6">
+          {/* ── The measure sheet, editable in place ──────────────────────────
+                A wrong width is usually spotted here, with the PO in front of
+                you. This is the same grid as the measure sheet itself and writes
+                to the same record — so the correction lands on the sheet, not
+                just on this order, and the preview above updates as you type. */}
+            <Card>
+              <button type="button" onClick={() => setSheetEditOpen(o => !o)} aria-expanded={sheetEditOpen}
+                className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left">
+                <div className="min-w-0">
+                  <h2 className="font-semibold text-slate-800 text-sm">Measure sheet</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Fix a size or a spec here — it saves to the sheet itself, and the PO follows.
+                  </p>
+                </div>
+                <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 transition-transform ${sheetEditOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {sheetEditOpen && (
+                <div className="border-t border-slate-100 p-3">
+                  <MeasureSheetTable
+                    sheetId={sheet.id}
+                    lineItems={sheet.lineItems || []}
+                    setLineItem={setLineItem}
+                    removeLineItem={removeLineItem}
+                    productTypes={productTypes}
+                  />
+                  <p className="text-[11px] text-slate-400 mt-2 px-1">
+                    Every line on the sheet is here, not only the curtains — it is the sheet.
+                    Changes save on their own.
+                  </p>
+                </div>
+              )}
+            </Card>
+
+          </div>
+        </>
       ) : (
         <>
           {/* Line-item selection — collapsed by default (rarely changed) */}
@@ -670,6 +807,39 @@ export default function PurchaseOrder() {
               </Card>
             );
           })()}
+
+        {/* ── The measure sheet, editable in place ──────────────────────────
+              A wrong width is usually spotted here, with the PO in front of
+              you. This is the same grid as the measure sheet itself and writes
+              to the same record — so the correction lands on the sheet, not
+              just on this order, and the preview above updates as you type. */}
+          <Card>
+            <button type="button" onClick={() => setSheetEditOpen(o => !o)} aria-expanded={sheetEditOpen}
+              className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left">
+              <div className="min-w-0">
+                <h2 className="font-semibold text-slate-800 text-sm">Measure sheet</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Fix a size or a spec here — it saves to the sheet itself, and the PO follows.
+                </p>
+              </div>
+              <ChevronDown size={16} className={`text-slate-400 flex-shrink-0 transition-transform ${sheetEditOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {sheetEditOpen && (
+              <div className="border-t border-slate-100 p-3">
+                <MeasureSheetTable
+                  sheetId={sheet.id}
+                  lineItems={sheet.lineItems || []}
+                  setLineItem={setLineItem}
+                  removeLineItem={removeLineItem}
+                  productTypes={productTypes}
+                />
+                <p className="text-[11px] text-slate-400 mt-2 px-1">
+                  Every line on the sheet is here, not only the curtains — it is the sheet.
+                  Changes save on their own.
+                </p>
+              </div>
+            )}
+          </Card>
 
           {/* Motorised order — expandable; controls the Motor side column on the PO */}
           <Card id="po-motor-sides">
@@ -918,6 +1088,12 @@ export default function PurchaseOrder() {
 
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-1">
+                {/* Not gated: saving is not issuing — see handleSaveDraft. */}
+                <button onClick={handleSaveDraft} disabled={!curtains.length}
+                  title="Keep this order without sending or downloading anything"
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+                  <Save size={14} /> {issued ? 'Save changes' : 'Save draft'}
+                </button>
                 <button onClick={withAccessoryCheck('Send', handleSend)} disabled={sending || !curtains.length || blocked}
                   title={blocked ? 'Check-measure the plan-estimate lines first' : undefined}
                   className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white">
