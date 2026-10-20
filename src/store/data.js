@@ -976,7 +976,26 @@ export const sheetContentScore = (sheet) => {
  * @param {boolean} opts.allowShrink  the user really did delete lines — set ONLY
  *                                    by explicit delete/clear actions.
  */
-export const saveMeasureSheet = (sheet, { allowShrink = false } = {}) => {
+/**
+ * Save a measure sheet.
+ *
+ * `baseUpdatedAt` is the version the caller started from — the `updatedAt` it
+ * loaded, or the one it got back from its own last save. Pass it and the write
+ * becomes optimistic rather than blind: if the stored copy has moved on since
+ * then, somebody else saved in between and this write would erase them.
+ *
+ * Without it a sheet is a whole-document last-writer-wins blob. Two tabs on one
+ * sheet is not exotic — the measure sheet is open in one and the PO builder in
+ * another — and the loser was silent. An editor sitting idle would republish
+ * its stale copy over a fresh edit every thirty seconds, which is how a width
+ * typed on site reverted on its own.
+ *
+ * A refused write returns the STORED copy, so the caller can show it and adopt
+ * it, and fires `lusso:sheet-conflict` so it can say what happened. Nothing is
+ * lost either way: the attempt is kept in version history, and `force` writes
+ * through once the user has chosen.
+ */
+export const saveMeasureSheet = (sheet, { allowShrink = false, baseUpdatedAt = null, force = false } = {}) => {
   const sheets = getMeasureSheets();
   const idx = sheets.findIndex(s => s.id === sheet.id);
   const stored = idx >= 0 ? sheets[idx] : null;
@@ -984,6 +1003,31 @@ export const saveMeasureSheet = (sheet, { allowShrink = false } = {}) => {
   // Snapshot BOTH sides before anything is overwritten, so even a refused write
   // — and even the state that tried to cause it — is recoverable.
   if (stored) recordSheetVersion(stored, 'before-save');
+
+  // ── Someone else got here first ──────────────────────────────────────────
+  // Compare INSTANTS, not strings. The app writes `new Date().toISOString()`
+  // ("…305Z") while a row that has been through Supabase comes back as
+  // "…305+00:00" — the same moment, and `"…+00:00" > "…Z"` is false because
+  // `+` sorts before `Z`. Compared as text this guard silently never fired,
+  // which is the worst way for a safety check to fail.
+  const baseMs   = baseUpdatedAt ? Date.parse(baseUpdatedAt) : NaN;
+  const storedMs = stored?.updatedAt ? Date.parse(stored.updatedAt) : NaN;
+
+  if (!force && Number.isFinite(baseMs) && Number.isFinite(storedMs) && storedMs > baseMs) {
+    recordSheetVersion(sheet, 'conflict-refused');
+    console.warn(
+      `[data] measure sheet ${sheet.id}: stored copy moved on ` +
+      `(${baseUpdatedAt} → ${stored.updatedAt}) — refusing to overwrite it.`,
+    );
+    try {
+      window.dispatchEvent(new CustomEvent('lusso:sheet-conflict', {
+        detail: { id: sheet.id, baseUpdatedAt, storedUpdatedAt: stored.updatedAt },
+      }));
+    } catch { /* non-browser */ }
+    // Marked so the caller can tell a refusal from a save without comparing
+    // timestamps itself — and get the same format trap a second time.
+    return { ...stored, __conflict: true };
+  }
 
   if (!allowShrink && wouldDestroyContent(sheet, stored)) {
     recordSheetVersion(sheet, 'refused-write');

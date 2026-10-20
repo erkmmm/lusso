@@ -825,29 +825,81 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   useEffect(() => { autosaveRef.current.sheet = sheet; }, [sheet]);
   useEffect(() => { autosaveRef.current.submitted = submitted; }, [submitted]);
 
+  // The version this editor is working from. Seeded from the sheet it loaded
+  // and advanced on every successful save, so saveMeasureSheet can tell "my
+  // own last write" from "somebody else's".
+  const baseUpdatedAtRef = useRef(sheet?.updatedAt || null);
+  // Only write when there is something to write. The heartbeat used to fire
+  // regardless, so an editor left open on a desk republished its copy every
+  // thirty seconds — and if anyone had edited the sheet elsewhere in between,
+  // that idle tab quietly put the old version back.
+  const dirtyRef = useRef(false);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  const [conflict, setConflict] = useState(null);   // { storedUpdatedAt }
+
   // Set when the user deliberately removes lines, so the content guard in
   // saveMeasureSheet lets that one write through. Anything the user did NOT
   // explicitly ask for still has to survive the guard.
   const allowShrinkRef = useRef(false);
 
-  const flushSave = useCallback((reason = 'auto') => {
+  const flushSave = useCallback((reason = 'auto', { force = false } = {}) => {
     const { sheet: s, submitted: done } = autosaveRef.current;
     if (done || !s?.id) return;
+    // Nothing typed since the last write? Then there is nothing this save can
+    // do except overwrite whoever else has touched the sheet since.
+    if (!dirtyRef.current && !force) return;
     // Opening the page and backing out shouldn't leave an empty draft behind.
     // Only skip when there is nothing to lose: no content AND nothing stored.
     if (sheetContentScore(s) === 0 && !getMeasureSheet(s.id)) return;
     try {
-      saveMeasureSheet({ ...s, status: s.status || 'Draft' }, // never downgrade a Submitted sheet
-        { allowShrink: allowShrinkRef.current });
+      const saved = saveMeasureSheet(
+        { ...s, status: s.status || 'Draft' },     // never downgrade a Submitted sheet
+        { allowShrink: allowShrinkRef.current, baseUpdatedAt: baseUpdatedAtRef.current, force },
+      );
+      // Refused as a conflict: the store hands back the copy that won, and the
+      // banner takes over. Stay dirty — this edit has NOT been filed.
+      if (saved?.__conflict) return;
+      if (saved?.updatedAt) baseUpdatedAtRef.current = saved.updatedAt;
       allowShrinkRef.current = false;
       setSavedAt(new Date());
       setDirty(false);
       setSaveError(false);
+      setConflict(null);
     } catch (e) {
       console.error(`[measure-sheet] save failed (${reason}):`, e);
       setSaveError(true);
     }
   }, []);
+
+  // Somebody else saved this sheet while it was open here.
+  useEffect(() => {
+    const onConflict = (e) => {
+      if (e.detail?.id !== autosaveRef.current.sheet?.id) return;
+      setConflict({ storedUpdatedAt: e.detail.storedUpdatedAt });
+    };
+    window.addEventListener('lusso:sheet-conflict', onConflict);
+    return () => window.removeEventListener('lusso:sheet-conflict', onConflict);
+  }, []);
+
+  // Take the other copy: drop what is on screen and reload what was stored.
+  const loadStoredSheet = useCallback(() => {
+    const fresh = getMeasureSheet(autosaveRef.current.sheet?.id);
+    if (!fresh) return;
+    baseUpdatedAtRef.current = fresh.updatedAt || null;
+    setSheet(fresh);
+    setConflict(null);
+    setDirty(false);
+    toast('Loaded the newer copy.');
+  }, []);
+
+  // Keep mine: write through, deliberately, over the other version. The copy
+  // being overwritten is already in version history.
+  const overwriteStoredSheet = useCallback(() => {
+    baseUpdatedAtRef.current = getMeasureSheet(autosaveRef.current.sheet?.id)?.updatedAt || null;
+    setConflict(null);
+    flushSave('conflict-overwrite', { force: true });
+    toast('Saved — your version is the one on file now.');
+  }, [flushSave]);
 
   // Debounced on change.
   useEffect(() => {
@@ -1280,6 +1332,33 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
           </div>
         </div>
       </div>
+
+      {/* Somebody else saved this sheet while it was open here. The edit on
+          screen has NOT been filed — it is deliberately still unsaved, so the
+          choice is the user's rather than whoever happened to type last. */}
+      {conflict && (
+        <div className="flex items-start gap-2.5 bg-orange-50 border border-orange-300 rounded-xl px-4 py-3">
+          <AlertTriangle size={16} className="text-orange-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-orange-900">This sheet was saved somewhere else</p>
+            <p className="text-xs text-orange-800 mt-0.5">
+              Another tab, device or person saved it while you had it open, so your last change
+              hasn&rsquo;t been filed — saving it now would wipe theirs. Both versions are kept in
+              the sheet&rsquo;s history either way.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2.5">
+              <button type="button" onClick={loadStoredSheet}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-white">
+                Load their version
+              </button>
+              <button type="button" onClick={overwriteStoredSheet}
+                className="text-xs font-medium px-3 py-1.5 rounded-lg border border-orange-300 text-orange-800 hover:bg-orange-100">
+                Keep mine &amp; overwrite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Picking work back up should be visible, not silent — the whole failure
           was a page that looked new when it wasn't (and vice versa). */}

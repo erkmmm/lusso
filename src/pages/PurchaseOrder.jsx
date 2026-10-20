@@ -235,17 +235,40 @@ export default function PurchaseOrder() {
   useEffect(() => { sheetRef.current = sheet; }, [sheet]);
   const flushRef = useRef(null);          // the pending timer
   const shrinkRef = useRef(false);        // a deliberate delete may shrink the sheet
+  // The version this page is editing from — see saveMeasureSheet. The measure
+  // sheet is very often open in another tab while a PO is built from it, which
+  // is exactly the case that used to end in one of them silently losing.
+  const baseUpdatedAtRef = useRef(sheet?.updatedAt || null);
+  const [sheetConflict, setSheetConflict] = useState(false);
 
   const persistSheet = useCallback(() => {
     const next = sheetRef.current;
     if (!next?.id) return;
     try {
-      saveMeasureSheet(next, { allowShrink: shrinkRef.current });
+      const saved = saveMeasureSheet(next, {
+        allowShrink: shrinkRef.current,
+        baseUpdatedAt: baseUpdatedAtRef.current,
+      });
+      // Refused: the stored copy moved on. Say so rather than looping on a
+      // write that will keep being refused.
+      if (saved?.__conflict) { setSheetConflict(true); return; }
+      if (saved?.updatedAt) baseUpdatedAtRef.current = saved.updatedAt;
       shrinkRef.current = false;
+      setSheetConflict(false);
     } catch (e) {
       console.error('[PO] could not save the measure sheet', e);
       toast('Could not save that change to the measure sheet.', 'error');
     }
+  }, []);
+
+  // Drop what is on screen here and take the stored copy.
+  const reloadSheet = useCallback(() => {
+    const fresh = getMeasureSheet(sheetRef.current?.id);
+    if (!fresh) return;
+    baseUpdatedAtRef.current = fresh.updatedAt || null;
+    setSheet(fresh);
+    setSheetConflict(false);
+    toast('Loaded the newer measure sheet.');
   }, []);
 
   const queueSheetSave = useCallback(() => {
@@ -731,6 +754,22 @@ export default function PurchaseOrder() {
               </button>
               {sheetEditOpen && (
                 <div className="border-t border-slate-100 p-3">
+                  {sheetConflict && (
+                    <div className="flex items-start gap-2.5 bg-orange-50 border border-orange-300 rounded-lg px-3 py-2.5 mb-3">
+                      <AlertTriangle size={15} className="text-orange-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-orange-900">The measure sheet changed somewhere else</p>
+                        <p className="text-[11px] text-orange-800 mt-0.5">
+                          Your last change here hasn&rsquo;t been saved — filing it would wipe theirs.
+                          Load their version to carry on from it; the copy on screen stays in the sheet&rsquo;s history.
+                        </p>
+                        <button type="button" onClick={reloadSheet}
+                          className="mt-2 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-orange-500 hover:bg-orange-400 text-white">
+                          Load their version
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <MeasureSheetTable
                     sheetId={sheet.id}
                     lineItems={sheet.lineItems || []}
@@ -826,6 +865,22 @@ export default function PurchaseOrder() {
             </button>
             {sheetEditOpen && (
               <div className="border-t border-slate-100 p-3">
+                {sheetConflict && (
+                  <div className="flex items-start gap-2.5 bg-orange-50 border border-orange-300 rounded-lg px-3 py-2.5 mb-3">
+                    <AlertTriangle size={15} className="text-orange-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-orange-900">The measure sheet changed somewhere else</p>
+                      <p className="text-[11px] text-orange-800 mt-0.5">
+                        Your last change here hasn&rsquo;t been saved — filing it would wipe theirs.
+                        Load their version to carry on from it; the copy on screen stays in the sheet&rsquo;s history.
+                      </p>
+                      <button type="button" onClick={reloadSheet}
+                        className="mt-2 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-orange-500 hover:bg-orange-400 text-white">
+                        Load their version
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <MeasureSheetTable
                   sheetId={sheet.id}
                   lineItems={sheet.lineItems || []}
