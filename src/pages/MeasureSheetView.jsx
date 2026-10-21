@@ -339,8 +339,12 @@ export default function MeasureSheetView() {
     try {
       const { count, unmapped } = exportMeasureSheetToBuz(sheet, job);
       if (unmapped.length) {
+        // "Left blank" undersold it: BUZ cannot order a line with no product,
+        // and rejects the upload with a raw deserialization error that names
+        // no fabric. Say which fabrics, and what BUZ will do about it.
         toast(
-          `Exported ${count} blind${count === 1 ? '' : 's'} to BUZ. ${unmapped.length} fabric${unmapped.length === 1 ? '' : 's'} had no inventory code (left blank): ${unmapped.join(', ')}. Add codes in Settings → BUZ Export.`,
+          `Exported ${count} blind${count === 1 ? '' : 's'}, but ${unmapped.length} fabric${unmapped.length === 1 ? ' has' : 's have'} no BUZ inventory code: ${unmapped.join(', ')}. ` +
+          `BUZ will refuse those lines — add the code in Settings → BUZ Export and export again.`,
           'warning',
         );
       } else {

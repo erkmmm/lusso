@@ -234,6 +234,25 @@ export function exportMeasureSheetToBuz(sheet, job = null) {
   if (rows.length === 0) {
     throw new Error('No roller blinds on this measure sheet to export.');
   }
+
+  // A row with no INVENTORY CODE has nothing for BUZ to order. BUZ does not say
+  // so politely: its importer looks the product up, gets a collection back
+  // instead of one record, and the whole upload dies on a raw .NET message —
+  //   "Cannot deserialize the current JSON array into type
+  //    'BUZ.Common.Entities.Inventory'"
+  // — which says nothing about fabrics and sends you looking for a bug in the
+  // file. When NOTHING is mapped the file cannot import at all, so building it
+  // only produces a trip to BUZ and that error. Say what is actually wrong,
+  // here, instead.
+  const codeIdx = BUZ_ROLL_COLUMNS.indexOf('INVENTORY CODE');
+  const mappedCount = rows.filter((r) => r[codeIdx]).length;
+  if (mappedCount === 0) {
+    throw new Error(
+      `No BUZ inventory code for ${unmapped.length === 1 ? 'the fabric' : 'any fabric'} on this sheet ` +
+      `(${unmapped.join(', ')}). BUZ rejects an order whose lines have no product, so there is nothing ` +
+      `worth exporting yet — add the code in Settings → BUZ Export, then export again.`,
+    );
+  }
   const aoa = [BUZ_ROLL_COLUMNS, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
