@@ -87,6 +87,8 @@ const KEYS = {
   measureSheetOptions:  'lusso_measure_sheet_options',
   schedulingDismissals: 'lusso_scheduling_dismissals',
   curtainRates:         'lusso_curtain_rates',
+  buzFabricCodes:       'lusso_buz_fabric_codes',
+  buzValueMaps:         'lusso_buz_value_map_rows',
   productDocuments:     'lusso_product_documents',
 };
 
@@ -290,6 +292,11 @@ const TABLES = [
   { table: 'takeoffs',               key: KEYS.takeoffs },
   { table: 'review_requests',        key: KEYS.reviewRequests },
   { table: 'measure_sheet_options',  key: KEYS.measureSheetOptions },
+  // BUZ export mappings. Shared reference data, not per-device preferences:
+  // the inventory codes entered in the office have to exist on the iPad, or an
+  // export from the wrong machine silently produces a file BUZ refuses.
+  { table: 'buz_fabric_codes',       key: KEYS.buzFabricCodes },
+  { table: 'buz_value_maps',         key: KEYS.buzValueMaps },
   { table: 'scheduling_dismissals',  key: KEYS.schedulingDismissals },
   { table: 'curtain_rates',          key: KEYS.curtainRates },
   // Metadata only — the PDF lives in Storage, and the extracted text lives in
@@ -456,10 +463,36 @@ async function fetchAllPages(table, useDeletedFilter) {
  * Supabase always wins — overwrites local data completely.
  * Returns { hadCloudData: bool }
  */
+// ── One-time rescue for tables that used to be localStorage-only ────────────
+// The BUZ mapping rows already on a device have never been near the server and
+// so are not in the outbox. Hydration drops local-only rows — correctly, since
+// normally that means "deleted on another device" — which would quietly erase
+// every mapping someone had entered the moment another device's rows arrived.
+//
+// Adopting them into the outbox first fixes both halves: flushPending pushes
+// them up, and the merge explicitly keeps anything still pending.
+const BUZ_ADOPTED_KEY = 'lusso_buz_rows_adopted';
+function adoptLegacyBuzRows() {
+  try {
+    if (LS.get(BUZ_ADOPTED_KEY)) return;
+    const pairs = [
+      [KEYS.buzFabricCodes, 'buz_fabric_codes'],
+      [KEYS.buzValueMaps,   'buz_value_maps'],
+    ];
+    for (const [key, table] of pairs) {
+      for (const r of LS.get(key) || []) if (r?.id) markPending(table, r.id);
+    }
+    LS.set(BUZ_ADOPTED_KEY, true);
+  } catch { /* best effort — a failed adoption just means a later save syncs it */ }
+}
+
 export async function hydrateFromSupabase() {
   if (!supabase) return { hadCloudData: false };
 
   let hadCloudData = false;
+
+  // Must run BEFORE the flush below, so these rows go up with it.
+  adoptLegacyBuzRows();
 
   // First, push anything still waiting to sync (failed on a flaky connection),
   // so this pull doesn't race ahead of an unsynced local record.
@@ -993,6 +1026,13 @@ export const db = {
 
   saveMeasureSheetOption:   (r) => upsert('measure_sheet_options', r),
   deleteMeasureSheetOption: (id) => remove('measure_sheet_options', id),
+
+  // BUZ export mappings — small shared config rows, hard-deleted like the
+  // measure-sheet options above.
+  saveBuzFabricCode:        (r) => upsert('buz_fabric_codes', r),
+  deleteBuzFabricCode:      (id) => remove('buz_fabric_codes', id),
+  saveBuzValueMap:          (r) => upsert('buz_value_maps', r),
+  deleteBuzValueMap:        (id) => remove('buz_value_maps', id),
 
   // Product reference documents (spec sheets etc). Soft-deleted: a spec sheet
   // someone removed by accident is worth getting back.

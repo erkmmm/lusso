@@ -2025,30 +2025,51 @@ export const deleteMsOption = (id) => {
 // The BUZ roller-blind import needs an exact INVENTORY CODE per blind (e.g.
 // "ROLLSERBOO1"), which Lusso can't derive from its free-text fabric field. The
 // user maintains this fabric-range → code table in Settings. Stored in
-// localStorage only (not synced to Supabase — no db table), matching how other
-// pure-local settings are kept.
-export const getBuzFabricCodes = () => get('lusso_buz_fabric_codes') || [];
+// Synced to Supabase (`buz_fabric_codes`). These were localStorage-only, which
+// meant the inventory codes someone entered in the office did not exist on the
+// iPad — and an export from the wrong device produced a file with every
+// INVENTORY CODE blank, which BUZ rejects with a deserialization error that
+// names no fabric. It is shared reference data, not a per-device preference.
+// Rows that already existed on a device before this table was synced are not in
+// the outbox and would otherwise sit there forever, invisible to everyone else.
+// Push them once per session; `upsert` is keyed by id so re-sending is harmless,
+// and a failure just re-queues through the normal retry path.
+let buzCodesPushed = false;
+const pushLegacyBuzFabricCodes = () => {
+  if (buzCodesPushed) return;
+  buzCodesPushed = true;
+  for (const row of get('lusso_buz_fabric_codes') || []) {
+    if (row?.id) db.saveBuzFabricCode(row);
+  }
+};
+
+export const getBuzFabricCodes = () => { pushLegacyBuzFabricCodes(); return get('lusso_buz_fabric_codes') || []; };
 
 export const saveBuzFabricCode = ({ id, range, code }) => {
   const r = String(range || '').trim();
   const c = String(code || '').trim();
   if (!r || !c) return null;
+  const now = new Date().toISOString();
   const all = get('lusso_buz_fabric_codes') || [];
   if (id) {
-    const next = all.map(e => (e.id === id ? { ...e, range: r, code: c } : e));
-    set('lusso_buz_fabric_codes', next);
-    return next.find(e => e.id === id) || null;
+    const row = { ...(all.find(e => e.id === id) || {}), id, range: r, code: c, updatedAt: now };
+    set('lusso_buz_fabric_codes', all.map(e => (e.id === id ? row : e)));
+    db.saveBuzFabricCode(row);
+    return row;
   }
-  const row = { id: uuidv4(), range: r, code: c, createdAt: new Date().toISOString() };
+  const row = { id: uuidv4(), range: r, code: c, createdAt: now, updatedAt: now };
   all.push(row);
   set('lusso_buz_fabric_codes', all);
+  db.saveBuzFabricCode(row);
   return row;
 };
 
 export const deleteBuzFabricCode = (id) => {
   const all = get('lusso_buz_fabric_codes') || [];
   const next = all.filter(e => e.id !== id);
-  if (next.length !== all.length) set('lusso_buz_fabric_codes', next);
+  if (next.length === all.length) return;
+  set('lusso_buz_fabric_codes', next);
+  db.deleteBuzFabricCode(id);
 };
 
 /**
@@ -2061,7 +2082,7 @@ export const lookupBuzInventoryCode = (fabricColour) => {
   const hay = String(fabricColour || '').toLowerCase().trim();
   if (!hay) return '';
   let best = null;
-  for (const e of get('lusso_buz_fabric_codes') || []) {
+  for (const e of getBuzFabricCodes()) {
     const key = String(e.range || '').toLowerCase().trim();
     if (!key) continue;
     if (hay === key || hay.includes(key)) {
@@ -2077,10 +2098,62 @@ export const lookupBuzInventoryCode = (fabricColour) => {
 // let the user override/extend them per Lusso option in Settings. Stored as
 // { field: { lussoValueLower: buzValue } }, keyed by lower-cased Lusso value so
 // lookups are case-insensitive. localStorage only, like the fabric-code table.
-export const getBuzValueMaps = () => get('lusso_buz_value_maps') || {};
+// Stored as ROWS (`lusso_buz_value_map_rows`, synced to `buz_value_maps`) rather
+// than the nested { field: { from: to } } object they used to live in — the sync
+// layer moves arrays of records keyed by id, and a single nested blob would make
+// two people editing different fields overwrite each other wholesale.
+//
+// The read API still hands back the nested shape, so buzExport.js and Settings
+// are unchanged.
+const BUZ_VALUE_ROWS = 'lusso_buz_value_map_rows';
+const BUZ_VALUE_LEGACY = 'lusso_buz_value_maps';
+
+// One-time lift of the old per-device object into rows. Runs before any read so
+// nobody's existing mappings disappear the moment this ships; the legacy key is
+// cleared afterwards so it can never run twice.
+let buzRowsMigrated = false;
+const migrateBuzValueMaps = () => {
+  if (buzRowsMigrated) return;
+  buzRowsMigrated = true;
+  const legacy = get(BUZ_VALUE_LEGACY);
+  if (!legacy || typeof legacy !== 'object') return;
+  const existing = get(BUZ_VALUE_ROWS) || [];
+  const have = new Set(existing.map(r => `${r.field}|${r.fromValue}`));
+  const now = new Date().toISOString();
+  const added = [];
+  for (const [field, map] of Object.entries(legacy)) {
+    if (!map || typeof map !== 'object') continue;
+    for (const [fromValue, toValue] of Object.entries(map)) {
+      if (!toValue || have.has(`${field}|${fromValue}`)) continue;
+      const row = { id: uuidv4(), field, fromValue, toValue, createdAt: now, updatedAt: now };
+      added.push(row);
+      db.saveBuzValueMap(row);          // push the rescued rows up too
+    }
+  }
+  if (added.length) set(BUZ_VALUE_ROWS, [...existing, ...added]);
+  try { localStorage.removeItem(BUZ_VALUE_LEGACY); } catch { /* private mode */ }
+};
+
+const buzValueRows = () => { migrateBuzValueMaps(); return get(BUZ_VALUE_ROWS) || []; };
+
+/** Every override, as { field: { lussoValueLower: buzValue } }. */
+export const getBuzValueMaps = () => {
+  const out = {};
+  for (const r of buzValueRows()) {
+    if (!r?.field || !r?.fromValue) continue;
+    (out[r.field] ||= {})[r.fromValue] = r.toValue;
+  }
+  return out;
+};
 
 /** The override map for one field ({ lussoValueLower: buzValue }); {} if none. */
-export const getBuzValueMap = (field) => (get('lusso_buz_value_maps') || {})[field] || {};
+export const getBuzValueMap = (field) => {
+  const out = {};
+  for (const r of buzValueRows()) {
+    if (r?.field === field && r?.fromValue) out[r.fromValue] = r.toValue;
+  }
+  return out;
+};
 
 /**
  * Set (or clear) one Lusso→BUZ override. An empty `toValue` removes the override
@@ -2089,11 +2162,22 @@ export const getBuzValueMap = (field) => (get('lusso_buz_value_maps') || {})[fie
 export const setBuzValueMapEntry = (field, fromValue, toValue) => {
   const from = String(fromValue || '').trim().toLowerCase();
   if (!field || !from) return;
-  const all = get('lusso_buz_value_maps') || {};
-  const fieldMap = { ...(all[field] || {}) };
+  const rows = buzValueRows();
+  const existing = rows.find(r => r.field === field && r.fromValue === from);
   const to = String(toValue || '').trim();
-  if (to) fieldMap[from] = to; else delete fieldMap[from];
-  set('lusso_buz_value_maps', { ...all, [field]: fieldMap });
+  const now = new Date().toISOString();
+
+  if (!to) {
+    if (!existing) return;
+    set(BUZ_VALUE_ROWS, rows.filter(r => r.id !== existing.id));
+    db.deleteBuzValueMap(existing.id);
+    return;
+  }
+  const row = existing
+    ? { ...existing, toValue: to, updatedAt: now }
+    : { id: uuidv4(), field, fromValue: from, toValue: to, createdAt: now, updatedAt: now };
+  set(BUZ_VALUE_ROWS, existing ? rows.map(r => (r.id === row.id ? row : r)) : [...rows, row]);
+  db.saveBuzValueMap(row);
 };
 
 // ─── Per-product-type spec schema ───────────────────────────────────────────────
