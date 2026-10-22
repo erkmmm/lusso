@@ -12,7 +12,7 @@
  */
 import { Calculator, AlertTriangle, Check } from 'lucide-react';
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { calcCurtain, resolveLineFabricPrice } from '../lib/curtainCalc';
+import { calcCurtain, resolveLineFabricPrice, resolveLineFabricWidth } from '../lib/curtainCalc';
 import { getCurtainRates, getPricedItems, OPERATION_TYPE_OPTIONS } from '../store/data';
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
@@ -110,6 +110,11 @@ export default function CurtainCostPanel({ item, set }) {
   // Fabric $/m: typed on the line wins, else matched from the price library by
   // the fabric's name, else the rate card default.
   const fabricPrice = resolveLineFabricPrice(item, rates, getPricedItems());
+  // Resolved the same way auto-costing does. The panel used to pass only the
+  // line's own width, so a fabric matched at 1400mm was still costed here
+  // against the 3300mm default — this panel and the quote it produced could
+  // disagree about the same curtain.
+  const fabricWidth = resolveLineFabricWidth(item, rates, fabricPrice);
 
   const result = calcCurtain({
     widthMm:         item.widthMm,
@@ -117,7 +122,7 @@ export default function CurtainCostPanel({ item, set }) {
     heading:         item.heading,
     trackType:       item.trackType,
     fabricPricePerM: fabricPrice.pricePerM,
-    fabricWidthMm:   item.curtainFabricWidthMm,
+    fabricWidthMm:   fabricWidth.widthMm,
     fittingEnabled:  item.curtainFittingEnabled !== false,
     extraCost:       item.curtainExtraCost,
     lining: {
@@ -170,7 +175,7 @@ export default function CurtainCostPanel({ item, set }) {
              placeholder={String(fabricPrice.pricePerM)}
              onChange={v => set('curtainFabricPricePerM', v)} />
         <Num label="Fabric width" suffix="mm" value={item.curtainFabricWidthMm}
-             placeholder={String(rates.fabricWidthMm)}
+             placeholder={String(fabricWidth.widthMm)}
              onChange={v => set('curtainFabricWidthMm', v)} />
         {item.attachedLining && (
           <Num label="Lining $/m" prefix="$" value={item.curtainLiningPricePerM}
@@ -218,6 +223,16 @@ export default function CurtainCostPanel({ item, set }) {
             fabric priced off the wrong library item, or off the generic rate
             card, looked exactly like a fabric priced correctly. */}
         <FabricSource fabricPrice={fabricPrice} fabricName={item.fabricColour} />
+        {/* Width gets its own line because it decides cut-drops vs railroaded,
+            and the rate-card fallback is wrong for nearly every fabric on the
+            list — assuming it quietly halves the metreage on a 1400mm roll. */}
+        <p className={`-mt-1 mb-1 pl-1 text-[10px] ${fabricWidth.assumed ? 'text-red-600' : 'text-slate-400'}`}>
+          {fabricWidth.source === 'manual'
+            ? `Roll width ${fabricWidth.widthMm}mm — typed on this line`
+            : fabricWidth.source === 'library'
+              ? `Roll width ${fabricWidth.widthMm}mm — from ${fabricWidth.item?.itemName || 'the matched fabric'}`
+              : <>⚠ Roll width {fabricWidth.widthMm}mm is the rate-card default, not this fabric&rsquo;s — it decides {fabric.mode === 'Continuous' ? 'railroaded' : 'cut drops'}. Set it on the fabric, or type it below.</>}
+        </p>
         <Row label="Making"
              detail={`${making.drops.toFixed(2)} drops @ ${money(making.ratePerDrop)}`}
              amount={making.cost} />

@@ -592,6 +592,30 @@ export function resolveLineFabricPrice(li = {}, rates = DEFAULT_CURTAIN_RATES, p
 }
 
 /**
+ * Where a curtain line's fabric ROLL WIDTH came from, in the same priority
+ * order as the price: typed on the line, then the matched library item, then
+ * the rate card.
+ *
+ * This matters more than the price does. Width decides Regular (fabric cut into
+ * drops) versus Continuous (railroaded, you buy the made width and no more),
+ * and the two give wildly different metreage for the same curtain. The rate
+ * card's fallback is 3300mm — but only 2 of the 336 fabrics in this price list
+ * are 3300 and over two thirds are around 1400, so assuming the default turns a
+ * cut-drops fabric into a railroaded one and badly under-measures it.
+ *
+ * `assumed` marks exactly that: a width nobody chose for this fabric.
+ */
+export function resolveLineFabricWidth(li = {}, rates = DEFAULT_CURTAIN_RATES, fabricPrice = null) {
+  const manual = Number(li.curtainFabricWidthMm) || 0;
+  if (manual > 0) return { widthMm: manual, source: 'manual', assumed: false };
+
+  const lib = Number(fabricPrice?.widthMm) || 0;
+  if (lib > 0) return { widthMm: lib, source: 'library', item: fabricPrice.item || null, assumed: false };
+
+  return { widthMm: Number(rates.fabricWidthMm) || 0, source: 'default', assumed: true };
+}
+
+/**
  * Auto-cost a line that came from (or is linked to) a measure sheet.
  *
  * Shared by every measure-sheet → quote path so they can't drift apart:
@@ -618,8 +642,10 @@ export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pric
   const fabricPrice = resolveLineFabricPrice(li, r, pricedItems);
   const fabricPricePerM = fabricPrice.pricePerM;
   // Roll width: typed on the line wins, then the matched fabric's own width,
-  // then the rate card default (handled inside calcCurtain).
-  const fabricWidthMm = Number(li.curtainFabricWidthMm) || fabricPrice.widthMm || undefined;
+  // then the rate card default — and which of those it was is reported, because
+  // the default silently turns a 1400mm cut-drops fabric into a railroaded one.
+  const fabricWidth = resolveLineFabricWidth(li, r, fabricPrice);
+  const fabricWidthMm = fabricWidth.widthMm || undefined;
 
   const result = calcCurtain({
     widthMm:         li.widthMm,
@@ -656,6 +682,16 @@ export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pric
     });
   }
 
+  // A roll width nobody chose is the same class of problem as a price nobody
+  // chose, and moves the metreage further. Only reachable once the fabric
+  // itself resolved — an unmatched fabric is already blocked above.
+  if (fabricWidth.assumed) {
+    fabricWarnings.push({
+      code: 'fabric-width-assumed',
+      message: `No roll width for this fabric — ${fabricWidth.widthMm}mm is the rate-card default, which decides cut-drops vs railroaded. Set it on the fabric or type it on the line.`,
+    });
+  }
+
   const warnings = [...result.warnings, ...fabricWarnings];
   if (!result.priced || warnings.length > 0) {
     return { blocked: true, warnings, result, fabricPriceSource: fabricPrice.source, fabricPrice };
@@ -667,6 +703,7 @@ export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pric
     labourCost:             Math.round(result.labourCost    * 100) / 100,
     curtainFabricPricePerM: fabricPricePerM,
     curtainFabricWidthMm:   fabricWidthMm ?? null,
+    fabricWidth,                                     // provenance for the UI
     fabricPriceSource:      fabricPrice.source,      // 'manual' | 'library' | 'default'
     fabricPriceItem:        fabricPrice.item || null,
     fabricPrice,                                     // full provenance for the UI
