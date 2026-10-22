@@ -46,6 +46,61 @@ function Row({ label, detail, amount, muted }) {
   );
 }
 
+/**
+ * The provenance line under the fabric cost: which price was used, where it
+ * came from, and — when that is a guess — what to do about it.
+ *
+ * Three cases matter and they must not look alike:
+ *   manual   — typed on this line; settled, stated quietly
+ *   library  — matched to a real item; name AND its $/m shown, so a wrong match
+ *              is obvious against the price list instead of having to be
+ *              reverse-engineered from the total
+ *   default  — nothing matched. If a fabric was NAMED this is a wrong number
+ *              wearing that fabric's name, so it reads as a warning.
+ */
+function FabricSource({ fabricPrice, fabricName }) {
+  const { source, item, match, candidates, notFound, searchedFor } = fabricPrice || {};
+
+  if (source === 'manual') {
+    return <p className="-mt-0.5 mb-1 pl-1 text-[10px] text-slate-400">Fabric price typed on this line</p>;
+  }
+
+  if (source === 'library') {
+    const ambiguous = match === 'ambiguous';
+    const tone = ambiguous ? 'text-amber-700' : match === 'partial' ? 'text-slate-500' : 'text-slate-400';
+    return (
+      <div className={`-mt-0.5 mb-1 pl-1 text-[10px] ${tone}`}>
+        <p>
+          {ambiguous ? '⚠ ' : ''}
+          {match === 'exact' ? 'Matched' : 'Closest match'} in the price library:{' '}
+          <span className="font-medium">{item?.itemName}</span>
+          {item?.itemCode ? <span className="text-slate-400"> ({item.itemCode})</span> : null}
+          {' '}at <span className="font-medium tabular-nums">{money(Number(item?.costPrice) || 0)}/m</span>
+        </p>
+        {ambiguous && (
+          <p className="mt-0.5">
+            “{fabricName}” also matches {candidates.length - 1} other item
+            {candidates.length - 1 === 1 ? '' : 's'} at different prices
+            ({candidates.slice(1, 4).map(c => c.itemName).join(', ')}). Type the $/m below to settle it.
+          </p>
+        )}
+        {!ambiguous && match === 'partial' && (
+          <p className="mt-0.5 text-slate-400">Matched on name, not exactly — check it is the right one.</p>
+        )}
+      </div>
+    );
+  }
+
+  // source === 'default'
+  return (
+    <p className={`-mt-0.5 mb-1 pl-1 text-[10px] ${notFound ? 'text-red-600' : 'text-slate-400'}`}>
+      {notFound
+        ? <>⚠ No per-metre price for “{searchedFor}” in the price library — this is the rate-card default, not this fabric&rsquo;s price. Add it to the price library, or type the $/m below.</>
+        : 'Rate-card default — no fabric named on this line'}
+    </p>
+  );
+}
+
 export default function CurtainCostPanel({ item, set }) {
   // Re-read on 'lusso:data-changed' so editing the rate card in Settings (or a
   // sync landing) reprices open lines without a reload.
@@ -158,13 +213,11 @@ export default function CurtainCostPanel({ item, set }) {
                ? `${m2(fabric.meterage)} @ ${money(fabric.pricePerM)}/m · ×${fabric.fullness} fullness${fabric.dropsRequired ? ` · ${fabric.dropsRequired} drops` : ''}`
                : 'not priced'}
              amount={fabric.cost} muted={!fabric.mode} />
-        <p className="-mt-0.5 mb-1 pl-1 text-[10px] text-slate-400">
-          {fabricPrice.source === 'manual'
-            ? 'Fabric price set on this line'
-            : fabricPrice.source === 'library'
-              ? `Fabric price from price library — ${fabricPrice.item?.itemName}`
-              : `Fabric price is the rate-card default — ${item.fabricColour ? `no per-metre "${item.fabricColour}" in the price library` : 'no fabric named on this line'}`}
-        </p>
+        {/* Where the $/m came from. This used to be one line of grey 10px text,
+            which is not enough for a number that drives the whole quote: a
+            fabric priced off the wrong library item, or off the generic rate
+            card, looked exactly like a fabric priced correctly. */}
+        <FabricSource fabricPrice={fabricPrice} fabricName={item.fabricColour} />
         <Row label="Making"
              detail={`${making.drops.toFixed(2)} drops @ ${money(making.ratePerDrop)}`}
              amount={making.cost} />

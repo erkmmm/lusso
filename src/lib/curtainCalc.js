@@ -510,16 +510,42 @@ export function resolveFabricPricePerM(fabricName, pricedItems = []) {
 
   const nameOf = (p) => String(p.itemName || '').trim().toLowerCase();
   const codeOf = (p) => String(p.itemCode || '').trim().toLowerCase();
+  const top = (list) => list.slice(0, 5);
 
   const exact = usable.find(p => nameOf(p) === want || (codeOf(p) && codeOf(p) === want));
   if (exact) return { pricePerM: Number(exact.costPrice), item: exact, match: 'exact' };
 
-  const partial = usable
-    .filter(p => { const n = nameOf(p); return n && (want.includes(n) || n.includes(want)); })
-    .sort((a, b) => nameOf(b).length - nameOf(a).length)[0];
-  if (partial) return { pricePerM: Number(partial.costPrice), item: partial, match: 'partial' };
+  // The library name appears INSIDE what was written on the sheet — "Shaw Vibe
+  // Blockout Pure" contains "Shaw Vibe". The LONGEST such name is the most
+  // specific thing that still fits, so longest-wins is right here.
+  const contained = usable
+    .filter(p => { const n = nameOf(p); return n && want.includes(n); })
+    .sort((a, b) => nameOf(b).length - nameOf(a).length);
 
-  return null;
+  // What was written appears inside a LONGER library name — "Hav" inside both
+  // "Haven" and "Whitehaven". Longest-wins is BACKWARDS here: it picks the
+  // least specific item that happens to have the wordiest name, which on this
+  // price list means "Hav" priced off Whitehaven at $40 instead of Haven at
+  // $95. Closest name first instead.
+  const extending = usable
+    .filter(p => { const n = nameOf(p); return n && n.includes(want); })
+    .sort((a, b) => nameOf(a).length - nameOf(b).length);
+
+  const all = [...contained, ...extending];
+  if (!all.length) return null;
+
+  // "Haven Ivory" means Haven with a colourway (contained wins). "Malab" is
+  // most likely a half-typed Malabar (extending wins). Nothing in the text
+  // reliably tells those apart, so when both readings exist and they disagree
+  // on price, say so rather than picking one and looking certain about it.
+  const prices = new Set(all.map(p => Number(p.costPrice)));
+  const best = contained[0] || extending[0];
+  return {
+    pricePerM: Number(best.costPrice),
+    item: best,
+    match: prices.size > 1 ? 'ambiguous' : 'partial',
+    candidates: top(all),
+  };
 }
 
 /**
@@ -540,9 +566,29 @@ export function resolveLineFabricPrice(li = {}, rates = DEFAULT_CURTAIN_RATES, p
   const manual = Number(li.curtainFabricPricePerM) || Number(li.fabricPricePerM) || 0;
   if (manual > 0) return { pricePerM: manual, source: 'manual', widthMm: libWidth };
 
-  if (hit) return { pricePerM: hit.pricePerM, source: 'library', item: hit.item, match: hit.match, widthMm: libWidth };
+  if (hit) {
+    return {
+      pricePerM: hit.pricePerM, source: 'library', item: hit.item,
+      match: hit.match, candidates: hit.candidates || null, widthMm: libWidth,
+      // An ambiguous hit has a price, but it is one of several that disagree —
+      // the caller must not treat it as settled.
+      confident: hit.match !== 'ambiguous',
+    };
+  }
 
-  return { pricePerM: Number(rates.fabricPricePerM) || 0, source: 'default', widthMm: null };
+  // Nothing matched. Falling back to the rate card is fine for a line with no
+  // fabric written on it yet, but when a fabric WAS named it means the price on
+  // screen is a generic default wearing that fabric's name — which is how a
+  // quote goes out costed against a number nobody chose. Flagged, not hidden.
+  const named = String(li.fabricColour || '').trim();
+  return {
+    pricePerM: Number(rates.fabricPricePerM) || 0,
+    source: 'default',
+    widthMm: null,
+    notFound: !!named,
+    searchedFor: named || null,
+    confident: !named,
+  };
 }
 
 /**
@@ -590,8 +636,29 @@ export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pric
     },
   }, r);
 
-  if (!result.priced || result.warnings.length > 0) {
-    return { blocked: true, warnings: result.warnings, result, fabricPriceSource: fabricPrice.source };
+  // A fabric that was named but couldn't be priced is blocked like any other
+  // missing cost. It used to sail through: the rate-card default is a positive
+  // number, so calcCurtain saw a price, raised no warning, and the line was
+  // quietly costed per metre against a figure that had nothing to do with the
+  // fabric on the sheet. Same for an ambiguous match, where several library
+  // items fit the name and disagree on price.
+  const fabricWarnings = [];
+  if (fabricPrice.notFound) {
+    fabricWarnings.push({
+      code: 'fabric-not-found',
+      message: `No per-metre price for "${fabricPrice.searchedFor}" in the price library — not costed off a guess.`,
+    });
+  } else if (fabricPrice.match === 'ambiguous') {
+    const names = (fabricPrice.candidates || []).map(c => c.itemName).filter(Boolean);
+    fabricWarnings.push({
+      code: 'fabric-ambiguous',
+      message: `"${li.fabricColour}" matches ${names.length} price-library items at different prices (${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}) — pick one.`,
+    });
+  }
+
+  const warnings = [...result.warnings, ...fabricWarnings];
+  if (!result.priced || warnings.length > 0) {
+    return { blocked: true, warnings, result, fabricPriceSource: fabricPrice.source, fabricPrice };
   }
 
   return {
@@ -602,6 +669,7 @@ export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pric
     curtainFabricWidthMm:   fabricWidthMm ?? null,
     fabricPriceSource:      fabricPrice.source,      // 'manual' | 'library' | 'default'
     fabricPriceItem:        fabricPrice.item || null,
+    fabricPrice,                                     // full provenance for the UI
     result,
   };
 }
