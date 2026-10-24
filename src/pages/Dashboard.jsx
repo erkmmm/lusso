@@ -972,14 +972,19 @@ export default function Dashboard() {
     const range = getDateRange(globalRange);
     const prev  = getPreviousPeriod(globalRange);
 
-    // Pipeline = open quotes sent (or created) in the last 12 months. Imported
-    // history keeps its honest Waiting/Sent statuses; the recency window is
-    // what keeps years-old undecided quotes from inflating this number.
-    const pipelineCutoff = subMonths(new Date(), 12);
+    // Pipeline = open quotes sent (or created) in the SELECTED period. It used
+    // to be a fixed 12 months whatever the filter said, so the card ignored the
+    // date range every other card on this page obeys — which is most of why it
+    // read $4.33M next to Quotient's $1.08M for the same 30 days.
+    //
+    // Imported history keeps its honest Waiting/Sent statuses, and the window
+    // is what stops years-old undecided quotes inflating the number.
     const pipelineQuotes = quotes.filter(q => {
       if (!PIPELINE_STATUSES.includes(q.status)) return false;
       const d = q.sentAt || q.createdAt;
-      return d ? new Date(d) >= pipelineCutoff : true; // undated drafts stay in
+      // A draft with no date at all can't be placed in a period; it is work in
+      // hand either way, so it stays in rather than vanishing from every view.
+      return d ? inRange(d, range) : true;
     });
     const pipelineValue  = pipelineQuotes.reduce((s, q) => s + quoteTotal(q), 0);
 
@@ -1386,7 +1391,7 @@ export default function Dashboard() {
           raw={lM(analytics.pipelineValue)} format={fmtCompact}
           valueTitle={fmt$(lM(analytics.pipelineValue))}
           delta={<span className="text-xs font-semibold text-blue-600"><Fig>{lI(analytics.pipelineCount)}</Fig></span>}
-          caption={`open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''} (last 12 mo)`}
+          caption={`open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''} · ${rangeLabel}`}
           spark={monthly.map(m => m.newQuotes)}
           sparkColor="#2E6E65"
           onClick={() => navigate('/jobs')}
