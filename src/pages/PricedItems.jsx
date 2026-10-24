@@ -31,6 +31,9 @@ const LUSSO_ITEM_FIELDS = [
   { key: 'costPrice',    label: 'Cost Price' },
   { key: 'sellPrice',    label: 'Sell Price / Unit Price' },
   { key: 'labourCost',   label: 'Labour Cost' },
+  // The curtain calculator reads this to choose cut-drops vs railroaded; until
+  // now it could only ever be typed in per item by hand.
+  { key: 'fabricWidthMm',label: 'Roll / Fabric Width' },
   { key: 'marginPercent',label: 'Margin %' },
   { key: 'taxRate',      label: 'Tax Rate / GST' },
   { key: 'notes',        label: 'Notes' },
@@ -152,6 +155,46 @@ function parseWidthMm(v) {
   return n < 10 ? Math.round(n * 1000) : Math.round(n);
 }
 
+/**
+ * What this CSV row would actually change about the item it matched.
+ *
+ * A price-sheet re-import is mostly rows that have not moved. Asking someone to
+ * decide "skip or update?" for all 336 of them is asking them to rubber-stamp
+ * it, which is the same as not asking — so the ones that moved are found here
+ * and pre-selected, and the rest are left alone.
+ *
+ * Only fields the sheet actually SUPPLIES are compared, because those are the
+ * only ones an update will write (see runPricedItemImport).
+ */
+const DIFF_FIELDS = [
+  { key: 'costPrice',     label: 'Cost',      money: true },
+  { key: 'sellPrice',     label: 'Sell',      money: true },
+  { key: 'fabricWidthMm', label: 'Roll width', unit: 'mm' },
+  { key: 'supplier',      label: 'Supplier'  },
+  { key: 'category',      label: 'Category'  },
+  { key: 'unitType',      label: 'Unit'      },
+];
+
+const sameValue = (a, b) => {
+  const an = Number(a), bn = Number(b);
+  if (Number.isFinite(an) && Number.isFinite(bn)) return Math.abs(an - bn) < 0.005;
+  return String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+};
+
+function diffAgainstExisting(existing, mapped) {
+  if (!existing) return [];
+  const out = [];
+  for (const f of DIFF_FIELDS) {
+    const to = mapped?.[f.key];
+    // Absent from the sheet → the update won't touch it → not a change.
+    if (to === undefined || to === null || to === '') continue;
+    const from = f.key === 'unitType' ? (existing.unitType ?? existing.unit) : existing[f.key];
+    if (sameValue(from, to)) continue;
+    out.push({ ...f, from: from ?? null, to });
+  }
+  return out;
+}
+
 // ─── Row processing ───────────────────────────────────────────────────────────
 
 function processItemRows(rawRows, headers, columnMap, existing, globalDupAction) {
@@ -205,7 +248,18 @@ function processItemRows(rawRows, headers, columnMap, existing, globalDupAction)
     // Check against existing
     const dup = findItemDuplicate(existing, mapped);
     if (dup) {
-      return { rowNum: idx + 1, mapped, status: 'duplicate', errors: [`Matches by ${dup.field}`], isDuplicate: true, duplicate: dup.item, dupField: dup.field, rowAction: globalDupAction };
+      const changes = diffAgainstExisting(dup.item, mapped);
+      // 'auto' is the default: update what moved, leave the rest alone. Any
+      // other value is a deliberate override from the Duplicates dropdown.
+      const rowAction = globalDupAction === 'auto'
+        ? (changes.length ? 'update' : 'skip')
+        : globalDupAction;
+      return {
+        rowNum: idx + 1, mapped, status: 'duplicate',
+        errors: [`Matches by ${dup.field}`],
+        isDuplicate: true, duplicate: dup.item, dupField: dup.field,
+        changes, rowAction,
+      };
     }
 
     return { rowNum: idx + 1, mapped, status: 'ready', errors: [], isDuplicate: false, duplicate: null, rowAction: 'import' };
@@ -324,7 +378,8 @@ export default function PricedItems() {
   const [rawRows, setRawRows]         = useState([]);
   const [columnMap, setColumnMap]     = useState({});
   const [previewRows, setPreviewRows] = useState([]);
-  const [globalDupAction, setGlobalDupAction] = useState('skip');
+  // 'auto' = decide per row from what actually changed; see diffAgainstExisting.
+  const [globalDupAction, setGlobalDupAction] = useState('auto');
   const [importing, setImporting]     = useState(false);
   const [result, setResult]           = useState(null);
   const [dragOver, setDragOver]       = useState(false);
@@ -476,7 +531,10 @@ export default function PricedItems() {
 
   const applyGlobalDupAction = (action) => {
     setGlobalDupAction(action);
-    setPreviewRows(prev => prev.map(r => r.status === 'duplicate' ? { ...r, rowAction: action } : r));
+    setPreviewRows(prev => prev.map(r => (
+      r.status !== 'duplicate' ? r
+        : { ...r, rowAction: action === 'auto' ? (r.changes?.length ? 'update' : 'skip') : action }
+    )));
   };
 
   const setRowAction = (rowNum, action) => {
@@ -505,6 +563,11 @@ export default function PricedItems() {
     if (r.status === 'empty') { acc.empty++; return acc; }
     if (r.status === 'error') { acc.errors++; return acc; }
     if (r.status === 'duplicate') {
+      if (r.changes?.length) {
+        acc.changed++;
+        const cost = r.changes.find(c => c.key === 'costPrice');
+        if (cost) { if (Number(cost.to) > Number(cost.from)) acc.rises++; else acc.drops++; }
+      } else acc.unchanged++;
       if (r.rowAction === 'update') acc.willUpdate++;
       else if (r.rowAction === 'create') acc.willImport++;
       else acc.willSkip++;
@@ -512,7 +575,7 @@ export default function PricedItems() {
     }
     acc.willImport++;
     return acc;
-  }, { willImport: 0, willUpdate: 0, willSkip: 0, errors: 0, empty: 0 });
+  }, { willImport: 0, willUpdate: 0, willSkip: 0, errors: 0, empty: 0, changed: 0, unchanged: 0, rises: 0, drops: 0 });
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -1027,17 +1090,35 @@ export default function PricedItems() {
                 <div className="flex flex-wrap items-center gap-4 text-sm">
                   <div className="flex items-center gap-1.5 text-green-600 font-medium"><CheckCircle2 size={15}/>{counts.willImport} to import</div>
                   {counts.willUpdate > 0 && <div className="flex items-center gap-1.5 text-blue-600 font-medium"><RefreshCw size={15}/>{counts.willUpdate} to update</div>}
-                  {counts.willSkip  > 0 && <div className="flex items-center gap-1.5 text-yellow-600 font-medium"><SkipForward size={15}/>{counts.willSkip} duplicate (skip)</div>}
+                  {counts.willSkip  > 0 && <div className="flex items-center gap-1.5 text-slate-400 font-medium"><SkipForward size={15}/>{counts.willSkip} unchanged (skip)</div>}
                   {counts.errors    > 0 && <div className="flex items-center gap-1.5 text-red-500 font-medium"><XCircle size={15}/>{counts.errors} errors</div>}
                   <div className="ml-auto flex items-center gap-2">
-                    <span className="text-xs text-slate-500">Duplicates:</span>
+                    <span className="text-xs text-slate-500">Already in the library:</span>
                     <select value={globalDupAction} onChange={e => applyGlobalDupAction(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                      <option value="auto">Update what changed</option>
                       <option value="skip">Skip all</option>
-                      <option value="update">Update existing</option>
+                      <option value="update">Update all</option>
                       <option value="create">Create new anyway</option>
                     </select>
                   </div>
                 </div>
+                {/* What the sheet actually moves. The point of a re-import is
+                    the handful of prices that changed, and they used to be
+                    indistinguishable from the hundreds that did not. */}
+                {(counts.changed > 0 || counts.unchanged > 0) && (
+                  <p className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                    {counts.changed > 0
+                      ? <>
+                          <span className="font-semibold text-slate-700">{counts.changed}</span> already in the
+                          library {counts.changed === 1 ? 'has' : 'have'} changed
+                          {counts.rises > 0 && <> — <span className="font-medium text-red-600">{counts.rises} price {counts.rises === 1 ? 'rise' : 'rises'}</span></>}
+                          {counts.drops > 0 && <>{counts.rises > 0 ? ',' : ' —'} <span className="font-medium text-green-700">{counts.drops} {counts.drops === 1 ? 'drop' : 'drops'}</span></>}
+                          {counts.unchanged > 0 && <>, and {counts.unchanged} unchanged.</>}
+                          {' '}Only the changed ones are ticked to update.
+                        </>
+                      : <>All {counts.unchanged} matching items are unchanged — nothing to update.</>}
+                  </p>
+                )}
               </Card>
 
               <Card>
@@ -1070,7 +1151,21 @@ export default function PricedItems() {
                           </td>
                           <td className="px-4 py-2.5 text-xs text-slate-400 font-mono">{r.mapped?.itemCode || '—'}</td>
                           <td className="px-4 py-2.5 text-xs text-slate-500">{r.mapped?.category || '—'}</td>
-                          <td className="px-4 py-2.5 text-right text-xs text-slate-500 tabular-nums">{fmtPrice(r.mapped?.costPrice)}</td>
+                          <td className="px-4 py-2.5 text-right text-xs tabular-nums">
+                            {(() => {
+                              const c = r.changes?.find(x => x.key === 'costPrice');
+                              if (!c) return <span className="text-slate-500">{fmtPrice(r.mapped?.costPrice)}</span>;
+                              const up = Number(c.to) > Number(c.from);
+                              return (
+                                <span className="whitespace-nowrap">
+                                  <span className="text-slate-400 line-through">{fmtPrice(c.from)}</span>
+                                  <span className={`ml-1 font-semibold ${up ? 'text-red-600' : 'text-green-700'}`}>
+                                    {up ? '↑' : '↓'}{fmtPrice(c.to)}
+                                  </span>
+                                </span>
+                              );
+                            })()}
+                          </td>
                           <td className="px-4 py-2.5 text-right text-xs font-medium text-slate-700 tabular-nums">{fmtPrice(r.mapped?.sellPrice)}</td>
                           <td className="px-4 py-2.5 text-right text-xs tabular-nums">
                             {r.mapped?.marginPercent != null ? <span className="text-green-600">{r.mapped.marginPercent.toFixed(1)}%</span> : '—'}
@@ -1078,7 +1173,15 @@ export default function PricedItems() {
                           <td className="px-4 py-2.5">
                             <RowStatusBadge status={r.status} action={r.rowAction}/>
                             {r.status === 'duplicate' && r.duplicate && (
-                              <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[120px]">← {r.duplicate.itemName}</div>
+                              <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[140px]">← {r.duplicate.itemName}</div>
+                            )}
+                            {r.status === 'duplicate' && (
+                              r.changes?.length
+                                ? <div className="text-[11px] text-blue-600 mt-0.5 truncate max-w-[160px]"
+                                       title={r.changes.map(c => `${c.label}: ${c.from ?? '—'} → ${c.to}`).join(', ')}>
+                                    {r.changes.map(c => c.label).join(', ')} changed
+                                  </div>
+                                : <div className="text-[11px] text-slate-300 mt-0.5">no change</div>
                             )}
                           </td>
                           <td className="px-4 py-2.5">
