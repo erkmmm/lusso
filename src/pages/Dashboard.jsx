@@ -263,7 +263,7 @@ function CountUp({ value, format = (v) => v }) {
 // Apex-style KPI stat card: label + icon, big value, delta + caption, sparkline.
 // Pass `raw` (number) + `format` to get the count-up animation; `value` is the
 // static fallback for non-numeric values ("—").
-function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, caption, spark, sparkColor = ACCENT, onClick, delay = 0 }) {
+function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, caption, footer, spark, sparkColor = ACCENT, onClick, delay = 0 }) {
   return (
     <button
       onClick={onClick}
@@ -283,12 +283,46 @@ function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, ca
         {delta}
         <span className="text-slate-400 truncate">{caption}</span>
       </div>
+      {/* A breakdown that needs more room than the caption line — the split of
+          a total, or how it is distributed. Sits above the sparkline. */}
+      {footer && <div className="mt-2.5">{footer}</div>}
       {spark && spark.length > 1 && (
         /* mt-auto bottom-aligns the sparkline in every card, so a card whose
            caption wraps to one line doesn't show a hole under the numbers */
         <div className="mt-auto pt-3 -mb-1"><Sparkline values={spark} color={sparkColor} height={34} /></div>
       )}
     </button>
+  );
+}
+
+/**
+ * How the pipeline is distributed across age bands.
+ *
+ * One total cannot tell live work from quotes nobody has touched in months,
+ * and the recency window that keeps the number honest also hides the problem
+ * it is solving. Segments are proportional to value, not count: ten small
+ * fresh quotes should not outweigh one large stale one.
+ */
+function AgeBar({ bands, infl }) {
+  const total = bands.reduce((s, b) => s + b.value, 0);
+  if (total <= 0) return null;
+  return (
+    <div>
+      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        {bands.map(b => b.value > 0 && (
+          <span key={b.label} title={`${b.label}: ${fmt$(infl(b.value))}`}
+            style={{ width: `${(b.value / total) * 100}%`, backgroundColor: b.colour }} />
+        ))}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] text-slate-400">
+        {bands.map(b => b.value > 0 && (
+          <span key={b.label} className="flex items-center gap-1 whitespace-nowrap">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: b.colour }} />
+            {b.label} <Fig>{fmtCompact(infl(b.value))}</Fig>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -984,6 +1018,10 @@ export default function Dashboard() {
     });
   }, [quotes]);
 
+  // Captured once, so the age maths below is a pure function of state rather
+  // than a Date.now() call during render.
+  const [mountedAt] = useState(() => Date.now());
+
   // ── Period analytics (respond to the date-range filter) ──────────────────────
   const analytics = useMemo(() => {
     const range = getDateRange(globalRange);
@@ -1004,6 +1042,39 @@ export default function Dashboard() {
       return d ? inRange(d, range) : true;
     });
     const pipelineValue  = pipelineQuotes.reduce((s, q) => s + quoteTotal(q), 0);
+
+    // Out with customers vs still being written. One total hid the difference,
+    // and they call for opposite actions — chase, or finish and send. It is
+    // also the gap against Quotient, which only counts what has actually gone
+    // out as awaiting acceptance.
+    const pipelineOut   = pipelineQuotes.filter(q => q.status !== 'Draft');
+    const pipelineDraft = pipelineQuotes.filter(q => q.status === 'Draft');
+    const pipelineOutValue   = pipelineOut.reduce((s2, q) => s2 + quoteTotal(q), 0);
+    const pipelineDraftValue = pipelineDraft.reduce((s2, q) => s2 + quoteTotal(q), 0);
+
+    // How old the money in the pipeline is. A total says nothing about whether
+    // it is live work or quotes nobody has touched in months — on the full
+    // history, 642 of the waiting quotes are over a year old.
+    // Age is measured as at the END of the period, or today — whichever comes
+    // first. "This financial year" runs to next June, and using that end date
+    // raw added up to a year to every quote's age and dumped the whole
+    // pipeline into the 90d+ band.
+    const nowMs = Math.min(range.end.getTime(), mountedAt);
+    const ageOf = (q) => {
+      const d = q.sentAt || q.createdAt;
+      if (!d) return 0;
+      const t = new Date(d).getTime();
+      return Number.isFinite(t) ? (nowMs - t) / 86400000 : 0;
+    };
+    const pipelineAge = [
+      { label: '0–30d',  colour: '#2E6E65', value: 0 },
+      { label: '31–90d', colour: '#C8A24A', value: 0 },
+      { label: '90d+',   colour: '#B45309', value: 0 },
+    ];
+    pipelineQuotes.forEach(q => {
+      const a = ageOf(q);
+      pipelineAge[a <= 30 ? 0 : a <= 90 ? 1 : 2].value += quoteTotal(q);
+    });
 
     const accepted     = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), range));
     const acceptedPrev = quotes.filter(q => q.status === 'Accepted' && inRange(wonAt(q), prev));
@@ -1027,7 +1098,11 @@ export default function Dashboard() {
       // and lapsing is the loss channel worth knowing about.
       const lapsed   = quotes.filter(q => q.status === 'Expired'  && inRange(lostExpiredAt(q), r));
       const declined = quotes.filter(q => q.status === 'Declined' && inRange(lostDeclinedAt(q), r));
-      return { wins: wins.length, losses: losses.length, lapsed: lapsed.length, declined: declined.length };
+      return {
+        wins: wins.length, losses: losses.length,
+        lapsed: lapsed.length, declined: declined.length,
+        lapsedValue: lapsed.reduce((s2, q) => s2 + quoteTotal(q), 0),
+      };
     };
     const res     = resolutionsIn(range);
     const resPrev = resolutionsIn(prev);
@@ -1038,12 +1113,16 @@ export default function Dashboard() {
 
     return {
       pipelineValue, pipelineCount: pipelineQuotes.length,
+      pipelineOutValue, pipelineDraftValue,
+      pipelineOutCount: pipelineOut.length, pipelineDraftCount: pipelineDraft.length,
+      pipelineAge,
       acceptedCount: accepted.length, acceptedCountPrev: acceptedPrev.length,
       acceptedValue, acceptedValuePrev, acceptedAvg,
       winRate, winRatePrev, decisions,
       wins: res.wins, lapsed: res.lapsed, declined: res.declined,
+      lapsedValue: res.lapsedValue, lapsedValuePrev: resPrev.lapsedValue,
     };
-  }, [quotes, globalRange]);
+  }, [quotes, globalRange, mountedAt]);
 
   // ── Top categories + category split (accepted quotes in range) ──────────────
   // Grouped by product CATEGORY (keyword rules over item code + title) —
@@ -1153,6 +1232,9 @@ export default function Dashboard() {
     const instant    = daysAll.filter(d => d < HOUR).length;
     const considered = daysAll.filter(d => d >= HOUR);
     const medianDays = considered.length ? Math.round(considered[Math.floor(considered.length / 2)]) : null;
+    // The 75th percentile, so the card can say how long the slower three
+    // quarters actually take rather than only the midpoint.
+    const p75Days = considered.length ? Math.round(considered[Math.floor(considered.length * 0.75)]) : null;
     const instantPct = daysAll.length ? (instant / daysAll.length) * 100 : null;
     const buckets = [['On the spot', instant], ['Same week', 0], ['1–2 wks', 0], ['2–4 wks', 0], ['1–2 mths', 0], ['2 mths+', 0]];
     considered.forEach(d => { buckets[d <= 7 ? 1 : d <= 14 ? 2 : d <= 30 ? 3 : d <= 60 ? 4 : 5][1]++; });
@@ -1182,7 +1264,7 @@ export default function Dashboard() {
 
     return {
       marginValue: gpKnown, marginPct, knownShare,
-      medianDays, decisionCount: daysAll.length, instantPct, buckets,
+      medianDays, p75Days, decisionCount: daysAll.length, instantPct, buckets,
       sentCount: sentIn.length, wonOfSent,
       repeatPct, repeatCount: repeatCusts.size,
     };
@@ -1414,7 +1496,12 @@ export default function Dashboard() {
           raw={lM(analytics.pipelineValue)} format={fmtCompact}
           valueTitle={fmt$(lM(analytics.pipelineValue))}
           delta={<span className="text-xs font-semibold text-blue-600"><Fig>{lI(analytics.pipelineCount)}</Fig></span>}
-          caption={`open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''} · ${rangeLabel}`}
+          caption={analytics.pipelineDraftCount > 0
+            // Out vs draft: one is waiting on the customer, the other is
+            // waiting on us. Opposite actions, so they shouldn't read as one.
+            ? `open · ${lI(analytics.pipelineOutCount)} out, ${lI(analytics.pipelineDraftCount)} draft`
+            : `open quote${lI(analytics.pipelineCount) !== 1 ? 's' : ''} · ${rangeLabel}`}
+          footer={<AgeBar bands={analytics.pipelineAge} infl={lM} />}
           spark={monthly.map(m => m.newQuotes)}
           sparkColor="#2E6E65"
           onClick={() => navigate('/jobs')}
@@ -1466,12 +1553,38 @@ export default function Dashboard() {
           sparkColor="#16A34A"
         />
         <StatCard
+          icon={CalendarX} label="Lapsed" delay={100}
+          raw={lM(analytics.lapsedValue)} format={fmtCompact}
+          valueTitle={fmt$(lM(analytics.lapsedValue))}
+          delta={analytics.lapsed > 0
+            ? <span className="text-xs font-semibold text-red-600"><Fig>{lI(analytics.lapsed)}</Fig></span>
+            : null}
+          caption={analytics.lapsed > 0
+            ? `quote${lI(analytics.lapsed) !== 1 ? 's' : ''} expired unanswered`
+            : 'nothing lapsed this period'}
+          // Carries the period with it, so the list you land on is the quotes
+          // this card counted — not all 723 that have ever lapsed.
+          onClick={() => {
+            const r = getDateRange(globalRange);
+            navigate(`/jobs?quoteExpiry=lapsed&from=${r.start.toISOString().slice(0, 10)}&to=${r.end.toISOString().slice(0, 10)}`);
+          }}
+        />
+        <StatCard
           icon={Timer} label="Days to Win" delay={120}
           {...(insights.medianDays !== null
             ? { raw: insights.medianDays, format: (v) => `${Math.round(v)}d` }
             : { value: '—' })}
+          delta={insights.instantPct !== null
+            ? <span className="text-xs font-semibold text-teal-700">{insights.instantPct.toFixed(0)}% on the spot</span>
+            : null}
           caption={insights.medianDays !== null
-            ? `median wait${insights.instantPct !== null ? ` · ${insights.instantPct.toFixed(0)}% say yes on the spot` : ''}`
+            // A median alone says nothing about the tail — half the point of
+            // the number is knowing how long the slow ones take.
+            ? (insights.p75Days !== null
+                // Terse because the delta badge shares this row — "3 in 4
+                // within 12 days" truncated to "3 in 4 wit…" on a narrow card.
+                ? `median · 75% ≤ ${insights.p75Days}d`
+                : 'median wait')
             : 'no wins with dates in period'}
         />
         <StatCard

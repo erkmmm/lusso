@@ -168,6 +168,10 @@ export default function Jobs() {
   // Dashboard's expiry tiles link here. 'past' = the quote's expiry date has
   // gone by and it is still open; 'soon' = it goes by within a fortnight.
   const [quoteExpiry, setQuoteExpiry] = useState(searchParams.get('quoteExpiry') || '');
+  // Optional window for quoteExpiry=lapsed, so a period-scoped dashboard card
+  // lands on the quotes it actually counted rather than every lapse on record.
+  const expiryFrom = searchParams.get('from') || '';
+  const expiryTo   = searchParams.get('to')   || '';
   const [staff, setStaff]           = useState('');
   const [sortBy, setSortBy]         = useState('newest');
   const [showFilters, setShowFilters] = useState(false);
@@ -189,6 +193,28 @@ export default function Jobs() {
   // catches edits while staying cheap enough to skip on every keystroke.
   const quotes = getQuotes();
   const quotesSig = quotes.length + '|' + quotes.reduce((m, q) => ((q.updatedAt || '') > m ? q.updatedAt : m), '');
+  // Jobs whose quote has already lapsed — the Lapsed card links here.
+  const lapsedJobIds = useMemo(() => {
+    const ids = new Set();
+    const from = expiryFrom ? new Date(`${expiryFrom}T00:00:00`) : null;
+    const to   = expiryTo   ? new Date(`${expiryTo}T23:59:59`)   : null;
+    quotes.forEach(q => {
+      if (!q.jobId || q.deletedAt || q.status !== 'Expired') return;
+      if (from || to) {
+        // Same date the dashboard counts a lapse on.
+        const raw = q.expiryDate || q.sentAt || q.createdAt;
+        if (!raw) return;
+        const d = new Date(raw);
+        if (Number.isNaN(d.getTime())) return;
+        if (from && d < from) return;
+        if (to && d > to) return;
+      }
+      ids.add(q.jobId);
+    });
+    return ids;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotesSig, expiryFrom, expiryTo]);
+
   // Open quotes on each job, keyed by job, so a project can be filtered by the
   // state of the quote sitting on it.
   const openQuoteExpiryByJob = useMemo(() => {
@@ -263,7 +289,9 @@ export default function Jobs() {
       }
       if (staff && job.assignedStaff !== staff) return false;
       if (stalled && !isStalledJob(job)) return false;
-      if (quoteExpiry) {
+      if (quoteExpiry === 'lapsed') {
+        if (!lapsedJobIds.has(job.id)) return false;
+      } else if (quoteExpiry) {
         const d = openQuoteExpiryByJob.get(job.id);
         if (!d) return false;
         const today = startOfDay(new Date());
@@ -272,7 +300,7 @@ export default function Jobs() {
       }
       return true;
     }).sort(SORTS[sortBy] || newest);
-  }, [jobs, customers, search, status, urgency, staff, stalled, quoteExpiry, openQuoteExpiryByJob, sortBy, valueByJob]);
+  }, [jobs, customers, search, status, urgency, staff, stalled, quoteExpiry, openQuoteExpiryByJob, lapsedJobIds, sortBy, valueByJob]);
 
   // Render in pages of 100 — reset when filters change.
   const PAGE = 100;
@@ -285,7 +313,7 @@ export default function Jobs() {
   }
   const visible = filtered.slice(0, visibleCount);
 
-  const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); setStalled(false); setSortBy('newest'); };
+  const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); setStalled(false); setQuoteExpiry(''); setSortBy('newest'); };
   const hasFilters = status || urgency || staff || search;
   // Count of active list controls shown as a badge on the Sort & Filter button
   // (search has its own field, so it's excluded from the in-panel count).
