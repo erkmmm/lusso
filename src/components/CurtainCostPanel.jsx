@@ -62,7 +62,26 @@ function FabricSource({ fabricPrice, fabricName }) {
   const { source, item, match, candidates, notFound, searchedFor } = fabricPrice || {};
 
   if (source === 'manual') {
-    return <p className="-mt-0.5 mb-1 pl-1 text-[10px] text-slate-400">Fabric price typed on this line</p>;
+    return <p className="-mt-0.5 mb-1 pl-1 text-[10px] text-slate-400">Fabric price typed on this line (overrides the price library)</p>;
+  }
+
+  // Auto-costing put this price here, from the library, and said so.
+  if (source === 'applied') {
+    return (
+      <div className={`-mt-0.5 mb-1 pl-1 text-[10px] ${fabricPrice.stale ? 'text-amber-700' : 'text-slate-400'}`}>
+        <p>
+          {fabricPrice.stale ? '⚠ ' : ''}Applied from the price library when this line was costed
+          {item?.itemName ? <> — <span className="font-medium">{item.itemName}</span></> : null}
+        </p>
+        {fabricPrice.stale && (
+          <p className="mt-0.5">
+            The price library now says{' '}
+            <span className="font-medium tabular-nums">{money(fabricPrice.libraryPricePerM)}/m</span> —
+            this line is still costed at the older figure. Clear the $/m below to take the current price.
+          </p>
+        )}
+      </div>
+    );
   }
 
   if (source === 'library') {
@@ -173,7 +192,7 @@ export default function CurtainCostPanel({ item, set }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Num label="Fabric $/m" prefix="$" value={item.curtainFabricPricePerM}
              placeholder={String(fabricPrice.pricePerM)}
-             onChange={v => set('curtainFabricPricePerM', v)} />
+             onChange={v => { set('curtainFabricPricePerM', v); set('curtainFabricPriceSource', 'manual'); }} />
         <Num label="Fabric width" suffix="mm" value={item.curtainFabricWidthMm}
              placeholder={String(fabricWidth.widthMm)}
              onChange={v => set('curtainFabricWidthMm', v)} />

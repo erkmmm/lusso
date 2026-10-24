@@ -563,8 +563,33 @@ export function resolveLineFabricPrice(li = {}, rates = DEFAULT_CURTAIN_RATES, p
   const hit = resolveFabricPricePerM(li.fabricColour, pricedItems);
   const libWidth = Number(hit?.item?.fabricWidthMm) || null;
 
-  const manual = Number(li.curtainFabricPricePerM) || Number(li.fabricPricePerM) || 0;
-  if (manual > 0) return { pricePerM: manual, source: 'manual', widthMm: libWidth };
+  // A price already on the line. It is NOT necessarily one someone typed:
+  // auto-costing writes the resolved $/m onto the line too, and for want of a
+  // note saying so this used to report it as "typed on this line" — telling
+  // the user they had entered a number the app had chosen for them, which is
+  // the opposite of showing where a price came from.
+  //
+  // `curtainFabricPriceSource` is that note. Absent (older lines) we can still
+  // do better than guessing: if the stored price matches what the library says
+  // today, it came from the library.
+  const onLine = Number(li.curtainFabricPricePerM) || Number(li.fabricPricePerM) || 0;
+  if (onLine > 0) {
+    const noted = li.curtainFabricPriceSource || null;
+    const agrees = !!hit && Number(hit.pricePerM) === onLine;
+    const fromLibrary = noted === 'library' || (!noted && agrees);
+    return {
+      pricePerM: onLine,
+      source: fromLibrary ? 'applied' : 'manual',
+      item: fromLibrary ? (hit?.item || null) : null,
+      match: fromLibrary ? hit?.match || null : null,
+      widthMm: libWidth,
+      // The library has moved since this line was costed. Worth saying: the
+      // quote is carrying a price the price list no longer agrees with.
+      stale: fromLibrary && !!hit && Number(hit.pricePerM) !== onLine,
+      libraryPricePerM: hit ? Number(hit.pricePerM) : null,
+      confident: true,
+    };
+  }
 
   if (hit) {
     return {

@@ -176,6 +176,10 @@ function msItemToQuoteLine(msLi, sortOrder, rates, pricedItems) {
         unitCostPrice:          costed.unitCostPrice,
         labourCost:             costed.labourCost,
         curtainFabricPricePerM: costed.curtainFabricPricePerM,
+        // Where that $/m came from, written down with it. Without this the
+        // calculator can only see "a price is on the line" and reports it as
+        // hand-typed — crediting the user with a number the app chose.
+        curtainFabricPriceSource: costed.fabricPriceSource,
       }
     : {};
 
@@ -1140,6 +1144,11 @@ export default function QuoteBuilder() {
         unitCostPrice:          result.unitCostPrice,
         labourCost:             result.labourCost,
         curtainFabricPricePerM: li.curtainFabricPricePerM || result.curtainFabricPricePerM,
+        // Only the app's own figure carries the app's provenance; a $/m
+        // already on the line keeps whatever note it came with.
+        curtainFabricPriceSource: li.curtainFabricPricePerM
+          ? (li.curtainFabricPriceSource || 'manual')
+          : result.fabricPriceSource,
       };
     });
 

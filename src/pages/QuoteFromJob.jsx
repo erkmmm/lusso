@@ -41,6 +41,7 @@ function msLineToQuoteLine(msLi, idx, rates, pricedItems) {
         unitCostPrice:          costed.unitCostPrice,
         labourCost:             costed.labourCost,
         curtainFabricPricePerM: costed.curtainFabricPricePerM,
+        curtainFabricPriceSource: costed.fabricPriceSource,   // see resolveLineFabricPrice
       }
     : { unitCostPrice: '', labourCost: '', curtainFabricPricePerM: '' };
 
