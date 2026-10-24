@@ -127,12 +127,16 @@ export default function Customers() {
     if (!newCustomer.phone.trim() && !newCustomer.email.trim()) e.phone = 'Phone or email required';
     setAddErrors(e);
     if (Object.keys(e).length > 0) return;
-    saveCustomer({ ...newCustomer, id: uuidv4(), assignedTo: displayName, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const id = uuidv4();
+    saveCustomer({ ...newCustomer, id, assignedTo: displayName, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     setShowAdd(false);
     setNewCustomer(EMPTY_CUSTOMER());
     setAddErrors({});
-    forceUpdate(n => n + 1);
     window.dispatchEvent(new CustomEvent('lusso:toast', { detail: { message: `${newCustomer.name} added.`, type: 'success' } }));
+    // Open the customer you just made. Adding one is almost always the first
+    // step of something else — a measure, a quote, a note — and dropping back
+    // to a list of two thousand names means finding them again to carry on.
+    navigate(`/customers/${id}`);
   };
 
   const toggleSelect = (id, e) => {

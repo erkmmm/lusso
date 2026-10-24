@@ -12,7 +12,7 @@ import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfDay, addDays } from 'date-fns';
 
 const fmt$ = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
 // Safe short date — tolerates missing / odd timestamps from sync.
@@ -165,6 +165,9 @@ export default function Jobs() {
   // "Stalled" = open job with no activity 14+ days (matches the dashboard's
   // Needs Attention tile, which links here with ?stalled=1).
   const [stalled, setStalled]       = useState(searchParams.get('stalled') === '1');
+  // Dashboard's expiry tiles link here. 'past' = the quote's expiry date has
+  // gone by and it is still open; 'soon' = it goes by within a fortnight.
+  const [quoteExpiry, setQuoteExpiry] = useState(searchParams.get('quoteExpiry') || '');
   const [staff, setStaff]           = useState('');
   const [sortBy, setSortBy]         = useState('newest');
   const [showFilters, setShowFilters] = useState(false);
@@ -186,6 +189,24 @@ export default function Jobs() {
   // catches edits while staying cheap enough to skip on every keystroke.
   const quotes = getQuotes();
   const quotesSig = quotes.length + '|' + quotes.reduce((m, q) => ((q.updatedAt || '') > m ? q.updatedAt : m), '');
+  // Open quotes on each job, keyed by job, so a project can be filtered by the
+  // state of the quote sitting on it.
+  const openQuoteExpiryByJob = useMemo(() => {
+    const m = new Map();
+    quotes.forEach(q => {
+      if (!q.jobId || q.deletedAt) return;
+      if (!['Waiting', 'Sent', 'Viewed'].includes(q.status)) return;
+      if (!q.expiryDate) return;
+      let d; try { d = parseISO(q.expiryDate); } catch { return; }
+      if (!d || Number.isNaN(d.getTime())) return;
+      // Soonest expiry on the job is the one that matters.
+      const prev = m.get(q.jobId);
+      if (!prev || d < prev) m.set(q.jobId, d);
+    });
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotesSig]);
+
   const valueByJob = useMemo(() => {
     const byJob = new Map();
     quotes.forEach(q => {
@@ -242,14 +263,21 @@ export default function Jobs() {
       }
       if (staff && job.assignedStaff !== staff) return false;
       if (stalled && !isStalledJob(job)) return false;
+      if (quoteExpiry) {
+        const d = openQuoteExpiryByJob.get(job.id);
+        if (!d) return false;
+        const today = startOfDay(new Date());
+        if (quoteExpiry === 'past' && !(d < today)) return false;
+        if (quoteExpiry === 'soon' && !(d >= today && d <= addDays(today, 14))) return false;
+      }
       return true;
     }).sort(SORTS[sortBy] || newest);
-  }, [jobs, customers, search, status, urgency, staff, stalled, sortBy, valueByJob]);
+  }, [jobs, customers, search, status, urgency, staff, stalled, quoteExpiry, openQuoteExpiryByJob, sortBy, valueByJob]);
 
   // Render in pages of 100 — reset when filters change.
   const PAGE = 100;
   const [visibleCount, setVisibleCount] = useState(PAGE);
-  const filterKey = `${search}|${status}|${urgency}|${staff}|${stalled}|${sortBy}`;
+  const filterKey = `${search}|${status}|${urgency}|${staff}|${stalled}|${quoteExpiry}|${sortBy}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (prevFilterKey !== filterKey) {
     setPrevFilterKey(filterKey);
@@ -261,7 +289,7 @@ export default function Jobs() {
   const hasFilters = status || urgency || staff || search;
   // Count of active list controls shown as a badge on the Sort & Filter button
   // (search has its own field, so it's excluded from the in-panel count).
-  const activeFilterCount = [status, urgency, staff, stalled, sortBy !== 'newest'].filter(Boolean).length;
+  const activeFilterCount = [status, urgency, staff, stalled, quoteExpiry, sortBy !== 'newest'].filter(Boolean).length;
 
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()); };
 

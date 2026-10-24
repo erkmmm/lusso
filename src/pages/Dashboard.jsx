@@ -5,14 +5,14 @@ import { useNavigate } from 'react-router-dom';
 import {
   formatDistanceToNow, parseISO, isWithinInterval,
   subDays, subMonths, subYears, startOfYear,
-  format, differenceInDays,
+  format, differenceInDays, startOfDay, addDays,
 } from 'date-fns';
 import {
   Briefcase, ClipboardList, CheckCircle2, Clock,
   AlertTriangle, TrendingUp, TrendingDown, Users, ArrowRight, Plus,
   DollarSign, ChevronDown, BarChart2, HardHat, Percent,
   SlidersHorizontal, Eye, EyeOff, FileText, X, Mail, Target, Package,
-  Pencil, Trophy, CalendarDays, Timer, FileDown,
+  Pencil, Trophy, CalendarDays, CalendarX, Timer, FileDown,
 } from 'lucide-react';
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
@@ -310,7 +310,24 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
     !installEvents.some(e => e.jobId === j.id)
   ).length;
 
+  // ── Quotes that have run out of time ──────────────────────────────────────
+  // A quote past its expiry date but still sitting as Waiting is neither won,
+  // lost, nor honestly open — and it is the one thing on this page that can be
+  // acted on today. Nothing surfaced them, so they just accumulated: they are
+  // also why the pipeline and Quotient's "awaiting acceptance" both read high.
+  const openQuotes = quotes.filter(q => ['Waiting', 'Sent', 'Viewed'].includes(q.status));
+  const today = startOfDay(new Date());
+  const in14  = addDays(today, 14);
+  const expiryOf = (q) => { try { return q.expiryDate ? parseISO(q.expiryDate) : null; } catch { return null; } };
+
+  const pastExpiry = openQuotes.filter(q => { const d = expiryOf(q); return d && d < today; });
+  const expiringSoon = openQuotes.filter(q => { const d = expiryOf(q); return d && d >= today && d <= in14; });
+  const sumOf = (list) => list.reduce((s2, q) => s2 + quoteTotal(q), 0);
+
   const items = [
+    // Most urgent first: these have already lapsed in the customer's eyes.
+    { key: 'pastExpiry', count: pastExpiry.length, label: 'Past expiry', sub: `${fmtCompact(sumOf(pastExpiry))} needs a decision`, icon: CalendarX, color: 'text-red-600', bg: 'bg-red-50', onClick: () => navigate('/jobs?quoteExpiry=past') },
+    { key: 'expiring',   count: expiringSoon.length, label: 'Expiring soon', sub: `${fmtCompact(sumOf(expiringSoon))} in the next 14 days`, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50', onClick: () => navigate('/jobs?quoteExpiry=soon') },
     { key: 'stalled',    count: stalled,         label: 'Stalled projects', sub: 'No activity 14+ days',  icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',   onClick: () => navigate('/jobs?stalled=1') },
     { key: 'schedule',   count: needsScheduling, label: 'Needs scheduling', sub: 'Ready, no install booked', icon: CalendarDays, color: 'text-teal-600',  bg: 'bg-teal-50',  onClick: () => navigate('/calendar') },
     { key: 'quotesOut',  count: quotesOut,       label: 'Quotes out',       sub: 'Awaiting customer',     icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/jobs') },
@@ -1005,7 +1022,12 @@ export default function Dashboard() {
       const losses = quotes.filter(q =>
         (q.status === 'Declined' && inRange(lostDeclinedAt(q), r)) ||
         (q.status === 'Expired'  && inRange(lostExpiredAt(q), r)));
-      return { wins: wins.length, losses: losses.length };
+      // Split the losses: customers almost never formally decline — a quote
+      // mostly just runs out of time. "Resolved" hides which of those happened,
+      // and lapsing is the loss channel worth knowing about.
+      const lapsed   = quotes.filter(q => q.status === 'Expired'  && inRange(lostExpiredAt(q), r));
+      const declined = quotes.filter(q => q.status === 'Declined' && inRange(lostDeclinedAt(q), r));
+      return { wins: wins.length, losses: losses.length, lapsed: lapsed.length, declined: declined.length };
     };
     const res     = resolutionsIn(range);
     const resPrev = resolutionsIn(prev);
@@ -1019,6 +1041,7 @@ export default function Dashboard() {
       acceptedCount: accepted.length, acceptedCountPrev: acceptedPrev.length,
       acceptedValue, acceptedValuePrev, acceptedAvg,
       winRate, winRatePrev, decisions,
+      wins: res.wins, lapsed: res.lapsed, declined: res.declined,
     };
   }, [quotes, globalRange]);
 
@@ -1412,7 +1435,15 @@ export default function Dashboard() {
             : { value: '—' })}
           delta={analytics.winRate !== null && analytics.winRatePrev !== null
             ? <DeltaBadge current={analytics.winRate} previous={analytics.winRatePrev} /> : null}
-          caption={analytics.decisions > 0 ? `of ${lI(analytics.decisions)} resolved quotes` : 'no resolved quotes yet'}
+          caption={analytics.decisions > 0
+            // Show the working. "of 14 resolved quotes" gave no way to tell a
+            // good month from one where nothing was decided, and no hint that
+            // lapsing — not declining — is how these are lost.
+            ? [`${lI(analytics.wins)} won`,
+               analytics.lapsed   ? `${lI(analytics.lapsed)} lapsed` : null,
+               analytics.declined ? `${lI(analytics.declined)} declined` : null,
+              ].filter(Boolean).join(' · ')
+            : 'no resolved quotes yet'}
           spark={monthly.map(m => m.winRate)}
           sparkColor="#9333EA"
           onClick={() => navigate('/jobs')}
