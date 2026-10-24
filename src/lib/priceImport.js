@@ -66,11 +66,18 @@ export function matchExistingItem(existing = [], incoming = {}) {
  * Only fields the sheet SUPPLIES are compared, because those are the only ones
  * an update writes — a column the sheet doesn't carry is not a change to zero,
  * it is simply absent.
+ *
+ * `ignore` is for fields that did not come from the price list at all. The PDF
+ * reader applies one supplier and one category to every row from form inputs
+ * above the table, so comparing them would mark all 300 rows "changed" because
+ * the operator typed the supplier slightly differently this time — burying the
+ * two prices that actually moved.
  */
-export function diffAgainstExisting(existing, incoming) {
+export function diffAgainstExisting(existing, incoming, { ignore = [] } = {}) {
   if (!existing) return [];
   const out = [];
   for (const f of DIFF_FIELDS) {
+    if (ignore.includes(f.key)) continue;
     const to = incoming?.[f.key];
     if (to === undefined || to === null || to === '') continue;
     const from = f.key === 'unitType' ? (existing.unitType ?? existing.unit) : existing[f.key];

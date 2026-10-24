@@ -7,6 +7,12 @@ import {
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { matchExistingItem, diffAgainstExisting, summariseImport } from '../lib/priceImport';
+
+// Supplier and category are typed once above the table and stamped on every
+// row, so a difference there says the operator phrased it differently — not
+// that this fabric changed. Comparing them would report all 300 rows as
+// updated and hide the handful whose price actually moved.
+const PDF_DIFF_OPTS = { ignore: ['supplier', 'category'] };
 import { extractPdfText } from '../lib/pdfExtract';
 import { extractPdfTable, rowsToItems, dataRows, isDraperyRow, parseWidthMm } from '../lib/pdfTable';
 import { isPerMetreUnit } from '../lib/curtainCalc';
@@ -323,17 +329,20 @@ export default function ImportSupplierPDF() {
       setParseError('That mapping produced no rows. Check the Name and Price columns are set.');
       return;
     }
+    // Same rule as the parse path below: offer what the sheet CHANGES, not
+    // only what it adds. Every row of a price refresh already exists, so
+    // selecting none of them left nothing to import.
     const existing = getPricedItems();
-    const byCode = new Map(existing.map(p => [p.itemCode?.toLowerCase(), p]));
-    const byName = new Map(existing.map(p => [p.itemName?.toLowerCase(), p]));
     const dupes = new Set();
     const withIds = drafts.map(d => {
       const tmpId = uuidv4();
-      if ((d.itemCode && byCode.get(d.itemCode.toLowerCase())) || byName.get(d.itemName.toLowerCase())) dupes.add(tmpId);
-      return { ...d, tmpId, supplierName: supplierName.trim() };
+      const hit = matchExistingItem(existing, d);
+      if (hit) dupes.add(tmpId);
+      const changes = hit ? diffAgainstExisting(hit.item, d, PDF_DIFF_OPTS) : [];
+      return { ...d, tmpId, supplierName: supplierName.trim(), existing: hit?.item || null, changes };
     });
     setItems(withIds);
-    setSelected(new Set(withIds.filter(i => !dupes.has(i.tmpId)).map(i => i.tmpId)));
+    setSelected(new Set(withIds.filter(i => !i.existing || i.changes.length).map(i => i.tmpId)));
     setDupeIds(dupes);
     setStep(2);
   };
@@ -387,7 +396,7 @@ export default function ImportSupplierPDF() {
         const tmpId = uuidv4();
         const hit = matchExistingItem(existing, item);
         if (hit) dupes.add(tmpId);
-        const changes = hit ? diffAgainstExisting(hit.item, item) : [];
+        const changes = hit ? diffAgainstExisting(hit.item, item, PDF_DIFF_OPTS) : [];
         return { ...item, tmpId, supplierName: supplierName.trim(), existing: hit?.item || null, changes };
       });
 
