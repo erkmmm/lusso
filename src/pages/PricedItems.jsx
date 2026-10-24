@@ -1,5 +1,6 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useRef, useCallback } from 'react';
+import { diffAgainstExisting } from '../lib/priceImport';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
@@ -153,46 +154,6 @@ function parseWidthMm(v) {
   if (/cm/.test(raw))            return Math.round(n * 10);
   if (/\bm\b|[0-9]\s*m$/.test(raw)) return Math.round(n * 1000);
   return n < 10 ? Math.round(n * 1000) : Math.round(n);
-}
-
-/**
- * What this CSV row would actually change about the item it matched.
- *
- * A price-sheet re-import is mostly rows that have not moved. Asking someone to
- * decide "skip or update?" for all 336 of them is asking them to rubber-stamp
- * it, which is the same as not asking — so the ones that moved are found here
- * and pre-selected, and the rest are left alone.
- *
- * Only fields the sheet actually SUPPLIES are compared, because those are the
- * only ones an update will write (see runPricedItemImport).
- */
-const DIFF_FIELDS = [
-  { key: 'costPrice',     label: 'Cost',      money: true },
-  { key: 'sellPrice',     label: 'Sell',      money: true },
-  { key: 'fabricWidthMm', label: 'Roll width', unit: 'mm' },
-  { key: 'supplier',      label: 'Supplier'  },
-  { key: 'category',      label: 'Category'  },
-  { key: 'unitType',      label: 'Unit'      },
-];
-
-const sameValue = (a, b) => {
-  const an = Number(a), bn = Number(b);
-  if (Number.isFinite(an) && Number.isFinite(bn)) return Math.abs(an - bn) < 0.005;
-  return String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
-};
-
-function diffAgainstExisting(existing, mapped) {
-  if (!existing) return [];
-  const out = [];
-  for (const f of DIFF_FIELDS) {
-    const to = mapped?.[f.key];
-    // Absent from the sheet → the update won't touch it → not a change.
-    if (to === undefined || to === null || to === '') continue;
-    const from = f.key === 'unitType' ? (existing.unitType ?? existing.unit) : existing[f.key];
-    if (sameValue(from, to)) continue;
-    out.push({ ...f, from: from ?? null, to });
-  }
-  return out;
 }
 
 // ─── Row processing ───────────────────────────────────────────────────────────

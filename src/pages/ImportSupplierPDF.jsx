@@ -6,6 +6,7 @@ import {
   ArrowLeft, ArrowRight, Package, RotateCcw, Table2, Columns3,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { matchExistingItem, diffAgainstExisting, summariseImport } from '../lib/priceImport';
 import { extractPdfText } from '../lib/pdfExtract';
 import { extractPdfTable, rowsToItems, dataRows, isDraperyRow, parseWidthMm } from '../lib/pdfTable';
 import { isPerMetreUnit } from '../lib/curtainCalc';
@@ -201,6 +202,8 @@ export default function ImportSupplierPDF() {
   const [items,    setItems]    = useState([]);   // ParsedItem[]
   const [selected, setSelected] = useState(new Set()); // Set of item tmpIds
   const [dupeIds,  setDupeIds]  = useState(new Set()); // items that match existing by code/name
+  // changed / unchanged / new, and which way the prices moved
+  const stats = summariseImport(items);
 
   // Import state
   const [importing,    setImporting]    = useState(false);
@@ -374,20 +377,23 @@ export default function ImportSupplierPDF() {
 
       // 4. Assign tmp IDs and check for duplicates vs existing library
       const existing = getPricedItems();
-      const existingCodes = new Map(existing.map(p => [p.itemCode?.toLowerCase(), p]));
-      const existingNames = new Map(existing.map(p => [p.itemName?.toLowerCase(), p]));
 
+      // "Already in the library" is not the useful fact — "the price moved" is.
+      // Every row on a refresh matches something, so selecting only the new
+      // ones meant selecting nothing at all, and the sheet could not be
+      // applied. Work out what each row would change, and offer THAT.
       const dupes = new Set();
       const withIds = data.items.map(item => {
         const tmpId = uuidv4();
-        const codeMatch = item.itemCode && existingCodes.get(item.itemCode.toLowerCase());
-        const nameMatch = existingNames.get(item.itemName.toLowerCase());
-        if (codeMatch || nameMatch) dupes.add(tmpId);
-        return { ...item, tmpId, supplierName: supplierName.trim() };
+        const hit = matchExistingItem(existing, item);
+        if (hit) dupes.add(tmpId);
+        const changes = hit ? diffAgainstExisting(hit.item, item) : [];
+        return { ...item, tmpId, supplierName: supplierName.trim(), existing: hit?.item || null, changes };
       });
 
       setItems(withIds);
-      setSelected(new Set(withIds.filter(i => !dupes.has(i.tmpId)).map(i => i.tmpId)));
+      // New products, and existing ones whose details actually moved.
+      setSelected(new Set(withIds.filter(i => !i.existing || i.changes.length).map(i => i.tmpId)));
       setDupeIds(dupes);
       setStep(2);
 
@@ -445,15 +451,18 @@ export default function ImportSupplierPDF() {
 
       // Map to the format runPricedItemImport expects
       const existing = getPricedItems();
-      const existingCodes = new Map(existing.map(p => [p.itemCode?.toLowerCase(), p]));
 
       const rows = toImport.map(item => {
-        const codeMatch = item.itemCode && existingCodes.get(item.itemCode.toLowerCase());
+        // Matched the SAME way the preview matched, by code then name. This
+        // used to look at the item code alone — and almost nothing in this
+        // library has one — so a row the preview called a duplicate came
+        // through here as an insert and filed a second copy of the fabric.
+        const hit = matchExistingItem(existing, item);
         return {
           status:    'ok',
-          isDuplicate: !!codeMatch,
-          duplicate:  codeMatch || null,
-          rowAction:  codeMatch ? 'update' : 'insert',
+          isDuplicate: !!hit,
+          duplicate:  hit?.item || null,
+          rowAction:  hit ? 'update' : 'insert',
           mapped: {
             itemName:      item.itemName,
             itemCode:      item.itemCode || '',
@@ -835,9 +844,22 @@ export default function ImportSupplierPDF() {
               <span className="text-slate-500">
                 {selected.size} selected for import
               </span>
-              {dupeIds.size > 0 && (
-                <span className="text-amber-600 font-medium">
-                  {dupeIds.size} already in library
+              {/* What the sheet DOES, rather than how much of it we have seen
+                  before. On a refresh every row is "already in library", which
+                  told you nothing and left nothing selected. */}
+              {stats.changed > 0 && (
+                <span className="text-blue-600 font-medium">
+                  {stats.changed} updated
+                  {stats.rises > 0 && <span className="text-red-600"> · {stats.rises} ↑</span>}
+                  {stats.drops > 0 && <span className="text-green-700"> · {stats.drops} ↓</span>}
+                </span>
+              )}
+              {stats.fresh > 0 && (
+                <span className="text-green-600 font-medium">{stats.fresh} new</span>
+              )}
+              {stats.unchanged > 0 && (
+                <span className="text-slate-400">
+                  {stats.unchanged} unchanged
                 </span>
               )}
             </div>
@@ -892,6 +914,7 @@ export default function ImportSupplierPDF() {
               {items.map(item => {
                 const isSelected = selected.has(item.tmpId);
                 const isDupe = dupeIds.has(item.tmpId);
+                const costChange = item.changes?.find(c => c.key === 'costPrice');
 
                 return (
                   <div
@@ -917,10 +940,18 @@ export default function ImportSupplierPDF() {
                             value={item.itemName}
                             onChange={v => editItem(item.tmpId, 'itemName', v)}
                           />
-                          {isDupe && (
-                            <span className="flex-shrink-0 text-[10px] font-semibold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
-                              duplicate
-                            </span>
+                          {/* "duplicate" was the wrong word for the common
+                              case: the fabric is in the library and the sheet
+                              has a new price for it. That is an update, and
+                              which fields moved is the useful part. */}
+                          {isDupe && (item.changes?.length
+                            ? <span title={item.changes.map(c => `${c.label}: ${c.from ?? '—'} → ${c.to}`).join(', ')}
+                                className="flex-shrink-0 text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                                updated · {item.changes.map(c => c.label.toLowerCase()).join(', ')}
+                              </span>
+                            : <span className="flex-shrink-0 text-[10px] font-medium bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full">
+                                no change
+                              </span>
                           )}
                         </div>
                         <DescCell
@@ -942,12 +973,24 @@ export default function ImportSupplierPDF() {
                         options={LUSSO_CATEGORIES}
                       />
 
-                      {/* Cost */}
-                      <EditableCell
-                        value={item.costPrice}
-                        onChange={v => editItem(item.tmpId, 'costPrice', v)}
-                        type="number"
-                      />
+                      {/* Cost — with what it is replacing, so the sheet can be
+                          checked against the library before it is applied
+                          rather than after. */}
+                      <div className="min-w-0">
+                        <EditableCell
+                          value={item.costPrice}
+                          onChange={v => editItem(item.tmpId, 'costPrice', v)}
+                          type="number"
+                        />
+                        {costChange && (
+                          <div className="text-[10px] whitespace-nowrap">
+                            <span className="text-slate-400 line-through">{costChange.from}</span>
+                            <span className={`ml-1 font-semibold ${Number(costChange.to) > Number(costChange.from) ? 'text-red-600' : 'text-green-700'}`}>
+                              {Number(costChange.to) > Number(costChange.from) ? '↑' : '↓'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
 
                       {fabricMode ? (
                         /* Roll width — decides Continuous vs Regular cutting */
