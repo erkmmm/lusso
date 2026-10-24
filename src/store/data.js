@@ -4129,9 +4129,7 @@ export const runPricedItemImport = async (batchId, rows) => {
     const itemId = isUpdate ? row.duplicate.id : uuidv4();
     const now = new Date().toISOString();
 
-    const item = {
-      ...(isUpdate ? row.duplicate : {}),
-      id: itemId,
+    const incoming = {
       itemName:       m.itemName      || '',
       itemCode:       m.itemCode      || '',
       sku:            m.sku           || m.itemCode || '',
@@ -4150,9 +4148,32 @@ export const runPricedItemImport = async (batchId, rows) => {
       markupPercent:  m.markupPercent ?? null,
       gstApplicable:  m.gstApplicable !== false,
       taxRate:        m.taxRate       ?? 10,
-      isActive:       true,
       notes:          m.notes         || '',
       tags:           m.tags          || '',
+    };
+
+    // On an UPDATE, a column the new sheet does not carry must not erase what
+    // is already on the item. A price-list refresh is usually a few columns —
+    // name and cost — and writing every other field back as blank silently
+    // destroys the rest of the record.
+    //
+    // Roll width was the sharp edge: there is no import column for it at all,
+    // so `fabricWidthMm` was always undefined and every updated fabric lost
+    // its width. Every fabric in the library has one, the curtain calculator
+    // needs it to choose cut-drops vs railroaded, and nothing about the import
+    // would have said a word.
+    //
+    // The trade: an update can no longer blank a field by leaving it empty.
+    // Clearing one is a deliberate act and belongs in the item editor, not in
+    // a side effect of re-importing a price sheet.
+    const supplied = Object.fromEntries(
+      Object.entries(incoming).filter(([, v]) => v !== undefined && v !== null && v !== ''),
+    );
+
+    const item = {
+      ...(isUpdate ? { ...row.duplicate, ...supplied } : incoming),
+      id: itemId,
+      isActive:       true,
       source:         'Quotient Priced Items CSV Import',
       importBatchId:  batchId,
       createdAt:      isUpdate ? (row.duplicate.createdAt || now) : now,

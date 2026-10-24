@@ -50,6 +50,12 @@ const FIELD_ALIASES = {
   notes: 'notes', tags: 'tags',
   labourcost: 'labourCost', labor: 'labourCost', labour: 'labourCost',
   marginpercent: 'marginPercent', margin: 'marginPercent',
+  // Roll width. The curtain calculator needs it to decide cut-drops vs
+  // railroaded, and there was no way to bring it in — it could only ever be
+  // typed per item by hand.
+  fabricwidth: 'fabricWidthMm', fabricwidthmm: 'fabricWidthMm',
+  rollwidth: 'fabricWidthMm', rollwidthmm: 'fabricWidthMm',
+  width: 'fabricWidthMm', widthmm: 'fabricWidthMm',
 };
 
 // ─── CSV parser (same as ImportContacts) ──────────────────────────────────────
@@ -127,6 +133,25 @@ function fmtPrice(v) {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 2 }).format(v);
 }
 
+/**
+ * Roll width from a price sheet, in mm.
+ *
+ * Suppliers write it every which way — 3100, "3100mm", "3.1m", "310cm" — and a
+ * width read wrong is worse than one left blank: it silently flips the curtain
+ * calculator between cut-drops and railroaded. A bare number under 10 is
+ * metres (nobody sells a 3mm roll); anything larger is already mm.
+ */
+function parseWidthMm(v) {
+  const raw = String(v ?? '').trim().toLowerCase();
+  if (!raw) return null;
+  const n = parseFloat(raw.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (/mm/.test(raw))            return Math.round(n);
+  if (/cm/.test(raw))            return Math.round(n * 10);
+  if (/\bm\b|[0-9]\s*m$/.test(raw)) return Math.round(n * 1000);
+  return n < 10 ? Math.round(n * 1000) : Math.round(n);
+}
+
 // ─── Row processing ───────────────────────────────────────────────────────────
 
 function processItemRows(rawRows, headers, columnMap, existing, globalDupAction) {
@@ -148,6 +173,7 @@ function processItemRows(rawRows, headers, columnMap, existing, globalDupAction)
       costPrice:   parsePrice(raw.costPrice),
       sellPrice:   parsePrice(raw.sellPrice),
       labourCost:  parsePrice(raw.labourCost),
+      fabricWidthMm: parseWidthMm(raw.fabricWidthMm),
       notes:       raw.notes       || '',
       tags:        raw.tags        || '',
       ...parseTaxRate(raw.taxRate),
