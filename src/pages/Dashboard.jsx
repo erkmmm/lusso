@@ -834,7 +834,7 @@ function DecisionTime({ insights, lI }) {
         </h2>
         <p className="text-xs text-slate-400 mt-0.5">
           {lI(sentCount)} sent → {lI(wonOfSent)} won
-          {medianDays !== null && <> · median <b className="text-slate-600">{medianDays}d</b> when they go away to decide</>}
+          {medianDays !== null && <> · median <b className="text-slate-600">{medianDays}d</b> for the ones that waited on the customer</>}
         </p>
       </div>
       <div className="p-5 space-y-2.5">
@@ -852,7 +852,12 @@ function DecisionTime({ insights, lI }) {
           ))
         )}
         {decisionCount > 0 && (
-          <p className="text-xs text-slate-400 pt-1">How long wins took from sent to yes. “On the spot” = accepted within an hour (closed at the consult).</p>
+          <p className="text-xs text-slate-400 pt-1">
+            How long wins took from sent to yes. Quotes go out after the appointment, so
+            “agreed before sending” (accepted within an hour of being sent) means the job was
+            already won and the paperwork followed — not a customer deciding in an hour. Those
+            carry no decision time, so they sit outside the median.
+          </p>
         )}
       </div>
     </Card>
@@ -1223,6 +1228,14 @@ export default function Dashboard() {
     // decision interval, so they're reported separately and excluded from
     // the median. Verified against the data: 375 wins share the exact same
     // send/accept second.
+    // Quotes are written up and sent after the appointment, not during it — so
+    // a win recorded as accepted within an hour of sending was NOT a customer
+    // deciding fast. It was agreed before the quote existed, and sent and
+    // accepted were ticked in one action: 384 of these share the exact same
+    // second and another 146 are under a minute apart. There is no decision
+    // interval in the record for them, so they are reported as what they are
+    // — already agreed when sent — and kept out of the median, which would
+    // otherwise be dragged toward zero by a data-entry artefact.
     const HOUR = 1 / 24;
     const daysAll = accepted
       .filter(q => q.sentAt && q.acceptedAt)
@@ -1236,7 +1249,7 @@ export default function Dashboard() {
     // quarters actually take rather than only the midpoint.
     const p75Days = considered.length ? Math.round(considered[Math.floor(considered.length * 0.75)]) : null;
     const instantPct = daysAll.length ? (instant / daysAll.length) * 100 : null;
-    const buckets = [['On the spot', instant], ['Same week', 0], ['1–2 wks', 0], ['2–4 wks', 0], ['1–2 mths', 0], ['2 mths+', 0]];
+    const buckets = [['Agreed before sending', instant], ['Same week', 0], ['1–2 wks', 0], ['2–4 wks', 0], ['1–2 mths', 0], ['2 mths+', 0]];
     considered.forEach(d => { buckets[d <= 7 ? 1 : d <= 14 ? 2 : d <= 30 ? 3 : d <= 60 ? 4 : 5][1]++; });
 
     // Sent → won for quotes sent in the period (long-range conversion view).
@@ -1575,7 +1588,7 @@ export default function Dashboard() {
             ? { raw: insights.medianDays, format: (v) => `${Math.round(v)}d` }
             : { value: '—' })}
           delta={insights.instantPct !== null
-            ? <span className="text-xs font-semibold text-teal-700">{insights.instantPct.toFixed(0)}% on the spot</span>
+            ? <span className="text-xs font-semibold text-teal-700">{insights.instantPct.toFixed(0)}% pre-agreed</span>
             : null}
           caption={insights.medianDays !== null
             // A median alone says nothing about the tail — half the point of
