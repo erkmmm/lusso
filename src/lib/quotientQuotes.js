@@ -45,16 +45,21 @@ const STATUS_MAP = {
 //
 // Historical imports must NOT flood the Dashboard's "Needs Attention" (which
 // flags any non-terminal job idle 14+ days). So we close out anything that's
-// resolved or old: won → Completed; declined/expired → Cancelled; a still-open
-// quote stays active ('Quoted') only if it's recent, otherwise it's a closed
+// resolved or old: won → Completed; declined/expired → Lost; a still-open quote
+// stays active ('Quoted') only if it's recent, otherwise it's a closed
 // historical record. Kept in sync with the one-time backfill of past imports.
+//
+// These used to land on 'Cancelled', which was the closest status available and
+// still wrong: nothing was cancelled, the quote just never converted. It made
+// every lapsed quote read as a customer walking away from agreed work. 'Lost'
+// says what actually happened.
 const RECENT_JOB_MS = 120 * 24 * 60 * 60 * 1000; // 120 days
 function quoteToJobStatus(status, createdAtIso) {
   if (status === 'Accepted') return 'Completed';
-  if (status === 'Declined' || status === 'Expired') return 'Cancelled';
+  if (status === 'Declined' || status === 'Expired') return 'Lost';
   const t = createdAtIso ? new Date(createdAtIso).getTime() : NaN;
   const recent = Number.isFinite(t) && (Date.now() - t) <= RECENT_JOB_MS;
-  return recent ? 'Quoted' : 'Cancelled';
+  return recent ? 'Quoted' : 'Lost';
 }
 
 function toIso(s) {

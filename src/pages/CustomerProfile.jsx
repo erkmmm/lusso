@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import OptionsMenu from '../components/OptionsMenu';
 import { format, parseISO } from 'date-fns';
-import { getCustomer, getJobsByCustomer, saveCustomer, updateCustomerXeroContact, deleteCustomer, restoreCustomer } from '../store/data';
+import { getCustomer, getJobsByCustomer, saveCustomer, updateCustomerXeroContact, deleteCustomer, restoreCustomer, isJobOpen } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
 import AddressAutocomplete from '../components/AddressAutocomplete';
@@ -294,7 +294,7 @@ export default function CustomerProfile() {
           <Card>
             <div className="p-5 space-y-2 text-xs text-slate-500">
               <div className="flex justify-between"><span>Total Jobs</span><span className="font-medium text-slate-700">{jobs.length}</span></div>
-              <div className="flex justify-between"><span>Active</span><span className="font-medium text-slate-700">{jobs.filter(j => j.status !== 'Completed' && j.status !== 'Cancelled').length}</span></div>
+              <div className="flex justify-between"><span>Active</span><span className="font-medium text-slate-700">{jobs.filter(isJobOpen).length}</span></div>
               <div className="flex justify-between"><span>Completed</span><span className="font-medium text-slate-700">{jobs.filter(j => j.status === 'Completed').length}</span></div>
               <div className="flex justify-between"><span>Customer Since</span><span className="font-medium text-slate-700">{format(parseISO(customer.createdAt), 'd MMM yyyy')}</span></div>
             </div>

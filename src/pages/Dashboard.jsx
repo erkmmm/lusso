@@ -18,7 +18,7 @@ import {
   getJobsFiltered, getCustomersFiltered, getActivity,
   getQuotesFiltered, computeQuoteTotals, linePricing,
   getInstallRequests, getCalendarEvents, JOB_STATUSES, isStalledJob,
-  getDismissedSchedulingIds,
+  getDismissedSchedulingIds, JOB_EXIT_STATUSES, isJobOpen,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
@@ -40,9 +40,11 @@ function loadLarp() {
 function saveLarp(v) { localStorage.setItem(LARP_KEY, v ? 'true' : 'false'); }
 
 // Ordered job pipeline stages (label === status key). Derived from the
-// canonical status ladder so new statuses appear automatically; Cancelled is
-// excluded — it's an exit, not a stage. Coloured via PIPELINE_RAMP.
-const PIPELINE_STAGES = JOB_STATUSES.filter(s => s !== 'Cancelled');
+// canonical status ladder so new statuses appear automatically; Cancelled and
+// Lost are excluded — they're exits, not stages. Coloured via PIPELINE_RAMP,
+// which has exactly one stop per stage, so an exit leaking in here would shift
+// every colour after it and leave the last stage undefined.
+const PIPELINE_STAGES = JOB_STATUSES.filter(s => !JOB_EXIT_STATUSES.includes(s));
 
 // Quote statuses that count as "in the pipeline" (sent, not yet decided).
 const PIPELINE_STATUSES = ['Draft', 'Sent', 'Viewed', 'Waiting'];
@@ -979,7 +981,7 @@ export default function Dashboard() {
   const stats = useMemo(() => {
     const counts = {};
     jobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
-    const active = jobs.filter(j => !['Completed', 'Cancelled'].includes(j.status)).length;
+    const active = jobs.filter(isJobOpen).length;
     const urgent = jobs.filter(j => ['Urgent', 'High'].includes(j.urgency)).length;
     return { counts, active, urgent };
   }, [jobs]);

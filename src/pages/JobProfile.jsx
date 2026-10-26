@@ -17,7 +17,7 @@ import {
   getNotes, isTaskOpen,
   updateJobStatus, saveJob, JOB_STATUSES, getQuotesByJob,
   deleteQuote, deleteJob,
-  installProgress, getPurchaseOrdersByJob,
+  installProgress, getPurchaseOrdersByJob, JOB_EXIT_STATUSES,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -116,7 +116,11 @@ export default function JobProfile() {
   const handleSaveNotes    = () => { saveJob({ ...job, internalNotes: notesValue }); setEditingNotes(false); toast('Notes saved.'); };
   const handleSaveJobEdits = () => { saveJob({ ...job, ...jobEdits }); setEditingJob(false); setJobEdits({}); toast('Job updated.'); };
 
-  const statusIndex  = JOB_STATUSES.indexOf(job.status);
+  // Position on the ladder, used to fill the progress bar. An exit status sits
+  // at the END of JOB_STATUSES, so indexOf would put it past every stage and
+  // paint the bar fully complete — a lost job would look delivered. An exit
+  // means the job never got anywhere, so it scores no progress at all.
+  const statusIndex  = JOB_EXIT_STATUSES.includes(job.status) ? -1 : JOB_STATUSES.indexOf(job.status);
   const totalQuoted  = quotes.reduce((sum, q) => sum + Number(q.grandTotal || 0), 0);
   const acceptedQuote = quotes.find(q => q.status === 'Accepted');
 
@@ -220,7 +224,7 @@ export default function JobProfile() {
           {/* Progress bar */}
           <div className="mt-4 pt-4 border-t border-slate-100">
             <div className="flex items-center gap-0">
-              {JOB_STATUSES.filter(s => s !== 'Cancelled').map((s, i, arr) => {
+              {JOB_STATUSES.filter(s => !JOB_EXIT_STATUSES.includes(s)).map((s, i, arr) => {
                 const idx  = JOB_STATUSES.indexOf(s);
                 const done = statusIndex >= idx;
                 const curr = job.status === s;

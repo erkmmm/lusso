@@ -6,7 +6,7 @@ import {
   Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus, Edit3,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { getCustomers, getCustomersFiltered, getJobs, getJobsByCustomer, saveCustomer, deleteCustomer, restoreCustomer, bulkDeleteCustomers, searchMatch } from '../store/data';
+import { getCustomers, getCustomersFiltered, getJobs, getJobsByCustomer, saveCustomer, deleteCustomer, restoreCustomer, bulkDeleteCustomers, searchMatch, isJobOpen } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
@@ -106,7 +106,7 @@ export default function Customers() {
       let e = m.get(j.customerId);
       if (!e) { e = { total: 0, active: 0, latest: null }; m.set(j.customerId, e); }
       e.total += 1;
-      if (j.status !== 'Completed' && j.status !== 'Cancelled') e.active += 1;
+      if (isJobOpen(j)) e.active += 1;
       if (!e.latest || new Date(j.updatedAt) > new Date(e.latest.updatedAt)) e.latest = j;
     });
     return m;

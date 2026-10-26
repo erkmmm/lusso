@@ -738,7 +738,7 @@ export const getJobsByCustomer = (customerId) => getJobs().filter(j => j.custome
 // than silently dropped, which is what a slow/partial data load used to do).
 export const STALLED_DAYS = 14;
 export function isStalledJob(job) {
-  if (!job || ['Completed', 'Cancelled'].includes(job.status)) return false;
+  if (!isJobOpen(job)) return false;
   const raw = job.updatedAt || job.createdAt;
   const t = raw ? new Date(raw).getTime() : NaN;
   const idleDays = Number.isNaN(t) ? Infinity : (Date.now() - t) / 86400000;
@@ -1829,7 +1829,34 @@ export const JOB_STATUSES = [
   'Rework',
   'Completed',
   'Cancelled',
+  'Lost',
 ];
+
+/**
+ * The three ways a job leaves the board, and why they are not one status.
+ *
+ * 'Completed' — delivered and done.
+ * 'Cancelled' — it was going ahead and then wasn't: the customer pulled out,
+ *               or we withdrew. Something was called off.
+ * 'Lost'      — it never started: the quote expired, was declined, or simply
+ *               went cold. Nothing was cancelled because nothing was agreed.
+ *
+ * Until now a quote that lapsed had to be filed as 'Cancelled', which reads as
+ * a customer walking away from committed work and overstates how much of that
+ * we do. It also meant the only alternative was leaving the job at 'Quoted'
+ * forever, which is how ~28 dead projects came to sit in Stalled projects.
+ *
+ * Appended rather than inserted: `job_advance_status` in the database keys its
+ * forward-only transitions off array position, and the dashboard's pipeline
+ * chart indexes PIPELINE_RAMP by stage position.
+ */
+export const CLOSED_JOB_STATUSES = ['Completed', 'Cancelled', 'Lost'];
+
+/** Exits, not stages — they have no place on the pipeline ladder. */
+export const JOB_EXIT_STATUSES = ['Cancelled', 'Lost'];
+
+/** Still live: on someone's plate, counts as pipeline, can go stale. */
+export const isJobOpen = (job) => !!job && !CLOSED_JOB_STATUSES.includes(job.status);
 
 export const STATUS_COLORS = {
   'New Enquiry':        'bg-slate-100 text-slate-700',
@@ -1846,6 +1873,8 @@ export const STATUS_COLORS = {
   'Rework':             'bg-rose-100 text-rose-700',
   'Completed':          'bg-green-100 text-green-700',
   'Cancelled':          'bg-red-100 text-red-700',
+  // Neutral grey, not red: losing a quote is an ordinary outcome, not a fault.
+  'Lost':               'bg-slate-200 text-slate-600',
 };
 
 export const PRODUCT_TYPES = [
