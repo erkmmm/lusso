@@ -21,6 +21,7 @@
 
 import {
   getQuote, getCustomer, sendQuote, getMessagePresets, addActivity,
+  recordQuoteFollowUp,
 } from '../store/data';
 import { sendQuoteEmail } from './email';
 
@@ -64,5 +65,59 @@ export async function deliverQuote(quoteOrId, { user = 'Admin', logActivity = fa
   // confirms a send (see lib/email.js). The quote is marked Sent because the
   // request did go through, but the caller should say so rather than promise
   // the customer has it.
+  return { quote: getQuote(quote.id) || quote, customer, unconfirmed: !!result?.unconfirmed };
+}
+
+/**
+ * Chase a quote the customer hasn't answered: the same quote, sent again.
+ *
+ * Follows the same order as deliverQuote and for the same reason — email
+ * first, record second, so nothing is marked chased that didn't go out.
+ *
+ * What it deliberately does NOT do is call sendQuote(). That would set the
+ * status back to 'Sent', throwing away the fact that the customer had opened
+ * it, and it is the function that anchors the expiry. A follow-up moves no
+ * deadline and changes nothing about where the customer's decision stands.
+ *
+ * @param {object|string} quoteOrId
+ * @param {object}  [opts]
+ * @param {string}  [opts.user]
+ * @returns {Promise<{quote: object, customer: object, unconfirmed?: boolean}>}
+ * @throws {Error} with a user-facing message
+ */
+export async function deliverQuoteFollowUp(quoteOrId, { user = 'Admin' } = {}) {
+  const quote = typeof quoteOrId === 'string' ? getQuote(quoteOrId) : quoteOrId;
+  if (!quote) throw new Error('Quote not found.');
+
+  // Only a quote that actually went out can be followed up — chasing a draft
+  // would send the customer their first sight of it under a "following up"
+  // subject line.
+  if (!quote.sentAt) {
+    throw new Error(`Quote ${quote.quoteNumber || ''} hasn't been sent yet, so there's nothing to follow up.`.trim());
+  }
+
+  const customer = getCustomer(quote.customerId);
+  if (!customer?.email) {
+    throw new Error(
+      `${customer?.name || 'This customer'} has no email address on file. ` +
+      'Add one to the customer record, then send the follow-up.'
+    );
+  }
+
+  const result = await sendQuoteEmail(
+    quote, customer, getMessagePresets().quoteFollowUpIntro, { followUp: true },
+  );
+
+  recordQuoteFollowUp(quote.id, user);
+
+  if (quote.jobId) {
+    addActivity({
+      jobId: quote.jobId,
+      type: 'quote_followed_up',
+      message: `Follow-up on quote ${quote.quoteNumber} sent to ${customer.email}`,
+      user,
+    });
+  }
+
   return { quote: getQuote(quote.id) || quote, customer, unconfirmed: !!result?.unconfirmed };
 }

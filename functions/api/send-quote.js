@@ -43,7 +43,7 @@ export async function onRequestPost(context) {
     return json(400, { error: 'Invalid JSON in request body' });
   }
 
-  const { quote, customer, appUrl, emailIntro } = body || {};
+  const { quote, customer, appUrl, emailIntro, followUp } = body || {};
 
   // ── Validate inputs ───────────────────────────────────────────────────────
   if (!quote)           return json(400, { error: 'Missing quote data' });
@@ -70,12 +70,19 @@ export async function onRequestPost(context) {
     ? '$' + Number(quote.grandTotal).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : null;
 
+  // A follow-up is the SAME quote sent again — same link, same totals, same
+  // expiry. Only the framing changes. Re-sending "Your quote is ready" would
+  // read as a new quote and leave the customer hunting for what changed.
+  const isFollowUp = !!followUp;
+
   const content = {
     preheader: `Quote ${quoteRef}${totalFmt ? ` · ${totalFmt}` : ''}${expiryFmt ? ` · valid until ${expiryFmt}` : ''}`,
-    eyebrow:   'Quotation',
-    heading:   'Your quote is ready',
+    eyebrow:   isFollowUp ? 'Following up' : 'Quotation',
+    heading:   isFollowUp ? 'Still thinking it over?' : 'Your quote is ready',
     greeting:  `Hi ${firstName},`,
-    body:      emailIntro || 'Thank you for the opportunity to quote on your window furnishings. Your full proposal is ready to view online — you can accept it directly from the page.',
+    body:      emailIntro || (isFollowUp
+      ? 'I wanted to follow up on the quote we sent you — it is included again below so it is easy to find. Nothing has changed in it, and it is still valid.'
+      : 'Thank you for the opportunity to quote on your window furnishings. Your full proposal is ready to view online — you can accept it directly from the page.'),
     panel: {
       title:    'Quote reference',
       subtitle: quoteRef,
@@ -85,8 +92,10 @@ export async function onRequestPost(context) {
         { label: 'Valid until',  value: expiryFmt || '' },
       ],
     },
-    cta:   { label: 'View your quote', url: quoteUrl },
-    outro: "If you have any questions, just reply to this email — we're happy to walk you through the details.",
+    cta:   { label: isFollowUp ? 'View your quote again' : 'View your quote', url: quoteUrl },
+    outro: isFollowUp
+      ? "If the timing isn't right, just reply and say so — we'd rather know than keep chasing."
+      : "If you have any questions, just reply to this email — we're happy to walk you through the details.",
   };
 
   const html = renderEmail(content);
@@ -104,7 +113,9 @@ export async function onRequestPost(context) {
         from:     FROM_ADDRESS,
         to:       [customer.email],
         reply_to: context.env.EMAIL_REPLY_TO || undefined,
-        subject:  `Your quote from Lusso – ${quoteRef}`,
+        subject:  isFollowUp
+          ? `Following up on your quote – ${quoteRef}`
+          : `Your quote from Lusso – ${quoteRef}`,
         html,
         text,
       }),

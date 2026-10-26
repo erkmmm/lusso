@@ -74,13 +74,20 @@ async function post(path, body) {
  * Send a quote email to the customer.
  * @param {object} quote    - full quote object
  * @param {object} customer - customer object (must have .email)
+ * @param {string} emailIntro - the message body above the quote panel
+ * @param {object} [opts]
+ * @param {boolean} [opts.followUp] - frame it as a follow-up rather than a
+ *   first send: same quote, same link, different subject and heading. Without
+ *   this the customer gets "Your quote is ready" a second time, which reads
+ *   like a new quote and invites them to wonder what changed.
  */
-export async function sendQuoteEmail(quote, customer, emailIntro) {
+export async function sendQuoteEmail(quote, customer, emailIntro, { followUp = false } = {}) {
   return post('send-quote', {
     quote,
     customer,
     appUrl: window.location.origin,
     emailIntro,
+    followUp,
   });
 }
 

@@ -792,6 +792,66 @@ export const dismissJobScheduling = (jobIds) => {
   if (changed) set('lusso_scheduling_dismissals', list);
 };
 
+// ── Quote follow-up dismissals ────────────────────────────────────────────────
+// "Stop suggesting a follow-up for this quote."
+//
+// In its OWN table, not a flag on the quote, for the same reason scheduling
+// dismissals are kept off jobs — and here there is a sharper reason too: a
+// quote write carries the whole row, and quotes_guard_lifecycle rejects a
+// writer whose view of the lifecycle is stale. Skipping a follow-up must never
+// risk carrying an old status back over a live one.
+export const getQuoteFollowUpDismissals = () => get('lusso_quote_followup_dismissals') || [];
+export const getDismissedFollowUpIds = () => new Set(getQuoteFollowUpDismissals().map(d => d.quoteId || d.id));
+
+export const dismissQuoteFollowUp = (quoteId) => {
+  if (!quoteId) return;
+  const list = getQuoteFollowUpDismissals();
+  if (list.some(d => (d.quoteId || d.id) === quoteId)) return;
+  const now = new Date().toISOString();
+  const rec = { id: quoteId, quoteId, createdAt: now, updatedAt: now };
+  list.push(rec);
+  set('lusso_quote_followup_dismissals', list);
+  db.saveQuoteFollowUpDismissal(rec);
+};
+
+export const restoreQuoteFollowUp = (quoteId) => {
+  const list = getQuoteFollowUpDismissals();
+  const next = list.filter(d => (d.quoteId || d.id) !== quoteId);
+  if (next.length === list.length) return;
+  set('lusso_quote_followup_dismissals', next);
+  db.removeQuoteFollowUpDismissal(quoteId);
+};
+
+/**
+ * Note that we chased this quote, without touching its lifecycle.
+ *
+ * Deliberately NOT sendQuote(): that sets status to 'Sent', which would undo
+ * the knowledge that the customer had opened it ('Viewed'), and it is the
+ * function that anchors the expiry. A follow-up is the same quote sent again —
+ * the customer's deadline does not move and nothing about their decision has
+ * changed.
+ *
+ * `lastFollowUpAt` is a real column so it syncs; the activity entry is local
+ * only ('activity' is excluded from quote writes), which is why the timestamp
+ * rather than the activity log is what the dashboard reads.
+ */
+export const recordQuoteFollowUp = (quoteId, user = 'System') => {
+  const list = getQuotes();
+  const idx  = list.findIndex(q => q.id === quoteId);
+  if (idx < 0) return null;
+  const now = new Date().toISOString();
+  const entry = { id: uuidv4(), type: 'followed_up', note: 'Follow-up sent to customer', user, createdAt: now };
+  list[idx] = {
+    ...list[idx],
+    lastFollowUpAt: now,
+    updatedAt: now,
+    activity: [entry, ...(list[idx].activity || [])],
+  };
+  set('lusso_quotes', list);
+  db.saveQuote(list[idx]);
+  return list[idx];
+};
+
 // Undo a dismissal — bring the job back into the scheduling reminder.
 export const restoreJobScheduling = (jobId) => {
   const list = getSchedulingDismissals();
@@ -4004,6 +4064,7 @@ export const DEFAULT_MESSAGE_PRESETS = {
   quoteEmailIntro: `Thank you for your enquiry. Please find your personalised quote from Lusso attached below.\n\nClick the button to view the full quote online, including pricing, product details and payment options. If you have any questions or would like to make any changes, please don't hesitate to get in touch — we're happy to help.\n\nWe look forward to working with you.`,
   quoteIntroMessage: `Thank you for choosing Lusso. Please find your quote below. All prices include GST. This quote is valid for 30 days from the date of issue.\n\nIf you have any questions, please contact us and we'll be happy to assist.`,
   quoteTerms: `• A 50% deposit is required to confirm your order.\n• Balance is due upon completion of installation.\n• Lead times are estimates only and subject to supplier availability.\n• All products remain the property of Lusso until paid in full.\n• Cancellations after order placement may incur a restocking fee.\n• Lusso is not liable for delays caused by third parties or circumstances beyond our control.`,
+  quoteFollowUpIntro: `I wanted to follow up on the quote we sent you — I've included it again below so it's easy to find.\n\nNothing has changed in it, and it's still valid. If you'd like anything adjusted — a different fabric, a change to the sizes, or a revised scope — just let me know and I'll rework it for you.\n\nIf now isn't the right time, that's no problem at all. Just reply and let me know, and I'll follow up again later.`,
   smsFollowUp: `Hi {name}, just following up on the quote we sent you for your window treatments. Happy to answer any questions or make any changes. Give us a call or reply here 😊`,
   smsAppointmentReminder: `Hi {name}, this is a reminder of your appointment with Lusso tomorrow. Please let us know if you need to reschedule. See you then!`,
   smsQuoteReady: `Hi {name}, your quote from Lusso is ready to view. Click here to see the details: {link}`,

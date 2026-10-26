@@ -12,13 +12,14 @@ import {
   AlertTriangle, TrendingUp, TrendingDown, Users, ArrowRight, Plus,
   DollarSign, ChevronDown, BarChart2, HardHat, Percent,
   SlidersHorizontal, Eye, EyeOff, FileText, X, Mail, Target, Package,
-  Pencil, Trophy, CalendarDays, CalendarX, Timer, FileDown, UserX,
+  Pencil, Trophy, CalendarDays, CalendarX, Timer, FileDown, UserX, Loader2,
 } from 'lucide-react';
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
   getQuotesFiltered, computeQuoteTotals, linePricing,
   getInstallRequests, getCalendarEvents, JOB_STATUSES, isStalledJob,
   getDismissedSchedulingIds, JOB_EXIT_STATUSES, isJobOpen,
+  getDismissedFollowUpIds, dismissQuoteFollowUp,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
@@ -26,6 +27,7 @@ import Card from '../components/Card';
 import { DonutChart, AreaChart, Sparkline } from '../components/DashboardCharts';
 import { PrivacyCtx, Fig } from '../components/PrivacyFig';
 import { PIPELINE_RAMP } from '../lib/chartColors';
+import { deliverQuoteFollowUp } from '../lib/quoteDelivery';
 import { categorizeProduct } from '../lib/productCategories';
 import { downloadDashboardReport } from '../lib/dashboardReport';
 
@@ -768,11 +770,23 @@ function TopSalesReps({ reps, lM, lI, lW }) {
 
 // Follow-up detection: open quotes from the last 90 days that the customer
 // never opened (3+ days after sending) or that expire within 14 days.
-function computeFollowUps(quotes) {
-  const now = Date.now(), DAY = 86400000;
+//
+// Two exclusions, both so the card stays a to-do list rather than a report:
+// a quote that was skipped is gone for good, and one chased in the last week
+// is hidden so the obvious next action isn't to chase it again tomorrow.
+const FOLLOW_UP_COOLDOWN_DAYS = 7;
+// Stable identity so the default prop doesn't make a new Set every render.
+const EMPTY_SET = new Set();
+function computeFollowUps(quotes, dismissedIds = new Set(), now = Date.now()) {
+  const DAY = 86400000;
   return quotes
     .filter(q => ['Sent', 'Viewed', 'Waiting'].includes(q.status) && q.sentAt
       && (now - new Date(q.sentAt).getTime()) < 90 * DAY)
+    .filter(q => !dismissedIds.has(q.id))
+    .filter(q => {
+      const t = q.lastFollowUpAt ? Date.parse(q.lastFollowUpAt) : NaN;
+      return !Number.isFinite(t) || (now - t) >= FOLLOW_UP_COOLDOWN_DAYS * DAY;
+    })
     .map(q => {
       // Imported (Quotient) quotes carry no open-tracking data — Quotient's
       // export never said whether the customer opened them — so "never opened"
@@ -792,7 +806,19 @@ function computeFollowUps(quotes) {
 }
 
 // ─── Follow-ups: quotes that need chasing ──────────────────────────────────────
-function FollowUps({ items, customers, navigate, lM }) {
+//
+// Each row offers the two things you actually do with an unanswered quote:
+// chase it, or decide it isn't worth chasing. Sending re-sends the SAME quote —
+// same link, same totals, same expiry — under a follow-up subject, so there is
+// nothing to review or re-approve first. Skip means stop suggesting this one.
+//
+// The row stays put after sending, showing "Sent", rather than disappearing
+// instantly: a row that vanishes the moment you click it leaves you unsure
+// whether it went.
+function FollowUps({
+  items, customers, navigate, lM,
+  onSend = () => {}, onSkip = () => {}, busyId = null, sentIds = EMPTY_SET,
+}) {
   return (
     <Card className="min-w-0 overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100">
@@ -809,33 +835,69 @@ function FollowUps({ items, customers, navigate, lM }) {
       ) : (
         <div className="divide-y divide-slate-50">
           {items.map(({ q, sentDays, expDays, unopened, expiring }) => {
-            const cust = customers.find(c => c.id === q.customerId);
+            const cust  = customers.find(c => c.id === q.customerId);
+            const busy  = busyId === q.id;
+            const sent  = sentIds.has(q.id);
+            const noEmail = !cust?.email;
             return (
-              <button
-                key={q.id}
-                onClick={() => navigate(`/quotes/${q.id}`)}
-                className="w-full px-5 py-3 text-left hover:bg-slate-50 transition-colors"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-slate-800 truncate">{cust?.name || 'Customer'}</p>
-                  <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(quoteTotal(q)))}</Fig></span>
+              <div key={q.id} className="px-5 py-3">
+                <button
+                  onClick={() => navigate(`/quotes/${q.id}`)}
+                  className="w-full text-left group"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-slate-800 truncate group-hover:text-amber-600">{cust?.name || 'Customer'}</p>
+                    <span className="text-sm font-semibold text-slate-900 tabular-nums flex-shrink-0"><Fig>{fmtCompact(lM(quoteTotal(q)))}</Fig></span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <span className="text-xs text-slate-400 truncate">{q.quoteNumber || '—'} · sent {sentDays}d ago</span>
+                    <span className="flex gap-1.5 flex-shrink-0">
+                      {unopened && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
+                          <Eye size={10} /> Not opened
+                        </span>
+                      )}
+                      {expiring && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                          Expires {expDays === 0 ? 'today' : `in ${expDays}d`}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </button>
+
+                <div className="mt-2 flex items-center gap-2">
+                  {sent ? (
+                    <span className="text-xs font-semibold text-green-600 flex items-center gap-1.5">
+                      <CheckCircle2 size={13} /> Follow-up sent
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => onSend(q)}
+                        disabled={busy || noEmail}
+                        title={noEmail
+                          ? `${cust?.name || 'This customer'} has no email address on file`
+                          : 'Re-send this same quote with a follow-up message'}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:bg-slate-100 disabled:text-slate-400 transition-colors flex items-center gap-1.5"
+                      >
+                        {busy ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <><Mail size={12} /> Send follow-up</>}
+                      </button>
+                      <button
+                        onClick={() => onSkip(q)}
+                        disabled={busy}
+                        title="Stop suggesting a follow-up for this quote"
+                        className="text-xs font-medium px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:text-slate-300 transition-colors"
+                      >
+                        Skip
+                      </button>
+                      {noEmail && (
+                        <span className="text-xs text-slate-400">no email on file</span>
+                      )}
+                    </>
+                  )}
                 </div>
-                <div className="mt-1 flex items-center justify-between gap-3">
-                  <span className="text-xs text-slate-400 truncate">{q.quoteNumber || '—'} · sent {sentDays}d ago</span>
-                  <span className="flex gap-1.5 flex-shrink-0">
-                    {unopened && (
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
-                        <Eye size={10} /> Not opened
-                      </span>
-                    )}
-                    {expiring && (
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                        Expires {expDays === 0 ? 'today' : `in ${expDays}d`}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -1336,7 +1398,48 @@ export default function Dashboard() {
   }, [quotes, customers]);
 
   // ── Follow-ups: recent open quotes never opened, or expiring soon ───────────
-  const followUps = useMemo(() => computeFollowUps(quotes), [quotes]);
+  // `followUpTick` is bumped after a send or a skip so the list recomputes
+  // against the freshly written store, rather than the snapshot it memoised.
+  const [followUpTick, setFollowUpTick] = useState(0);
+  const [followUpBusy, setFollowUpBusy] = useState(null);
+  const [followUpSent, setFollowUpSent] = useState(() => new Set());
+
+  const followUps = useMemo(
+    () => computeFollowUps(quotes, getDismissedFollowUpIds(), mountedAt),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [quotes, mountedAt, followUpTick],
+  );
+
+  const sendFollowUp = async (q) => {
+    if (followUpBusy) return;
+    setFollowUpBusy(q.id);
+    try {
+      const { customer, unconfirmed } = await deliverQuoteFollowUp(q.id, { user: displayName || 'Admin' });
+      setFollowUpSent(prev => new Set(prev).add(q.id));
+      window.dispatchEvent(new CustomEvent('lusso:toast', { detail: {
+        message: unconfirmed
+          ? `Follow-up for ${q.quoteNumber} was accepted by the mail service but not confirmed.`
+          : `Follow-up sent to ${customer.email}.`,
+        type: unconfirmed ? 'info' : 'success',
+      } }));
+    } catch (err) {
+      // deliverQuoteFollowUp throws messages written to be shown as-is.
+      window.dispatchEvent(new CustomEvent('lusso:toast', { detail: {
+        message: err?.message || 'Could not send the follow-up.', type: 'error',
+      } }));
+    } finally {
+      setFollowUpBusy(null);
+      setFollowUpTick(t => t + 1);
+    }
+  };
+
+  const skipFollowUp = (q) => {
+    dismissQuoteFollowUp(q.id);
+    setFollowUpTick(t => t + 1);
+    window.dispatchEvent(new CustomEvent('lusso:toast', { detail: {
+      message: `${q.quoteNumber || 'Quote'} won't be suggested for follow-up again.`, type: 'success',
+    } }));
+  };
 
   // ── This-calendar-month progress (for targets) ───────────────────────────────
   const monthProgress = useMemo(() => {
@@ -1641,7 +1744,11 @@ export default function Dashboard() {
       {/* ── Row 1c · Follow-ups + Decision time ─────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up" style={{ animationDelay: '160ms' }}>
         <div className="lg:col-span-2 min-w-0">
-          <FollowUps items={followUps} customers={customers} navigate={navigate} lM={lM} />
+          <FollowUps
+            items={followUps} customers={customers} navigate={navigate} lM={lM}
+            onSend={sendFollowUp} onSkip={skipFollowUp}
+            busyId={followUpBusy} sentIds={followUpSent}
+          />
         </div>
         <DecisionTime insights={insights} lI={lI} />
       </div>

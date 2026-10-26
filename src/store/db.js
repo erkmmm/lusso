@@ -86,6 +86,7 @@ const KEYS = {
   reviewRequests:       'lusso_review_requests',
   measureSheetOptions:  'lusso_measure_sheet_options',
   schedulingDismissals: 'lusso_scheduling_dismissals',
+  quoteFollowUpDismissals: 'lusso_quote_followup_dismissals',
   curtainRates:         'lusso_curtain_rates',
   buzFabricCodes:       'lusso_buz_fabric_codes',
   buzValueMaps:         'lusso_buz_value_map_rows',
@@ -298,6 +299,7 @@ const TABLES = [
   { table: 'buz_fabric_codes',       key: KEYS.buzFabricCodes },
   { table: 'buz_value_maps',         key: KEYS.buzValueMaps },
   { table: 'scheduling_dismissals',  key: KEYS.schedulingDismissals },
+  { table: 'quote_followup_dismissals', key: KEYS.quoteFollowUpDismissals },
   { table: 'curtain_rates',          key: KEYS.curtainRates },
   // Metadata only — the PDF lives in Storage, and the extracted text lives in
   // its own table so it never lands in localStorage (see product_documents.sql).
@@ -424,7 +426,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // ~2.8s of backoff — on every hydration, for every user, filling the console
 // with errors that mask real ones. Verified against the live schema
 // 2026-08-31; a table missing from here still works, just slowly.
-const NO_SOFT_DELETE = new Set(['scheduling_dismissals']);
+const NO_SOFT_DELETE = new Set(['scheduling_dismissals', 'quote_followup_dismissals']);
 
 // Range pagination only works if the sort is TOTAL. `created_at` is not unique
 // — a bulk import stamps hundreds of rows with the same millisecond (customers:
@@ -959,6 +961,7 @@ const SYNC_ORDER = [
   'customers', 'staff', 'installers', 'product_types', 'priced_items', 'suppliers',
   'jobs', 'measure_sheets', 'quotes', 'installations', 'tasks', 'takeoffs',
   'review_requests', 'notifications', 'calendar_events', 'scheduling_dismissals',
+  'quote_followup_dismissals',
 ];
 export async function flushPending() {
   if (!supabase) return;
@@ -1144,6 +1147,11 @@ export const db = {
   // can never churn or truncate the jobs list)
   saveSchedulingDismissal:   (r) => upsert('scheduling_dismissals', r),
   removeSchedulingDismissal: (id) => remove('scheduling_dismissals', id),
+
+  // "Stop suggesting a follow-up for this quote" — same reasoning as above,
+  // kept off the quote row so a skip can never carry a stale status back.
+  saveQuoteFollowUpDismissal:   (r) => upsert('quote_followup_dismissals', r),
+  removeQuoteFollowUpDismissal: (id) => remove('quote_followup_dismissals', id),
 
   // Quotes
   saveQuote:          (r) => upsert('quotes', r),
