@@ -1134,7 +1134,24 @@ export async function batchUpsertCustomers(customers) {
   if (!supabase || !customers.length) return { inserted: 0, errors: [] };
 
   const excludeSet = new Set(EXCLUDE_COLUMNS.customers || []);
-  const rows = customers.map(r => {
+
+  // One row per id, last wins.
+  //
+  // Postgres rejects an INSERT ... ON CONFLICT DO UPDATE whose VALUES mention
+  // the same conflict key twice — "ON CONFLICT DO UPDATE command cannot affect
+  // row a second time" — and it rejects the WHOLE statement, so a single
+  // repeated id loses the entire chunk of 500. That is exactly what happened
+  // running Quotient's contacts export: the local cache held 31 of 1,981
+  // customers twice, so 1,648 good updates were computed and 1 reached the
+  // server.
+  //
+  // The cache should not contain duplicate ids and that is being fixed
+  // separately, but a batch upsert must not be the thing that fails when it
+  // does: de-duplicating here is cheap, and an id appearing twice carries no
+  // information about which copy was wanted anyway.
+  const deduped = [...new Map(customers.map(r => [r.id, r])).values()];
+
+  const rows = deduped.map(r => {
     const raw = toDb(r);
     return Object.fromEntries(Object.entries(raw).filter(([k]) => !excludeSet.has(k)));
   });
@@ -1246,7 +1263,11 @@ function toPricedItemDbRow(item) {
 export async function batchUpsertPricedItems(items) {
   if (!supabase || !items.length) return { inserted: 0, errors: [] };
 
-  const payload = items.map(toPricedItemDbRow);
+  // Same reason as batchUpsertCustomers: a repeated id makes Postgres reject
+  // the whole chunk, not just the duplicate row.
+  const deduped = [...new Map(items.map(r => [r.id, r])).values()];
+
+  const payload = deduped.map(toPricedItemDbRow);
 
   let inserted = 0;
   const errors = [];
