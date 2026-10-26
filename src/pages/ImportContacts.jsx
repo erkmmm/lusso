@@ -134,7 +134,7 @@ function findDuplicate(existing, mapped) {
   return null;
 }
 
-function processRows(rawRows, headers, columnMap, existingCustomers, globalDupAction) {
+function processRows(rawRows, headers, columnMap, existingCustomers, globalDupAction, newRowAction = 'import') {
   const seen = new Set(); // detect intra-CSV dupes
   return rawRows.map((cells, idx) => {
     // Map raw cells to Lusso fields
@@ -196,7 +196,7 @@ function processRows(rawRows, headers, columnMap, existingCustomers, globalDupAc
       };
     }
 
-    return { rowNum: idx + 1, mapped, rawCells: cells, status: 'ready', errors: [], isDuplicate: false, duplicate: null, rowAction: 'import' };
+    return { rowNum: idx + 1, mapped, rawCells: cells, status: 'ready', errors: [], isDuplicate: false, duplicate: null, rowAction: newRowAction };
   });
 }
 
@@ -266,6 +266,14 @@ export default function ImportContacts() {
   // meant the common case did nothing at all to the ~2,000 existing customers.
   // 'fill' can only add, never overwrite or erase, so it is the safe default.
   const [globalDupAction, setGlobalDupAction] = useState('fill');
+  // What to do with rows that matched nothing. Creating them is the normal
+  // point of a contacts import, so that stays the default — but a sheet can
+  // carry rows there is no way to match: Quotient's export has 319 contacts
+  // with neither an email nor a phone, including records where a number or an
+  // address was typed into the name field. Importing those adds duplicates of
+  // customers you already have, under worse names. Being able to take the
+  // fills and leave the creates is the difference between running this and not.
+  const [newRowAction, setNewRowAction] = useState('import');
   const [importing, setImporting] = useState(false);
   const [result, setResult]       = useState(null);
   const [batchId, setBatchId]     = useState(null);
@@ -301,7 +309,7 @@ export default function ImportContacts() {
 
   const buildPreview = () => {
     const existing = getCustomers();
-    const rows = processRows(rawRows, headers, columnMap, existing, globalDupAction);
+    const rows = processRows(rawRows, headers, columnMap, existing, globalDupAction, newRowAction);
     setPreviewRows(rows);
     setStep('preview');
   };
@@ -317,6 +325,11 @@ export default function ImportContacts() {
   const applyGlobalDupAction = (action) => {
     setGlobalDupAction(action);
     setPreviewRows(prev => prev.map(r => r.status === 'duplicate' ? { ...r, rowAction: action } : r));
+  };
+
+  const applyNewRowAction = (action) => {
+    setNewRowAction(action);
+    setPreviewRows(prev => prev.map(r => r.status === 'ready' ? { ...r, rowAction: action } : r));
   };
 
   // ── Run import ─────────────────────────────────────────────────────────────
@@ -349,9 +362,9 @@ export default function ImportContacts() {
       else acc.willImport++;
       return acc;
     }
-    acc.willImport++;
+    if (r.rowAction === 'skip') acc.willSkipNew++; else acc.willImport++;
     return acc;
-  }, { willImport: 0, willUpdate: 0, willSkip: 0, errors: 0, empty: 0 });
+  }, { willImport: 0, willUpdate: 0, willSkip: 0, willSkipNew: 0, errors: 0, empty: 0 });
 
   const resetWizard = () => {
     setStep('upload'); setFileName(''); setHeaders([]); setRawRows([]);
@@ -499,11 +512,21 @@ export default function ImportContacts() {
                   <div className="flex items-center gap-1.5 text-green-600 font-medium"><CheckCircle2 size={15}/>{counts.willImport} to import</div>
                   {counts.willUpdate > 0 && <div className="flex items-center gap-1.5 text-blue-600 font-medium"><RefreshCw size={15}/>{counts.willUpdate} existing {globalDupAction === 'fill' ? 'to fill in' : 'to overwrite'}</div>}
                   {counts.willSkip > 0 && <div className="flex items-center gap-1.5 text-yellow-600 font-medium"><SkipForward size={15}/>{counts.willSkip} duplicates (skip)</div>}
+                  {counts.willSkipNew > 0 && <div className="flex items-center gap-1.5 text-slate-400 font-medium"><SkipForward size={15}/>{counts.willSkipNew} new (skip)</div>}
                   {counts.errors > 0 && <div className="flex items-center gap-1.5 text-red-500 font-medium"><XCircle size={15}/>{counts.errors} errors</div>}
                   {counts.empty > 0 && <div className="flex items-center gap-1.5 text-slate-400 font-medium"><SkipForward size={15}/>{counts.empty} empty rows</div>}
 
                   <div className="ml-auto flex items-center gap-2">
-                    <span className="text-xs text-slate-500">Duplicates:</span>
+                    <span className="text-xs text-slate-500">New:</span>
+                    <select
+                      value={newRowAction}
+                      onChange={e => applyNewRowAction(e.target.value)}
+                      className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <option value="import">Create them</option>
+                      <option value="skip">Skip them</option>
+                    </select>
+                    <span className="text-xs text-slate-500 ml-1">Duplicates:</span>
                     <select
                       value={globalDupAction}
                       onChange={e => applyGlobalDupAction(e.target.value)}
