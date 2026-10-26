@@ -124,7 +124,11 @@ export default function Customers() {
   const handleAddCustomer = () => {
     const e = {};
     if (!newCustomer.name.trim()) e.name = 'Name is required';
-    if (!newCustomer.phone.trim() && !newCustomer.email.trim()) e.phone = 'Phone or email required';
+    // Phone, not "phone or email". Accepting either is how ~730 customers ended
+    // up with no number: an email was enough to create the record, and nothing
+    // ever asked again. A phone is the one detail you always have when someone
+    // enquires, and the only one that lets you chase a quote or a measure.
+    if (!newCustomer.phone.trim()) e.phone = 'Phone is required';
     setAddErrors(e);
     if (Object.keys(e).length > 0) return;
     const id = uuidv4();

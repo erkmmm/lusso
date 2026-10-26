@@ -12,7 +12,7 @@ import {
   AlertTriangle, TrendingUp, TrendingDown, Users, ArrowRight, Plus,
   DollarSign, ChevronDown, BarChart2, HardHat, Percent,
   SlidersHorizontal, Eye, EyeOff, FileText, X, Mail, Target, Package,
-  Pencil, Trophy, CalendarDays, CalendarX, Timer, FileDown,
+  Pencil, Trophy, CalendarDays, CalendarX, Timer, FileDown, UserX,
 } from 'lucide-react';
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
@@ -329,7 +329,7 @@ function AgeBar({ bands, infl }) {
 }
 
 // ─── Needs Attention ──────────────────────────────────────────────────────────
-function NeedsAttention({ jobs, quotes, navigate, infl }) {
+function NeedsAttention({ jobs, quotes, customers, navigate, infl }) {
   const stalled = jobs.filter(isStalledJob).length;
   const quotesOut       = quotes.filter(q => ['Sent', 'Viewed'].includes(q.status)).length;
   const pendingInstalls = getInstallRequests().filter(r => r.status === 'Sent').length;
@@ -366,6 +366,15 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
   const completedJobIds = new Set(jobs.filter(j => j.status === 'Completed').map(j => j.id));
   const onFinishedJob = (q) => q.jobId && completedJobIds.has(q.jobId);
 
+  // Customers with live work we have no way of reaching. Scoped to open jobs on
+  // purpose: 808 customers are missing a phone or address, but most were never
+  // asked and are dormant — only the ones with work in progress cost anything.
+  const openJobCustomerIds = new Set(jobs.filter(isJobOpen).map(j => j.customerId).filter(Boolean));
+  const unreachable = (customers || []).filter(c =>
+    !c.deletedAt && openJobCustomerIds.has(c.id) &&
+    (!String(c.phone ?? '').trim() && !String(c.mobile ?? '').trim() || !String(c.address ?? '').trim())
+  ).length;
+
   const pastExpiry = openQuotes.filter(q => { const d = expiryOf(q); return d && d < today && !onFinishedJob(q); });
   const expiringSoon = openQuotes.filter(q => { const d = expiryOf(q); return d && d >= today && d <= in14; });
   const sumOf = (list) => list.reduce((s2, q) => s2 + quoteTotal(q), 0);
@@ -374,6 +383,7 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
     // Most urgent first: these have already lapsed in the customer's eyes.
     { key: 'pastExpiry', count: pastExpiry.length, label: 'Past expiry', sub: `${fmtCompact(sumOf(pastExpiry))} needs a decision`, icon: CalendarX, color: 'text-red-600', bg: 'bg-red-50', onClick: () => navigate('/jobs?quoteExpiry=past') },
     { key: 'expiring',   count: expiringSoon.length, label: 'Expiring soon', sub: `${fmtCompact(sumOf(expiringSoon))} in the next 14 days`, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50', onClick: () => navigate('/jobs?quoteExpiry=soon') },
+    { key: 'unreachable', count: unreachable, label: 'Missing details', sub: 'Open work, no phone or address', icon: UserX, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50', onClick: () => navigate('/customers/missing-details') },
     { key: 'stalled',    count: stalled,         label: 'Stalled projects', sub: 'No activity 14+ days',  icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',   onClick: () => navigate('/jobs?stalled=1') },
     { key: 'schedule',   count: needsScheduling, label: 'Needs scheduling', sub: 'Ready, no install booked', icon: CalendarDays, color: 'text-teal-600',  bg: 'bg-teal-50',  onClick: () => navigate('/calendar') },
     { key: 'quotesOut',  count: quotesOut,       label: 'Quotes out',       sub: 'Awaiting customer',     icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50', onClick: () => navigate('/jobs') },
@@ -1625,7 +1635,7 @@ export default function Dashboard() {
 
       {/* ── Needs Attention ──────────────────────────────────────────────────── */}
       <div className="animate-fade-up" style={{ animationDelay: '120ms' }}>
-        <NeedsAttention jobs={jobs} quotes={quotes} navigate={navigate} infl={lI} />
+        <NeedsAttention jobs={jobs} quotes={quotes} customers={customers} navigate={navigate} infl={lI} />
       </div>
 
       {/* ── Row 1c · Follow-ups + Decision time ─────────────────────────────── */}

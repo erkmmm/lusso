@@ -4382,12 +4382,47 @@ export const runQuotientQuoteImport = async (plan, onProgress = () => {}) => {
   return { imported: enriched.length, customersCreated: plan.newCustomers.length, skipped: plan.stats.skippedExisting, errors };
 };
 
+/**
+ * Decide what an imported row is allowed to change about a customer.
+ *
+ * This is the whole safety story of a contacts import, so it lives on its own
+ * where it can be read and tested.
+ *
+ * It used to be written inline as `phone: m.phone || ''` for every field, which
+ * blanked everything the sheet did not carry. No export carries every column —
+ * Quotient's contacts export has no Mobile, Notes or Tags column at all — so an
+ * update erased data the sheet never claimed to know about. The rule now:
+ *
+ *   • an empty cell is not a value, it is silence, and silence changes nothing
+ *   • `fillOnly` may only write where we hold nothing, so it cannot overwrite a
+ *     good local number with a worse one from the sheet (Quotient exports the
+ *     FIRST phone and address only) and cannot erase anything at all
+ *
+ * @param existing  the stored customer, or null/undefined for a new record
+ * @param incoming  field → value from the sheet ('' or null meaning "absent")
+ * @returns the merged field set — no id, no timestamps, callers add those
+ */
+export function mergeContactFields(existing, incoming, { fillOnly = false } = {}) {
+  // A new record still wants the full shape, so absent fields read as '' rather
+  // than undefined and the row is well formed either way.
+  const blank = Object.fromEntries(Object.keys(incoming).map(k => [k, '']));
+  const base = existing || blank;
+  const out = { ...base };
+  for (const [k, v] of Object.entries(incoming)) {
+    const val = String(v ?? '').trim();
+    if (!val) continue;
+    if (fillOnly && String(base[k] ?? '').trim()) continue;
+    out[k] = val;
+  }
+  return out;
+}
+
 export const runContactImport = async (batchId, rows) => {
   const batch = getImportBatch(batchId);
   if (!batch) return null;
 
   const allCustomers = [...getCustomers()];
-  let imported = 0, updated = 0, dups = 0, errors = 0, skipped = 0;
+  let imported = 0, updated = 0, dups = 0, errors = 0, skipped = 0, unchanged = 0;
 
   // Track which customers need to be written to Supabase
   const toUpsert = [];
@@ -4402,37 +4437,45 @@ export const runContactImport = async (batchId, rows) => {
     }
 
     const m = row.mapped;
-    const isUpdate = action === 'update' && row.duplicate;
+    const isUpdate = (action === 'update' || action === 'fill') && row.duplicate;
+    const fillOnly = action === 'fill';
     const customerId = isUpdate ? row.duplicate.id : uuidv4();
 
     const addrLine = [m.address, [m.suburb, m.state, m.postcode].filter(Boolean).join(' '), m.country].filter(Boolean).join(', ');
 
+    const incoming = {
+      name: m.name, businessName: m.businessName, firstName: m.firstName, lastName: m.lastName,
+      email: m.email, phone: m.phone, mobile: m.mobile,
+      address: addrLine, billingAddress: addrLine,
+      suburb: m.suburb, state: m.state, postcode: m.postcode, country: m.country,
+      notes: m.notes, tags: m.tags,
+    };
+
+    const base = isUpdate ? row.duplicate : null;
+    const merged = mergeContactFields(base, incoming, { fillOnly });
+
     const customer = {
-      ...(isUpdate ? row.duplicate : {}),
+      ...merged,
       id: customerId,
-      name: m.name || '',
-      businessName: m.businessName || '',
-      firstName: m.firstName || '',
-      lastName: m.lastName || '',
-      email: m.email || '',
-      phone: m.phone || '',
-      mobile: m.mobile || '',
-      address: addrLine,
-      billingAddress: addrLine,
-      suburb: m.suburb || '',
-      state: m.state || '',
-      postcode: m.postcode || '',
-      country: m.country || '',
-      notes: m.notes || '',
-      source: 'Quotient CSV Import',
-      tags: m.tags || '',
-      importBatchId: batchId,
-      preferredContact: m.email ? 'Email' : m.phone ? 'Phone' : 'Email',
+      // Don't relabel where an existing customer originally came from, and
+      // don't move them off the batch that first created them.
+      source: base.source || 'Quotient CSV Import',
+      importBatchId: base.importBatchId || batchId,
+      preferredContact: base.preferredContact
+        || (merged.email ? 'Email' : merged.phone || merged.mobile ? 'Phone' : 'Email'),
       createdAt: isUpdate ? (row.duplicate.createdAt || new Date().toISOString()) : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
     if (isUpdate) {
+      // Most rows in a re-import are identical to what's stored. Writing them
+      // anyway would push ~2,000 no-op upserts at Supabase and bump every
+      // updatedAt, which is what hydration sorts on — so a run that changed
+      // nothing would still look like every customer had just been edited.
+      const changed = Object.keys(incoming).some(
+        k => String(customer[k] ?? '').trim() !== String(row.duplicate[k] ?? '').trim()
+      );
+      if (!changed) { unchanged++; continue; }
       const idx = allCustomers.findIndex(c => c.id === customerId);
       if (idx >= 0) allCustomers[idx] = customer;
       updated++;
@@ -4467,6 +4510,7 @@ export const runContactImport = async (batchId, rows) => {
     status: errors > 0 ? 'Completed with errors' : 'Completed',
     importedCount: imported,
     updatedCount: updated,
+    unchangedCount: unchanged,
     duplicateCount: dups,
     errorCount: errors,
     skippedCount: skipped,

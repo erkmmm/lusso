@@ -141,6 +141,11 @@ export default function NewJob() {
   const handleCreateCustomer = () => {
     const errs = {};
     if (!newCust.name.trim()) errs.name = 'Name is required';
+    // A customer created here is one you are about to measure and quote, so the
+    // two details that work needs are not optional. This form asked for neither,
+    // which is the larger half of why 808 customers have no number or address.
+    if (!newCust.phone.trim())   errs.phone   = 'Phone is required to book a measure';
+    if (!newCust.address.trim()) errs.address = 'Address is required to measure and install';
     if (Object.keys(errs).length) { setNewCustErr(errs); return; }
 
     setCustSaving(true);
@@ -305,8 +310,9 @@ export default function NewJob() {
                     onChange={e => ncf('phone', e.target.value)}
                     placeholder="04xx xxx xxx"
                     type="tel"
-                    className={inp()}
+                    className={inp(newCustErr.phone)}
                   />
+                  {newCustErr.phone && <p className="text-xs text-red-500 mt-1">{newCustErr.phone}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
@@ -328,6 +334,7 @@ export default function NewJob() {
                   onChange={v => ncf('address', v)}
                   placeholder="Start typing an address…"
                 />
+                {newCustErr.address && <p className="text-xs text-red-500 mt-1">{newCustErr.address}</p>}
               </div>
 
               <div>

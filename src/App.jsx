@@ -26,6 +26,7 @@ import ContentQueue from './pages/ContentQueue';
 import Content from './pages/Content';
 import InstallView from './pages/InstallView';
 import Customers from './pages/Customers';
+import MissingContactDetails from './pages/MissingContactDetails';
 import CustomerProfile from './pages/CustomerProfile';
 import MeasureSheets from './pages/MeasureSheets';
 import NewMeasureSheet from './pages/NewMeasureSheet';
@@ -368,6 +369,7 @@ function AppRoutes() {
               <Route path="/content"                    element={<Content />} />
               <Route path="/content/queue"              element={<ContentQueue />} />
               <Route path="/customers"                  element={<Customers />} />
+              <Route path="/customers/missing-details" element={<MissingContactDetails />} />
               <Route path="/customers/:id"              element={<CustomerProfile />} />
               <Route path="/measure-sheets"             element={<MeasureSheets />} />
               <Route path="/measure-sheets/new"         element={<NewMeasureSheetRoute />} />

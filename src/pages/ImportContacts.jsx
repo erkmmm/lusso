@@ -261,7 +261,11 @@ export default function ImportContacts() {
   const [rawRows, setRawRows]     = useState([]);
   const [columnMap, setColumnMap] = useState({});
   const [previewRows, setPreviewRows] = useState([]);
-  const [globalDupAction, setGlobalDupAction] = useState('skip');
+  // Default to filling blanks rather than skipping. A contacts re-import is
+  // almost always run to recover detail that is missing locally, and 'skip'
+  // meant the common case did nothing at all to the ~2,000 existing customers.
+  // 'fill' can only add, never overwrite or erase, so it is the safe default.
+  const [globalDupAction, setGlobalDupAction] = useState('fill');
   const [importing, setImporting] = useState(false);
   const [result, setResult]       = useState(null);
   const [batchId, setBatchId]     = useState(null);
@@ -341,7 +345,7 @@ export default function ImportContacts() {
     if (r.status === 'error') { acc.errors++; return acc; }
     if (r.status === 'duplicate') {
       if (r.rowAction === 'skip')   acc.willSkip++;
-      else if (r.rowAction === 'update') acc.willUpdate++;
+      else if (r.rowAction === 'update' || r.rowAction === 'fill') acc.willUpdate++;
       else acc.willImport++;
       return acc;
     }
@@ -493,7 +497,7 @@ export default function ImportContacts() {
               <Card className="p-4">
                 <div className="flex flex-wrap items-center gap-4 text-sm">
                   <div className="flex items-center gap-1.5 text-green-600 font-medium"><CheckCircle2 size={15}/>{counts.willImport} to import</div>
-                  {counts.willUpdate > 0 && <div className="flex items-center gap-1.5 text-blue-600 font-medium"><RefreshCw size={15}/>{counts.willUpdate} to update</div>}
+                  {counts.willUpdate > 0 && <div className="flex items-center gap-1.5 text-blue-600 font-medium"><RefreshCw size={15}/>{counts.willUpdate} existing {globalDupAction === 'fill' ? 'to fill in' : 'to overwrite'}</div>}
                   {counts.willSkip > 0 && <div className="flex items-center gap-1.5 text-yellow-600 font-medium"><SkipForward size={15}/>{counts.willSkip} duplicates (skip)</div>}
                   {counts.errors > 0 && <div className="flex items-center gap-1.5 text-red-500 font-medium"><XCircle size={15}/>{counts.errors} errors</div>}
                   {counts.empty > 0 && <div className="flex items-center gap-1.5 text-slate-400 font-medium"><SkipForward size={15}/>{counts.empty} empty rows</div>}
@@ -505,8 +509,9 @@ export default function ImportContacts() {
                       onChange={e => applyGlobalDupAction(e.target.value)}
                       className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
                     >
+                      <option value="fill">Fill in blanks only</option>
+                      <option value="update">Overwrite with sheet</option>
                       <option value="skip">Skip all</option>
-                      <option value="update">Update existing</option>
                       <option value="create">Create new anyway</option>
                     </select>
                   </div>
