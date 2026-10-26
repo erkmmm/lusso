@@ -2,13 +2,20 @@
  * BackButton — reusable back-navigation button.
  *
  * Behaviour:
- *  • If the browser has history to go back to (arrived via in-app navigation),
- *    calls navigate(-1) so the user returns to the exact previous page.
- *  • If the page was opened directly (bookmark / refresh / external link),
- *    falls back to the provided `fallback` route so the user is never stranded.
+ *  • Goes to the page that was open last — the previous in-app history entry,
+ *    or, when this document is the first one (a reload, a PWA launch, a push
+ *    notification opening a deep link), the last page open earlier in this
+ *    browser session.
+ *  • Falls back to `fallback` only when there is genuinely nothing to go back
+ *    to, so the user is never stranded and never thrown out of the app.
+ *
+ * The decision lives in src/lib/navTrail.js, shared with the Layout's global
+ * back control. It used to be `window.history.length > 1` here, which counts
+ * pages visited before the app was opened too — so on the app's first page it
+ * popped out of the app's own history, landing on the dashboard or worse.
  *
  * Props:
- *  fallback  string    – route to navigate to when there is no history (default "/")
+ *  fallback  string    – route used when there is nothing to go back to (default "/")
  *  label     string    – button text (default "Back")
  *  className string    – extra Tailwind classes appended to the button
  *  guard     function  – optional callback called before navigation.
@@ -18,10 +25,10 @@
  */
 
 import { ArrowLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useGoBack } from '../lib/navTrail';
 
 export default function BackButton({ fallback = '/', label = 'Back', className = '', guard }) {
-  const navigate = useNavigate();
+  const goBack = useGoBack(fallback);
 
   const handleClick = () => {
     // Run guard if provided; if it returns false, cancel navigation
@@ -29,15 +36,7 @@ export default function BackButton({ fallback = '/', label = 'Back', className =
       const allowed = guard();
       if (allowed === false) return;
     }
-
-    // window.history.length === 1 means this is the only entry in the browser's
-    // history stack — the user arrived directly (fresh tab, bookmark, shared link).
-    // Anything > 1 means at least one previous navigation exists; go back there.
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate(fallback);
-    }
+    goBack();
   };
 
   return (

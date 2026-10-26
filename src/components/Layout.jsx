@@ -4,12 +4,13 @@ import {
   LayoutDashboard, Briefcase, Users,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
-  ChevronDown, Home, UserCog, Users2, Inbox, ArrowLeft,
+  ChevronDown, Home, Users2, Inbox, ArrowLeft,
   Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
 } from '../store/data';
+import { useGoBack, recordVisit } from '../lib/navTrail';
 import { getEmployeeCountSync } from '../store/profiles';
 import { toast } from './ToastContainer';
 import RouteErrorBoundary from './ErrorBoundary';
@@ -252,13 +253,11 @@ export default function Layout() {
   const location      = useLocation();
   const { user, signOut } = useAuth();
 
-  // Global back — shown on every page except the dashboard. Goes back in
-  // history, or to the dashboard if there's nowhere to go back to.
+  // Global back — shown on every page except the dashboard. Goes to the page
+  // that was open last; the dashboard only when there genuinely isn't one.
+  // See src/lib/navTrail.js for why window.history.length can't decide this.
   const isDashboard = location.pathname === '/';
-  const goBack = () => {
-    if (window.history.length > 1) navigate(-1);
-    else navigate('/');
-  };
+  const goBack = useGoBack('/');
 
   // Content scrolls inside <main>, not the window, so React Router can't reset
   // it. Scroll the page to the top on every route change (incl. back/forward)
@@ -268,6 +267,13 @@ export default function Layout() {
     mainRef.current?.scrollTo({ top: 0, left: 0 });
     window.scrollTo(0, 0);
   }, [location.pathname]);
+
+  // Every page the user opens goes in the session trail, so a reload or a push
+  // notification opening a deep link can still go back to the page that was
+  // open last instead of landing on the dashboard.
+  useEffect(() => {
+    recordVisit(location.pathname + location.search);
+  }, [location.pathname, location.search]);
   const { isAM, displayName, profile } = useProfile() || {};
 
   const unread = notifications.filter(n => !n.isRead).length;

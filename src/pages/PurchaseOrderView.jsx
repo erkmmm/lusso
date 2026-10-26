@@ -7,6 +7,7 @@
  */
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useGoBack } from '../lib/navTrail';
 import { format, parseISO } from 'date-fns';
 import {
   FileText, Printer, Download, Pencil, Trash2, History, Send, ArrowLeft, Mail, Loader,
@@ -29,6 +30,7 @@ const when = (iso) => {
 export default function PurchaseOrderView() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const goBack   = useGoBack('/purchase-orders');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -72,7 +74,7 @@ export default function PurchaseOrderView() {
       <Card className="p-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0">
-            <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600 mb-2">
+            <button onClick={goBack} className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600 mb-2">
               <ArrowLeft size={13} /> Back
             </button>
             <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
