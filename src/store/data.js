@@ -4342,15 +4342,18 @@ export const runQuotientQuoteImport = async (plan, onProgress = () => {}) => {
   const prevCustomers = getCustomers();
   const prevQuotes    = getQuotes();
   const prevJobs      = getJobs();
-  const customers = [...prevCustomers, ...plan.newCustomers.map(c => ({
+  // Only the records that are genuinely new get appended AND pushed to the
+  // cloud — see appendNew for why a "new" id can already be stored locally.
+  const newCusts = appendNew(prevCustomers, plan.newCustomers.map(c => ({
     ...c, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-  }))];
-  const quotes = [...prevQuotes, ...enriched];
+  })), 'customers');
+  const newQuotes = appendNew(prevQuotes, enriched, 'quotes');
   // One project (job) per imported quote so it shows on the Projects list.
-  // Skip any job id already present (re-run safety) so we never duplicate.
-  const prevJobIds = new Set(prevJobs.map(j => j.id));
-  const newJobs = (plan.jobs || []).filter(j => !prevJobIds.has(j.id));
-  const jobs = [...prevJobs, ...newJobs];
+  const newJobs = appendNew(prevJobs, plan.jobs || [], 'jobs');
+
+  const customers = [...prevCustomers, ...newCusts];
+  const quotes    = [...prevQuotes, ...newQuotes];
+  const jobs      = [...prevJobs, ...newJobs];
   // Write-through. localStorage is best-effort (lsSet never throws): the data is
   // also mirrored to the durable IndexedDB backup and synced to the cloud below,
   // so a full device doesn't lose the import — the global "storage full" toast
@@ -4361,25 +4364,53 @@ export const runQuotientQuoteImport = async (plan, onProgress = () => {}) => {
   set('lusso_quotes', quotes);
 
   // Cloud sync (chunked). Customers first, then jobs, so quote FKs resolve.
-  onProgress('customers', 0, plan.newCustomers.length);
-  const cRes = await db.bulkSaveCustomers(
-    customers.filter(c => plan.newCustomers.some(n => n.id === c.id)),
-    (done, tot) => onProgress('customers', done, tot)
-  );
+  onProgress('customers', 0, newCusts.length);
+  const cRes = await db.bulkSaveCustomers(newCusts, (done, tot) => onProgress('customers', done, tot));
   onProgress('jobs', 0, newJobs.length);
   const jRes = await db.bulkSaveJobs(newJobs, (done, tot) => onProgress('jobs', done, tot));
-  onProgress('quotes', 0, enriched.length);
-  const qRes = await db.bulkSaveQuotes(enriched, (done, tot) => onProgress('quotes', done, tot));
+  onProgress('quotes', 0, newQuotes.length);
+  const qRes = await db.bulkSaveQuotes(newQuotes, (done, tot) => onProgress('quotes', done, tot));
 
   const errors = (cRes?.failed || 0) + (jRes?.failed || 0) + (qRes?.failed || 0);
   saveImportBatch({
     ...batch,
     status: 'Completed',
-    importedCount: enriched.length,
+    importedCount: newQuotes.length,
     errorCount: errors,
     completedAt: new Date().toISOString(),
   });
-  return { imported: enriched.length, customersCreated: plan.newCustomers.length, skipped: plan.stats.skippedExisting, errors };
+  // Report what was actually added, not what was planned — they differ when a
+  // planned id turned out to be stored already (see appendNew).
+  return { imported: newQuotes.length, customersCreated: newCusts.length, skipped: plan.stats.skippedExisting, errors };
+};
+
+/**
+ * Append only the records whose id we don't already hold.
+ *
+ * The quote importer plans "new" customer ids DETERMINISTICALLY from the name or
+ * email (`qnt-cust-jane-smith`), and matches existing customers by exact name or
+ * email. So a customer whose stored name or email has since changed fails the
+ * match but still generates the same id — and a plain [...prev, ...incoming]
+ * then put a SECOND row with that id into localStorage. Supabase's primary key
+ * collapsed the pair on the way up, so the duplicate only ever existed locally,
+ * where it rendered the customer twice and tripped React's duplicate-key
+ * warning. Quote and job ids are planned the same way and had the same hole;
+ * jobs already filtered for it, and this is that filter, shared.
+ *
+ * Existing records win: anything already stored is the fuller, progressed copy,
+ * and an import that believes it is creating a record must never overwrite one.
+ *
+ * Returns just the records safe to add, so the caller appends and cloud-syncs
+ * the same set.
+ */
+const appendNew = (prev, incoming, label) => {
+  const have = new Set(prev.map(r => r.id));
+  const fresh = (incoming || []).filter(r => !have.has(r.id));
+  const skipped = (incoming || []).length - fresh.length;
+  if (skipped > 0) {
+    console.warn(`[import] ${label}: ${skipped} planned record(s) already exist by id — kept the stored copy, not appended`);
+  }
+  return fresh;
 };
 
 /**
