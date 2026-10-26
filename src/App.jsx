@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import { initStore } from './store/data';
-import { hydrateFromSupabase, flushPending } from './store/db';
+import { hydrateFromSupabase, flushPending, dedupeLocalCaches } from './store/db';
 import { initDurableStore } from './store/storage';
 import { supabase } from './lib/supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -138,6 +138,13 @@ function AppRoutes() {
       ]);
       if (cancelled) return;
       initStore();
+
+      // Collapse any duplicate ids an older build left in the cache, BEFORE a
+      // page reads it. A table holding one id twice rendered that record twice
+      // and hid another, and React warned about the repeated key.
+      const deduped = dedupeLocalCaches();
+      if (deduped.removed > 0) window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+
       if (!user) return;
 
       // Do we already have cached data on this device (after the restore)? If so,

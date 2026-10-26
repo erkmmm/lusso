@@ -426,6 +426,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // 2026-08-31; a table missing from here still works, just slowly.
 const NO_SOFT_DELETE = new Set(['scheduling_dismissals']);
 
+// Range pagination only works if the sort is TOTAL. `created_at` is not unique
+// — a bulk import stamps hundreds of rows with the same millisecond (customers:
+// 1981 rows across just 54 distinct created_at values, with every 500-row page
+// boundary landing inside a tie group of 250-300 rows). Ordering by it alone
+// leaves ties in an undefined order, and each page below is a SEPARATE query,
+// so a row near a boundary could come back on both pages while another was
+// never returned at all. That is how the customer cache ended up holding 31 ids
+// twice and missing 31 real customers. Tie-breaking on the primary key makes
+// the ordering total, so the pages are stable across queries.
 async function fetchAllPages(table, useDeletedFilter) {
   let all = [];
   let from = 0;
@@ -440,7 +449,10 @@ async function fetchAllPages(table, useDeletedFilter) {
     for (let attempt = 0; attempt < PAGE_RETRIES; attempt++) {
       let q = supabase.from(table).select('*');
       if (useDeletedFilter && !NO_SOFT_DELETE.has(table)) q = q.is('deleted_at', null);
-      q = q.order('created_at', { ascending: true }).range(from, from + PAGE_SIZE - 1);
+      q = q
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })        // unique tie-break — see above
+        .range(from, from + PAGE_SIZE - 1);
 
       const { data, error } = await q;
       if (!error) { page = data || []; lastErr = null; break; }
@@ -454,7 +466,87 @@ async function fetchAllPages(table, useDeletedFilter) {
     from += PAGE_SIZE;
   }
 
-  return { data: all, error: null };
+  // Belt-and-braces. The total ordering above makes cross-page duplicates
+  // impossible, but every caller treats this result as a set keyed by id, so
+  // never hand back two rows for one id — whatever the server did.
+  const seen = new Set();
+  const unique = all.filter(r => {
+    const id = r?.id;
+    if (id == null) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  if (unique.length !== all.length) {
+    console.warn(`[db] fetch ${table}: ${all.length - unique.length} duplicate row(s) across pages — deduped`);
+  }
+
+  return { data: unique, error: null };
+}
+
+// ── One-time cache repair: collapse duplicate ids ────────────────────
+/**
+ * Every cached table is a set keyed by id — the server enforces that with a
+ * primary key, and every list in the app keys its React rows on it. Before the
+ * tie-break in fetchAllPages, unstable page boundaries could write one row into
+ * a local table twice (while silently dropping another), and nothing since
+ * removes those: hydration only rewrites a table it fetched successfully, and
+ * the row-count safety guards can legitimately skip that for a whole session.
+ *
+ * So collapse duplicates once per install, before anything reads the data.
+ * Keeps the row with the newer updatedAt; order is otherwise preserved.
+ * Returns { removed, tables } — tables maps key → rows removed.
+ */
+const DEDUPE_VERSION_KEY = 'lusso_cache_deduped_v1';
+
+export function dedupeLocalCaches({ force = false } = {}) {
+  const report = { removed: 0, tables: {} };
+  try {
+    if (!force && lsGet(DEDUPE_VERSION_KEY)) return report;
+
+    for (const key of [...new Set([...TABLES.map(t => t.key), 'lusso_activity'])]) {
+      const rows = lsGet(key);
+      if (!Array.isArray(rows) || rows.length < 2) continue;
+
+      // Pick the surviving copy for each id first, then rebuild in place so the
+      // list keeps its existing order.
+      const best = new Map();
+      for (const row of rows) {
+        const id = row?.id;
+        if (id == null) continue;
+        const prev = best.get(id);
+        if (!prev) { best.set(id, row); continue; }
+        const a = new Date(row.updatedAt || 0).getTime();
+        const b = new Date(prev.updatedAt || 0).getTime();
+        if (a > b) best.set(id, row);
+      }
+      if (best.size === rows.filter(r => r?.id != null).length) continue; // no dupes
+
+      const seen = new Set();
+      const out = [];
+      for (const row of rows) {
+        const id = row?.id;
+        if (id == null) { out.push(row); continue; } // id-less row: never dropped
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(best.get(id));
+      }
+
+      const removed = rows.length - out.length;
+      lsSet(key, out);
+      report.removed += removed;
+      report.tables[key] = removed;
+      console.warn(`[db] dedupe ${key}: removed ${removed} duplicate row(s) — ${out.length} unique records remain`);
+    }
+
+    lsSet(DEDUPE_VERSION_KEY, true);
+    if (report.removed === 0) console.info('[db] dedupe: no duplicate ids in the local cache');
+  } catch (e) {
+    // A failed repair must never block startup — the merge is keyed by id now,
+    // so the next successful hydration cleans the table up anyway.
+    console.warn('[db] dedupe skipped:', e?.message || e);
+  }
+  return report;
 }
 
 // ── Hydration ────────────────────────────────────────────────────────
@@ -543,7 +635,7 @@ export async function hydrateFromSupabase() {
       // confirmed to the server yet; always keep local so a queued edit isn't
       // overwritten by the stale server row (which flushPending would then push
       // back, losing the edit).
-      const merged = rows.map(sbRow => {
+      const mergeRow = (sbRow) => {
         const localRow = localById.get(sbRow.id);
         if (!localRow) return sbRow;
         if (pend.has(sbRow.id)) return localRow;
@@ -588,17 +680,24 @@ export async function hydrateFromSupabase() {
         // Local is the newer row overall — but the lifecycle is the server's to
         // state, not this browser's. See SERVER_LIFECYCLE_FIELDS.
         return { ...localRow, ...serverLifecycle(table, sbRow) };
-      });
+      };
+
+      // Keyed by id, NOT positional: one id must yield exactly one record, so a
+      // repeated row (from a duplicated fetch, or a local array that is already
+      // duplicated) collapses instead of being written twice. Every list in the
+      // app keys its React rows on record.id, so a duplicate here surfaced as
+      // "Encountered two children with the same key" on /customers.
+      const merged = new Map();
+      for (const sbRow of rows) merged.set(sbRow.id, mergeRow(sbRow));
 
       // Also keep pending records that don't exist on the server yet (new,
       // not-yet-synced). Any OTHER local-only record was deleted elsewhere.
-      const mergedIds = new Set(merged.map(r => r.id));
       if (pend.size) {
         for (const localRow of local) {
-          if (pend.has(localRow.id) && !mergedIds.has(localRow.id)) merged.push(localRow);
+          if (pend.has(localRow.id) && !merged.has(localRow.id)) merged.set(localRow.id, localRow);
         }
       }
-      LS.set(key, merged);
+      LS.set(key, [...merged.values()]);
       if (rows.length > 0) hadCloudData = true;
     })
   );
