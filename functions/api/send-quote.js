@@ -75,6 +75,13 @@ export async function onRequestPost(context) {
   // read as a new quote and leave the customer hunting for what changed.
   const isFollowUp = !!followUp;
 
+  // One subject, used for both the send and the communications log. These were
+  // two separate literals, so changing the email's subject silently left the
+  // audit trail claiming something different had been sent.
+  const subject = isFollowUp
+    ? `Following up on your quote – ${quoteRef}`
+    : `Your quote from Lusso – ${quoteRef}`;
+
   const content = {
     preheader: `Quote ${quoteRef}${totalFmt ? ` · ${totalFmt}` : ''}${expiryFmt ? ` · valid until ${expiryFmt}` : ''}`,
     eyebrow:   isFollowUp ? 'Following up' : 'Quotation',
@@ -113,9 +120,7 @@ export async function onRequestPost(context) {
         from:     FROM_ADDRESS,
         to:       [customer.email],
         reply_to: context.env.EMAIL_REPLY_TO || undefined,
-        subject:  isFollowUp
-          ? `Following up on your quote – ${quoteRef}`
-          : `Your quote from Lusso – ${quoteRef}`,
+        subject,
         html,
         text,
       }),
@@ -137,8 +142,10 @@ export async function onRequestPost(context) {
     await logOutboundEmail(context, bearerToken(context), {
       externalId: resendData?.id,
       to:         customer.email,
-      subject:    `Your quote from Lusso – ${quoteRef}`,
-      body:       `Quote ${quoteRef} emailed to ${customer.email}.`,
+      subject,
+      body:       isFollowUp
+        ? `Follow-up on quote ${quoteRef} emailed to ${customer.email}.`
+        : `Quote ${quoteRef} emailed to ${customer.email}.`,
       customerId: customer.id,
       jobId:      quote.jobId,
     });

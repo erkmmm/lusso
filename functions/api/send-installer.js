@@ -140,6 +140,10 @@ export async function onRequestPost(context) {
   const html = renderEmail(content);
   const text = renderText(content);
 
+  // One subject for both the send and the communications log, so the audit
+  // trail can never claim a different subject than the one that went out.
+  const subject = `Installation request – ${request.suburb || 'Job'} – ${proposedDate}`;
+
   try {
     const resendRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -151,7 +155,7 @@ export async function onRequestPost(context) {
         from:     FROM_ADDRESS,
         to:       [installer.email],
         reply_to: context.env.EMAIL_REPLY_TO || undefined,
-        subject:  `Installation request – ${request.suburb || 'Job'} – ${proposedDate}`,
+        subject,
         html,
         text,
         ...(attachments.length ? { attachments } : {}),
@@ -170,7 +174,7 @@ export async function onRequestPost(context) {
     await logOutboundEmail(context, bearerToken(context), {
       externalId: resendData?.id,
       to:         installer.email,
-      subject:    `Installation request – ${request.suburb || 'Job'} – ${proposedDate}`,
+      subject,
       body:       `Installation request emailed to ${installer.name || installer.email}.`,
       jobId:      job?.id,
     });
