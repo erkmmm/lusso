@@ -354,7 +354,17 @@ function NeedsAttention({ jobs, quotes, navigate, infl }) {
   const in14  = addDays(today, 14);
   const expiryOf = (q) => { try { return q.expiryDate ? parseISO(q.expiryDate) : null; } catch { return null; } };
 
-  const pastExpiry = openQuotes.filter(q => { const d = expiryOf(q); return d && d < today; });
+  // A quote sitting on a job we have already delivered is not awaiting anyone's
+  // decision — the work happened and the quote status just never caught up. It
+  // is also most of how this tile filled up: of the quotes found here against
+  // Quotient, several were on jobs already at Completed. Chasing those is noise,
+  // so a finished job drops out. Deliberately only 'Completed': 'Cancelled' and
+  // 'Installed' are left in, since those are worth a second look rather than
+  // silently hidden.
+  const completedJobIds = new Set(jobs.filter(j => j.status === 'Completed').map(j => j.id));
+  const onFinishedJob = (q) => q.jobId && completedJobIds.has(q.jobId);
+
+  const pastExpiry = openQuotes.filter(q => { const d = expiryOf(q); return d && d < today && !onFinishedJob(q); });
   const expiringSoon = openQuotes.filter(q => { const d = expiryOf(q); return d && d >= today && d <= in14; });
   const sumOf = (list) => list.reduce((s2, q) => s2 + quoteTotal(q), 0);
 

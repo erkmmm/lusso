@@ -295,6 +295,10 @@ export default function Jobs() {
         const d = openQuoteExpiryByJob.get(job.id);
         if (!d) return false;
         const today = startOfDay(new Date());
+        // Mirrors the dashboard's Past expiry tile, which drops quotes sitting
+        // on a delivered job. The tile links straight here, so if only one of
+        // the two filtered, the count and this list would disagree.
+        if (quoteExpiry === 'past' && job.status === 'Completed') return false;
         if (quoteExpiry === 'past' && !(d < today)) return false;
         if (quoteExpiry === 'soon' && !(d >= today && d <= addDays(today, 14))) return false;
       }
