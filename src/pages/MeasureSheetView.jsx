@@ -337,14 +337,31 @@ export default function MeasureSheetView() {
 
   const handleBuzExport = () => {
     try {
-      const { count, unmapped } = exportMeasureSheetToBuz(sheet, job);
-      if (unmapped.length) {
+      const { count, unmapped, ambiguous } = exportMeasureSheetToBuz(sheet, job);
+      if (unmapped.length || ambiguous.length) {
         // "Left blank" undersold it: BUZ cannot order a line with no product,
         // and rejects the upload with a raw deserialization error that names
         // no fabric. Say which fabrics, and what BUZ will do about it.
+        //
+        // The two causes need different fixes, so say them separately rather
+        // than lumping everything under "no code".
+        const parts = [];
+        if (unmapped.length) {
+          const f = unmapped.map((e) => e.fabric);
+          parts.push(
+            `${f.length} fabric${f.length === 1 ? ' is' : 's are'} not in the BUZ catalogue under that name (${f.join(', ')}) — ` +
+            `pin a code in Settings → BUZ Export`,
+          );
+        }
+        if (ambiguous.length) {
+          const f = ambiguous.map((e) => e.fabric);
+          parts.push(
+            `${f.length} fabric${f.length === 1 ? '' : 's'} match more than one BUZ product (${f.join(', ')}) — ` +
+            `add the opacity, e.g. "Blockout" or "Light Filtering"`,
+          );
+        }
         toast(
-          `Exported ${count} blind${count === 1 ? '' : 's'}, but ${unmapped.length} fabric${unmapped.length === 1 ? ' has' : 's have'} no BUZ inventory code: ${unmapped.join(', ')}. ` +
-          `BUZ will refuse those lines — add the code in Settings → BUZ Export and export again.`,
+          `Exported ${count} blind${count === 1 ? '' : 's'}, but BUZ will refuse some lines. ${parts.join('. ')}.`,
           'warning',
         );
       } else {

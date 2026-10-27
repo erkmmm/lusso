@@ -29,6 +29,7 @@ import {
   getCurtainRates, saveCurtainRates, resetCurtainRates,
 } from '../store/data';
 import { BUZ_MAP_FIELDS } from '../lib/buzExport';
+import { buzCatalogueMeta } from '../lib/buzFabricResolver';
 import { getPushStatus, enablePush, disablePush, sendTestPush, pushSupported, needsHomeScreenInstall,
          NOTIFICATION_GROUPS, getMutedTypes, setGroupMuted } from '../lib/push';
 import { pushAllToSupabase, hydrateFromSupabase, flushPending } from '../store/db';
@@ -1905,12 +1906,13 @@ function BuzExportSection() {
     <Card className="p-5">
       <div className="mb-4">
         <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-          <FileDown size={15} className="text-amber-500" /> BUZ Export — Fabric Codes
+          <FileDown size={15} className="text-amber-500" /> BUZ Export — Fabric Code Overrides
         </h2>
         <p className="text-xs text-slate-400 mt-0.5">
-          When you export a roller-blind measure sheet to BUZ, each blind needs a BUZ <span className="font-medium">INVENTORY CODE</span>.
-          Map your fabric ranges to their BUZ codes here. A blind's fabric is matched by name (the longest matching range wins);
-          any fabric with no match is left blank in the file for you to complete. Stored on this device only.
+          Each blind exported to BUZ needs an <span className="font-medium">INVENTORY CODE</span>, and Lusso now works it out
+          from {buzCatalogueMeta().combinations.toLocaleString()} fabrics read off the BUZ catalogue — so most ranges need
+          nothing here. Add a row only to pin a fabric Lusso can&rsquo;t place, or to override what it picked. Entries here
+          always win, and are matched by name with the longest matching range taking precedence.
         </p>
       </div>
 
