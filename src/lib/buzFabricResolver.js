@@ -59,6 +59,39 @@ const coreTokens = (materialName) => {
  * Flattened catalogue: one entry per (brand, material type, colour), carrying
  * the tokens needed to match and the code to emit. Built once on first use.
  */
+/**
+ * Ranges whose real inventory prefix is NOT group+brand+material.
+ *
+ * The configurator's dropdown values compose the right code for most ranges,
+ * but not all, and there is nothing in the form that says which. Verified
+ * 2026-10-27 by building one line per range in BUZ and exporting the order —
+ * the only way to see a real code. Of five ranges checked, three composed
+ * correctly and two did not:
+ *
+ *   Linesque Blockout  ROLLM110T801S86  = composed        ok
+ *   Palm Beach B/O     ROLLM110T790Q5   = composed        ok
+ *   Kleenscreen        ROLLM105T1092I4  = composed        ok
+ *   Solarview          ROLLM122T341C14  ≠ ROLLM105T461C14
+ *   Vibe Blockout      ROLLM66BOI2      ≠ ROLLM110T315I2   (no T segment at all)
+ *
+ * It is per-RANGE, not per-brand: Kleenscreen and Solarview are both Texstyle
+ * and only one of them composes. The COLOUR code is right either way (C14, I2),
+ * so only the prefix needs correcting and colours still derive.
+ *
+ * Keyed by "<brandCode>|<materialCode>" — the identifiers the form gives us.
+ *
+ * WARNING: only 5 of 177 ranges have been checked against BUZ. The rest are
+ * assumed to compose and MAY BE WRONG. Verify a range before trusting it, and
+ * add it here when it isn't. isVerifiedRange() says which are known-good.
+ */
+const PREFIX_OVERRIDES = {
+  'M105|T461': 'ROLLM122T341',   // Texstyle / Solarview Screen Fabric
+  'M110|T315': 'ROLLM66BO',      // Shaw / Vibe Blockout
+};
+
+/** Ranges confirmed against a real BUZ export — composed or overridden. */
+const VERIFIED = new Set(['M110|T801', 'M110|T790', 'M105|T1092', 'M105|T461', 'M110|T315']);
+
 let INDEX = null;
 
 const buildIndex = () => {
@@ -67,10 +100,13 @@ const buildIndex = () => {
     for (const [matCode, mat] of Object.entries(brand.m)) {
       const core = coreTokens(mat.n);
       const op = opacityOf(normalise(mat.n));
+      const key = brandCode + '|' + matCode;
+      const prefix = PREFIX_OVERRIDES[key] ?? (CODES.group + brandCode + matCode);
       for (const [colCode, colName] of mat.c) {
         const colTokens = tokens(colName);
         out.push({
-          code: CODES.group + brandCode + matCode + colCode,
+          code: prefix + colCode,
+          verified: VERIFIED.has(key),
           brand: brand.n,
           material: mat.n,
           colour: colName,
@@ -165,8 +201,8 @@ export function deriveBuzInventoryCode(fabricText) {
     };
   }
 
-  const { code, brand, material, colour } = hits[0];
-  return { code, brand, material, colour };
+  const { code, brand, material, colour, verified } = hits[0];
+  return { code, brand, material, colour, verified };
 }
 
 /** Every (brand, material, colour) the catalogue knows — for Settings/debug UI. */
