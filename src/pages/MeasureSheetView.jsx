@@ -337,8 +337,8 @@ export default function MeasureSheetView() {
 
   const handleBuzExport = () => {
     try {
-      const { count, unmapped, ambiguous } = exportMeasureSheetToBuz(sheet, job);
-      if (unmapped.length || ambiguous.length) {
+      const { count, unmapped, missingColour, ambiguous } = exportMeasureSheetToBuz(sheet, job);
+      if (unmapped.length || missingColour.length || ambiguous.length) {
         // "Left blank" undersold it: BUZ cannot order a line with no product,
         // and rejects the upload with a raw deserialization error that names
         // no fabric. Say which fabrics, and what BUZ will do about it.
@@ -346,6 +346,20 @@ export default function MeasureSheetView() {
         // The two causes need different fixes, so say them separately rather
         // than lumping everything under "no code".
         const parts = [];
+        if (missingColour.length) {
+          // The commonest cause by far, and the only one the user can fix
+          // without leaving the sheet — so lead with it, and name the colours
+          // BUZ actually stocks rather than just saying one is missing.
+          parts.push(
+            missingColour.map((e) => {
+              const r = e.ranges[0];
+              const list = r ? `${r.colours.slice(0, 5).join(', ')}${r.colours.length > 5 ? `, +${r.colours.length - 5} more` : ''}` : '';
+              return r
+                ? `"${e.fabric}" has no colour — BUZ stocks ${r.material} in ${list}`
+                : `"${e.fabric}" has no colour`;
+            }).join('. '),
+          );
+        }
         if (unmapped.length) {
           const f = unmapped.map((e) => e.fabric);
           parts.push(

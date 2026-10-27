@@ -105,6 +105,7 @@ const CONTROLS_MAP = {
 // defaulted here: mapping it to a different motor size would order the wrong
 // hardware. It passes through unmapped until someone sets it in Settings.
 export const DEFAULT_CONTROLTYPE_MAP = {
+  'rb09':             'Acmeda RB09',
   'li-ion motor 1.1': 'Acmeda Automate Zero Li-ion Q Motor 1.1',
   'li-ion motor 2.0': 'Acmeda Automate Zero Li-ion Q Motor 2.0',
   'e6 arc 240 rts':   'Acmeda Automate E6 ARC 240 RTS',
@@ -162,7 +163,10 @@ export function resolveInventoryCode(fabricText) {
 
   const derived = deriveBuzInventoryCode(fabricText);
   if (derived.code) return { ...derived, source: 'catalogue' };
-  return { code: '', source: 'none', reason: derived.reason, candidates: derived.candidates };
+  return {
+    code: '', source: 'none', reason: derived.reason,
+    candidates: derived.candidates, ranges: derived.ranges,
+  };
 }
 
 const isDual = (item) =>
@@ -232,28 +236,45 @@ export function buildBuzRow(item) {
  * line's `quantity` stays as the QTY column (BUZ expands it), matching the
  * sample.
  *
- * Returns { rows, unmapped, ambiguous }. Both lists are fabrics with no
- * INVENTORY CODE, split because they need different fixes: `unmapped` fabrics
- * aren't in the BUZ catalogue under that name at all, while `ambiguous` ones
- * match several products — usually the same range in Blockout and Light
- * Filtering — and just need the opacity saying.
+ * Returns { rows, unmapped, missingColour, ambiguous }. All three list fabrics
+ * with no INVENTORY CODE, split because each needs a different fix:
+ *   unmapped      — not in the BUZ catalogue under that name; needs an override
+ *   missingColour — a real range, but no colour said, and BUZ orders a colour
+ *   ambiguous     — matches several products, usually the same range in
+ *                   Blockout and Light Filtering; needs the opacity saying
  */
 export function buildBuzRows(sheet) {
   const items = (sheet?.lineItems || []).filter(isRollerBlindItem);
   const rows = items.map(buildBuzRow);
   const unmapped = [];
+  const missingColour = [];
   const ambiguous = [];
+  const BUCKETS = { ambiguous, nocolour: missingColour };
+
   items.forEach((item) => {
     const fabric = norm(item.fabricColour) || '(no fabric)';
     const res = resolveInventoryCode(item.fabricColour);
     if (res.code) return;
-    const bucket = res.reason === 'ambiguous' ? ambiguous : unmapped;
+    const bucket = BUCKETS[res.reason] || unmapped;
     if (!bucket.some((e) => e.fabric === fabric)) {
-      bucket.push({ fabric, candidates: res.candidates || [] });
+      bucket.push({ fabric, candidates: res.candidates || [], ranges: res.ranges || [] });
     }
   });
-  return { rows, unmapped, ambiguous };
+  return { rows, unmapped, missingColour, ambiguous };
 }
+
+/**
+ * "Solar view — BUZ stocks Solarview Screen Fabric in 12 colours: Alabaster,
+ * Black, …". Naming the colours is the whole point: the fix is to pick one.
+ */
+const describeMissingColour = (e) => {
+  const r = e.ranges[0];
+  if (!r) return e.fabric;
+  const shown = r.colours.slice(0, 6).join(', ');
+  const more = r.colours.length > 6 ? `, +${r.colours.length - 6} more` : '';
+  const alsoRanges = e.ranges.length > 1 ? ` (and ${e.ranges.length - 1} other range${e.ranges.length > 2 ? 's' : ''})` : '';
+  return `${e.fabric} — BUZ stocks ${r.material}${alsoRanges} in ${r.colours.length} colour${r.colours.length === 1 ? '' : 's'}: ${shown}${more}`;
+};
 
 /** Fabric names only — the shape callers want for a message. */
 const names = (list) => list.map((e) => e.fabric);
@@ -274,7 +295,7 @@ export function buzFileName(job) {
  * code. Throws with a clear message when there are no roller blinds to export.
  */
 export function exportMeasureSheetToBuz(sheet, job = null) {
-  const { rows, unmapped, ambiguous } = buildBuzRows(sheet);
+  const { rows, unmapped, missingColour, ambiguous } = buildBuzRows(sheet);
   if (rows.length === 0) {
     throw new Error('No roller blinds on this measure sheet to export.');
   }
@@ -291,15 +312,21 @@ export function exportMeasureSheetToBuz(sheet, job = null) {
   const codeIdx = BUZ_ROLL_COLUMNS.indexOf('INVENTORY CODE');
   const mappedCount = rows.filter((r) => r[codeIdx]).length;
   if (mappedCount === 0) {
-    const stuck = [...names(unmapped), ...names(ambiguous)];
-    const fix = ambiguous.length && !unmapped.length
-      ? 'Those fabric names match more than one BUZ product — say which, e.g. add "Blockout" or ' +
-        '"Light Filtering" to the fabric, or pin a code in Settings → BUZ Export.'
-      : 'Add the code in Settings → BUZ Export, then export again.';
+    // Lead with the most actionable cause. A missing colour is the common one
+    // and the easiest to fix, so name the colours rather than the problem.
+    let detail;
+    if (missingColour.length && !unmapped.length && !ambiguous.length) {
+      detail = `${missingColour.map(describeMissingColour).join('; ')}. Add the colour to the fabric and export again.`;
+    } else if (ambiguous.length && !unmapped.length && !missingColour.length) {
+      detail = `${names(ambiguous).join(', ')} — each matches more than one BUZ product. ` +
+        'Say which, e.g. add "Blockout" or "Light Filtering" to the fabric.';
+    } else {
+      detail = `${[...names(unmapped), ...names(missingColour), ...names(ambiguous)].join(', ')}. ` +
+        'Add the colour to the fabric, or pin a code in Settings → BUZ Export.';
+    }
     throw new Error(
-      `No BUZ inventory code for ${stuck.length === 1 ? 'the fabric' : 'any fabric'} on this sheet ` +
-      `(${stuck.join(', ')}). BUZ rejects an order whose lines have no product, so there is nothing ` +
-      `worth exporting yet — ${fix}`,
+      `No BUZ inventory code for ${rows.length === 1 ? 'the blind' : 'any blind'} on this sheet. ` +
+      `BUZ rejects an order whose lines have no product, so there is nothing worth exporting yet — ${detail}`,
     );
   }
   const aoa = [BUZ_ROLL_COLUMNS, ...rows];
@@ -307,5 +334,5 @@ export function exportMeasureSheetToBuz(sheet, job = null) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'ROLL');
   XLSX.writeFile(wb, buzFileName(job));
-  return { count: rows.length, unmapped, ambiguous };
+  return { count: rows.length, unmapped, missingColour, ambiguous };
 }

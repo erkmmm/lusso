@@ -107,6 +107,7 @@ const matches = (hayTokens, hayJoined, needles, joined) =>
  *   { code, brand, material, colour }                  — single confident match
  *   { code: '', reason: 'empty' }                      — nothing to resolve
  *   { code: '', reason: 'nomatch' }                    — no catalogue entry fits
+ *   { code: '', reason: 'nocolour', ranges: [] }       — range known, colour not
  *   { code: '', reason: 'ambiguous', candidates: [] }  — several fit equally
  *
  * A match requires BOTH the range and the colour to appear in the text. Where
@@ -120,11 +121,26 @@ export function deriveBuzInventoryCode(fabricText) {
   const wantOpacity = opacityOf(normalise(fabricText));
 
   const joined = t.join('');
-  let hits = index().filter(
-    (e) => matches(t, joined, e.core, e.coreJoined)
-        && matches(t, joined, e.colourTokens, e.colourJoined),
-  );
-  if (!hits.length) return { code: '', reason: 'nomatch' };
+  const rangeHits = index().filter((e) => matches(t, joined, e.core, e.coreJoined));
+  let hits = rangeHits.filter((e) => matches(t, joined, e.colourTokens, e.colourJoined));
+
+  if (!hits.length) {
+    // Knowing the range but not the colour is the common case and deserves its
+    // own answer: "Solar view" is a real BUZ range, but BUZ stocks it in twelve
+    // colours and can't order "a Solarview". Hand back the colours so the
+    // caller can say which ones are on offer instead of just failing.
+    if (rangeHits.length) {
+      const byMaterial = new Map();
+      for (const e of rangeHits) {
+        if (!byMaterial.has(e.material)) {
+          byMaterial.set(e.material, { brand: e.brand, material: e.material, colours: [] });
+        }
+        byMaterial.get(e.material).colours.push(e.colour);
+      }
+      return { code: '', reason: 'nocolour', ranges: [...byMaterial.values()] };
+    }
+    return { code: '', reason: 'nomatch' };
+  }
 
   // An opacity word in the text is a filter, not a tiebreak: honour it before
   // scoring so "linesque soba blockout" can never land on a Light Filtering row.
