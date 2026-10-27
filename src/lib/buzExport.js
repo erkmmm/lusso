@@ -309,24 +309,35 @@ export function exportMeasureSheetToBuz(sheet, job = null) {
   // file. When NOTHING is mapped the file cannot import at all, so building it
   // only produces a trip to BUZ and that error. Say what is actually wrong,
   // here, instead.
+  // ONE blank INVENTORY CODE kills the whole upload, not just its own line.
+  // BUZ's Cart importer resolves every product before saving anything; a line
+  // with no product makes its lookup return a collection where it wants one
+  // record, and the entire save dies on a raw .NET message:
+  //   "Cannot deserialize the current JSON array into type
+  //    'BUZ.Common.Entities.Inventory'"
+  // So a partly-coded file is worth nothing — 5 good lines and 1 blank imports
+  // exactly as well as 0 good lines. Refuse while it can still be fixed here,
+  // rather than handing over a file that cannot work. (Confirmed the hard way
+  // on LUS-TEST: 5 of 6 coded, BUZ still rejected the lot.)
   const codeIdx = BUZ_ROLL_COLUMNS.indexOf('INVENTORY CODE');
-  const mappedCount = rows.filter((r) => r[codeIdx]).length;
-  if (mappedCount === 0) {
-    // Lead with the most actionable cause. A missing colour is the common one
-    // and the easiest to fix, so name the colours rather than the problem.
-    let detail;
-    if (missingColour.length && !unmapped.length && !ambiguous.length) {
-      detail = `${missingColour.map(describeMissingColour).join('; ')}. Add the colour to the fabric and export again.`;
-    } else if (ambiguous.length && !unmapped.length && !missingColour.length) {
-      detail = `${names(ambiguous).join(', ')} — each matches more than one BUZ product. ` +
-        'Say which, e.g. add "Blockout" or "Light Filtering" to the fabric.';
-    } else {
-      detail = `${[...names(unmapped), ...names(missingColour), ...names(ambiguous)].join(', ')}. ` +
-        'Add the colour to the fabric, or pin a code in Settings → BUZ Export.';
+  const blankRows = rows.filter((r) => !r[codeIdx]).length;
+  if (blankRows > 0) {
+    const parts = [];
+    if (missingColour.length) {
+      parts.push(missingColour.map(describeMissingColour).join('; ') + ' — add the colour');
+    }
+    if (ambiguous.length) {
+      parts.push(`${names(ambiguous).join(', ')} — each matches more than one BUZ product, ` +
+        'so say which: add "Blockout" or "Light Filtering"');
+    }
+    if (unmapped.length) {
+      parts.push(`${names(unmapped).join(', ')} — not found in the BUZ catalogue, ` +
+        'so pin a code in Settings → BUZ Export');
     }
     throw new Error(
-      `No BUZ inventory code for ${rows.length === 1 ? 'the blind' : 'any blind'} on this sheet. ` +
-      `BUZ rejects an order whose lines have no product, so there is nothing worth exporting yet — ${detail}`,
+      `${blankRows} of ${rows.length} blind${rows.length === 1 ? '' : 's'} ` +
+      `${blankRows === 1 ? 'has' : 'have'} no BUZ inventory code. BUZ rejects the whole order if even ` +
+      `one line has no product, so this file could not import — ${parts.join('. ')}.`,
     );
   }
   const aoa = [BUZ_ROLL_COLUMNS, ...rows];
