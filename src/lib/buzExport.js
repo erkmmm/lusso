@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { v4 as uuidv4 } from 'uuid';
 import { categorizeProduct } from './productCategories';
+import { deriveBuzInventoryCode } from './buzFabricResolver';
 import {
   lookupBuzInventoryCode, getBuzValueMap,
   OPERATION_TYPE_OPTIONS, HEADING_OPTIONS, BASE_BAR_TYPE_OPTIONS,
@@ -16,9 +17,12 @@ import {
  * defaults (see DEFAULTS), and a few need value translation because Lusso's
  * dropdown vocab differs from BUZ's (see the *_MAP tables).
  *
- * The one value Lusso can't derive is INVENTORY CODE (col B) — that's a BUZ
- * fabric/product code (e.g. "ROLLSERBOO1"). It comes from the user-maintained
- * fabric-range → code table in Settings, via lookupBuzInventoryCode().
+ * INVENTORY CODE (col B) is derived, not configured. BUZ builds the code from
+ * its own product-form tokens — group + brand + material type + colour — so
+ * resolveInventoryCode() matches the fabric text against the captured
+ * catalogue (src/data/buzRollCodes.json, see docs/buz/). The Settings
+ * fabric-range table still wins when present, as an override for anything the
+ * catalogue can't resolve or gets wrong.
  */
 
 // Column headers, in BUZ's required order. Index === spreadsheet column A,B,C…
@@ -90,10 +94,22 @@ const CONTROLS_MAP = {
 
 // CONTROLTYPE (col H): from Lusso's operation type (item.trackType). BUZ spells
 // its motor SKUs in full; seed the ones we know and pass the rest through.
+//
+// Values below are verbatim from BUZ's own Control Type dropdown, captured
+// 2026-10-27 from the live Rollerblinds catalogue form — see docs/buz/.
+// BUZ matches on the exact string, so do not "tidy" the spacing or wording.
+//
+// NOTE: Lusso's OPERATION_TYPE_OPTIONS lists a 'Li-ion Motor 3.0' that BUZ has
+// no equivalent for — its Zero Li-ion Q ladder is 0.7 / 1.1 / 2.0 only, with a
+// separate non-Zero 'Acmeda Automate Li-ion Motor 6.0'. It is deliberately NOT
+// defaulted here: mapping it to a different motor size would order the wrong
+// hardware. It passes through unmapped until someone sets it in Settings.
 export const DEFAULT_CONTROLTYPE_MAP = {
-  'li-ion motor 1.1': 'Acmeda Automate Zero Li-ion Q  Motor 1.1',
-  'li-ion motor 2.0': 'Acmeda Automate Zero Li-ion Q  Motor 2.0',
-  'li-ion motor 3.0': 'Acmeda Automate Zero Li-ion Q  Motor 3.0',
+  'rb09':             'Acmeda RB09',
+  'li-ion motor 1.1': 'Acmeda Automate Zero Li-ion Q Motor 1.1',
+  'li-ion motor 2.0': 'Acmeda Automate Zero Li-ion Q Motor 2.0',
+  'e6 arc 240 rts':   'Acmeda Automate E6 ARC 240 RTS',
+  'm6 - 240 wt':      'Acmeda Automate M6 - 240 WT',
 };
 
 // ROLLDIR (col J): from Lusso's heading/roll field.
@@ -132,6 +148,27 @@ const mapOr = (table, v) => (norm(v) ? (table[lc(v)] ?? norm(v)) : '');
 const mapField = (fieldKey, defaults, v) =>
   mapOr({ ...defaults, ...getBuzValueMap(fieldKey) }, v);
 
+/**
+ * Resolve a fabric to its BUZ inventory code.
+ *
+ * A Settings entry is an explicit human decision, so it wins outright. Only
+ * when there isn't one do we derive from the captured BUZ catalogue. The
+ * derivation refuses to guess between fabrics that differ solely by opacity
+ * ("Le Reve Chalk" is both a Blockout and a Light Filtering), so the caller
+ * gets a reason it can show rather than a plausible wrong code.
+ */
+export function resolveInventoryCode(fabricText) {
+  const override = lookupBuzInventoryCode(fabricText);
+  if (override) return { code: override, source: 'settings' };
+
+  const derived = deriveBuzInventoryCode(fabricText);
+  if (derived.code) return { ...derived, source: 'catalogue' };
+  return {
+    code: '', source: 'none', reason: derived.reason,
+    candidates: derived.candidates, ranges: derived.ranges,
+  };
+}
+
 const isDual = (item) =>
   /\bdual\b/i.test(item.productNameSnapshot || item.productType || '');
 
@@ -148,7 +185,7 @@ export function isRollerBlindItem(item) {
  * translated; everything else is a direct field or a default.
  */
 export function buildBuzRow(item) {
-  const inventoryCode = lookupBuzInventoryCode(item.fabricColour);
+  const inventoryCode = resolveInventoryCode(item.fabricColour).code;
   const controlType   = mapField('controltype', DEFAULT_CONTROLTYPE_MAP, item.trackType);
   const controlSide   = mapOr(CONTROLS_MAP, item.control || item.motorSide);
   const rollDir       = mapField('rolldir', DEFAULT_ROLLDIR_MAP, item.heading);
@@ -197,22 +234,50 @@ export function buildBuzRow(item) {
 /**
  * Build BUZ ROLL rows for every roller-blind line on a measure sheet. Each
  * line's `quantity` stays as the QTY column (BUZ expands it), matching the
- * sample. Returns { rows, unmapped } where `unmapped` lists fabrics with no
- * INVENTORY CODE so the caller can warn.
+ * sample.
+ *
+ * Returns { rows, unmapped, missingColour, ambiguous }. All three list fabrics
+ * with no INVENTORY CODE, split because each needs a different fix:
+ *   unmapped      — not in the BUZ catalogue under that name; needs an override
+ *   missingColour — a real range, but no colour said, and BUZ orders a colour
+ *   ambiguous     — matches several products, usually the same range in
+ *                   Blockout and Light Filtering; needs the opacity saying
  */
 export function buildBuzRows(sheet) {
   const items = (sheet?.lineItems || []).filter(isRollerBlindItem);
   const rows = items.map(buildBuzRow);
-  const codeIdx = BUZ_ROLL_COLUMNS.indexOf('INVENTORY CODE');
   const unmapped = [];
-  rows.forEach((r, i) => {
-    if (!r[codeIdx]) {
-      const fabric = norm(items[i].fabricColour) || '(no fabric)';
-      if (!unmapped.includes(fabric)) unmapped.push(fabric);
+  const missingColour = [];
+  const ambiguous = [];
+  const BUCKETS = { ambiguous, nocolour: missingColour };
+
+  items.forEach((item) => {
+    const fabric = norm(item.fabricColour) || '(no fabric)';
+    const res = resolveInventoryCode(item.fabricColour);
+    if (res.code) return;
+    const bucket = BUCKETS[res.reason] || unmapped;
+    if (!bucket.some((e) => e.fabric === fabric)) {
+      bucket.push({ fabric, candidates: res.candidates || [], ranges: res.ranges || [] });
     }
   });
-  return { rows, unmapped };
+  return { rows, unmapped, missingColour, ambiguous };
 }
+
+/**
+ * "Solar view — BUZ stocks Solarview Screen Fabric in 12 colours: Alabaster,
+ * Black, …". Naming the colours is the whole point: the fix is to pick one.
+ */
+const describeMissingColour = (e) => {
+  const r = e.ranges[0];
+  if (!r) return e.fabric;
+  const shown = r.colours.slice(0, 6).join(', ');
+  const more = r.colours.length > 6 ? `, +${r.colours.length - 6} more` : '';
+  const alsoRanges = e.ranges.length > 1 ? ` (and ${e.ranges.length - 1} other range${e.ranges.length > 2 ? 's' : ''})` : '';
+  return `${e.fabric} — BUZ stocks ${r.material}${alsoRanges} in ${r.colours.length} colour${r.colours.length === 1 ? '' : 's'}: ${shown}${more}`;
+};
+
+/** Fabric names only — the shape callers want for a message. */
+const names = (list) => list.map((e) => e.fabric);
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -230,7 +295,7 @@ export function buzFileName(job) {
  * code. Throws with a clear message when there are no roller blinds to export.
  */
 export function exportMeasureSheetToBuz(sheet, job = null) {
-  const { rows, unmapped } = buildBuzRows(sheet);
+  const { rows, unmapped, missingColour, ambiguous } = buildBuzRows(sheet);
   if (rows.length === 0) {
     throw new Error('No roller blinds on this measure sheet to export.');
   }
@@ -247,10 +312,21 @@ export function exportMeasureSheetToBuz(sheet, job = null) {
   const codeIdx = BUZ_ROLL_COLUMNS.indexOf('INVENTORY CODE');
   const mappedCount = rows.filter((r) => r[codeIdx]).length;
   if (mappedCount === 0) {
+    // Lead with the most actionable cause. A missing colour is the common one
+    // and the easiest to fix, so name the colours rather than the problem.
+    let detail;
+    if (missingColour.length && !unmapped.length && !ambiguous.length) {
+      detail = `${missingColour.map(describeMissingColour).join('; ')}. Add the colour to the fabric and export again.`;
+    } else if (ambiguous.length && !unmapped.length && !missingColour.length) {
+      detail = `${names(ambiguous).join(', ')} — each matches more than one BUZ product. ` +
+        'Say which, e.g. add "Blockout" or "Light Filtering" to the fabric.';
+    } else {
+      detail = `${[...names(unmapped), ...names(missingColour), ...names(ambiguous)].join(', ')}. ` +
+        'Add the colour to the fabric, or pin a code in Settings → BUZ Export.';
+    }
     throw new Error(
-      `No BUZ inventory code for ${unmapped.length === 1 ? 'the fabric' : 'any fabric'} on this sheet ` +
-      `(${unmapped.join(', ')}). BUZ rejects an order whose lines have no product, so there is nothing ` +
-      `worth exporting yet — add the code in Settings → BUZ Export, then export again.`,
+      `No BUZ inventory code for ${rows.length === 1 ? 'the blind' : 'any blind'} on this sheet. ` +
+      `BUZ rejects an order whose lines have no product, so there is nothing worth exporting yet — ${detail}`,
     );
   }
   const aoa = [BUZ_ROLL_COLUMNS, ...rows];
@@ -258,5 +334,5 @@ export function exportMeasureSheetToBuz(sheet, job = null) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'ROLL');
   XLSX.writeFile(wb, buzFileName(job));
-  return { count: rows.length, unmapped };
+  return { count: rows.length, unmapped, missingColour, ambiguous };
 }
