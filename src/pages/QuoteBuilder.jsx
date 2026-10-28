@@ -2175,7 +2175,13 @@ export default function QuoteBuilder() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">Overall Discount</label>
-                  <select value={form.discountType || 'None'} onChange={e => set('discountType', e.target.value)}
+                  <select value={form.discountType || 'None'} onChange={e => {
+                    set('discountType', e.target.value);
+                    // The label names a specific credit. Leaving it attached to
+                    // a discount that is no longer that credit would print the
+                    // wrong reason on the customer's quote.
+                    if (e.target.value === 'None') set('discountLabel', '');
+                  }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
                     {['None', 'Percentage', 'Fixed Amount'].map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
@@ -2189,6 +2195,18 @@ export default function QuoteBuilder() {
                       type="number"
                       value={form.discountValue || ''}
                       onChange={e => set('discountValue', Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                )}
+                {form.discountType && form.discountType !== 'None' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1.5">Shown to customer as</label>
+                    <input
+                      type="text"
+                      value={form.discountLabel || ''}
+                      placeholder="Discount"
+                      onChange={e => set('discountLabel', e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                     />
                   </div>
