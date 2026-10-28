@@ -425,6 +425,25 @@ function SaveState({ dirty, error, savedAt }) {
   return <span className="text-xs text-slate-400">Not saved yet</span>;
 }
 
+/**
+ * The specs a line already holds, as one readable line.
+ *
+ * Shown on the collapsed specs row so an inherited set can be checked at a
+ * glance. Only specs that HOLD a value appear, in the schema's own order, and
+ * it stops at three so the row never wraps on a phone.
+ */
+function specSummary(item, productType) {
+  const set = [];
+  for (const key of getVisibleSpecKeys(item, productType)) {
+    if (key === 'lining') { if (item.attachedLining) set.push('Lined'); continue; }
+    const f = MS_SPEC_FIELDS.find(x => x.key === key);
+    const v = f && String(item[f.itemField] || '').trim();
+    if (v) set.push(v);
+  }
+  if (!set.length) return '';
+  return set.length > 3 ? `${set.slice(0, 3).join(' · ')} · +${set.length - 3}` : set.join(' · ');
+}
+
 function Section({ title, icon, open, onToggle, children }) {
   return (
     <Card>
@@ -482,6 +501,9 @@ function LandscapeHint() {
 // iPhone in landscape is over 900px wide and would otherwise be read as a
 // tablet. The smallest iPad's short edge is 744; the largest phone's is ~440.
 const TABLET_MIN_EDGE = 600;
+
+const isPhoneDevice = () =>
+  typeof window !== 'undefined' && Math.min(window.innerWidth, window.innerHeight) < TABLET_MIN_EDGE;
 
 const deviceDefaultLayout = () => {
   if (typeof window === 'undefined') return 'cards';
@@ -708,7 +730,11 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   const [submitting,     setSubmitting]     = useState(false);
   const [errors,         setErrors]         = useState({});
   const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true, notes: true });
-  const [expandedItems,  setExpandedItems]  = useState(() => new Set(sheet.lineItems.map(li => li.id)));
+  // Specs start CLOSED. Eleven dropdowns stood open on every card, which is
+  // most of why one opening ran to 1300px on a phone — and a new line already
+  // inherits its specs from the one before, so on a normal house they never
+  // need opening at all.
+  const [expandedItems,  setExpandedItems]  = useState(() => new Set());
   // Which cards are open as a full editor. A fully-expanded card is ~340px, so
   // a twenty-line sheet was seven thousand pixels of scrolling with nothing to
   // navigate by — you could not tell which opening you were in, and going back
@@ -968,10 +994,13 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   }, [openCards]);
 
   const toggleCard = (iid) => setOpenCards(prev => {
-    const next = new Set(prev);
-    if (next.has(iid)) next.delete(iid);
-    else { next.add(iid); scrollCardIntoView(iid); }
-    return next;
+    if (prev.has(iid)) { const n = new Set(prev); n.delete(iid); return n; }
+    scrollCardIntoView(iid);
+    // On a phone, opening one opening closes the rest: you work a room at a
+    // time, and two open cards is two screens of scrolling between the room
+    // you're standing in and its width field. On an iPad there's room for more
+    // than one, so the old behaviour stands.
+    return isPhoneDevice() ? new Set([iid]) : new Set([...prev, iid]);
   });
 
   // Step to the next opening without touching the scrollbar: close this one,
@@ -1052,7 +1081,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       ...s,
       lineItems: [...s.lineItems, { ...lineFromPrevious(s.lineItems[s.lineItems.length - 1]), id }],
     }));
-    setExpandedItems(prev => new Set([...prev, id])); // auto-expand specs
+    setOpenCards(prev => (isPhoneDevice() ? new Set([id]) : new Set([...prev, id])));
     setOpenCards(new Set([id]));                       // and it's the only one open
   }, []);
 
@@ -1066,7 +1095,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       items.splice(idx + 1, 0, copy); // insert right after the source
       return { ...s, lineItems: items };
     });
-    setExpandedItems(prev => new Set([...prev, id])); // auto-expand the copy
+    setOpenCards(prev => (isPhoneDevice() ? new Set([id]) : new Set([...prev, id])));
     setOpenCards(new Set([id]));
   }, []);
 
@@ -1874,9 +1903,12 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                       issues={limitIssues[item.id]} onToggle={() => toggleCard(item.id)} />
                   </div>
 
-                  {/* Item header */}
-                  <div className="border-b border-slate-100 px-4 py-3 flex items-start gap-2">
-                    <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Item header. The row actions used to share this flex row
+                      with the fields and squeezed Location to 205px inside a
+                      343px card; they sit under the fields now, so both inputs
+                      get the full width on a phone. */}
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Location *</label>
                         <input value={item.location} onChange={e => setLineItem(idx, 'location', e.target.value)}
@@ -1895,43 +1927,49 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                         />
                       </div>
                     </div>
-                    <CheckMeasureControl
-                      item={item}
-                      onConfirm={() => confirmLineMeasured(idx)}
-                      onRevert={() => revertLineToPlan(idx)}
-                    />
-                    <button onClick={() => copyLineItem(idx)}
-                      className="flex-shrink-0 text-slate-300 hover:text-amber-500 transition-colors p-1 rounded" title="Copy to new line">
-                      <Copy size={15} />
-                    </button>
-                    <button onClick={() => removeLineItem(idx)}
-                      className="flex-shrink-0 text-slate-300 hover:text-red-400 transition-colors p-1 rounded" title="Remove item">
-                      <Trash2 size={15} />
-                    </button>
+                    <div className="flex items-center gap-1 -mt-0.5">
+                      <CheckMeasureControl
+                        item={item}
+                        onConfirm={() => confirmLineMeasured(idx)}
+                        onRevert={() => revertLineToPlan(idx)}
+                      />
+                      <span className="flex-1" />
+                      <button onClick={() => copyLineItem(idx)}
+                        className="text-slate-300 hover:text-amber-500 transition-colors p-1.5 rounded" title="Copy to new line">
+                        <Copy size={14} />
+                      </button>
+                      <button onClick={() => removeLineItem(idx)}
+                        className="text-slate-300 hover:text-red-400 transition-colors p-1.5 rounded" title="Remove item">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Core fields — Width & Drop get their own prominent row with
                       large touch targets + numeric keyboards for on-site use. */}
                   <div className="px-4 pt-3 pb-2 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Width (mm)</label>
-                        <input type="number" inputMode="numeric" min="1" value={item.widthMm}
-                          onChange={e => setLineItem(idx, 'widthMm', e.target.value)} placeholder="e.g. 1800"
-                          className="w-full border border-slate-200 rounded-lg text-base px-3 py-3 bg-white text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Drop (mm)</label>
-                        <input type="number" inputMode="numeric" min="1" value={item.dropMm}
-                          onChange={e => setLineItem(idx, 'dropMm', e.target.value)} placeholder="e.g. 2400"
-                          className="w-full border border-slate-200 rounded-lg text-base px-3 py-3 bg-white text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                      </div>
+                      {[['widthMm', 'Width', '1800'], ['dropMm', 'Drop', '2400']].map(([field, label, eg]) => (
+                        <div key={field}>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {label} <span className="font-normal text-slate-400">mm</span>
+                          </label>
+                          <input type="number" inputMode="numeric" min="1" value={item[field]}
+                            onChange={e => setLineItem(idx, field, e.target.value)} placeholder={eg}
+                            onFocus={e => e.target.select()}
+                            className="w-full border border-slate-200 rounded-xl text-2xl font-semibold text-slate-900 px-2 py-3.5 bg-white text-center tabular-nums no-spin placeholder:text-slate-300 placeholder:font-normal placeholder:text-lg focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200" />
+                        </div>
+                      ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    {/* Qty is 1 on almost every opening and fabric is typed by
+                        hand, so the space goes to fabric. */}
+                    <div className="grid grid-cols-[4.5rem_1fr] gap-2">
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Qty</label>
                         <input type="number" inputMode="numeric" min="1" value={item.quantity}
-                          onChange={e => setLineItem(idx, 'quantity', e.target.value)} className={inp()} />
+                          onFocus={e => e.target.select()}
+                          onChange={e => setLineItem(idx, 'quantity', e.target.value)}
+                          className={inp() + ' text-center tabular-nums no-spin'} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">Fabric / Colour</label>
@@ -1950,12 +1988,24 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                     </div>
                   )}
 
-                  {/* Specs toggle */}
+                  {/* Specs toggle. Closed, it still states what the specs ARE —
+                      they are inherited from the previous opening, and a row
+                      that only said "Show specifications" gave no way to tell
+                      whether the right ones had carried over without opening
+                      eleven dropdowns to look. */}
                   <div className="px-4 pb-3">
                     <button type="button" onClick={() => toggleItemExpand(item.id)}
-                      className="flex items-center gap-1.5 text-xs font-medium text-amber-600 hover:text-amber-700 transition-colors">
-                      {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                      {isExpanded ? 'Hide specifications' : 'Show specifications'}
+                      className="w-full flex items-center gap-2 text-left py-1">
+                      {isExpanded
+                        ? <ChevronUp size={14} className="text-amber-600 flex-shrink-0" />
+                        : <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />}
+                      {isExpanded ? (
+                        <span className="text-xs font-medium text-amber-600">Hide specifications</span>
+                      ) : specSummary(item, productType) ? (
+                        <span className="text-xs text-slate-500 truncate">{specSummary(item, productType)}</span>
+                      ) : (
+                        <span className="text-xs font-medium text-amber-600">Add specifications</span>
+                      )}
                     </button>
                   </div>
 
