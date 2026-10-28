@@ -5,6 +5,7 @@ import {
   MessageSquare, Mail, Inbox as InboxIcon, Loader, Search, X,
   Send, ArrowLeft, User, Trash2, Briefcase,
   Globe, Phone, MapPin, Clock, UserPlus, Archive, ArchiveRestore, Check,
+  ExternalLink, Compass, BarChart3,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import OptionsMenu from '../components/OptionsMenu';
@@ -13,6 +14,7 @@ import { deleteCustomer, restoreCustomer, saveCustomer, getCustomers, findCustom
 import { useProfile } from '../contexts/UserProfileContext';
 import { toast } from '../components/ToastContainer';
 import { format, parseISO, isToday, isYesterday, isThisWeek } from 'date-fns';
+import { leadSource, sourceStyle, summariseLeadSources } from '../lib/leadSource';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -61,6 +63,7 @@ function enquiryToConv(e) {
     key: `web:${e.id}`,
     isWebLead: true,
     enquiry: e,
+    source: leadSource(e),
     customerId: null,
     customerName: e.name || 'Website enquiry',
     customerPhone: e.phone || null,
@@ -210,6 +213,19 @@ function ConvRow({ conv, selected, onClick, onDelete }) {
             {conv.last?.body ?? '—'}
           </p>
         </div>
+        {/* Where the lead came from, at a glance — the question you ask
+            before opening it, not after. */}
+        {conv.isWebLead && conv.source && (
+          <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400 truncate">
+            <Compass size={11} className="flex-shrink-0 text-slate-300" />
+            <span className="truncate">
+              {conv.source.sourceLabel}
+              {conv.source.firstTouchKnown && conv.source.entryLabel
+                ? ` → ${conv.source.entryLabel}`
+                : ''}
+            </span>
+          </p>
+        )}
       </div>
 
       {/* Unread badge */}
@@ -228,6 +244,258 @@ function ConvRow({ conv, selected, onClick, onDelete }) {
     >
       <Trash2 size={15} />
     </button>
+    </div>
+  );
+}
+
+// ── Lead sources report ───────────────────────────────────────────────────────
+// Fills the pane that otherwise says "select a conversation". It is built from
+// the leads already loaded for the list, so it costs no extra query.
+const REPORT_PERIODS = [
+  { id: '30',  label: '30 days',  days: 30 },
+  { id: '90',  label: '90 days',  days: 90 },
+  { id: '365', label: '12 months', days: 365 },
+  { id: 'all', label: 'All time',  days: null },
+];
+
+function SourceBars({ rows, total, empty }) {
+  if (!rows.length) return <p className="px-5 py-6 text-center text-sm text-slate-400">{empty}</p>;
+  const max = Math.max(...rows.map(r => r.count));
+  return (
+    <div className="px-5 py-4 space-y-3">
+      {rows.map(r => (
+        <div key={r.key} className="flex items-center gap-3">
+          <span className="flex-1 sm:flex-none sm:w-44 min-w-0 text-sm text-slate-600 truncate" title={r.path || r.label}>
+            {r.label}
+          </span>
+          {/* The bar is squeezed to nothing once the label and figures have
+              had their share of a phone's width, so it only appears where
+              there is room for it to mean something. */}
+          <div className="hidden sm:block flex-1 h-2 rounded-full bg-slate-100 overflow-hidden min-w-0">
+            <div
+              className={`h-full rounded-full ${r.bar || 'bg-teal-400'}`}
+              style={{ width: `${(r.count / max) * 100}%` }}
+            />
+          </div>
+          <span className="w-20 flex-shrink-0 text-right text-xs tabular-nums text-slate-500">
+            {r.count}
+            <span className="text-slate-300"> · </span>
+            {Math.round((r.count / total) * 100)}%
+          </span>
+          <span
+            className={`w-16 flex-shrink-0 text-right text-xs tabular-nums ${r.converted ? 'text-emerald-600' : 'text-slate-300'}`}
+            title={`${r.converted} of ${r.count} became a customer`}
+          >
+            {r.converted} won
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LeadSourceReport({ leads, onBack }) {
+  const [period, setPeriod] = useState('90');
+  // Captured once, so the period window is a pure function of state rather
+  // than a clock read during render.
+  const [now] = useState(() => Date.now());
+
+  const { summary, cutoffLabel } = useMemo(() => {
+    const days = REPORT_PERIODS.find(p => p.id === period)?.days ?? null;
+    const cutoff = days ? now - days * 86400000 : null;
+    const scoped = cutoff
+      ? leads.filter(l => l.created_at && new Date(l.created_at).getTime() >= cutoff)
+      : leads;
+    return {
+      summary: summariseLeadSources(scoped),
+      cutoffLabel: REPORT_PERIODS.find(p => p.id === period)?.label ?? '',
+    };
+  }, [leads, period, now]);
+
+  const sourceRows = summary.sources.map(r => ({ ...r, bar: sourceStyle(r.kind).bar }));
+  const unknownPages = summary.entryPages.find(p => p.key === '__unknown__')?.count ?? 0;
+
+  // Nothing to see in the entry-page view until the site has recorded some,
+  // so start on the one that has every lead ever taken in it.
+  const [pageMode, setPageMode] = useState(
+    summary.firstTouchCount > 0 ? 'entry' : 'form',
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-slate-50/50">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+        <div>
+          <button
+            onClick={onBack}
+            className="sm:hidden flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 mb-2 -ml-1"
+          >
+            <ArrowLeft size={14} /> Inbox
+          </button>
+          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+            <BarChart3 size={17} className="text-teal-500" />
+            Where your leads come from
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            {summary.total} website lead{summary.total === 1 ? '' : 's'} in the last {cutoffLabel.toLowerCase()}.
+            Pick a lead on the left to see its own trail.
+          </p>
+        </div>
+
+        <div className="flex gap-1.5">
+          {REPORT_PERIODS.map(p => (
+            <button
+              key={p.id}
+              onClick={() => setPeriod(p.id)}
+              className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
+                period === p.id
+                  ? 'bg-teal-600 text-white border-teal-600'
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200">
+          <div className="px-5 py-3.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-slate-800">
+                {pageMode === 'entry' ? 'Pages that bring them in' : 'Pages they enquire from'}
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {pageMode === 'entry'
+                  ? 'The page they first landed on that visit.'
+                  : 'The page they were on when they sent the form.'}
+              </p>
+            </div>
+            <div className="flex gap-1 flex-shrink-0">
+              {[
+                { id: 'entry', label: 'Landed on' },
+                { id: 'form',  label: 'Enquired from' },
+              ].map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setPageMode(m.id)}
+                  className={`text-[11px] font-medium px-2 py-1 rounded-md border transition-colors ${
+                    pageMode === m.id
+                      ? 'bg-slate-800 text-white border-slate-800'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <SourceBars
+            rows={pageMode === 'entry' ? summary.entryPages : summary.formPages}
+            total={summary.total}
+            empty="No leads in this period."
+          />
+          {pageMode === 'entry' && unknownPages > 0 && (
+            <p className="px-5 pb-4 -mt-1 text-xs text-slate-400">
+              {unknownPages === summary.total
+                ? 'None of these recorded an entry page — the site only started tracking it from today, so this fills in as new leads arrive. Until then, “Enquired from” has the full history.'
+                : `${unknownPages} of these came in before the site recorded an entry page.`}
+            </p>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200">
+          <div className="px-5 py-3.5 border-b border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-800">What sent them</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Search, AI assistants, social, campaigns, or straight to the site.
+            </p>
+          </div>
+          <SourceBars
+            rows={sourceRows}
+            total={summary.total}
+            empty="No leads in this period."
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Where a lead came from ────────────────────────────────────────────────────
+// Two separate facts, kept separate: the page that brought them to the site,
+// and the page they were on when they filled the form in. They are the same
+// most of the time, and when they are not, the difference is the interesting
+// part.
+function OriginRow({ label, children }) {
+  return (
+    <div className="flex items-start gap-3 px-4 py-2.5">
+      <span className="w-24 flex-shrink-0 text-xs text-slate-400 pt-px">{label}</span>
+      <div className="min-w-0 flex-1 text-sm text-slate-700">{children}</div>
+    </div>
+  );
+}
+
+function LeadOrigin({ enquiry }) {
+  const s = leadSource(enquiry);
+  const style = sourceStyle(s.sourceKind);
+
+  return (
+    <div>
+      <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-1.5">
+        Where this lead came from
+      </p>
+      <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
+        <OriginRow label="Source">
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${style.pill}`}>
+            {s.sourceLabel}
+          </span>
+          {s.campaign && s.campaign !== s.sourceLabel && (
+            <span className="ml-2 text-xs text-slate-500">campaign {s.campaign}</span>
+          )}
+          {s.referrerUrl && (
+            <p className="mt-1 text-xs text-slate-400 break-all">{s.referrerUrl}</p>
+          )}
+        </OriginRow>
+
+        <OriginRow label="Landed on">
+          {s.firstTouchKnown ? (
+            <>
+              <span className="font-medium">{s.entryLabel}</span>
+              <span className="ml-1.5 text-xs text-slate-400">{s.entryPath}</span>
+            </>
+          ) : (
+            <span className="text-slate-400">
+              Not recorded — this lead came in before the site started tracking the entry page.
+            </span>
+          )}
+        </OriginRow>
+
+        <OriginRow label="Enquired from">
+          {s.submitUrl ? (
+            <a
+              href={s.submitUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 hover:text-teal-700 hover:underline"
+            >
+              <span className="font-medium">{s.submitLabel}</span>
+              <ExternalLink size={12} className="text-slate-400" />
+            </a>
+          ) : (
+            <span className="text-slate-400">Unknown</span>
+          )}
+          {s.browsed && (
+            <p className="mt-1 text-xs text-slate-400">
+              Different page to the one they arrived on
+              {s.pagesSeen ? ` — ${s.pagesSeen} page${s.pagesSeen === 1 ? '' : 's'} that visit` : ''}.
+            </p>
+          )}
+          {!s.browsed && s.pagesSeen > 1 && (
+            <p className="mt-1 text-xs text-slate-400">
+              {s.pagesSeen} pages that visit.
+            </p>
+          )}
+        </OriginRow>
+      </div>
     </div>
   );
 }
@@ -398,6 +666,8 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
             </div>
           </div>
         )}
+
+        <LeadOrigin enquiry={e} />
       </div>
 
       {/* Reply composer + lifecycle actions */}
@@ -1224,12 +1494,22 @@ export default function Inbox() {
                   </span>
                 )}
               </h1>
-              <button
-                onClick={() => setPickerOpen(true)}
-                title="New message"
-                className="flex items-center gap-1.5 text-xs font-semibold bg-violet-500 hover:bg-violet-400 text-white px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
-                <MessageSquare size={14} /> New
-              </button>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {leads.length > 0 && (
+                  <button
+                    onClick={() => { setSelected(null); setDraftConv(null); setMobile('thread'); }}
+                    title="Where your leads come from"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-teal-700 border border-slate-200 hover:border-teal-300 px-2.5 py-1.5 rounded-lg transition-colors">
+                    <BarChart3 size={14} /> Sources
+                  </button>
+                )}
+                <button
+                  onClick={() => setPickerOpen(true)}
+                  title="New message"
+                  className="flex items-center gap-1.5 text-xs font-semibold bg-violet-500 hover:bg-violet-400 text-white px-3 py-1.5 rounded-lg transition-colors">
+                  <MessageSquare size={14} /> New
+                </button>
+              </div>
             </div>
 
             {/* Search */}
@@ -1319,6 +1599,8 @@ export default function Inbox() {
                 onDeleteConversation={setConvToDelete}
               />
             )
+          ) : leads.length > 0 ? (
+            <LeadSourceReport leads={leads} onBack={handleBack} />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
               <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center mb-4">
