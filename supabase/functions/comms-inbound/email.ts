@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2"
+import { noteMarketingReply } from "./marketing.ts"
 
 // Inbound email from the Cloudflare Email Routing worker on reply.lusso.com.au.
 //
@@ -24,6 +25,12 @@ export async function parseInboundEmail(
   const from = (msg.from ?? "").trim().toLowerCase()
   const to   = (msg.to ?? "").trim().toLowerCase()
   if (!from) return json({ error: "from required" }, 400)
+
+  // If this answers a marketing email, mark it before the threading work
+  // below. An email campaign is what an SMS follow-up chains behind, so the
+  // 'replied' state is what stops the text going to someone already talking
+  // to us. See comms-inbound/marketing.ts.
+  await noteMarketingReply(admin, { email: from })
 
   let jobId: string | null = null
   let customerId: string | null = null

@@ -1,5 +1,5 @@
 /**
- * marketing-send — sends ONE wave of a campaign.
+ * marketing-send — sends ONE wave of a campaign, by email or by SMS.
  *
  * Waves, not blasts. The last campaign went to the whole list in a week and
  * the repair requests it (correctly) produced arrived faster than the install
@@ -21,6 +21,19 @@
  *   · Reply-To is the customer's reply token, so "can you fix my blinds" lands
  *     on their record in the CRM instead of in a shared inbox.
  *
+ * SMS differs from email in three ways that matter here, and only three:
+ *
+ *   · Reachability is a different test. marketing_audience() returns people
+ *     who are `textable` for an SMS campaign and `emailable` for an email one,
+ *     and the two do not substitute — a mobile is not a fallback for a bounced
+ *     address. Suppression is likewise separate: STOP stops the texts, it does
+ *     not unsubscribe the email, because the customer did not ask for that.
+ *   · Every message costs money per segment, so the length maths is done
+ *     before sending (see sms.ts) and surfaced in the preview rather than
+ *     discovered on the bill.
+ *   · The opt-out is a keyword, not a link. It is appended to every message
+ *     and honoured by comms-inbound. Those two halves must ship together.
+ *
  * POST body:
  *   { campaignId, waveSize?, dryRun?, testTo? }
  *     dryRun  — render the first few and report counts, write nothing
@@ -31,6 +44,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2"
 import { renderEmail, renderText } from "../send-communication/emailLayout.ts"
 import { merge, hasUnresolved } from "./merge.ts"
+import { composeSms, smsMetrics, smsProblems } from "./sms.ts"
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +54,9 @@ const cors = {
 // Resend's default allowance is 2 requests/second. One wave is small by
 // design, so pacing is cheaper than the complexity of the batch endpoint.
 const SEND_GAP_MS = 550
+
+// Twilio AU long-code throughput is ~1 message/second.
+const SMS_GAP_MS = 1050
 
 // Hard ceiling per invocation regardless of wave_size, so a mistyped number
 // cannot run the function past its wall-clock limit halfway through a wave.
@@ -66,7 +83,15 @@ interface Recipient {
   primary_product: string | null
   product_phrase: string | null
   product_families: string[]
+  mobile_e164: string | null
+  textable: boolean
 }
+
+type Channel = "email" | "sms"
+
+/** The address a given channel actually delivers to. */
+const addressOf = (channel: Channel, r: Recipient) =>
+  channel === "sms" ? (r.mobile_e164 ?? "") : r.email
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
@@ -105,13 +130,30 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Campaign is paused" }, 409)
     }
 
+    // The campaign decides its own channel; the request never overrides it.
+    // A caller that could pass channel could text a list written for email.
+    const channel: Channel = campaign.channel === "sms" ? "sms" : "email"
+
     const RESEND_KEY = Deno.env.get("RESEND_API_KEY") ?? ""
     // No silent fallback to the transactional sender: shipping marketing from
     // the address that delivers quotes is the one mistake this file exists to
     // prevent, so an unset secret is an error, not a default.
     const FROM = Deno.env.get("MARKETING_EMAIL_FROM") ?? ""
-    if (!RESEND_KEY)        return json({ error: "RESEND_API_KEY is not configured" }, 500)
-    if (!FROM && !dryRun)   return json({ error: "MARKETING_EMAIL_FROM is not set. Marketing must send from a different subdomain to quotes — set it before sending." }, 500)
+    // Twilio's own credentials, shared with send-communication: campaign texts
+    // come from the same registered AU mobile customers already reply to, so a
+    // reply threads onto their record through the existing inbound webhook.
+    const TW_SID   = Deno.env.get("TWILIO_ACCOUNT_SID") ?? ""
+    const TW_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") ?? ""
+    const TW_FROM  = Deno.env.get("TWILIO_PHONE_NUMBER") ?? ""
+
+    if (channel === "email") {
+      if (!RESEND_KEY)      return json({ error: "RESEND_API_KEY is not configured" }, 500)
+      if (!FROM && !dryRun) return json({ error: "MARKETING_EMAIL_FROM is not set. Marketing must send from a different subdomain to quotes — set it before sending." }, 500)
+    } else if (!dryRun) {
+      if (!TW_SID || !TW_TOKEN || !TW_FROM) {
+        return json({ error: "Twilio is not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER)" }, 500)
+      }
+    }
 
     const APP_URL      = Deno.env.get("APP_URL") ?? "https://app.lusso.com.au"
     const REPLY_DOMAIN = Deno.env.get("REPLY_DOMAIN") ?? ""
@@ -120,6 +162,19 @@ Deno.serve(async (req: Request) => {
       Math.max(1, Number(waveSize) || campaign.wave_size || 50),
       MAX_PER_RUN,
     )
+
+    // Segment membership is derived from a materialised view, so a customer who
+    // accepted a quote since the last refresh is still sitting in their old
+    // segment — and segment D invites people to replace blinds they may have
+    // only just bought. Refresh before a real wave. A preview is advisory and
+    // can read whatever is current; paying 1-2s on every preview click is not
+    // worth it.
+    if (!dryRun && !testTo) {
+      const { error: rErr } = await admin.rpc("marketing_refresh_facts")
+      // Not fatal: stale segments are a worse message, not a broken send, and
+      // refusing the whole wave over a refresh hiccup helps nobody.
+      if (rErr) console.error("marketing_refresh_facts failed:", rErr.message)
+    }
 
     // One definition of the audience, shared with the UI preview, so the two
     // can never disagree about who is about to be mailed.
@@ -146,8 +201,24 @@ Deno.serve(async (req: Request) => {
         waveSize: size,
         inThisWave: recipients.length,
         remainingAfter: remaining === null ? null : Math.max(0, remaining - recipients.length),
-        from: FROM || "(MARKETING_EMAIL_FROM not set)",
+        channel,
+        from: channel === "sms"
+          ? (TW_FROM || "(TWILIO_PHONE_NUMBER not set)")
+          : (FROM || "(MARKETING_EMAIL_FROM not set)"),
+        // Segments across the whole wave, not just the sampled three — the
+        // number that decides what this costs. Estimated from the sample's
+        // worst case, because rendering 100 bodies to count them is wasteful
+        // and under-estimating is the failure that matters.
+        ...(channel === "sms" ? { smsSegmentsPerMessage: worstSegments(campaign, recipients) } : {}),
         preview: recipients.slice(0, 3).map((r) => {
+          if (channel === "sms") {
+            const c = composeSmsFor(campaign, r)
+            return {
+              to: r.mobile_e164, name: r.name, text: c.text, problems: c.problems,
+              encoding: c.metrics.encoding, chars: c.metrics.chars, segments: c.metrics.segments,
+              offenders: c.metrics.offenders,
+            }
+          }
           const c = compose(campaign, r, "PREVIEW-TOKEN", APP_URL)
           return { to: r.email, name: r.name, subject: c.subject, text: c.text, problems: c.problems }
         }),
@@ -165,7 +236,18 @@ Deno.serve(async (req: Request) => {
       if (!testTo) {
         const { data: claimed, error: claimErr } = await admin
           .from("marketing_sends")
-          .insert({ campaign_id: campaignId, customer_id: r.customer_id, email: r.email, wave, status: "queued" })
+          .insert({
+            campaign_id: campaignId,
+            customer_id: r.customer_id,
+            channel,
+            // Only the address this channel actually uses is recorded. Writing
+            // both would make the per-channel unique indexes collide across
+            // channels and block the SMS follow-up to an emailed customer.
+            email:  channel === "email" ? r.email : null,
+            mobile: channel === "sms"   ? r.mobile_e164 : null,
+            wave,
+            status: "queued",
+          })
           .select("id").maybeSingle()
         if (claimErr) {
           if (claimErr.code === "23505") { skipped++; continue }
@@ -174,68 +256,135 @@ Deno.serve(async (req: Request) => {
         sendRowId = claimed?.id ?? null
       }
 
-      const { data: unsubToken } = await admin
-        .rpc("marketing_ensure_unsub_token", { p_email: r.email })
-
-      const composed = compose(campaign, r, unsubToken ?? "", APP_URL)
-      if (composed.problems.length) {
-        failed++
-        errors.push({ email: r.email, error: composed.problems.join("; ") })
-        if (sendRowId) {
-          await admin.from("marketing_sends")
-            .update({ status: "failed", error: composed.problems.join("; ") }).eq("id", sendRowId)
+      if (channel === "sms") {
+        const composed = composeSmsFor(campaign, r)
+        if (composed.problems.length) {
+          failed++
+          errors.push({ email: r.mobile_e164 ?? "(no mobile)", error: composed.problems.join("; ") })
+          if (sendRowId) {
+            await admin.from("marketing_sends")
+              .update({ status: "failed", error: composed.problems.join("; ") }).eq("id", sendRowId)
+          }
+          continue
         }
-        continue
-      }
 
-      // A reply threads back onto this customer's record in the CRM. This is
-      // the difference between repair demand being a pipeline and being chaos.
-      let replyTo: string | undefined
-      if (REPLY_DOMAIN) {
-        const token = await ensureReplyToken(admin, r.customer_id)
-        if (token) replyTo = `q-${token}@${REPLY_DOMAIN}`
-      }
-
-      const unsubUrl = `${APP_URL}/api/unsubscribe?t=${unsubToken}`
-
-      try {
-        const res = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from: FROM,
-            to: testTo || r.email,
-            reply_to: replyTo,
-            subject: composed.subject,
-            html: composed.html,
-            text: composed.text,
-            headers: {
-              // Gmail and Yahoo require both on bulk mail, and both must work
-              // without the recipient signing in anywhere.
-              "List-Unsubscribe": `<${unsubUrl}>`,
-              "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        const dest = testTo || r.mobile_e164!
+        try {
+          // Twilio's REST API, form-encoded, same as send-communication. No
+          // StatusCallback: a receipt for a campaign text has nothing in
+          // `communications` to match against yet, so it would be noise. The
+          // SID is kept in external_id so receipts can be reconciled later.
+          const form = new URLSearchParams({ To: dest, From: TW_FROM, Body: composed.text })
+          const res = await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${TW_SID}/Messages.json`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: "Basic " + btoa(`${TW_SID}:${TW_TOKEN}`),
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: form,
             },
-          }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.message ?? res.statusText)
+          )
+          const data = await res.json()
+          if (!res.ok) throw new Error(data?.message ?? res.statusText)
 
-        sent++
-        if (sendRowId) {
-          await admin.from("marketing_sends")
-            .update({ status: "sent", external_id: data.id, sent_at: new Date().toISOString() })
-            .eq("id", sendRowId)
+          sent++
+          if (sendRowId) {
+            await admin.from("marketing_sends")
+              .update({ status: "sent", external_id: data.sid, sent_at: new Date().toISOString() })
+              .eq("id", sendRowId)
+          }
+
+          // Mirror it onto the customer's record. Without this a staff member
+          // opening a reply sees an answer to a question they cannot see.
+          if (!testTo && r.customer_id) {
+            await admin.from("communications").insert({
+              customer_id: r.customer_id,
+              channel: "sms",
+              direction: "outbound",
+              subject: `Campaign · ${campaign.name}`,
+              body: composed.text,
+              to_address: dest,
+              from_address: TW_FROM,
+              status: "sent",
+              external_id: data.sid,
+            })
+          }
+        } catch (e) {
+          failed++
+          errors.push({ email: dest, error: String(e) })
+          if (sendRowId) {
+            await admin.from("marketing_sends").update({ status: "failed", error: String(e) }).eq("id", sendRowId)
+          }
         }
-      } catch (e) {
-        failed++
-        errors.push({ email: r.email, error: String(e) })
-        if (sendRowId) {
-          await admin.from("marketing_sends").update({ status: "failed", error: String(e) }).eq("id", sendRowId)
+      } else {
+        const { data: unsubToken } = await admin
+          .rpc("marketing_ensure_unsub_token", { p_email: r.email })
+
+        const composed = compose(campaign, r, unsubToken ?? "", APP_URL)
+        if (composed.problems.length) {
+          failed++
+          errors.push({ email: r.email, error: composed.problems.join("; ") })
+          if (sendRowId) {
+            await admin.from("marketing_sends")
+              .update({ status: "failed", error: composed.problems.join("; ") }).eq("id", sendRowId)
+          }
+          continue
+        }
+
+        // A reply threads back onto this customer's record in the CRM. This is
+        // the difference between repair demand being a pipeline and being chaos.
+        let replyTo: string | undefined
+        if (REPLY_DOMAIN) {
+          const token = await ensureReplyToken(admin, r.customer_id)
+          if (token) replyTo = `q-${token}@${REPLY_DOMAIN}`
+        }
+
+        const unsubUrl = `${APP_URL}/api/unsubscribe?t=${unsubToken}`
+
+        try {
+          const res = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              from: FROM,
+              to: testTo || r.email,
+              reply_to: replyTo,
+              subject: composed.subject,
+              html: composed.html,
+              text: composed.text,
+              headers: {
+                // Gmail and Yahoo require both on bulk mail, and both must work
+                // without the recipient signing in anywhere.
+                "List-Unsubscribe": `<${unsubUrl}>`,
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+              },
+            }),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data?.message ?? res.statusText)
+
+          sent++
+          if (sendRowId) {
+            await admin.from("marketing_sends")
+              .update({ status: "sent", external_id: data.id, sent_at: new Date().toISOString() })
+              .eq("id", sendRowId)
+          }
+        } catch (e) {
+          failed++
+          errors.push({ email: r.email, error: String(e) })
+          if (sendRowId) {
+            await admin.from("marketing_sends").update({ status: "failed", error: String(e) }).eq("id", sendRowId)
+          }
         }
       }
 
       if (testTo) break
-      await sleep(SEND_GAP_MS)
+      // Resend allows 2/sec; a Twilio long code sends about 1/sec and queues
+      // the rest, so pacing to the slower of the two keeps the wave inside the
+      // function's wall clock instead of handing Twilio a backlog.
+      await sleep(channel === "sms" ? SMS_GAP_MS : SEND_GAP_MS)
     }
 
     if (!testTo && sent > 0 && campaign.status === "draft") {
@@ -370,6 +519,59 @@ function compose(
   }
 
   return { subject, problems, html: renderEmail(content), text: renderText(content) }
+}
+
+/**
+ * Render one campaign's SMS for one recipient.
+ *
+ * Deliberately NOT a variant of compose(): a text has no subject, no heading,
+ * no preheader, no CTA block and no unsubscribe link, and pretending otherwise
+ * is how an email layout ends up inside a 160-character message. The only
+ * thing the two share is the merge syntax, so the same {{first_name}} works in
+ * both and a campaign author does not have to learn two dialects.
+ */
+function composeSmsFor(campaign: Record<string, any>, r: Recipient) {
+  const values: Record<string, unknown> = {
+    first_name:           r.first_name,
+    name:                 r.name,
+    business_name:        r.business_name,
+    suburb:               r.suburb,
+    last_purchase_label:  r.last_purchase_label,
+    last_purchase_year:   r.last_purchase_year,
+    years_since_purchase: r.years_since_purchase,
+    purchase_count:       r.purchase_count,
+    blind_count:          r.blind_count,
+    curtain_count:        r.curtain_count,
+    has_motorised:        r.has_motorised,
+    has_battery:          r.has_battery,
+    primary_product:      r.primary_product,
+    product_phrase:       r.product_phrase,
+  }
+
+  const merged = merge(campaign.sms_body, values)
+  const problems: string[] = []
+  // An unresolved token in a text is worse than in an email: there is no
+  // layout to hide it, so "{{first_name}}" is the first thing read.
+  if (hasUnresolved(merged)) problems.push("unresolved merge field in sms_body")
+
+  const text = composeSms(merged)
+  problems.push(...smsProblems(text))
+
+  return { text, problems, metrics: smsMetrics(text) }
+}
+
+/**
+ * The highest segment count across the sampled recipients.
+ *
+ * Worst case rather than average on purpose: merge fields vary the length per
+ * person, and the number is used to decide whether a wave is affordable. An
+ * average rounds the expensive recipients away.
+ */
+function worstSegments(campaign: Record<string, any>, recipients: Recipient[]) {
+  return recipients.slice(0, 25).reduce(
+    (worst, r) => Math.max(worst, composeSmsFor(campaign, r).metrics.segments),
+    0,
+  )
 }
 
 function json(b: unknown, s = 200) {

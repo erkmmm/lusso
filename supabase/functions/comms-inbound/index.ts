@@ -7,6 +7,9 @@ import {
   isTwilioStatusCallback, applyTwilioStatus,
   isResendDeliveryEvent, applyResendStatus,
 } from "./delivery.ts"
+import {
+  isStopKeyword, isStartKeyword, suppressMobile, unsuppressMobile, noteMarketingReply,
+} from "./marketing.ts"
 
 // Inbound customer messages.
 //
@@ -16,6 +19,11 @@ import {
 //   Test  — a hand-rolled JSON shape for either channel, behind a shared
 //           secret, so the threading logic can be exercised without waiting
 //           on a real message.
+//
+// An inbound SMS can also be an opt-out. The campaign texts promise "Reply
+// STOP to opt out", and that promise is kept here — see marketing.ts. The
+// keyword is handled before anything else that could fail, because a dropped
+// opt-out keeps on texting someone who asked us to stop.
 //
 // Delivery receipts for messages *we* sent arrive here too, on the same two
 // authenticated paths: Twilio's StatusCallback is form-urlencoded with a
@@ -125,11 +133,54 @@ Deno.serve(async (req: Request) => {
       jobId = jobs?.[0]?.id ?? null
     }
 
+    // ── Opt-out keywords ────────────────────────────────────────────────────
+    // Recorded, then logged, then answered with empty TwiML and nothing else.
+    // No confirmation text of our own: Twilio's own opt-out handling already
+    // replies and blocks the number at the carrier, so a second message would
+    // either arrive as a duplicate or fail to send against our own block.
+    if (isStopKeyword(body)) {
+      const stopped = await suppressMobile(admin, from)
+      await admin.from("communications").insert({
+        job_id: jobId,
+        customer_id: customerId,
+        channel: "sms",
+        direction: "inbound",
+        subject: stopped ? "Opted out of marketing SMS" : "Opt-out received (number not recognised)",
+        body,
+        to_address: to,
+        from_address: from,
+        status: "received",
+      })
+      return xml()
+    }
+
+    if (isStartKeyword(body)) {
+      const resumed = await unsuppressMobile(admin, from)
+      await admin.from("communications").insert({
+        job_id: jobId,
+        customer_id: customerId,
+        channel: "sms",
+        direction: "inbound",
+        subject: resumed ? "Opted back in to marketing SMS" : null,
+        body,
+        to_address: to,
+        from_address: from,
+        status: "received",
+      })
+      return xml()
+    }
+
+    // An ordinary reply. If it answers a campaign text, attribute it so the
+    // campaign's reply count is real and a chained follow-up skips this person
+    // rather than talking over the conversation they just started.
+    const campaignId = await noteMarketingReply(admin, { mobile: from })
+
     await admin.from("communications").insert({
       job_id: jobId,
       customer_id: customerId,
       channel: "sms",
       direction: "inbound",
+      subject: campaignId ? `Reply to campaign · ${campaignId}` : null,
       body,
       to_address: to,
       from_address: from,

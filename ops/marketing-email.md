@@ -79,3 +79,35 @@ an email says. It just no longer reads out a checklist of faults.
 
 Repair requests will still arrive — they always do from any contact with a
 customer base. The point is not to manufacture them.
+
+## 6. Marketing SMS — what has to be true before the first text
+
+Added 2026-10-28. Texts go out on the **same registered AU mobile customers
+already reply to** (`+61485075111`, `TWILIO_PHONE_NUMBER`), deliberately not an
+alphanumeric sender ID: those are one-way, which would break reply threading,
+and unregistered IDs now carry an "Unverified" label under ACMA's Sender ID
+Register. No new Twilio setup is needed — but two things are:
+
+- **Top up Twilio.** Each segment costs roughly 5c, so one pass over all 1,197
+  textable customers is about $62 and a wave of 25 about $2.57. The balance was
+  ~$20 in August. Unlike email, an empty balance fails mid-wave.
+- **Check the preview's segment count before sending.** A text is 160
+  characters only while every character is GSM-7. One curly apostrophe or em
+  dash — which a word processor inserts without asking — flips the whole
+  message to UCS-2 at 70 characters a segment and can triple the cost of a
+  wave. The preview names the offending characters; keep campaign copy plain
+  ASCII.
+
+**SMS is not extra reach.** Of 1,197 customers with a usable mobile, only three
+have no email address. A text campaign is therefore never a substitute for an
+email campaign and never a duplicate of one — it is the follow-up to silence.
+Set `audience.after_campaign` to the email campaign it follows and
+`only_if_contacted: true`, and the audience will contain only people that email
+actually reached, minus anyone who already replied.
+
+**Opt-out is not optional.** Every text has "Reply STOP to opt out" appended by
+the sender, and `comms-inbound` honours the keyword into
+`marketing_sms_suppressions`. Stopping the texts does **not** unsubscribe the
+email — the customer did not ask for that. A free-text request ("please stop
+sending me these") does not auto-suppress; it lands in the Inbox for someone to
+action, and it still has to be honoured.

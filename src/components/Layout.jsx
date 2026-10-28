@@ -5,7 +5,7 @@ import {
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, Users2, Inbox, ArrowLeft,
-  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, Mail, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, Send, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
@@ -52,7 +52,7 @@ const NAV_SECTIONS = [
     label: 'MARKETING',
     items: [
       { to: '/content', label: 'Content', icon: FileStack },
-      { to: '/email',   label: 'Email',   icon: Mail },
+      { to: '/campaigns', label: 'Campaigns', icon: Send },
     ],
   },
   {

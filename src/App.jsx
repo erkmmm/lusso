@@ -24,7 +24,7 @@ import JobProfile from './pages/JobProfile';
 import JobTakeoff from './pages/JobTakeoff';
 import ContentQueue from './pages/ContentQueue';
 import Content from './pages/Content';
-import EmailMarketing from './pages/EmailMarketing';
+import Campaigns from './pages/Campaigns';
 import InstallView from './pages/InstallView';
 import Customers from './pages/Customers';
 import MissingContactDetails from './pages/MissingContactDetails';
@@ -376,7 +376,10 @@ function AppRoutes() {
               <Route path="/jobs/:id/takeoff"           element={<JobTakeoff />} />
               <Route path="/jobs/:id/install"           element={<InstallView />} />
               <Route path="/content"                    element={<Content />} />
-              <Route path="/email"                      element={<EmailMarketing />} />
+              <Route path="/campaigns"                  element={<Campaigns />} />
+              {/* The page was "Email" before it could also send SMS. Kept so
+                  existing bookmarks and links don't 404. */}
+              <Route path="/email"                      element={<Campaigns />} />
               <Route path="/content/queue"              element={<ContentQueue />} />
               <Route path="/customers"                  element={<Customers />} />
               <Route path="/customers/missing-details" element={<MissingContactDetails />} />
