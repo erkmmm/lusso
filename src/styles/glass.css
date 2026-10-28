@@ -505,6 +505,19 @@ html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(n + 8) { an
   }
 }
 
+/* Chrome is not a card either, and the exemption below does not cover it: it
+   matches .bg-white INSIDE a .fixed, so a fixed element that IS .bg-white slips
+   through — the save bar being one. That bar then never settles. The entrance
+   has a 400ms delay and `backwards` fill, so until it starts the element holds
+   the from-keyframe; the measure sheet re-renders on every autosave tick, which
+   restarts the animation inside that window, and the bar sits permanently 6%
+   oversized, blurred and overhanging the viewport by ~11px a side. A pinned bar
+   is not arriving with the page, so it should never have had the animation. */
+html.theme-glass:not([data-public]) .glass-stage .bg-white.fixed,
+html.theme-glass:not([data-public]) .app-action-bar {
+  animation: none;
+}
+
 /* A modal is not part of the page, so it must not inherit the page's entrance
    — it has its own, and running both reads as a double-take. */
 html.theme-glass:not([data-public]) .glass-stage .fixed .bg-white {
