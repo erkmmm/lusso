@@ -1193,7 +1193,15 @@ export default function Inbox() {
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)]">
+    // h-full, not a viewport calculation. This used to be
+    // h-[calc(100vh-64px)], subtracting the height of the mobile bottom nav —
+    // which was wrong at both ends: on desktop that nav does not exist, so the
+    // page stopped 64px short and left a dead strip along the bottom, and on
+    // mobile it ignored the 55px header above it, so the list ran 55px UNDER
+    // the nav and the last rows could not be reached. <main> already resolves
+    // both cases (it is a flex child with pb-16 lg:pb-0), so filling it is both
+    // correct and immune to either chrome changing height.
+    <div className="app-pane flex flex-col h-full">
 
       {/* ── Two-pane layout ── */}
       <div className="flex flex-1 min-h-0">

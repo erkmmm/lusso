@@ -372,6 +372,22 @@ html.theme-glass:not([data-public]) .app-sidebar {
   }
 }
 
+/* Full-height pane pages (the Inbox) paint their own frosted columns rather
+   than scrolling inside the stage, so they have to float on the same geometry
+   as the sidebar. Without this they ran flush to the top of the viewport with
+   square corners while the sidebar beside them sat inset and rounded — the
+   junction read as unfinished, and list rows bled off the top edge because
+   nothing clipped them. overflow:hidden is what rounds the children too. */
+@media (min-width: 1024px) {
+  html.theme-glass:not([data-public]) .app-pane {
+    margin: 14px;
+    height: calc(100vh - 28px);
+    border-radius: 26px;
+    overflow: hidden;
+    box-shadow: var(--glass-shadow), var(--glass-rim);
+  }
+}
+
 /* The active nav item is a bright solid in the kit — the one opaque thing on
    screen, which is what makes it read as "you are here" through the frost. */
 html.theme-glass:not([data-public]) .app-sidebar a[aria-current='page'] {
