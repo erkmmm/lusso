@@ -104,7 +104,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Customer confirmation ────────────────────────────────────────────────
-    // Their receipt: what they chose, what it came to, and what happens next.
+    // What it came to, how to pay it, and what happens next. Deliberately NOT
+    // an itemised receipt — they already have the quotation, linked below, and
+    // a list of lines pushed the bank details the customer has to act on down
+    // the page.
     // Failing to send it must never fail the staff notification, so it's
     // wrapped and reported rather than thrown.
     let customerSend: Record<string, unknown> = { sent: false }
@@ -112,29 +115,61 @@ Deno.serve(async (req: Request) => {
       try {
         const money = (n: unknown) =>
           "$" + Number(n ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        const items: Array<{ name: string; location?: string; quantity?: number; total?: number }> =
-          Array.isArray(p.items) ? p.items : []
-        const lines = items
-          .map(i => `• ${i.name}${i.location ? ` (${i.location})` : ""}${Number(i.quantity) > 1 ? ` × ${i.quantity}` : ""} — ${money(i.total)}`)
-          .join("\n")
-        const deposit = p.depositAmount != null
-          ? `\n\nYour ${p.depositLabel ?? ""} deposit of ${money(p.depositAmount)} confirms the order — we'll sort that out with you on the call.`
-          : ""
+
+        // Bank details live in the shared business settings — the same row the
+        // public quote page reads — rather than being duplicated here.
+        const { data: bs } = await admin
+          .from("business_settings").select("settings").eq("id", 1).maybeSingle()
+        const bizSettings = (bs?.settings ?? {}) as Record<string, any>
+        const pay = (bizSettings.paymentDetails ?? {}) as Record<string, any>
+
+        // What to pay now: the deposit if the quote asks for one, otherwise
+        // the balance. Never both, and never a figure the customer has to
+        // work out from two others.
+        const hasDeposit = p.depositAmount != null && Number(p.depositAmount) > 0
+        const amountNow  = hasDeposit ? Number(p.depositAmount) : Number(p.grandTotal)
+        const amountWhat = hasDeposit
+          ? `Deposit due${p.depositLabel ? ` (${p.depositLabel})` : ""}`
+          : "Amount due"
+
         const quoteLink = p.publicToken
           ? `${appUrl}/quotes/${quoteId}/preview?t=${encodeURIComponent(String(p.publicToken))}`
           : ""
 
+        // The quote number is the payment reference. Without it a transfer
+        // lands in the account with nothing to match it to.
+        const payRows = [
+          { label: amountWhat,  value: money(amountNow), strong: true },
+          { label: "BSB",            value: pay.bsb },
+          { label: "Account number", value: pay.accountNumber },
+          { label: "Account name",   value: pay.accountName },
+          { label: "Reference",      value: String(p.quoteNumber ?? "") },
+        ].filter(r => r.value != null && r.value !== "")
+
+        const orderTotalLine = hasDeposit
+          ? `The balance of ${money(Number(p.grandTotal) - amountNow)} is due on completion of installation.`
+          : ""
+        const cardLine = pay.creditCardNote ? ` ${pay.creditCardNote}` : ""
+
         const custContent = {
-          preheader: `Your order is confirmed · ${p.quoteNumber} · ${money(p.grandTotal)}`,
+          preheader: `Order confirmed · ${p.quoteNumber} · ${money(p.grandTotal)}`,
           eyebrow: "Order confirmed",
-          heading: `Thank you — we have your acceptance`,
-          greeting: `Hi ${String(custName).split(" ")[0] || "there"},`,
+          heading: "Thank you for your order",
+          greeting: `Dear ${String(custName).split(" ")[0] || "there"},`,
           body:
-            `Thanks for accepting quote ${p.quoteNumber}${p.siteAddress ? ` for ${p.siteAddress}` : ""}. `
-            + `Here's what you've confirmed:\n\n${lines}\n\nTotal: ${money(p.grandTotal)} (incl. GST where it applies).${deposit}`,
-          cta: quoteLink ? { label: "View your quote", url: quoteLink } : null,
-          outro: "We'll call within one business day to arrange the deposit and book your installation. "
-               + "If anything here doesn't look right, just reply to this email — it comes straight to us.",
+            `Thank you for accepting quotation ${p.quoteNumber}${p.siteAddress ? ` for ${p.siteAddress}` : ""}. `
+            + `Your order is now confirmed and the total is ${money(p.grandTotal)}, including GST where it applies.\n\n`
+            + `To secure your order and book your installation, please arrange payment by direct deposit using the details below.`
+            + cardLine,
+          panel: {
+            title: "Payment details",
+            rows: payRows,
+          },
+          cta: quoteLink ? { label: "View your quotation", url: quoteLink } : null,
+          outro:
+            (orderTotalLine ? orderTotalLine + " " : "")
+            + "One of our team will be in touch within one business day to confirm your measurements and arrange an installation date. "
+            + "If any detail above is not as you expected, please reply to this email and we will put it right.",
           signOff: "The Lusso Team",
         }
 
@@ -144,7 +179,7 @@ Deno.serve(async (req: Request) => {
           body: JSON.stringify({
             from: EMAIL_FROM,
             to: [p.customerEmail],
-            subject: `Your Lusso order is confirmed — ${p.quoteNumber}`,
+            subject: `Order confirmed — ${p.quoteNumber}`,
             html: renderEmail(custContent),
             text: renderText(custContent),
           }),

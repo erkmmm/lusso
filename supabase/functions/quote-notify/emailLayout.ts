@@ -35,7 +35,11 @@ export const escapeHtml = (s = '') =>
 
 const richText = (s = '') => escapeHtml(s).replace(/\r?\n/g, '<br>')
 
+export interface PanelRow { label: string; value?: string | number | null; strong?: boolean }
+
 export interface EmailContent {
+  /** Same shape as the Pages copy's `panel` — keep the two identical. */
+  panel?: { title?: string; subtitle?: string; rows?: PanelRow[] } | null
   preheader?: string
   eyebrow?: string
   heading?: string
@@ -47,7 +51,36 @@ export interface EmailContent {
   footerNote?: string
 }
 
+
+/**
+ * A bordered detail panel — label/value pairs, for bank details and the like.
+ *
+ * Ported from functions/api/_emailLayout.js with the same `panel` shape and
+ * markup. Bank details written out as a sentence are how a customer mistypes
+ * an account number; each value gets its own row.
+ */
+function panelHtml(panel: EmailContent['panel']): string {
+  if (!panel) return ''
+  const { title, subtitle, rows = [] } = panel
+
+  const rowsHtml = rows.filter(r => r && r.value != null && r.value !== '').map(r => `
+    <tr>
+      <td style="padding:7px 0 0;font-family:${FONT};font-size:13px;color:${BRAND.stone};white-space:nowrap;">${escapeHtml(r.label)}</td>
+      <td align="right" style="padding:7px 0 0;font-family:${FONT};font-size:13px;font-weight:${r.strong ? '700' : '500'};color:${BRAND.ink};">${escapeHtml(String(r.value))}</td>
+    </tr>`).join('')
+
+  return `
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="background:${BRAND.paper};border:1px solid ${BRAND.mist};border-radius:8px;margin:0 0 28px;">
+      <tr><td style="padding:20px 22px;">
+        ${title ? `<div style="font-family:${FONT};font-size:9.5px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:${BRAND.stone};">${escapeHtml(title)}</div>` : ''}
+        ${subtitle ? `<div style="font-family:${FONT};font-size:20px;font-weight:700;color:${BRAND.ink};padding-top:5px;letter-spacing:-0.01em;">${escapeHtml(subtitle)}</div>` : ''}
+        ${rowsHtml ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:${title || subtitle ? '10px' : '0'};">${rowsHtml}</table>` : ''}
+      </td></tr>
+    </table>`
+}
+
 export function renderEmail({
+  panel = null,
   preheader = '',
   eyebrow = '',
   heading = '',
@@ -108,6 +141,7 @@ export function renderEmail({
       ${heading ? `<h1 style="margin:0 0 20px;font-family:${FONT};font-size:25px;line-height:1.25;font-weight:700;letter-spacing:-0.02em;color:${BRAND.ink};">${escapeHtml(heading)}</h1>` : ''}
       ${greeting ? `<p style="margin:0 0 12px;font-family:${FONT};font-size:15px;line-height:1.65;color:${BRAND.graphite};">${escapeHtml(greeting)}</p>` : ''}
       ${body ? `<p style="margin:0 0 26px;font-family:${FONT};font-size:15px;line-height:1.65;color:${BRAND.graphite};">${richText(body)}</p>` : ''}
+      ${panelHtml(panel)}
       ${ctaHtml}
       ${outro ? `<p style="margin:0 0 22px;font-family:${FONT};font-size:14px;line-height:1.65;color:${BRAND.stone};">${richText(outro)}</p>` : ''}
       ${signOff ? `
@@ -133,10 +167,17 @@ export function renderEmail({
 </html>`
 }
 
-export function renderText({ greeting = '', body = '', cta = null, outro = '', signOff = 'The Lusso Team' }: EmailContent = {}): string {
+export function renderText({ greeting = '', body = '', panel = null, cta = null, outro = '', signOff = 'The Lusso Team' }: EmailContent = {}): string {
   const out: string[] = []
   if (greeting) out.push(greeting)
   if (body) out.push(body)
+  if (panel) {
+    const lines: string[] = []
+    if (panel.title)    lines.push(panel.title.toUpperCase())
+    if (panel.subtitle) lines.push(panel.subtitle)
+    ;(panel.rows || []).filter(r => r && r.value != null && r.value !== '').forEach(r => lines.push(`${r.label}: ${r.value}`))
+    if (lines.length) out.push(lines.join('\n'))
+  }
   if (cta?.url) out.push(`${cta.label}: ${cta.url}`)
   if (outro) out.push(outro)
   // Internal notifications pass an empty signOff — don't leave a dangling
