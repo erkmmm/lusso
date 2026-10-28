@@ -1401,23 +1401,160 @@ export async function batchUpsertPricedItems(items) {
 // only in each staff member's localStorage, which a customer's browser doesn't
 // have — so the quote page showed placeholder BSB/ABN details on a cold load.
 
-/** Read the shared settings. Returns null when offline or not yet configured. */
-export async function getBusinessSettings() {
-  if (!supabase) return null;
+/**
+ * Internal read that distinguishes "the row isn't there" from "we couldn't look".
+ *
+ * getBusinessSettings() collapses both to null, which is fine for rendering but
+ * not for deciding whether a write is safe: treating a failed read as an empty
+ * row would let a partial write through exactly when we are least able to check
+ * it. The write guard below needs the difference, so it reads through here.
+ */
+async function readBusinessSettingsRow() {
+  if (!supabase) return { read: false, settings: null };
   const { data, error } = await supabase
     .from('business_settings').select('settings').eq('id', 1).maybeSingle();
   if (error) {
     console.warn('[db] getBusinessSettings:', error.message);
-    return null;
+    return { read: false, settings: null };
   }
-  return data?.settings ?? null;
+  return { read: true, settings: data?.settings ?? null };
 }
 
-/** Mirror the local settings to the shared row. Fire-and-forget. */
+/** Read the shared settings. Returns null when offline or not yet configured. */
+export async function getBusinessSettings() {
+  return (await readBusinessSettingsRow()).settings;
+}
+
+// ── The write guard ───────────────────────────────────────────────────────────
+// This row outranks the code. fetchPublicQuoteSettings() spreads `remote` LAST,
+// so whatever lands here is what every customer sees — even on a bundle whose
+// DEFAULT_QUOTE_SETTINGS are perfectly correct. That asymmetry has already cost
+// us once: on 2026-08-31, 51 minutes after the real details were committed and
+// deployed, a tab still holding the pre-fix `lusso_quote_settings` saved
+// Settings and mirrored its stale copy here. Nothing errored and nothing was
+// logged, so every customer quote cold-loaded a Melbourne placeholder number
+// for two months while the CRM looked correct to staff (who read their own
+// localStorage, not the row).
+//
+// The mechanism is structural, not a one-off: saveQuoteSettings() spreads
+// saved-over-default, so a value frozen in localStorage beats the shipped
+// default and arrives here looking indistinguishable from a deliberate edit.
+
+/**
+ * Values that were once shipped as DEFAULT_QUOTE_SETTINGS and are now retired.
+ *
+ * A client offering one is replaying a stale copy rather than stating a fact
+ * about the business — Lusso has never had a Melbourne landline. That makes
+ * these safe to refuse outright in a way a general staleness test can't be:
+ * there is no future in which the right answer to businessPhone is 03 9000 1234.
+ * Add to this list whenever a customer-facing default is corrected.
+ */
+const RETIRED_SETTINGS_VALUES = {
+  businessName:  ['Lusso Blinds & Curtains'],
+  businessEmail: ['info@lusso.com.au'],
+  businessPhone: ['03 9000 1234'],
+};
+
+/**
+ * Fields the customer-facing quote cannot render honestly without.
+ *
+ * A write that drops one came from a bundle predating the field — the
+ * 2026-08-31 clobber arrived carrying 13 of the row's 32 keys. Enforced only
+ * against ground the row has already gained, so the first write to an empty row
+ * is still allowed to be partial.
+ */
+const REQUIRED_SETTINGS_KEYS = [
+  'businessName', 'businessEmail', 'businessPhone',
+  'businessAddress', 'businessABN', 'paymentDetails',
+];
+
+/**
+ * Decide whether `incoming` may replace `existing`, and what to actually write.
+ *
+ * Exported because the whole failure was that this decision happened invisibly.
+ * Returns { ok, reasons, payload }.
+ */
+export function vetBusinessSettings(incoming, existing) {
+  const reasons = [];
+
+  for (const [key, retired] of Object.entries(RETIRED_SETTINGS_VALUES)) {
+    const v = incoming?.[key];
+    if (typeof v === 'string' && retired.includes(v.trim()))
+      reasons.push(`${key} is the retired placeholder "${v}"`);
+  }
+
+  for (const key of REQUIRED_SETTINGS_KEYS) {
+    if (existing?.[key] !== undefined && incoming?.[key] === undefined)
+      reasons.push(`${key} is missing, and the row already has it`);
+  }
+
+  // Merge over the existing row rather than replacing it, so a write can never
+  // drop a key it simply doesn't know about. `operationWords` lives ONLY in this
+  // row — nothing in the code defaults it — and a plain upsert would erase the
+  // staff-entered wording. paymentDetails merges field-by-field, mirroring how
+  // the read side recombines it. operationWords deliberately replaces rather
+  // than merges: clearing a keyword has to be able to actually clear it.
+  const payload = {
+    ...(existing || {}),
+    ...incoming,
+    paymentDetails: {
+      ...(existing?.paymentDetails || {}),
+      ...(incoming?.paymentDetails || {}),
+    },
+  };
+
+  return { ok: reasons.length === 0, reasons, payload };
+}
+
+/**
+ * Mirror the local settings to the shared row, if they pass the guard.
+ *
+ * Reads the row back afterwards and compares: an upsert can report success
+ * without landing, and a save that silently did nothing is precisely the
+ * failure this row has already suffered, so it has to be loud.
+ */
 export async function saveBusinessSettings(settings) {
-  if (!supabase || !settings) return;
+  if (!supabase || !settings) return { ok: false, reasons: ['no client or no settings'] };
+
+  const { read, settings: existing } = await readBusinessSettingsRow();
+  if (!read) {
+    console.error(
+      '[db] saveBusinessSettings skipped: could not read the current row, so a ' +
+      'write might silently narrow it. The shared row was left untouched.',
+    );
+    return { ok: false, reasons: ['could not read the current row'] };
+  }
+
+  const { ok, reasons, payload } = vetBusinessSettings(settings, existing);
+  if (!ok) {
+    console.error(
+      '[db] saveBusinessSettings REFUSED. This browser is holding stale quote ' +
+      'settings and would have overwritten the live customer-facing details:' +
+      reasons.map(r => `\n  \u2022 ${r}`).join('') +
+      '\nThe shared row was left untouched. Clear this site\'s stored settings ' +
+      '(localStorage key "lusso_quote_settings") and reload before editing Settings.',
+    );
+    return { ok: false, reasons };
+  }
+
   const { error } = await supabase
     .from('business_settings')
-    .upsert({ id: 1, settings, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-  if (error) console.warn('[db] saveBusinessSettings:', error.message);
+    .upsert({ id: 1, settings: payload, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  if (error) {
+    console.error('[db] saveBusinessSettings failed:', error.message);
+    return { ok: false, reasons: [error.message] };
+  }
+
+  const saved = (await readBusinessSettingsRow()).settings;
+  const drift = REQUIRED_SETTINGS_KEYS.filter(
+    k => JSON.stringify(saved?.[k]) !== JSON.stringify(payload[k]),
+  );
+  if (drift.length) {
+    console.error(
+      '[db] saveBusinessSettings reported success but the row does not match on:',
+      drift, '— the customer quote page may be showing something else.',
+    );
+    return { ok: false, reasons: drift.map(k => `${k} did not persist`) };
+  }
+  return { ok: true, reasons: [] };
 }
