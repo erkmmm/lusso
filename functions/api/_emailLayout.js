@@ -161,6 +161,10 @@ function tableHtml(table) {
  * @param {string}  o.outro      Copy below the CTA.
  * @param {string}  o.signOff    Defaults to "The Lusso Team".
  * @param {string}  o.footerNote Small print under the footer rule.
+ * @param {{label:string,url:string}} [o.footerLink] Footer link rendered as a
+ *   real anchor. Marketing email uses it for the one-click unsubscribe the
+ *   Spam Act and the Gmail/Yahoo bulk-sender rules require; transactional mail
+ *   leaves it unset and the footer is unchanged.
  */
 export function renderEmail({
   preheader = '',
@@ -177,6 +181,7 @@ export function renderEmail({
   outro = '',
   signOff = 'The Lusso Team',
   footerNote = '',
+  footerLink = null,
 } = {}) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -230,6 +235,9 @@ export function renderEmail({
       <p style="margin:0;font-family:${FONT};font-size:11px;line-height:1.7;color:${BRAND.stone};">
         Lusso &middot; Fashion for Windows
         ${footerNote ? `<br>${richText(footerNote)}` : ''}
+        ${footerLink?.url && footerLink?.label
+          ? `<br><a href="${encodeURI(footerLink.url)}" style="color:${BRAND.stone};text-decoration:underline;">${escapeHtml(footerLink.label)}</a>`
+          : ''}
       </p>
     </td></tr>
 
@@ -245,7 +253,7 @@ export function renderEmail({
  * Plain-text alternative. Sending one alongside the HTML measurably improves
  * deliverability and is what text-only clients and screen readers fall back to.
  */
-export function renderText({ greeting = '', body = '', panel = null, cta = null, outro = '', signOff = 'The Lusso Team' } = {}) {
+export function renderText({ greeting = '', body = '', panel = null, cta = null, outro = '', signOff = 'The Lusso Team', footerLink = null } = {}) {
   const out = [];
   if (greeting) out.push(greeting);
   if (body) out.push(body);
@@ -261,5 +269,6 @@ export function renderText({ greeting = '', body = '', panel = null, cta = null,
   // Internal notifications pass an empty signOff — don't leave a dangling
   // "Kind regards," with nothing after it.
   out.push(signOff ? `Kind regards,\n${signOff}\n\nLusso · Fashion for Windows` : 'Lusso · Fashion for Windows');
+  if (footerLink?.url && footerLink?.label) out.push(`${footerLink.label}: ${footerLink.url}`);
   return out.join('\n\n');
 }

@@ -45,6 +45,13 @@ export interface EmailContent {
   outro?: string
   signOff?: string
   footerNote?: string
+  /**
+   * A link in the footer, rendered as a real anchor rather than escaped text.
+   * Exists for marketing email, which must carry a one-click unsubscribe to
+   * satisfy the Spam Act and the Gmail/Yahoo bulk-sender rules. Transactional
+   * mail leaves this unset and the footer is unchanged.
+   */
+  footerLink?: { label: string; url: string } | null
 }
 
 export function renderEmail({
@@ -57,6 +64,7 @@ export function renderEmail({
   outro = '',
   signOff = 'The Lusso Team',
   footerNote = '',
+  footerLink = null,
 }: EmailContent = {}): string {
   const eyebrowHtml = eyebrow ? `
     <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin:0 0 14px;">
@@ -122,6 +130,9 @@ export function renderEmail({
       <p style="margin:0;font-family:${FONT};font-size:11px;line-height:1.7;color:${BRAND.stone};">
         Lusso &middot; Fashion for Windows
         ${footerNote ? `<br>${richText(footerNote)}` : ''}
+        ${footerLink?.url && footerLink?.label
+          ? `<br><a href="${encodeURI(footerLink.url)}" style="color:${BRAND.stone};text-decoration:underline;">${escapeHtml(footerLink.label)}</a>`
+          : ''}
       </p>
     </td></tr>
 
@@ -133,7 +144,7 @@ export function renderEmail({
 </html>`
 }
 
-export function renderText({ greeting = '', body = '', cta = null, outro = '', signOff = 'The Lusso Team' }: EmailContent = {}): string {
+export function renderText({ greeting = '', body = '', cta = null, outro = '', signOff = 'The Lusso Team', footerLink = null }: EmailContent = {}): string {
   const out: string[] = []
   if (greeting) out.push(greeting)
   if (body) out.push(body)
@@ -142,5 +153,6 @@ export function renderText({ greeting = '', body = '', cta = null, outro = '', s
   // Internal notifications pass an empty signOff — don't leave a dangling
   // "Kind regards," with nothing after it.
   out.push(signOff ? `Kind regards,\n${signOff}\n\nLusso · Fashion for Windows` : 'Lusso · Fashion for Windows')
+  if (footerLink?.url && footerLink?.label) out.push(`${footerLink.label}: ${footerLink.url}`)
   return out.join('\n\n')
 }
