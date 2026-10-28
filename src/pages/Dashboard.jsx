@@ -13,6 +13,7 @@ import {
   DollarSign, ChevronDown, BarChart2, HardHat, Percent,
   SlidersHorizontal, Eye, EyeOff, FileText, X, Mail, Target, Package,
   Pencil, Trophy, CalendarDays, CalendarX, Timer, FileDown, UserX, Loader2,
+  Globe,
 } from 'lucide-react';
 import {
   getJobsFiltered, getCustomersFiltered, getActivity,
@@ -32,6 +33,8 @@ import { PIPELINE_RAMP } from '../lib/chartColors';
 import { deliverQuoteFollowUp } from '../lib/quoteDelivery';
 import { categorizeProduct } from '../lib/productCategories';
 import { downloadDashboardReport } from '../lib/dashboardReport';
+import { summariseLeadSources, sourceStyle } from '../lib/leadSource';
+import { useWebLeads } from '../hooks/useWebLeads';
 
 // Chart accent follows the active colour theme (Apex emerald by default).
 const ACCENT = 'var(--brand-500)';
@@ -978,6 +981,138 @@ function Seasonality({ data, lM }) {
   );
 }
 
+// ─── Where leads come from ────────────────────────────────────────────────────
+// Website enquiries, rolled up two ways: what sent them, and which page they
+// came in on. The entry page is what SEO and ads actually buy, and it is only
+// recorded on leads taken since the site started carrying it — so the page
+// column can fall back to the page the form was on, which every lead has.
+function LeadSourceRows({ rows, total, lI, onOpen, empty }) {
+  if (!rows.length) return <p className="px-5 py-8 text-center text-sm text-slate-400">{empty}</p>;
+  const max = Math.max(...rows.map(r => r.count));
+  return (
+    <div className="divide-y divide-slate-50">
+      {rows.map(r => (
+        <button
+          key={r.key}
+          onClick={onOpen}
+          title={r.path || r.label}
+          className="w-full flex items-center gap-3 px-5 py-2.5 text-left hover:bg-slate-50 transition-colors"
+        >
+          <span className="flex-1 min-w-0 text-sm text-slate-700 truncate">{r.label}</span>
+          <div className="hidden sm:block w-24 h-1.5 rounded-full bg-slate-100 overflow-hidden flex-shrink-0">
+            <div className={`h-full rounded-full ${r.bar || 'bg-amber-400'}`} style={{ width: `${(r.count / max) * 100}%` }} />
+          </div>
+          <span className="w-14 flex-shrink-0 text-right text-sm font-semibold text-slate-800 tabular-nums">
+            {lI(r.count)}
+          </span>
+          <span className="w-16 flex-shrink-0 text-right text-xs tabular-nums text-slate-400">
+            {Math.round((r.count / total) * 100)}%
+          </span>
+          <span
+            className={`w-14 flex-shrink-0 text-right text-xs tabular-nums ${r.converted ? 'text-emerald-600' : 'text-slate-300'}`}
+            title={`${r.converted} of ${r.count} became a customer`}
+          >
+            {lI(r.converted)} won
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LeadSources({ summary, loading, navigate, lI }) {
+  // Nothing to see in the entry-page view until the site has recorded some,
+  // so open on the one that holds every lead ever taken.
+  const [pageMode, setPageMode] = useState('entry');
+  const effectiveMode = summary.firstTouchCount > 0 ? pageMode : 'form';
+  const unknownPages = summary.entryPages.find(p => p.key === '__unknown__')?.count ?? 0;
+
+  const sourceRows = summary.sources.map(r => ({ ...r, bar: sourceStyle(r.kind).bar }));
+  const pageRows = effectiveMode === 'entry' ? summary.entryPages : summary.formPages;
+
+  const openInbox = () => navigate('/inbox');
+
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+            <Globe size={15} className="text-amber-500" /> Where Leads Come From
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {loading
+              ? 'Loading website enquiries…'
+              : `${lI(summary.total)} website enquir${summary.total === 1 ? 'y' : 'ies'} in this period`}
+          </p>
+        </div>
+        <button
+          onClick={openInbox}
+          className="text-xs text-amber-600 hover:underline flex items-center gap-1 flex-shrink-0"
+        >
+          View leads <ArrowRight size={12} />
+        </button>
+      </div>
+
+      {summary.total === 0 && !loading ? (
+        <p className="px-5 py-10 text-center text-sm text-slate-400">
+          No website enquiries in this period.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-slate-100">
+          <div className="min-w-0">
+            <div className="px-5 pt-4 pb-2">
+              <h3 className="text-xs font-semibold tracking-wide uppercase text-slate-400">What sent them</h3>
+            </div>
+            <LeadSourceRows
+              rows={sourceRows} total={summary.total} lI={lI} onOpen={openInbox}
+              empty="Nothing recorded yet."
+            />
+          </div>
+
+          <div className="min-w-0 border-t lg:border-t-0 border-slate-100">
+            <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold tracking-wide uppercase text-slate-400">
+                {effectiveMode === 'entry' ? 'Pages that bring them in' : 'Pages they enquire from'}
+              </h3>
+              {summary.firstTouchCount > 0 && (
+                <div className="flex gap-1 flex-shrink-0">
+                  {[
+                    { id: 'entry', label: 'Landed on' },
+                    { id: 'form',  label: 'Enquired from' },
+                  ].map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => setPageMode(m.id)}
+                      className={`text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors ${
+                        effectiveMode === m.id
+                          ? 'bg-slate-800 text-white border-slate-800'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <LeadSourceRows
+              rows={pageRows} total={summary.total} lI={lI} onOpen={openInbox}
+              empty="Nothing recorded yet."
+            />
+            {effectiveMode === 'entry' && unknownPages > 0 && (
+              <p className="px-5 py-3 text-xs text-slate-400">
+                {unknownPages === summary.total
+                  ? 'No entry pages recorded yet — this fills in as new leads arrive.'
+                  : `${unknownPages} of these came in before the site recorded an entry page.`}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ─── Top Customers by lifetime value ───────────────────────────────────────────
 function TopCustomers({ items, navigate, lM, lI }) {
   return (
@@ -1033,6 +1168,10 @@ export default function Dashboard() {
 
   const customers = getCustomersFiltered(isAM, displayName);
   const activity  = getActivity();
+
+  // Website enquiries live in Supabase rather than the local store, so they
+  // come through their own cached read instead of getXFiltered().
+  const { leads: webLeads, loading: leadsLoading } = useWebLeads();
 
   // Every salesperson seen anywhere — job assignments AND quote salespeople
   // (the imported history carries names that never appear on a job).
@@ -1109,6 +1248,11 @@ export default function Dashboard() {
       };
     });
   }, [quotes]);
+
+  const leadSummary = useMemo(() => {
+    const range = getDateRange(globalRange);
+    return summariseLeadSources(webLeads.filter(l => inRange(l.created_at, range)));
+  }, [webLeads, globalRange]);
 
   // Captured once, so the age maths below is a pure function of state rather
   // than a Date.now() call during render.
@@ -1826,6 +1970,11 @@ export default function Dashboard() {
           <Seasonality data={seasonality} lM={lM} />
         </div>
         <TopCustomers items={topCustomers} navigate={navigate} lM={lM} lI={lI} />
+      </div>
+
+      {/* ── Row 3c · Where website leads come from ───────────────────────────── */}
+      <div className="animate-fade-up" style={{ animationDelay: '340ms' }}>
+        <LeadSources summary={leadSummary} loading={leadsLoading} navigate={navigate} lI={lI} />
       </div>
 
       {/* ── Row 4 · Recent quotes + Targets / Top salespeople ────────────────── */}
