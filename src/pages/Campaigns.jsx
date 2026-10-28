@@ -138,7 +138,7 @@ export default function Campaigns() {
   };
 
   if (loading) {
-    return <div className="flex items-center gap-2 text-slate-400 text-sm p-8">
+    return <div className="p-4 sm:p-6 max-w-4xl mx-auto flex items-center gap-2 text-slate-400 text-sm">
       <Loader2 size={16} className="animate-spin" /> Loading campaigns…
     </div>;
   }
@@ -147,7 +147,13 @@ export default function Campaigns() {
   const campaigns = data?.campaigns ?? [];
 
   return (
-    <div className="space-y-6">
+    // Without this frame the cards ran the full width of the content area while
+    // every other page sits in a centred column. There is no single width in
+    // this app — pages are spread across max-w-4xl/5xl/6xl/7xl — so this takes
+    // the narrow end, matching Today, Reviews, Users and ContentQueue. Note
+    // that /content (Content.jsx, directly above this in the Marketing nav) is
+    // max-w-6xl, so those two deliberately do not match.
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
