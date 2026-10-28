@@ -1,0 +1,575 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   GLASS — a visionOS-style frosted theme for the whole app
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Ported from the "Glassy Dashboard" kit. The app has ~330 cards across 48
+   pages, so this is deliberately NOT a per-page rewrite: dark mode already
+   funnels every Tailwind surface utility through semantic tokens
+   (`.dark .bg-white { background-color: var(--surf-card) }` and friends), so
+   a glass skin only has to (a) make those tokens translucent and (b) add one
+   backdrop-filter pass on the surfaces that are allowed to frost. Every page
+   inherits the material for free, and nothing here is page-specific.
+
+   Everything is scoped to `html.theme-glass:not([data-public])`, which also force-enables `.dark`
+   (see ThemeContext). The `html` prefix is load-bearing: it lifts specificity
+   to (0,2,1) so these rules beat the unlayered `.dark .bg-white` block in
+   index.css no matter what order the two files end up in.
+
+   Two things are deliberately left alone:
+     • the public customer quote page (`.quote-public`) — it renders the fixed
+       Lusso brand kit and must look identical on every route and theme;
+     • print — a frosted panel prints as a grey smear.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 · Material tokens ───────────────────────────────────────────────────
+   The smoke is warmed slightly against the default wallpaper (a sunlit room);
+   the kit's neutral grey read cold and plastic over it. */
+html.theme-glass:not([data-public]) {
+  --glass-blur: 30px;
+  --glass-sat: 150%;
+  --glass-rgb: 38, 34, 31;
+  --glass-alpha: 0.52;
+  --glass-fill: rgba(var(--glass-rgb), var(--glass-alpha));
+
+  /* Nested surfaces never frost again (see §4), so they carry their own fill */
+  --glass-nested: rgba(255, 255, 255, 0.07);
+  --glass-nested-2: rgba(255, 255, 255, 0.12);
+  --glass-sunken: rgba(0, 0, 0, 0.18);
+
+  /* Floating things — menus, modals, popovers — sit deeper so body text on
+     them stays readable over a busy photo. */
+  --glass-deep: rgba(26, 23, 21, 0.82);
+
+  --glass-shadow:
+    0 34px 70px -28px rgba(0, 0, 0, 0.55),
+    0 12px 28px -16px rgba(0, 0, 0, 0.4);
+  --glass-rim: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+
+  /* Wallpaper dimming. Much heavier than the kit's 0.26 — a CRM is wall-to-wall
+     12px text, and the original let the bright sky punch straight through it. */
+  --bg-dim: 0.46;
+
+  /* Motion (a global multiplier; 0 disables every entrance) */
+  --motion: 1;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-dolly: cubic-bezier(0.16, 1, 0.3, 1);
+
+  color-scheme: dark;
+}
+
+/* ── 2 · Semantic token remap ──────────────────────────────────────────────
+   These are the same names dark mode already uses, so all 326 `bg-white`s,
+   every border utility and all the text ramps follow along without edits. */
+html.theme-glass:not([data-public]) {
+  --surf-page: transparent;
+  --surf-page-rgb: 255 255 255;
+  --surf-card: var(--glass-fill);
+  --surf-muted: var(--glass-nested);
+  --surf-hover: var(--glass-nested-2);
+
+  --bord-strong: rgba(255, 255, 255, 0.18);
+  --bord-default: rgba(255, 255, 255, 0.13);
+  --bord-subtle: rgba(255, 255, 255, 0.1);
+  --bord-faint: rgba(255, 255, 255, 0.07);
+
+  /* Brighter than dark mode's ramp: glass sits over a photograph, not #111 */
+  --txt-primary: rgba(255, 255, 255, 0.96);
+  --txt-secondary: rgba(255, 255, 255, 0.82);
+  --txt-muted: rgba(255, 255, 255, 0.68);
+  --txt-faint: rgba(255, 255, 255, 0.54);
+  --txt-faintest: rgba(255, 255, 255, 0.4);
+
+  /* Keep Lusso bronze as the accent — a warm wallpaper would fight the kit's
+     cornflower blue — but lift it to the dark-mode tint so it reads on glass. */
+  --brand-bright: #ffd9b0;
+  --brand-bright-rgb: 255 217 176;
+
+  --sb-bg: rgba(20, 17, 15, 0.56);
+  --sb-hover: rgba(255, 255, 255, 0.1);
+  --sb-active: rgba(255, 255, 255, 0.18);
+  --sb-border: rgba(255, 255, 255, 0.1);
+  --sb-text: rgba(255, 255, 255, 0.76);
+
+  /* Chart furniture. Lighter than the flat-dark values — glass sits over a
+     photograph, so a 0.08 gridline disappears into the wallpaper. */
+  --chart-track: rgba(255, 255, 255, 0.14);
+  --chart-grid: rgba(255, 255, 255, 0.12);
+  --chart-axis: rgba(255, 255, 255, 0.58);
+
+  --card: var(--glass-fill);
+  --popover: var(--glass-deep);
+  --muted: var(--glass-nested);
+  --border: rgba(255, 255, 255, 0.13);
+  --input: rgba(255, 255, 255, 0.22);
+  --background: transparent;
+  --foreground: rgba(255, 255, 255, 0.96);
+}
+
+/* ── 3 · The wallpaper ─────────────────────────────────────────────────────
+   A fixed layer behind everything. The shell, the scroll area and the page
+   background all go transparent so it shows through the gutters. */
+/* Only <html> carries the fallback colour. If <body> keeps one too it paints
+   as an ordinary in-flow block background — which lands ON TOP of the
+   z-index:-1 wallpaper and hides it completely. */
+html.theme-glass:not([data-public]) {
+  background-color: #1c1a19 !important;
+}
+
+html.theme-glass:not([data-public]) body {
+  background-color: transparent !important;
+}
+
+html.theme-glass:not([data-public]) #root,
+html.theme-glass:not([data-public]) .app-shell,
+html.theme-glass:not([data-public]) .app-main,
+html.theme-glass:not([data-public]) .loading-screen {
+  background-color: transparent !important;
+}
+
+/* z-index -1, matching the existing <ThemeBackground> canvas. At 0 this is a
+   fixed element in the root stacking context and paints OVER every unpositioned
+   page — the login screen disappeared behind it. Negative z-index drops it
+   behind the whole document instead, which is why #root has to stay
+   transparent (below). */
+.glass-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  /* Also the "No photo" backdrop (Settings → Wallpaper). A photo covers this
+     completely, so it only shows when there isn't one — a warm graded room
+     rather than a flat fill, because glass over a dead-flat colour stops
+     reading as glass at all (nothing for the frost to refract). */
+  background:
+    radial-gradient(90% 70% at 18% 0%, #3a322c 0%, transparent 60%),
+    radial-gradient(80% 60% at 100% 100%, #2b2521 0%, transparent 55%),
+    #1b1917;
+}
+
+.glass-bg__img {
+  position: absolute;
+  inset: -2%;
+  background-position: center;
+  background-size: cover;
+  animation: glass-bg-in calc(1600ms * var(--motion)) var(--ease-out) backwards;
+}
+
+.glass-bg__shade {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 85% at 50% 12%, transparent 30%, rgba(0, 0, 0, 0.45) 100%),
+    linear-gradient(rgba(12, 10, 9, var(--bg-dim)), rgba(12, 10, 9, var(--bg-dim)));
+}
+
+@keyframes glass-bg-in {
+  from {
+    opacity: 0;
+    transform: scale(1.1);
+    filter: blur(24px) saturate(0.7);
+  }
+}
+
+/* The wallpaper mounts at the app root, so it also has to stand down on the
+   customer-facing routes — otherwise a quote would render brand-kit-correct
+   panels on top of a staff member's wallpaper. */
+html[data-public] .glass-bg {
+  display: none;
+}
+
+/* ── 4 · The glass material ────────────────────────────────────────────────
+   `bg-white` is the card convention across the whole codebase (and what
+   <Card> renders), so it is the one hook that frosts.
+
+   Only TOP-LEVEL cards frost. A backdrop-filter inside a backdrop-filter
+   blurs the already-blurred result — sections nested in a card go muddy and
+   cost a second full-screen pass each. §4b flattens them back to a plain
+   translucent fill, which is also what the kit does with `flat` glass. */
+html.theme-glass:not([data-public]) .bg-white {
+  background-color: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-shadow), var(--glass-rim);
+  border-color: var(--bord-strong);
+}
+
+/* 4b · Nested glass — one pass only. Matches at any depth, so a card three
+   levels down is still flat. */
+html.theme-glass:not([data-public]) .bg-white .bg-white {
+  background-color: var(--glass-nested);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* 4c · Inner panels. These are "sunken" areas inside a card (table heads,
+   summary strips, empty states) — they read as recesses in the glass. */
+html.theme-glass:not([data-public]) .bg-slate-50,
+html.theme-glass:not([data-public]) .bg-slate-100,
+html.theme-glass:not([data-public]) .bg-slate-50\/80,
+html.theme-glass:not([data-public]) .bg-slate-50\/60,
+html.theme-glass:not([data-public]) .bg-slate-50\/50,
+html.theme-glass:not([data-public]) .bg-slate-50\/40,
+html.theme-glass:not([data-public]) .bg-slate-50\/30 {
+  background-color: var(--glass-nested);
+}
+
+html.theme-glass:not([data-public]) .bg-slate-200 {
+  background-color: var(--glass-nested-2);
+}
+
+/* The one hard-coded page surface in the app — the auth screens' off-white
+   half (`bg-[#F7F8F6]`). It is an arbitrary value, so it bypasses the token
+   remap above and would sit as an opaque sheet over the wallpaper. */
+html.theme-glass:not([data-public]) .bg-\[\#F7F8F6\] {
+  background-color: transparent;
+}
+
+/* 4d · Floating surfaces — modals, dropdowns, popovers, the command palette.
+   Deeper fill and a stronger blur: these carry dense text and often sit over
+   the brightest part of the wallpaper. */
+html.theme-glass:not([data-public]) .fixed.inset-0 > .bg-white,
+html.theme-glass:not([data-public]) .fixed.inset-0 .bg-white:not(.bg-white *),
+html.theme-glass:not([data-public]) [class*='z-50'].bg-white,
+html.theme-glass:not([data-public]) .absolute.bg-white,
+html.theme-glass:not([data-public]) .shadow-xl.bg-white,
+html.theme-glass:not([data-public]) .bg-white.shadow-xl,
+html.theme-glass:not([data-public]) .bg-white.shadow-2xl {
+  background-color: var(--glass-deep);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  backdrop-filter: blur(40px) saturate(160%);
+  box-shadow:
+    0 40px 90px -30px rgba(0, 0, 0, 0.7),
+    var(--glass-rim);
+}
+
+/* 4e · The scrim behind a modal. The app's `bg-black/40` is doing the job of
+   two things here — dimming AND separating — so it gets a blur as well. */
+html.theme-glass:not([data-public]) .fixed.inset-0.bg-black\/40,
+html.theme-glass:not([data-public]) .fixed.inset-0.bg-black\/50,
+html.theme-glass:not([data-public]) .fixed.inset-0.bg-black\/60 {
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* ── 5 · Shape ─────────────────────────────────────────────────────────────
+   The kit's defining proportion is its radius: 22–30px where a conventional
+   dashboard uses 8–12. Scaling the whole radius scale up is most of what
+   makes the app read as "the glassy one" at a glance. */
+html.theme-glass:not([data-public]) .rounded-lg { border-radius: 14px; }
+html.theme-glass:not([data-public]) .rounded-xl { border-radius: 20px; }
+html.theme-glass:not([data-public]) .rounded-2xl { border-radius: 26px; }
+html.theme-glass:not([data-public]) .rounded-3xl { border-radius: 32px; }
+html.theme-glass:not([data-public]) .rounded-md { border-radius: 10px; }
+
+/* ── 6 · Depth ─────────────────────────────────────────────────────────────
+   Flat Tailwind shadows under-sell glass; it needs the long soft cast that
+   makes a panel look like it is floating in front of the room. */
+/* `:not(.bg-white)` because a card is nearly always `bg-white shadow-sm`, and
+   both rules match at the same specificity — so whichever came last won. The
+   card's own deep cast (§4) is the one that should survive; this is for the
+   non-card things that carry a shadow (buttons, chips, floating bars). */
+html.theme-glass:not([data-public]) .shadow-sm:not(.bg-white),
+html.theme-glass:not([data-public]) .shadow:not(.bg-white) {
+  box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.5), var(--glass-rim);
+}
+
+html.theme-glass:not([data-public]) .shadow-lg:not(.bg-white),
+html.theme-glass:not([data-public]) .shadow-xl:not(.bg-white),
+html.theme-glass:not([data-public]) .shadow-2xl:not(.bg-white) {
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.65), var(--glass-rim);
+}
+
+/* ── 7 · Controls ──────────────────────────────────────────────────────────
+   Inputs become recesses cut into the glass rather than white boxes sat on
+   top of it. */
+html.theme-glass:not([data-public]) input:not([type='checkbox']):not([type='radio']):not([type='range']),
+html.theme-glass:not([data-public]) textarea,
+html.theme-glass:not([data-public]) select {
+  background-color: var(--glass-sunken);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--txt-primary);
+}
+
+html.theme-glass:not([data-public]) input::placeholder,
+html.theme-glass:not([data-public]) textarea::placeholder {
+  color: var(--txt-faintest);
+}
+
+html.theme-glass:not([data-public]) input:focus,
+html.theme-glass:not([data-public]) textarea:focus,
+html.theme-glass:not([data-public]) select:focus {
+  background-color: rgba(0, 0, 0, 0.26);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+/* The native dropdown list is an OS surface, so it needs a real colour —
+   a transparent one renders as unreadable white-on-white. */
+html.theme-glass:not([data-public]) select option {
+  background-color: #241f1c;
+  color: #fff;
+}
+
+/* 7b · The primary button keeps Lusso bronze but gains the kit's specular top
+   edge, so it reads as a lit solid sitting on the glass. */
+html.theme-glass:not([data-public]) .bg-amber-500 {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 24px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* 7c · Secondary/ghost buttons — anything using a light slate fill. */
+html.theme-glass:not([data-public]) .bg-slate-50:hover,
+html.theme-glass:not([data-public]) .hover\:bg-slate-50:hover,
+html.theme-glass:not([data-public]) .hover\:bg-slate-100:hover {
+  background-color: var(--glass-nested-2);
+}
+
+/* 7d · Tinted status chips (bg-green-50, bg-red-50, …). The 50-weight tints
+   are designed for white paper and vanish on glass; re-cut them as a wash of
+   their own hue at a weight that survives. */
+html.theme-glass:not([data-public]) [class*='bg-green-50'] { background-color: rgba(94, 230, 154, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-red-50'] { background-color: rgba(255, 125, 125, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-amber-50'] { background-color: rgba(255, 201, 92, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-orange-50'] { background-color: rgba(255, 170, 92, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-blue-50'] { background-color: rgba(118, 180, 255, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-sky-50'] { background-color: rgba(120, 200, 255, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-teal-50'] { background-color: rgba(94, 226, 210, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-violet-50'] { background-color: rgba(155, 140, 255, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-purple-50'] { background-color: rgba(176, 140, 255, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-yellow-50'] { background-color: rgba(255, 221, 92, 0.16); }
+html.theme-glass:not([data-public]) [class*='bg-slate-100'] { background-color: rgba(255, 255, 255, 0.12); }
+
+/* Their text needs lifting to match — the 600/700 weights were picked against
+   a near-white tint. */
+html.theme-glass:not([data-public]) .text-green-600, html.theme-glass:not([data-public]) .text-green-700, html.theme-glass:not([data-public]) .text-green-800 { color: #7df0ae; }
+html.theme-glass:not([data-public]) .text-red-600, html.theme-glass:not([data-public]) .text-red-700, html.theme-glass:not([data-public]) .text-red-800 { color: #ff9b9b; }
+html.theme-glass:not([data-public]) .text-orange-600, html.theme-glass:not([data-public]) .text-orange-700 { color: #ffc08a; }
+html.theme-glass:not([data-public]) .text-blue-600, html.theme-glass:not([data-public]) .text-blue-700, html.theme-glass:not([data-public]) .text-blue-800 { color: #9ccaff; }
+html.theme-glass:not([data-public]) .text-sky-600, html.theme-glass:not([data-public]) .text-sky-700 { color: #93d4ff; }
+html.theme-glass:not([data-public]) .text-teal-600, html.theme-glass:not([data-public]) .text-teal-700 { color: #80e8da; }
+html.theme-glass:not([data-public]) .text-violet-600, html.theme-glass:not([data-public]) .text-violet-700 { color: #b9adff; }
+html.theme-glass:not([data-public]) .text-purple-600, html.theme-glass:not([data-public]) .text-purple-700 { color: #c9a9ff; }
+html.theme-glass:not([data-public]) .text-yellow-600, html.theme-glass:not([data-public]) .text-yellow-700 { color: #ffe08a; }
+
+/* ── 8 · The side dock ─────────────────────────────────────────────────────
+   The kit's dock is a floating pill of glass, not a wall. The sidebar keeps
+   its own geometry (it holds far more than the kit's 8 icons) but detaches
+   from the edge and frosts. */
+html.theme-glass:not([data-public]) .app-sidebar {
+  background-color: var(--sb-bg) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(150%);
+  backdrop-filter: blur(36px) saturate(150%);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@media (min-width: 1024px) {
+  html.theme-glass:not([data-public]) .app-sidebar {
+    margin: 14px 0 14px 14px;
+    border-radius: 26px;
+    border-right: 0;
+    box-shadow: var(--glass-shadow), var(--glass-rim);
+    height: calc(100vh - 28px);
+  }
+}
+
+/* The active nav item is a bright solid in the kit — the one opaque thing on
+   screen, which is what makes it read as "you are here" through the frost. */
+html.theme-glass:not([data-public]) .app-sidebar a[aria-current='page'] {
+  background-color: rgba(255, 255, 255, 0.92);
+  color: #141416;
+  font-weight: 600;
+  box-shadow: 0 10px 24px -10px rgba(255, 255, 255, 0.3);
+}
+
+html.theme-glass:not([data-public]) .app-sidebar a[aria-current='page'] svg {
+  color: #141416;
+}
+
+/* ── 9 · Top bar + bottom nav ──────────────────────────────────────────────
+   Both are `bg-white` so §4 already frosts them; these just restore the edge
+   treatment the kit uses (a hairline, no hard border). */
+html.theme-glass:not([data-public]) header.bg-white {
+  background-color: rgba(26, 23, 21, 0.6);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+html.theme-glass:not([data-public]) nav.bg-white {
+  background-color: rgba(26, 23, 21, 0.72);
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ── 10 · Tables ───────────────────────────────────────────────────────────
+   Zebra striping and hard rules both fight the material; the kit separates
+   rows with light alone. */
+html.theme-glass:not([data-public]) table thead {
+  background-color: var(--glass-nested);
+}
+
+html.theme-glass:not([data-public]) table tbody tr {
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+html.theme-glass:not([data-public]) table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ── 11 · Page entrance ────────────────────────────────────────────────────
+   The kit's signature move: the page arrives from in front of the viewer —
+   slightly oversized and blurred — and settles back into the room, with its
+   cards staggering in behind it.
+
+   This is the cheap version of the kit's ViewStage. The real one cross-fades
+   two live pages and re-aims every panel's transform-origin at the viewport
+   centre; that needs every panel to be a component it controls. Here the
+   wrapper re-keys on the route (see Layout) and the stagger comes from
+   nth-child, which costs nothing and survives any page layout. */
+/* `display: contents` — the wrapper exists ONLY to carry the route key, and
+   must leave no box behind. Two things go wrong the moment it becomes a real
+   element:
+
+     1. It would be an ancestor with `opacity`/`filter` during the entrance,
+        and that blanks `backdrop-filter` on every card inside it — the panels
+        would un-frost for the length of the animation and pop back. (This is
+        why the kit animates each panel individually and keeps the glass layer
+        on a separate child, rather than animating a page container.)
+     2. `h-full` on a page root resolves against its parent. Six pages
+        (Inbox, JobTakeoff, InstallView, Dashboard, ContentQueue,
+        ImportQuotes) size themselves that way off <main>, and an auto-height
+        div in between collapses them — in every theme, not just this one.
+
+   So the camera move lives on the cards, which is also where the kit puts it. */
+.glass-stage {
+  display: contents;
+}
+
+/* Cards materialize in sequence. Capped at 8 — past that the stagger stops
+   reading as choreography and starts reading as lag.
+
+   Transform, opacity and blur are all on the card ITSELF, never on a wrapper:
+   on the element, they composite with its own backdrop-filter just fine; on an
+   ancestor, they would destroy it. */
+html.theme-glass:not([data-public]) .glass-stage .bg-white {
+  animation: glass-card-in calc(560ms * var(--motion)) var(--ease-dolly) backwards;
+}
+
+html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(1) { animation-delay: calc(40ms * var(--motion)); }
+html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(2) { animation-delay: calc(100ms * var(--motion)); }
+html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(3) { animation-delay: calc(160ms * var(--motion)); }
+html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(4) { animation-delay: calc(220ms * var(--motion)); }
+html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(5) { animation-delay: calc(280ms * var(--motion)); }
+html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(6) { animation-delay: calc(330ms * var(--motion)); }
+html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(7) { animation-delay: calc(370ms * var(--motion)); }
+html.theme-glass:not([data-public]) .glass-stage .bg-white:nth-child(n + 8) { animation-delay: calc(400ms * var(--motion)); }
+
+@keyframes glass-card-in {
+  from {
+    opacity: 0;
+    transform: scale(1.06) translateY(-4px);
+    filter: blur(8px);
+  }
+}
+
+/* A modal is not part of the page, so it must not inherit the page's entrance
+   — it has its own, and running both reads as a double-take. */
+html.theme-glass:not([data-public]) .glass-stage .fixed .bg-white {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-glass:not([data-public]) {
+    --motion: 0;
+  }
+
+  html.theme-glass:not([data-public]) .glass-stage .bg-white,
+  .glass-bg__img {
+    animation: none;
+  }
+}
+
+/* ── 11b · Sticky surfaces must be opaque ──────────────────────────────────
+   A pinned column or a pinned header is the one place glass cannot be glass.
+   Sticky cells are what the rest of the table scrolls UNDER, so a translucent
+   one shows the moving content straight through itself — on the measure sheet
+   that reads as the Location column overlapping the columns sliding beneath
+   it. (Also why they drop backdrop-filter: a blur pass per cell on a 60-row
+   sheet is real cost for an effect that has to be hidden anyway.)
+
+   The tints are the same hues as the chips in §7d, composited over an opaque
+   base instead of over the wallpaper, so a pinned warning cell still matches
+   an unpinned one. */
+html.theme-glass:not([data-public]) {
+  --pin-base: #262220;
+}
+
+html.theme-glass:not([data-public]) .sticky.bg-white,
+html.theme-glass:not([data-public]) .sticky.bg-slate-50,
+html.theme-glass:not([data-public]) .sticky.bg-slate-100,
+html.theme-glass:not([data-public]) .sticky.bg-amber-50,
+html.theme-glass:not([data-public]) .sticky.bg-amber-100,
+html.theme-glass:not([data-public]) .sticky.bg-red-50 {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+html.theme-glass:not([data-public]) .sticky.bg-white { background-color: var(--pin-base); }
+html.theme-glass:not([data-public]) .sticky.bg-slate-50 { background-color: color-mix(in srgb, #ffffff 7%, var(--pin-base)); }
+html.theme-glass:not([data-public]) .sticky.bg-slate-100 { background-color: color-mix(in srgb, #ffffff 12%, var(--pin-base)); }
+html.theme-glass:not([data-public]) .sticky.bg-amber-50 { background-color: color-mix(in srgb, #ffc95c 16%, var(--pin-base)); }
+html.theme-glass:not([data-public]) .sticky.bg-amber-100 { background-color: color-mix(in srgb, #ffc95c 26%, var(--pin-base)); }
+html.theme-glass:not([data-public]) .sticky.bg-red-50 { background-color: color-mix(in srgb, #ff7d7d 18%, var(--pin-base)); }
+
+/* ── 11c · Hover and state fills ───────────────────────────────────────────
+   `hover:bg-white` is a DIFFERENT class from `bg-white` — the material rule in
+   §4 never matched it, so hovering painted a solid white box under text that
+   this theme has already turned white. Every light-fill variant in the app is
+   listed here; grep for `:bg-white` and `:bg-slate-` before adding a new one. */
+html.theme-glass:not([data-public]) .hover\:bg-white:hover,
+html.theme-glass:not([data-public]) .hover\:bg-slate-200:hover,
+html.theme-glass:not([data-public]) .group:hover .group-hover\:bg-slate-50,
+html.theme-glass:not([data-public]) .active\:bg-slate-100:active {
+  background-color: var(--glass-nested-2);
+}
+
+html.theme-glass:not([data-public]) .hover\:bg-slate-50\/60:hover,
+html.theme-glass:not([data-public]) .hover\:bg-slate-50\/50:hover {
+  background-color: var(--glass-nested);
+}
+
+/* A hovered sticky cell has to stay opaque too, or it goes see-through for
+   exactly as long as the pointer is on it. */
+html.theme-glass:not([data-public]) .sticky.hover\:bg-white:hover,
+html.theme-glass:not([data-public]) .sticky.hover\:bg-slate-50:hover,
+html.theme-glass:not([data-public]) .sticky.hover\:bg-slate-100:hover {
+  background-color: color-mix(in srgb, #ffffff 12%, var(--pin-base));
+}
+
+/* ── 12 · Exclusions ───────────────────────────────────────────────────────
+   Every rule above is scoped `:not([data-public])`. The customer-facing routes
+   (the quote preview, the install response) set `data-public` on <html> while
+   they are mounted, which switches the entire theme off in one move — glass,
+   wallpaper, token remap and all.
+
+   It is an attribute on <html> rather than a class on each page root because
+   those pages render the fixed Lusso brand kit (Paper/Ink/Bronze) and must
+   look identical on every route and in every theme, for a customer who has no
+   idea the staff app exists. A per-element opt-out would have to be repeated
+   on every modal and portal they open; this cannot be missed. */
+
+/* Frosted glass prints as a grey smear, and the wallpaper as a full-page
+   photo. Both go away. */
+@media print {
+  .glass-bg {
+    display: none !important;
+  }
+
+  html.theme-glass:not([data-public]) *,
+  html.theme-glass:not([data-public]) .bg-white {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    animation: none !important;
+  }
+}

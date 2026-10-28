@@ -3,7 +3,17 @@
  * Calm, premium palette (muted, never neon), tuned to Lusso's brand.
  * All charts are responsive (viewBox-scaled) and theme/dark-mode friendly
  * because they read `currentColor` / slate-neutral strokes where possible.
+ *
+ * The three structural colours below (donut track, gridlines, axis labels)
+ * used to be literal near-white hexes, which meant the chart furniture stayed
+ * paper-coloured on every dark theme — a glowing white donut track on a dark
+ * card. They are CSS variables now, defined per theme in index.css; the
+ * fallbacks here are the original light-mode values, so nothing moves for the
+ * themes that were already correct.
  */
+const TRACK = 'var(--chart-track, #EAEBE6)';
+const GRID  = 'var(--chart-grid, #EEEFEA)';
+const AXIS  = 'var(--chart-axis, #9AA0A6)';
 import { useId } from 'react';
 import { useMountAnimation } from '../hooks/useMountAnimation';
 import { useDashPrivacy, FIG_BLUR } from './PrivacyFig';
@@ -29,7 +39,7 @@ export function DonutChart({ data, centerValue, centerLabel, size = 168, thickne
       <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={centerLabel || 'chart'}>
           {/* track */}
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EAEBE6" strokeWidth={thickness} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={TRACK} strokeWidth={thickness} />
           {total > 0 && items.map((d, i) => {
             const frac = d.value / total;
             const len = frac * c;
@@ -101,9 +111,9 @@ export function LineChart({ series, xLabels, height = 220 }) {
         const yy = padT + ih - g * ih;
         return (
           <g key={i}>
-            <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#EEEFEA" strokeWidth="1" />
-            <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize="10" fill="#9AA0A6">{money(g * maxL)}</text>
-            {right && <text x={W - padR + 8} y={yy + 3} textAnchor="start" fontSize="10" fill="#9AA0A6">{Math.round(g * maxR)}</text>}
+            <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke={GRID} strokeWidth="1" />
+            <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize="10" fill={AXIS}>{money(g * maxL)}</text>
+            {right && <text x={W - padR + 8} y={yy + 3} textAnchor="start" fontSize="10" fill={AXIS}>{Math.round(g * maxR)}</text>}
           </g>
         );
       })}
@@ -119,7 +129,7 @@ export function LineChart({ series, xLabels, height = 220 }) {
       ))}
       {xLabels.map((lb, i) => (
         (i % tickEvery === 0 || i === n - 1) && (
-          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="#9AA0A6">{lb}</text>
+          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill={AXIS}>{lb}</text>
         )
       ))}
     </svg>
@@ -194,8 +204,8 @@ export function AreaChart({ values = [], xLabels = [], color = 'var(--brand-500)
         const yy = padT + ih - g * ih;
         return (
           <g key={i}>
-            <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#EEEFEA" strokeWidth="1" />
-            <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize="10" fill="#9AA0A6" style={priv ? { filter: 'blur(4px)' } : undefined}>{format(g * max)}</text>
+            <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke={GRID} strokeWidth="1" />
+            <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize="10" fill={AXIS} style={priv ? { filter: 'blur(4px)' } : undefined}>{format(g * max)}</text>
           </g>
         );
       })}
@@ -214,7 +224,7 @@ export function AreaChart({ values = [], xLabels = [], color = 'var(--brand-500)
       </g>
       {xLabels.map((lb, i) => (
         (i % tickEvery === 0 || i === n - 1) && (
-          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="#9AA0A6">{lb}</text>
+          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill={AXIS}>{lb}</text>
         )
       ))}
     </svg>

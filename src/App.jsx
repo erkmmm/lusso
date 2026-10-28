@@ -45,6 +45,7 @@ import ImportQuotes from './pages/ImportQuotes';
 import QuoteBuilder from './pages/QuoteBuilder';
 import QuoteView from './pages/QuoteView';
 import CustomerQuotePage from './pages/CustomerQuotePage';
+import GlassBackground from './components/GlassBackground';
 import ImportContacts from './pages/ImportContacts';
 import ImportHistory from './pages/ImportHistory';
 import PricedItems from './pages/PricedItems';
@@ -484,6 +485,7 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <ThemeBackground />
+        <GlassBackground />
         <AuthProvider>
           <UserProfileProvider>
             <RealtimeProvider>

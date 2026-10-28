@@ -6,11 +6,13 @@ import {
   MapPin, MessageSquare, Loader, Truck,
 } from 'lucide-react';
 import { getInstallRequestByToken, respondToInstallRequest } from '../store/data';
+import usePublicPage from '../lib/usePublicPage';
 
 const PICKUP_NEEDS_LOCATIONS = (type) =>
   ['Pickup from Lusso warehouse', 'Pickup from one supplier', 'Pickup from multiple suppliers'].includes(type);
 
 export default function InstallResponse() {
+  usePublicPage(); // customer-facing — never inherits the staff theme
   const { token } = useParams();
 
   // The action is fixed by WHICH link (token) was used — accept vs decline —

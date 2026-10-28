@@ -1,5 +1,5 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings2, Plus, ChevronUp, ChevronDown, Edit3, Save, X, Check,
@@ -8,9 +8,8 @@ import {
   AlertTriangle, Sun, Moon, Monitor, Clock, Wifi, WifiOff,
   Link2, Link2Off, ExternalLink, Building2, Loader, Bot, Trash2,
   MessageSquare, Database, Zap, ClipboardList, FileDown, Bell, BellOff, Smartphone,
-  Calculator, RotateCcw, Type, CheckSquare, Square,
+  Calculator, RotateCcw, Type, CheckSquare, Square, Image as ImageIcon,
 } from 'lucide-react';
-import { useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../contexts/ThemeContext';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -40,6 +39,129 @@ import {
   xeroSaveSettings, xeroInvoiceStatusBadge, xeroDismissErrors,
   xeroActivateOrganisation, xeroGetBrandingThemes,
 } from '../lib/xero';
+
+
+// ── Glass wallpaper ──────────────────────────────────────────────────────────
+// Only shown while the Glass theme is active — it is the one theme with a
+// photograph behind it, and the control would be inert anywhere else.
+//
+// The dim slider earns its place: the whole point is that people put their own
+// photo back there, and a bright one makes 12px table text unreadable. Dimming
+// is the fix, and only the person looking at it knows how much they need.
+function GlassWallpaperCard() {
+  const {
+    glassBg, setGlassBg, glassDim, setGlassDim, customUrl,
+    uploadGlassWallpaper, removeGlassWallpaper,
+  } = useTheme();
+
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const onFile = async (e) => {
+    const file = e.target.files?.[0];
+    // Reset immediately so picking the SAME file again still fires onChange.
+    e.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    setError('');
+    try {
+      await uploadGlassWallpaper(file);
+    } catch (err) {
+      setError(err?.message || 'Could not use that image.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const OPTIONS = [
+    { value: 'default', label: 'Room',     desc: 'The one it ships with.',   preview: '/glass-wallpaper.jpg' },
+    { value: 'custom',  label: 'Your photo', desc: customUrl ? 'Tap Upload to change it.' : 'Upload one below.', preview: customUrl },
+    { value: 'none',    label: 'No photo', desc: 'Plain graded backdrop.',   preview: null },
+  ];
+
+  return (
+    <Card>
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <ImageIcon size={14} className="text-amber-500" /> Wallpaper
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          What sits behind the glass. Stored on this device only, and never sent to a customer.
+        </p>
+      </div>
+
+      <div className="p-4 grid grid-cols-3 gap-3">
+        {OPTIONS.map(({ value, label, desc, preview }) => {
+          const active = glassBg === value;
+          // Selecting "Your photo" with nothing stored would show an empty
+          // backdrop, so it opens the picker instead.
+          const choose = () =>
+            (value === 'custom' && !customUrl) ? fileRef.current?.click() : setGlassBg(value);
+          return (
+            <button key={value} type="button" onClick={choose}
+              className={`rounded-xl border-2 overflow-hidden text-left transition-all ${
+                active ? 'border-amber-500' : 'border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="h-20 bg-slate-100 relative">
+                {preview
+                  ? <img src={preview} alt="" className="w-full h-full object-cover" />
+                  : <div className="w-full h-full" style={{
+                      background: 'radial-gradient(90% 70% at 18% 0%, #3a322c 0%, transparent 60%), radial-gradient(80% 60% at 100% 100%, #2b2521 0%, transparent 55%), #1b1917',
+                    }} />}
+                {value === 'custom' && !customUrl && (
+                  <div className="absolute inset-0 flex items-center justify-center text-slate-400">
+                    <Upload size={18} />
+                  </div>
+                )}
+              </div>
+              <div className="px-3 py-2">
+                <p className={`text-xs font-semibold ${active ? 'text-amber-700' : 'text-slate-700'}`}>{label}</p>
+                <p className="text-[11px] text-slate-400 leading-tight mt-0.5">{desc}</p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="px-5 pb-4 flex flex-wrap items-center gap-2">
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={onFile} />
+        <button type="button" disabled={busy} onClick={() => fileRef.current?.click()}
+          className="flex items-center gap-2 text-xs font-medium bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-white rounded-lg px-3 py-2 transition-colors">
+          {busy ? <Loader size={13} className="animate-spin" /> : <Upload size={13} />}
+          {busy ? 'Saving…' : customUrl ? 'Replace photo' : 'Upload a photo'}
+        </button>
+        {customUrl && (
+          <button type="button" onClick={() => removeGlassWallpaper()}
+            className="flex items-center gap-2 text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg px-3 py-2 transition-colors">
+            <Trash2 size={13} /> Remove
+          </button>
+        )}
+        <p className="text-[11px] text-slate-400 basis-full">
+          Resized to 2560px and kept on this device. Big phone photos are fine.
+        </p>
+        {error && <p className="text-[11px] text-red-600 basis-full">{error}</p>}
+      </div>
+
+      <div className="px-5 pb-5 pt-4 border-t border-slate-100">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-medium text-slate-500">Dim</p>
+          <p className="text-xs text-slate-400 tabular-nums">{Math.round(glassDim * 100)}%</p>
+        </div>
+        <input
+          type="range" min="0" max="0.85" step="0.01" value={glassDim}
+          onChange={(e) => setGlassDim(parseFloat(e.target.value))}
+          aria-label="Wallpaper dim"
+          className="w-full accent-amber-500"
+        />
+        <p className="text-[11px] text-slate-400 mt-1.5">
+          Darkens the photo behind the panels. Turn it up if a bright picture is making text hard to read.
+        </p>
+      </div>
+    </Card>
+  );
+}
 
 export default function Settings() {
   useDataRefresh();
@@ -117,6 +239,7 @@ export default function Settings() {
   const { theme, setTheme, colorTheme, setColorTheme, animBg, setAnimBg, bgStyle, setBgStyle } = useTheme();
 
   const COLOR_OPTIONS = [
+    { value: 'glass',     label: 'Glass',     desc: 'Frosted panels over a room — the default. Always dark.', swatch: '#8a7d72' },
     { value: 'lusso',     label: 'Lusso',     desc: 'Brand kit — bronze on paper.', swatch: '#6E5A43' },
     { value: 'apex',      label: 'Apex',      desc: 'Emerald & charcoal — demo style.', swatch: '#009368' },
     { value: 'taupe',     label: 'Taupe',     desc: 'Warm taupe & cream.',   swatch: '#644a40' },
@@ -327,7 +450,7 @@ export default function Settings() {
                 <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
                   <Sun size={14} className="text-amber-500" /> Colour theme
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Pick the accent palette. Lusso, Apex, Taupe & Green follow light/dark; Cyberpunk, Matrix & Mono are always dark.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Pick the accent palette. Glass is the default. Lusso, Apex, Taupe &amp; Green follow light/dark; Glass, Cyberpunk, Matrix &amp; Mono are always dark.</p>
               </div>
               <div className="p-4 grid grid-cols-2 gap-3">
                 {COLOR_OPTIONS.map(({ value, label, desc, swatch }) => {
@@ -349,6 +472,9 @@ export default function Settings() {
                 })}
               </div>
             </Card>
+
+            {/* Wallpaper — Glass theme only; see GlassWallpaperCard. */}
+            {colorTheme === 'glass' && <GlassWallpaperCard />}
 
             {/* Animated background */}
             <Card>

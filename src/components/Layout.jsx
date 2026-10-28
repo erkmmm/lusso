@@ -657,9 +657,22 @@ export default function Layout() {
 
         {/* Page content — extra bottom padding on mobile for bottom nav */}
         <main ref={mainRef} className="app-main flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
-          <RouteErrorBoundary>
-            <Outlet />
-          </RouteErrorBoundary>
+          {/* `key` on the route is what replays the Glass theme's card
+              entrance on every navigation: React throws the subtree away and
+              remounts it, so the CSS animations start over. Keyed on pathname
+              only (not search) deliberately — a filter change is not a new
+              page, and replaying the whole entrance on every keystroke in a
+              search box would be unusable.
+
+              The wrapper is `display: contents` (see glass.css §11), so it
+              adds no box and cannot affect layout in any theme. Do not give it
+              a background, padding or an animation — a real box here breaks
+              both `h-full` pages and the cards' backdrop-filter. */}
+          <div className="glass-stage" key={location.pathname}>
+            <RouteErrorBoundary>
+              <Outlet />
+            </RouteErrorBoundary>
+          </div>
         </main>
       </div>
 

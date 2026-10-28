@@ -8,6 +8,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { quoteSections, unansweredChoices } from '../lib/quoteSections';
 import { useQuoteTracking } from '../hooks/useQuoteTracking';
+import usePublicPage from '../lib/usePublicPage';
 
 /* ───────────────────────────────────────────────────────────────────────────
    Lusso customer quote page — implements the "Lusso Quote Page" design
@@ -196,6 +197,10 @@ function PlanSection({ snapshot }) {
  *   the end of what the customer sees.
  */
 export default function CustomerQuotePage({ previewQuote = null, footer = null }) {
+  // Customer-facing: pins the page to the fixed brand kit whatever theme staff
+  // are running. Also covers the staff send-preview, which is the point of a
+  // preview — it has to be what the customer actually gets.
+  usePublicPage();
   const routeParams    = useParams();
   const id             = previewQuote?.id || routeParams.id;
   const [searchParams] = useSearchParams();

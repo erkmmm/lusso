@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* The Glass theme (visionOS-style frosted skin). Scoped entirely to
+   `html.theme-glass`, so importing it costs nothing for the other themes. */
+@import "./styles/glass.css";
+
 /* ── Lusso Brand Theme ────────────────────────────────────────────────
    Two switchable colour themes, each with light + dark:
      • Taupe (default)  — warm taupe-brown + cream
@@ -1062,6 +1066,15 @@ textarea:focus:not(:focus-visible) {
    all read from the per-theme variables above, so dark mode reskins too.
 ────────────────────────────────────────────────────────────────────── */
 html.dark { color-scheme: dark; }
+
+/* Chart furniture (DashboardCharts). The light values are the component's own
+   fallbacks; these are the dark equivalents — structural lines should sit just
+   above the card surface, never glow off it. */
+.dark {
+  --chart-track: rgba(255, 255, 255, 0.10);
+  --chart-grid:  rgba(255, 255, 255, 0.08);
+  --chart-axis:  rgba(255, 255, 255, 0.45);
+}
 
 .dark body { background-color: var(--surf-page); color: var(--txt-primary); }
 
