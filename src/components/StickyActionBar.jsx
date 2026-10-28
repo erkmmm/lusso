@@ -22,7 +22,13 @@ export default function StickyActionBar({ children, className = '' }) {
   const { rail } = useSidebar();
   return (
     <div
-      className={`fixed bottom-16 lg:bottom-0 left-0 right-0 z-20 bg-white border-t border-slate-200 px-4 py-3 transition-[left] duration-200 ${
+      // data-rail is what the glass theme keys off to inset the bar: there the
+      // sidebar floats on a 14px margin, so its right edge is 14px further over
+      // than left-16/left-64 assume, and the bar's own left edge slid underneath
+      // it. Exposed as an attribute rather than letting the stylesheet reach for
+      // the Tailwind class names, which are an implementation detail.
+      data-rail={rail ? 'true' : 'false'}
+      className={`app-action-bar fixed bottom-16 lg:bottom-0 left-0 right-0 z-20 bg-white border-t border-slate-200 px-4 py-3 transition-[left] duration-200 ${
         rail ? 'lg:left-16' : 'lg:left-64'
       } ${className}`}
     >

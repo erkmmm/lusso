@@ -372,6 +372,26 @@ html.theme-glass:not([data-public]) .app-sidebar {
   }
 }
 
+/* The save/submit bar floats with the rest of the shell rather than being a
+   slab welded to the bottom of the window. Two things were wrong under glass:
+   it ran flush to the bottom and right with square corners and a border-top
+   while every other surface sits inset and rounded, and its left edge
+   (lg:left-64 = 256px) sat 14px UNDER the floating sidebar, whose right edge is
+   at 14 + 256. The rail state comes in on data-rail so the offsets follow the
+   sidebar when it collapses. */
+@media (min-width: 1024px) {
+  html.theme-glass:not([data-public]) .app-action-bar {
+    right: 14px;
+    bottom: 14px;
+    border-top: 0;
+    border-radius: 26px;
+    box-shadow: var(--glass-shadow), var(--glass-rim);
+    transition: left 200ms;
+  }
+  html.theme-glass:not([data-public]) .app-action-bar[data-rail='false'] { left: 284px; }
+  html.theme-glass:not([data-public]) .app-action-bar[data-rail='true']  { left: 92px; }
+}
+
 /* Full-height pane pages (the Inbox) paint their own frosted columns rather
    than scrolling inside the stage, so they have to float on the same geometry
    as the sidebar. Without this they ran flush to the top of the viewport with

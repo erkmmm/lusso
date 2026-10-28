@@ -304,9 +304,17 @@ function LineSummary({ item, idx, open, issues, onToggle }) {
     : issues?.length ? 'warning' : null;
 
   return (
+    // rounded-[inherit] because the card above cannot clip: an overflow-hidden
+    // ancestor would become the scroll container for the open card's sticky
+    // title bar and silently kill it, so corners are rounded on the children
+    // instead. This row had no rounding at all, so its hover and selected fills
+    // painted square corners out past the card's rounded ones — most visible at
+    // the top-left, right behind the number badge. Inheriting matches both
+    // states for free: all four corners when collapsed (parent is the
+    // rounded-xl card), top two only when open (parent is rounded-t-xl).
     <button type="button" onClick={onToggle}
       aria-expanded={open}
-      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-amber-50/60 transition-colors">
+      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-amber-50/60 transition-colors rounded-[inherit]">
       <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${
         open ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'
       }`}>{idx + 1}</span>
