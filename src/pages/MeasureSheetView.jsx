@@ -8,6 +8,8 @@ import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasure
 import { exportMeasureSheetToBuz, isRollerBlindItem } from '../lib/buzExport';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
+import CollapsibleSection from '../components/CollapsibleSection';
+import useCollapsedSections from '../hooks/useCollapsedSections';
 import NotesFeed from '../components/NotesFeed';
 import LinePhotos from '../components/LinePhotos';
 import StatusBadge from '../components/StatusBadge';
@@ -249,6 +251,7 @@ function PrintView({ sheet, customer, job }) {
 }
 
 export default function MeasureSheetView() {
+  const collapse = useCollapsedSections('measuresheet');
   useDataRefresh();
   const { id } = useParams();
   const navigate = useNavigate();
@@ -520,22 +523,21 @@ export default function MeasureSheetView() {
 
         {/* Purchase orders placed off this sheet */}
         {purchaseOrders.length > 0 && (
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                <History size={15} /> Purchase Orders ({purchaseOrders.length})
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">What was ordered, and exactly what the supplier was sent.</p>
-            </div>
+          <CollapsibleSection
+          className=""
+          bodyClass=""
+          id="purchaseorders" collapse={collapse} icon={History} title="Purchase Orders" count={purchaseOrders.length} hint="What was ordered, and exactly what the supplier was sent."
+        >
             <PoHistoryList orders={purchaseOrders} />
-          </Card>
+          </CollapsibleSection>
         )}
 
         {/* Customer */}
-        <Card>
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><User size={15} /> Customer</h2>
-          </div>
+        <CollapsibleSection
+          className=""
+          bodyClass=""
+          id="customer" collapse={collapse} icon={User} title="Customer"
+        >
           <div className="p-5 space-y-2 text-sm">
             <p className="font-semibold text-slate-800">{customer?.name}</p>
             {customer?.phone && <p className="text-slate-500 flex items-center gap-1.5"><Phone size={12} />{customer.phone}</p>}
@@ -547,13 +549,14 @@ export default function MeasureSheetView() {
               <p className="text-xs text-slate-400 mt-1">Preferred: {customer.preferredContact}</p>
             )}
           </div>
-        </Card>
+        </CollapsibleSection>
 
         {/* Job */}
-        <Card>
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Briefcase size={15} /> Job</h2>
-          </div>
+        <CollapsibleSection
+          className=""
+          bodyClass=""
+          id="job" collapse={collapse} icon={Briefcase} title="Job"
+        >
           <div className="p-5 space-y-2 text-sm">
             {job ? (
               <>
@@ -565,14 +568,15 @@ export default function MeasureSheetView() {
               <p className="text-slate-400 text-xs">Not linked to a job yet.</p>
             )}
           </div>
-        </Card>
+        </CollapsibleSection>
 
         {/* Site notes */}
         {(sheet.accessInstructions || sheet.parkingNotes || sheet.siteConditionNotes) && (
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><MapPin size={15} /> Site Notes</h2>
-            </div>
+          <CollapsibleSection
+          className=""
+          bodyClass=""
+          id="sitenotes" collapse={collapse} icon={MapPin} title="Site Notes"
+        >
             <div className="p-5 space-y-3 text-sm">
               {sheet.accessInstructions && (
                 <div><dt className="text-xs text-slate-400 mb-1">Access</dt><dd className="text-slate-700">{sheet.accessInstructions}</dd></div>
@@ -584,7 +588,7 @@ export default function MeasureSheetView() {
                 <div><dt className="text-xs text-slate-400 mb-1">Site Condition</dt><dd className="text-slate-700">{sheet.siteConditionNotes}</dd></div>
               )}
             </div>
-          </Card>
+          </CollapsibleSection>
         )}
 
         {/* Notes captured on this sheet — what was written on site, readable
@@ -603,14 +607,15 @@ export default function MeasureSheetView() {
 
         {/* Internal notes */}
         {sheet.internalNotes && (
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm">Internal Notes</h2>
-            </div>
+          <CollapsibleSection
+          className=""
+          bodyClass=""
+          id="internalnotes" collapse={collapse} title="Internal Notes"
+        >
             <div className="p-5">
               <p className="text-sm text-slate-600 whitespace-pre-wrap">{sheet.internalNotes}</p>
             </div>
-          </Card>
+          </CollapsibleSection>
         )}
       </div>
 

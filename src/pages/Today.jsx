@@ -21,6 +21,8 @@ import {
   getMeasureSheets,
 } from '../store/data';
 import Card from '../components/Card';
+import CollapsibleSection from '../components/CollapsibleSection';
+import useCollapsedSections from '../hooks/useCollapsedSections';
 import ContentQueueCard from '../components/ContentQueueCard';
 import { supabase } from '../lib/supabase';
 
@@ -290,6 +292,18 @@ export default function Today() {
 
   const total = sections.reduce((n, s) => n + s.items.length, 0);
 
+  // Section keys are already stable, so they double as the persistence ids.
+  const collapse = useCollapsedSections('today');
+
+  // Jumping to a section opens it on the way. The scroll waits a frame so it
+  // measures the section's expanded height, not its collapsed one.
+  const jumpTo = (key) => {
+    collapse.setOpen(key, true);
+    requestAnimationFrame(() => {
+      document.getElementById(`sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
       <div>
@@ -317,27 +331,30 @@ export default function Today() {
           {/* Jump strip — the same counts the 7am push quoted. */}
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
             {sections.map(s => (
-              <a key={s.key} href={`#sec-${s.key}`}
+              <button key={s.key} type="button" onClick={() => jumpTo(s.key)}
                 className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full border border-slate-200 bg-white text-slate-600 whitespace-nowrap flex-shrink-0 hover:border-slate-300">
                 <s.icon size={12} className={s.tone} />
                 {s.label}
                 <span className="font-bold text-slate-900">{s.items.length}</span>
-              </a>
+              </button>
             ))}
           </div>
 
           {sections.map(s => (
-            <Card key={s.key} id={`sec-${s.key}`} className="overflow-hidden scroll-mt-4">
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
-                <s.icon size={15} className={s.tone} />
-                <div className="min-w-0">
-                  <h2 className="font-semibold text-slate-800 text-sm">
-                    {s.label} <span className="text-slate-400 font-normal">· {s.items.length}</span>
-                  </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">{s.hint}</p>
-                </div>
-              </div>
-              <div className="divide-y divide-slate-50">
+            <CollapsibleSection
+              key={s.key}
+              id={s.key}
+              anchor={`sec-${s.key}`}
+              collapse={collapse}
+              icon={s.icon}
+              iconClass={s.tone}
+              title={s.label}
+              count={s.items.length}
+              hint={s.hint}
+              className="scroll-mt-4"
+              bodyClass="divide-y divide-slate-50"
+            >
+              <>
                 {s.items.map(item => (
                   <button key={item.id} onClick={() => navigate(item.to)}
                     className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 transition-colors">
@@ -350,8 +367,8 @@ export default function Today() {
                     <ChevronRight size={15} className="text-slate-300 flex-shrink-0" />
                   </button>
                 ))}
-              </div>
-            </Card>
+              </>
+            </CollapsibleSection>
           ))}
         </>
       )}

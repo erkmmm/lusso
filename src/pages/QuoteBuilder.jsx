@@ -24,6 +24,7 @@ import {
   getCurtainRates,
 } from '../store/data';
 import Card from '../components/Card';
+import CollapsibleSection from '../components/CollapsibleSection';
 import CurtainCostPanel from '../components/CurtainCostPanel';
 import { isCurtainProduct, autoCostCurtainLine } from '../lib/curtainCalc';
 import { quoteSections } from '../lib/quoteSections';
@@ -414,22 +415,21 @@ function PlanAttachment({ takeoff, snapshot, busy, onAttach, onDetach, onToggleS
   );
 }
 
+// Local state, not remembered: a quote is built top to bottom in one sitting,
+// and a section you folded away last time is one you would have to go looking
+// for on the next quote.
 function Section({ title, icon: Icon, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <Card>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-5 py-4 text-left"
-      >
-        <span className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-          <Icon size={15} className="text-slate-400" /> {title}
-        </span>
-        {open ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-      </button>
-      {open && <div className="px-5 pb-5 border-t border-slate-100">{children}</div>}
-    </Card>
+    <CollapsibleSection
+      icon={Icon}
+      title={title}
+      open={open}
+      onToggle={() => setOpen(o => !o)}
+      bodyClass="px-5 pb-5 pt-4"
+    >
+      {children}
+    </CollapsibleSection>
   );
 }
 

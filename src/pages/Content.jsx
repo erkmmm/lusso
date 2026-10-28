@@ -22,6 +22,8 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
+import CollapsibleSection from '../components/CollapsibleSection';
+import useCollapsedSections from '../hooks/useCollapsedSections';
 import { toast } from '../components/ToastContainer';
 import { nextFreeSlot, perDay } from '../lib/contentSchedule';
 import { publishImage, unpublishImage } from '../lib/contentMedia';
@@ -382,6 +384,7 @@ function Stat({ label, value, hint, warn }) {
 /* ── Queue ───────────────────────────────────────────────────────────────── */
 
 function QueueTab({ posts, drafts, failed, live, onOpen, onApprove, onReschedule, onPostNow, onDelete, busy, waiting }) {
+  const collapse = useCollapsedSections('content');
   if (posts === null) return <p className="text-sm text-slate-400">Loading…</p>;
   return (
     <div className="space-y-4">
@@ -397,7 +400,7 @@ function QueueTab({ posts, drafts, failed, live, onOpen, onApprove, onReschedule
       </Card>
 
       {drafts.length > 0 && (
-        <Section title="Drafts" note="read before they go out">
+        <Section title="Drafts" note="read before they go out" collapse={collapse}>
           {drafts.map(p => (
             <Row key={p.id} post={p} onOpen={() => onOpen(p)} onDelete={onDelete} action={
               <button onClick={() => onApprove(p)}
@@ -408,7 +411,7 @@ function QueueTab({ posts, drafts, failed, live, onOpen, onApprove, onReschedule
         </Section>
       )}
 
-      <Section title="Waiting to publish"
+      <Section title="Waiting to publish" collapse={collapse}
         note={waiting.length
           ? 'in the order they go out'
           : 'nothing yet — approve a draft to queue it'}>
@@ -430,7 +433,7 @@ function QueueTab({ posts, drafts, failed, live, onOpen, onApprove, onReschedule
       </Section>
 
       {failed.length > 0 && (
-        <Section title="Didn't publish" tone="rose">
+        <Section title="Didn't publish" tone="rose" collapse={collapse}>
           {failed.map(p => (
             <li key={p.id} className="py-2.5">
               <button onClick={() => onOpen(p)} className="text-left text-sm font-medium text-slate-800 hover:underline">
@@ -460,7 +463,7 @@ function QueueTab({ posts, drafts, failed, live, onOpen, onApprove, onReschedule
       )}
 
       {live.length > 0 && (
-        <Section title="Live">
+        <Section title="Live" collapse={collapse}>
           {live.slice(0, 20).map(p => <Row key={p.id} post={p} onOpen={() => onOpen(p)} />)}
         </Section>
       )}
@@ -468,14 +471,23 @@ function QueueTab({ posts, drafts, failed, live, onOpen, onApprove, onReschedule
   );
 }
 
-function Section({ title, note, tone, children }) {
+// Thin adapter over the shared CollapsibleSection, so the four call sites below
+// read the same as they always did. `id` is derived from the title: these four
+// are fixed and named in English, and a title change renaming the stored key
+// only costs someone one re-collapse.
+function Section({ title, note, tone, collapse, children }) {
   return (
-    <Card className="px-5 py-4">
-      <h2 className={`text-sm font-semibold ${tone === 'rose' ? 'text-rose-700' : 'text-slate-800'}`}>
-        {title}{note && <span className="ml-1 font-normal text-slate-400">— {note}</span>}
-      </h2>
-      <ul className="mt-2 divide-y divide-slate-100">{children}</ul>
-    </Card>
+    <CollapsibleSection
+      id={title.toLowerCase().replace(/[^a-z]+/g, '-')}
+      collapse={collapse}
+      title={title}
+      titleNote={note}
+      titleClass={tone === 'rose' ? 'text-rose-700' : 'text-slate-800'}
+      bodyAs="ul"
+      bodyClass="px-5 py-2 divide-y divide-slate-100"
+    >
+      {children}
+    </CollapsibleSection>
   );
 }
 

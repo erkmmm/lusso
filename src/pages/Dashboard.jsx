@@ -24,6 +24,8 @@ import {
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
+import CollapsibleSection from '../components/CollapsibleSection';
+import useCollapsedSections from '../hooks/useCollapsedSections';
 import { DonutChart, AreaChart, Sparkline } from '../components/DashboardCharts';
 import { PrivacyCtx, Fig } from '../components/PrivacyFig';
 import { PIPELINE_RAMP } from '../lib/chartColors';
@@ -1009,6 +1011,7 @@ function TopCustomers({ items, navigate, lM, lI }) {
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
+  const collapse = useCollapsedSections('dashboard');
   useDataRefresh();
   const navigate  = useNavigate();
   const { isAM = true, displayName = '', isSP } = useProfile() || {};
@@ -1784,17 +1787,16 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        <Card className="min-w-0">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-800 text-sm">Job Pipeline</h2>
-            <button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
-              View all <ArrowRight size={12} />
-            </button>
-          </div>
+        <CollapsibleSection
+          className="min-w-0"
+          bodyClass=""
+          id="pipeline" collapse={collapse} title="Job Pipeline"
+          actions={<button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">View all <ArrowRight size={12} /></button>}
+        >
           <div className="p-5">
             <DonutChart data={pipelineData} centerValue={lI(stats.active)} centerLabel="active projects" />
           </div>
-        </Card>
+        </CollapsibleSection>
       </div>
 
       {/* ── Row 3 · Top products + Sales by category donut ───────────────────── */}
@@ -1802,11 +1804,11 @@ export default function Dashboard() {
         <div className="lg:col-span-2 min-w-0">
           <TopProducts products={products} lM={lM} lI={lI} />
         </div>
-        <Card className="min-w-0">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="font-semibold text-slate-800 text-sm">Sales by Category</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Revenue by product type</p>
-          </div>
+        <CollapsibleSection
+          className="min-w-0"
+          bodyClass=""
+          id="category" collapse={collapse} title="Sales by Category" hint="Revenue by product type"
+        >
           <div className="p-5">
             <DonutChart
               data={products.map((p, i) => ({ label: p.name, value: Math.round(lM(p.revenue)), color: PIPELINE_RAMP[(i * 2) % PIPELINE_RAMP.length] }))}
@@ -1815,7 +1817,7 @@ export default function Dashboard() {
               valueFmt={fmtCompact}
             />
           </div>
-        </Card>
+        </CollapsibleSection>
       </div>
 
       {/* ── Row 3b · Seasonality + Top customers ─────────────────────────────── */}
@@ -1844,13 +1846,12 @@ export default function Dashboard() {
 
       {/* ── Row 5 · Recent jobs table + Activity feed ────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up" style={{ animationDelay: '440ms' }}>
-        <Card className="lg:col-span-2 min-w-0 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-800 text-sm">Recent Jobs</h2>
-            <button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
-              View all <ArrowRight size={12} />
-            </button>
-          </div>
+        <CollapsibleSection
+          className="lg:col-span-2 min-w-0 overflow-hidden"
+          bodyClass=""
+          id="recentjobs" collapse={collapse} title="Recent Jobs"
+          actions={<button onClick={() => navigate('/jobs')} className="text-xs text-amber-600 hover:underline flex items-center gap-1">View all <ArrowRight size={12} /></button>}
+        >
           {/* Phone: stacked rows — no sideways scrolling */}
           <div className="sm:hidden divide-y divide-slate-50">
             {recentJobs.map(job => {
@@ -1920,12 +1921,13 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
-        </Card>
+        </CollapsibleSection>
 
-        <Card className="min-w-0">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="font-semibold text-slate-800 text-sm">Recent Activity</h2>
-          </div>
+        <CollapsibleSection
+          className="min-w-0"
+          bodyClass=""
+          id="activity" collapse={collapse} title="Recent Activity"
+        >
           <div className="divide-y divide-slate-50">
             {recentActivity.map(act => {
               const { icon: Icon, color, bg } = ACTIVITY_ICONS[act.type] || ACTIVITY_FALLBACK;
@@ -1954,7 +1956,7 @@ export default function Dashboard() {
               <p className="px-5 py-8 text-center text-sm text-slate-400">No activity yet.</p>
             )}
           </div>
-        </Card>
+        </CollapsibleSection>
       </div>
 
     </div>

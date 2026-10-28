@@ -11,6 +11,8 @@ import { format, parseISO } from 'date-fns';
 import { getCustomer, getJobsByCustomer, saveCustomer, updateCustomerXeroContact, deleteCustomer, restoreCustomer, isJobOpen } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
+import CollapsibleSection from '../components/CollapsibleSection';
+import useCollapsedSections from '../hooks/useCollapsedSections';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import { toast } from '../components/ToastContainer';
 import { xeroSearchContacts } from '../lib/xero';
@@ -18,6 +20,7 @@ import CommsTab from '../components/CommsTab';
 import NotesFeed from '../components/NotesFeed';
 
 export default function CustomerProfile() {
+  const collapse = useCollapsedSections('customer');
   const { id } = useParams();
   const navigate = useNavigate();
   // Read directly so re-renders always get fresh data
@@ -187,18 +190,12 @@ export default function CustomerProfile() {
           )}
 
           {/* Jobs */}
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-              <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                <Briefcase size={15} /> Projects ({jobs.length})
-              </h2>
-              <button
-                onClick={() => navigate(`/jobs/new?customerId=${id}`)}
-                className="flex items-center gap-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-              >
-                <Plus size={13} /> New Project
-              </button>
-            </div>
+          <CollapsibleSection
+          className=""
+          bodyClass=""
+          id="projects" collapse={collapse} icon={Briefcase} title="Projects" count={jobs.length}
+          actions={<button onClick={() => navigate(`/jobs/new?customerId=${id}`)} className="flex items-center gap-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"><Plus size={13} /> New Project</button>}
+        >
 
             {jobs.length === 0 ? (
               <div className="p-8 text-center">
@@ -237,7 +234,7 @@ export default function CustomerProfile() {
                 ))}
               </div>
             )}
-          </Card>
+          </CollapsibleSection>
 
           {/* Notes & to-dos — anything true about the customer rather than one
               of their jobs: what they're deciding on, who to talk to, what they
@@ -265,10 +262,11 @@ export default function CustomerProfile() {
 
         {/* Right sidebar */}
         <div className="space-y-5">
-          <Card>
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm">Contact Details</h2>
-            </div>
+          <CollapsibleSection
+          className=""
+          bodyClass=""
+          id="contact" collapse={collapse} title="Contact Details"
+        >
             <div className="p-5 space-y-3 text-sm">
               <Row label="Phone"            value={customer.phone} />
               <Row label="Email"            value={customer.email} />
@@ -276,19 +274,18 @@ export default function CustomerProfile() {
               <Row label="Billing Address"  value={customer.billingAddress} />
               <Row label="Preferred Contact" value={customer.preferredContact} />
             </div>
-          </Card>
+          </CollapsibleSection>
 
           {customer.notes && (
-            <Card>
-              <div className="px-5 py-4 border-b border-slate-100">
-                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                  <StickyNote size={14} /> Standing notes
-                </h2>
-              </div>
+            <CollapsibleSection
+          className=""
+          bodyClass=""
+          id="notes" collapse={collapse} icon={StickyNote} title="Standing notes"
+        >
               <div className="p-5">
                 <p className="text-sm text-slate-600 whitespace-pre-wrap">{customer.notes}</p>
               </div>
-            </Card>
+            </CollapsibleSection>
           )}
 
           <Card>

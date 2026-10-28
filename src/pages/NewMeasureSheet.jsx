@@ -24,6 +24,7 @@ import { evaluateLine } from '../lib/productLimits';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
+import CollapsibleSection from '../components/CollapsibleSection';
 import ConsultRecorder from '../components/ConsultRecorder';
 import MeasureSheetTable from '../components/MeasureSheetTable';
 import CheckMeasureControl, { CheckMeasureBanner } from '../components/CheckMeasureControl';
@@ -444,16 +445,13 @@ function specSummary(item, productType) {
   return set.length > 3 ? `${set.slice(0, 3).join(' · ')} · +${set.length - 3}` : set.join(' · ');
 }
 
+// Controlled by the page: saving a sheet reopens specific sections, so the
+// open state has to live where that logic is rather than in here.
 function Section({ title, icon, open, onToggle, children }) {
   return (
-    <Card>
-      <button onClick={onToggle}
-        className="w-full px-5 py-4 border-b border-slate-100 flex items-center justify-between text-left">
-        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">{icon}{title}</h2>
-        {open ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-      </button>
-      {open && <div className="p-5">{children}</div>}
-    </Card>
+    <CollapsibleSection icon={icon} title={title} open={open} onToggle={onToggle}>
+      {children}
+    </CollapsibleSection>
   );
 }
 

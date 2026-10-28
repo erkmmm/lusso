@@ -13,6 +13,8 @@ import { useProfile } from '../contexts/UserProfileContext';
 import { sendPurchaseOrder } from '../lib/email';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
+import CollapsibleSection from '../components/CollapsibleSection';
+import useCollapsedSections from '../hooks/useCollapsedSections';
 import PoPreview from '../components/PoPreview';
 import PoHistoryList from '../components/PoHistoryList';
 import MeasureSheetTable from '../components/MeasureSheetTable';
@@ -67,6 +69,7 @@ function sideCode(value) {
 const SIDE_WORD = { L: 'left', R: 'right' };
 
 export default function PurchaseOrder() {
+  const collapse = useCollapsedSections('purchaseorder');
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const { displayName = '' } = useProfile() || {};
@@ -400,6 +403,7 @@ export default function PurchaseOrder() {
   };
   const goToAccessories = () => {
     setAccessoryPrompt(null);
+    collapse.setOpen('accessories', true);
     requestAnimationFrame(() => {
       document.getElementById('po-accessories')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -968,11 +972,12 @@ export default function PurchaseOrder() {
           </Card>
 
           {/* Accessories — repeatable wand & remote entries (hidden until added) */}
-          <Card id="po-accessories">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-800 text-sm">Accessories</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Add wands and remotes as needed — only added items appear on the PO.</p>
-            </div>
+          <CollapsibleSection
+          anchor="po-accessories"
+          className=""
+          bodyClass=""
+          id="accessories" collapse={collapse} title="Accessories" hint="Add wands and remotes as needed — only added items appear on the PO."
+        >
             {wandCalc.total > 0 ? (
               <div className="mx-5 mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
@@ -1033,7 +1038,7 @@ export default function PurchaseOrder() {
                 </div>
               ))}
             </div>
-          </Card>
+          </CollapsibleSection>
 
           {/* PO preview (printed/exported layout) */}
           <Card>
