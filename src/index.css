@@ -1094,8 +1094,11 @@ html.quote-skin {
   --lq-page: transparent;
   --lq-surface: rgba(255, 255, 255, 0.62);
   /* The header stays the dark band the brand kit has always had — it anchors
-     a bright page, and the Lusso mark on it is the white one. */
-  --lq-raised: rgba(24, 21, 19, 0.74);
+     a bright page, and the Lusso mark on it is the white one. Near-opaque,
+     unlike the dark skin's: at 0.74 over a LIGHT backdrop the band composites
+     to a washed grey-brown and the bronze quote number on it falls to
+     3.63:1. The same fill over the dim room needs no such help. */
+  --lq-raised: rgba(22, 19, 17, 0.92);
   --lq-on-raised: rgba(255, 255, 255, 0.95);
   --lq-accent: #14161A;
   --lq-on-accent: #FFFFFF;
@@ -1108,10 +1111,15 @@ html.quote-skin {
     0 20px 44px -24px rgba(23, 21, 18, 0.26),
     0 6px 16px -10px rgba(23, 21, 18, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  /* A white veil over the photo. Heavy, because the quote puts bare prose
-     straight on the backdrop where the app would have used a panel. */
-  --lq-scrim: linear-gradient(rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.74));
-  --lq-under: #EDEBE8;
+  /* A graded room, not a photograph. Glass over a dead-flat colour stops
+     reading as glass — there is nothing for the frost to refract — so this
+     carries two soft highlights and a diagonal fall. Warm, in the brand's
+     paper tones, and quiet enough to put body copy straight on. */
+  --lq-backdrop:
+    radial-gradient(92% 72% at 16% 0%, #FFFFFF 0%, transparent 62%),
+    radial-gradient(80% 62% at 100% 100%, #EEEAE4 0%, transparent 58%),
+    linear-gradient(158deg, #F7F5F2 0%, #E8E5DF 100%);
+  --lq-under: #F1EFEB;
 
   color-scheme: light;
   background-color: var(--lq-under) !important;
@@ -1146,13 +1154,13 @@ html.quote-skin.quote-skin-dark {
     0 34px 70px -28px rgba(0, 0, 0, 0.55),
     0 12px 28px -16px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  /* The app dims 0.46. This dims harder for the same reason the light scrim
-     is heavy: the brightest pixel under the quote's column is a blown-out
-     window at rgb(255,241,224), where 0.46 leaves body text at 2.73:1. */
-  --lq-scrim:
-    radial-gradient(120% 85% at 50% 12%, transparent 30%, rgba(0, 0, 0, 0.45) 100%),
-    linear-gradient(rgba(12, 10, 9, 0.70), rgba(12, 10, 9, 0.70));
-  --lq-under: #1c1a19;
+  /* The theme's own no-photo backdrop, which is what glass.css falls back to
+     when no wallpaper is set: a warm graded room rather than a flat fill. */
+  --lq-backdrop:
+    radial-gradient(90% 70% at 18% 0%, #3A322C 0%, transparent 60%),
+    radial-gradient(80% 60% at 100% 100%, #2B2521 0%, transparent 55%),
+    linear-gradient(160deg, #241F1C 0%, #15120F 100%);
+  --lq-under: #1C1A19;
 
   color-scheme: dark;
 }
@@ -1161,21 +1169,16 @@ html.quote-skin.quote-skin-dark {
 html.quote-skin body,
 html.quote-skin #root { background-color: transparent !important; }
 
-/* The same photo the app uses, so the two really are the same room. */
-html.quote-skin body::before,
-html.quote-skin body::after {
+/* A fixed layer behind everything, so the gradient does not scroll with the
+   quote and the frost always has the same room to refract. */
+html.quote-skin body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  background: var(--lq-backdrop);
 }
-html.quote-skin body::before {
-  background-image: url('/glass-wallpaper.jpg');
-  background-size: cover;
-  background-position: center;
-}
-html.quote-skin body::after { background: var(--lq-scrim); }
 
 /* Paper has no backdrop to frost against, and a translucent panel prints as
    a grey smear. Print drops to flat ink on white, in either skin. */
@@ -1207,8 +1210,7 @@ html.quote-skin body::after { background: var(--lq-scrim); }
     background-color: #FFFFFF !important;
     color-scheme: light;
   }
-  html.quote-skin body::before,
-  html.quote-skin body::after { display: none; }
+  html.quote-skin body::before { display: none; }
 }
 
 /* ── Customer quote: body + details rail ──────────────────────────────────
