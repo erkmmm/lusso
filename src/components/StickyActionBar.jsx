@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useSidebar } from '../contexts/SidebarContext';
 
 // A page's save / submit bar, pinned to the bottom of the CONTENT column.
@@ -20,19 +21,47 @@ import { useSidebar } from '../contexts/SidebarContext';
 // page's padding box would not.
 export default function StickyActionBar({ children, className = '' }) {
   const { rail } = useSidebar();
+
+  // The bar is `fixed`, so it occupies no space in the flow and the page's own
+  // bottom padding has to allow for it. `.app-main` carries pb-16, which is
+  // exactly the 64px tab bar and nothing more — so on every page with one of
+  // these bars the last ~67px of content sat underneath it, unreachable at the
+  // bottom of the scroll. A spacer the bar's own height puts that space back.
+  //
+  // Measured rather than hardcoded: the bar grows when it wraps on a narrow
+  // screen and when it shows a submit error above the buttons, and a fixed
+  // number would be wrong in both cases.
+  const barRef = useRef(null);
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    // ResizeObserver reports the initial size on observe, so this covers the
+    // first measurement too — no setState directly in the effect body.
+    const ro = new ResizeObserver(([entry]) => {
+      setHeight(entry.target.offsetHeight);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
+    <>
+    <div aria-hidden="true" style={{ height }} />
     <div
+      ref={barRef}
       // data-rail is what the glass theme keys off to inset the bar: there the
       // sidebar floats on a 14px margin, so its right edge is 14px further over
       // than left-16/left-64 assume, and the bar's own left edge slid underneath
       // it. Exposed as an attribute rather than letting the stylesheet reach for
       // the Tailwind class names, which are an implementation detail.
       data-rail={rail ? 'true' : 'false'}
-      className={`app-action-bar fixed bottom-16 lg:bottom-0 left-0 right-0 z-20 bg-white border-t border-slate-200 px-4 py-3 transition-[left] duration-200 ${
+      className={`app-action-bar fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] lg:bottom-0 left-0 right-0 z-20 bg-white border-t border-slate-200 px-4 py-3 transition-[left] duration-200 ${
         rail ? 'lg:left-16' : 'lg:left-64'
       } ${className}`}
     >
       {children}
     </div>
+    </>
   );
 }

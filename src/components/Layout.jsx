@@ -656,7 +656,7 @@ export default function Layout() {
         </header>
 
         {/* Page content — extra bottom padding on mobile for bottom nav */}
-        <main ref={mainRef} className="app-main flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
+        <main ref={mainRef} className="app-main flex-1 overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
           {/* `key` on the route is what replays the Glass theme's card
               entrance on every navigation: React throws the subtree away and
               remounts it, so the CSS animations start over. Keyed on pathname
@@ -677,7 +677,10 @@ export default function Layout() {
       </div>
 
       {/* ── Mobile bottom nav ─────────────────────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-slate-100 flex items-stretch h-16 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] no-print">
+      {/* h-16 plus the home-indicator inset. On a phone that inset is ~34px of
+          untouchable screen; without it the tab row's own labels sit under the
+          indicator and every bottom clearance in the app is short by that much. */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-slate-100 flex items-stretch h-16 pb-[env(safe-area-inset-bottom)] box-content shadow-[0_-4px_12px_rgba(0,0,0,0.06)] no-print">
         {/* Home */}
         <NavLink to="/" end className={({ isActive }) =>
           `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
