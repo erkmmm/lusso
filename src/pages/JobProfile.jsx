@@ -7,8 +7,8 @@ import {
   Calendar, ClipboardList, FileText,
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, HardHat, Plus, Upload,
-  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal, CheckSquare, PackageCheck,
-  Copy, Printer, FileDown,
+  CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal, PackageCheck,
+  Copy, Printer, FileDown, ChevronDown,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import ConsultRecordings from '../components/ConsultRecordings';
@@ -19,7 +19,7 @@ import {
   updateJobStatus, saveJob, JOB_STATUSES, getQuotesByJob,
   deleteQuote, deleteJob,
   installProgress, getPurchaseOrdersByJob, JOB_EXIT_STATUSES,
-  duplicateMeasureSheet,
+  duplicateMeasureSheet, deleteMeasureSheet, saveMeasureSheet,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -250,11 +250,15 @@ export default function JobProfile() {
         {/* Tab bar */}
         <div className="flex border-t border-slate-100 overflow-x-auto">
           {TABS.map(({ id: tid, label, icon: Icon }) => {
+            // A badge, not strictly a count: install reads "3/12", because
+            // progress is the thing you want from across the room.
             const count =
-              tid === 'quotes'   ? quotes.length :
-              tid === 'measures' ? measureSheets.length :
-              tid === 'orders'   ? jobPurchaseOrders.length :
-              tid === 'notes'    ? openNotes : null;
+              tid === 'quotes'   ? (quotes.length || null) :
+              tid === 'measures' ? (measureSheets.length || null) :
+              tid === 'orders'   ? (jobPurchaseOrders.length || null) :
+              tid === 'notes'    ? (openNotes || null) :
+              tid === 'install'  ? (installTotal > 0 ? `${installDone}/${installTotal}` : null) : null;
+            const done = tid === 'install' && installTotal > 0 && installDone === installTotal;
             return (
               <button key={tid} onClick={() => setActiveTab(tid)}
                 className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-1 justify-center ${
@@ -264,9 +268,11 @@ export default function JobProfile() {
                 }`}>
                 <Icon size={14} />
                 {label}
-                {count !== null && count > 0 && (
+                {count !== null && (
                   <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                    activeTab === tid ? 'bg-amber-200 text-amber-700' : 'bg-slate-100 text-slate-500'
+                    done                ? 'bg-green-100 text-green-700'
+                    : activeTab === tid ? 'bg-amber-200 text-amber-700'
+                    :                     'bg-slate-100 text-slate-500'
                   }`}>{count}</span>
                 )}
               </button>
@@ -508,31 +514,27 @@ export default function JobProfile() {
               <ClipboardList size={15} /> Measure Sheets
             </h2>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              <button onClick={() => navigate(`/jobs/${id}/takeoff`)}
-                title="Measure windows straight off the plan PDF"
-                className="flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors">
-                <Ruler size={12} /> Plan Takeoff
-              </button>
-              {/* Only worth offering once there is something to install. */}
-              {installTotal > 0 && (
-                <button onClick={() => navigate(`/jobs/${id}/install`)}
-                  title="Room-by-room checklist for install day"
-                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors border ${
-                    installDone === installTotal
-                      ? 'border-green-200 text-green-700 bg-green-50 hover:bg-green-100'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}>
-                  <CheckSquare size={12} /> Install {installDone}/{installTotal}
-                </button>
-              )}
-              <button onClick={() => navigate(`/measure-sheets/import?customerId=${job.customerId}&jobId=${id}`)}
-                className="flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors">
-                <Upload size={12} /> Import
-              </button>
-              <button onClick={() => navigate(`/measure-sheets/new?customerId=${job.customerId}&jobId=${id}`)}
-                className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg transition-colors">
-                <Plus size={12} /> New Sheet
-              </button>
+              {/* Blank, from a plan, from Excel — three ways to answer one
+                  question (where are the measurements coming from?), which were
+                  three buttons competing for the same job. The install
+                  checklist that used to sit here was never a sheet action at
+                  all; its progress is on the Install tab, which is where it
+                  was always going to be looked for. */}
+              <OptionsMenu
+                align="right"
+                title="Start a new measure sheet"
+                menuClassName="w-52"
+                buttonClassName="flex items-center gap-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg transition-colors"
+                trigger={<><Plus size={12} /> New Sheet <ChevronDown size={12} /></>}
+                items={[
+                  { label: 'Blank sheet', icon: ClipboardList,
+                    onClick: () => navigate(`/measure-sheets/new?customerId=${job.customerId}&jobId=${id}`) },
+                  { label: 'From a plan', icon: Ruler,
+                    onClick: () => navigate(`/jobs/${id}/takeoff`) },
+                  { label: 'Import from Excel', icon: Upload,
+                    onClick: () => navigate(`/measure-sheets/import?customerId=${job.customerId}&jobId=${id}`) },
+                ]}
+              />
             </div>
           </div>
 
@@ -560,7 +562,7 @@ export default function JobProfile() {
                       navigate(`/measure-sheets/${ms.id}`);
                     }
                   }}
-                  className="px-5 py-4 cursor-pointer hover:bg-slate-50/70 transition-colors"
+                  className="px-5 py-4 cursor-pointer"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0">
@@ -611,6 +613,28 @@ export default function JobProfile() {
                               if (!dupe) { toast('Could not duplicate that sheet.', 'error'); return; }
                               toast('Measure sheet duplicated — opening the copy to edit.');
                               navigate(`/measure-sheets/${dupe.id}/edit`);
+                            } },
+                          { divider: true },
+                          // Soft delete, and the sheet is still in hand — so
+                          // Undo puts it back rather than sending you to
+                          // Measure Sheets → Recover to find it.
+                          { label: 'Delete', icon: Trash2, danger: true,
+                            onClick: () => {
+                              // Neither mutator announces itself, and this page
+                              // reads in the render body — so say it, which is
+                              // what useDataRefresh() is listening for.
+                              const changed = () =>
+                                window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+                              deleteMeasureSheet(ms.id);
+                              changed();
+                              toast('Measure sheet deleted.', 'info', {
+                                duration: 10000,
+                                onUndo: () => {
+                                  saveMeasureSheet({ ...ms, deletedAt: null });
+                                  changed();
+                                  toast('Measure sheet restored.', 'info');
+                                },
+                              });
                             } },
                         ]}
                       />

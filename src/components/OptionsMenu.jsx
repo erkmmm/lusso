@@ -6,11 +6,19 @@
  *     { label: 'Edit',   icon: Edit3,  onClick: () => {} },
  *     { label: 'Delete', icon: Trash2, onClick: () => {}, danger: true },
  *   ]} />
+ *
+ * `trigger` replaces the ⋯ with your own control, for the case where the menu
+ * IS the primary action rather than a secondary one — "New Sheet ▾" offering
+ * blank / from a plan / from Excel. Same menu, same dismissal behaviour; only
+ * the thing you press is different.
  */
 import { useState, useEffect, useRef } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 
-export default function OptionsMenu({ items = [], align = 'right', buttonClassName = '' }) {
+export default function OptionsMenu({
+  items = [], align = 'right', buttonClassName = '', trigger = null,
+  title = 'Options', menuClassName = 'w-44',
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -36,15 +44,17 @@ export default function OptionsMenu({ items = [], align = 'right', buttonClassNa
     <div className="relative" ref={ref}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ${buttonClassName}`}
-        title="Options"
+        className={trigger
+          ? buttonClassName
+          : `w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ${buttonClassName}`}
+        title={title}
       >
-        <MoreHorizontal size={16} />
+        {trigger ?? <MoreHorizontal size={16} />}
       </button>
 
       {open && (
         <div
-          className={`absolute z-50 mt-1 w-44 bg-white rounded-xl border border-slate-200 shadow-lg py-1 ${
+          className={`absolute z-50 mt-1 ${menuClassName} bg-white rounded-xl border border-slate-200 shadow-lg py-1 ${
             align === 'left' ? 'left-0' : 'right-0'
           }`}
           onClick={e => e.stopPropagation()}
