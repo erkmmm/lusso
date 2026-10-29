@@ -996,10 +996,12 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
 
       {/* Body — the conversation leads, the reference detail folds away */}
       <div ref={bodyRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 bg-slate-50/50 space-y-4">
+        {/* Collapsed always, including on a lead nobody has replied to yet:
+            the summary line carries what they want and where they came from,
+            and the enquiry itself is right underneath it. */}
         <Disclosure
           label="Lead details"
           summary={[e.interest, originSummary].filter(Boolean).join(' · ')}
-          defaultOpen={items.length === 0}
         >
           <div className="flex flex-wrap gap-2">
             {e.interest && (
