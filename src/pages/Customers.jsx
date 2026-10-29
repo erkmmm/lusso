@@ -91,22 +91,24 @@ export default function Customers() {
   const customers = getCustomersFiltered(isAM, displayName);
 
   /**
-   * How many groups of records look like the same person — a shared email
-   * address, or a shared phone number. Counted here rather than asked of the
-   * server so the link only appears when there is something behind it; the
-   * review page does the authoritative pass.
+   * Whether any records share an email address or a phone number at all, so
+   * the link only appears when there is something behind it. Deliberately a
+   * cheap local check — the review page scores name agreement properly and is
+   * the authoritative pass.
    */
-  const duplicateGroups = useMemo(() => {
+  const hasPossibleDuplicates = useMemo(() => {
     const byEmail = new Map();
     const byPhone = new Map();
     for (const c of customers) {
       const e = (c.email || '').trim().toLowerCase();
-      if (e) byEmail.set(e, (byEmail.get(e) ?? 0) + 1);
+      // Our own addresses sit on records whose owner had none; one of them is
+      // on 13 different people. Never a sign of a duplicate.
+      if (e && !e.endsWith('@lusso.com.au')) byEmail.set(e, (byEmail.get(e) ?? 0) + 1);
       const p = (c.phone || '').replace(/\D/g, '').slice(-9);
       if (p.length === 9) byPhone.set(p, (byPhone.get(p) ?? 0) + 1);
     }
-    const count = (m) => [...m.values()].filter(n => n > 1).length;
-    return count(byEmail) + count(byPhone);
+    const any = (m) => [...m.values()].some(n => n > 1);
+    return any(byEmail) || any(byPhone);
   }, [customers]);
 
   const filtered = useMemo(() => {
@@ -209,15 +211,17 @@ export default function Customers() {
           <h1 className="text-2xl font-bold text-slate-900">Customers</h1>
           <p className="text-slate-500 text-sm mt-0.5">
             {filtered.length} customer{filtered.length !== 1 ? 's' : ''}
-            {duplicateGroups > 0 && (
+            {hasPossibleDuplicates && (
               <>
                 {' · '}
+                {/* No count here on purpose: this is a cheap local check, and
+                    the review page does the real scoring. A number that
+                    disagreed with the page would just be noise. */}
                 <button
                   onClick={() => navigate('/customers/duplicates')}
                   className="inline-flex items-center gap-1 text-violet-600 hover:underline font-medium"
                 >
-                  <Merge size={13} />
-                  {duplicateGroups} possible duplicate{duplicateGroups !== 1 ? 's' : ''}
+                  <Merge size={13} /> Review possible duplicates
                 </button>
               </>
             )}

@@ -68,6 +68,23 @@ const LEAD_STATUS = {
   archived:  { label: 'Archived',  pill: 'bg-slate-100 text-slate-500' },
 };
 
+/** Our own addresses are a staff placeholder on a customer record, never identity. */
+function emailKey(v) {
+  const e = (v || '').trim().toLowerCase();
+  return !e || e.endsWith('@lusso.com.au') ? '' : e;
+}
+
+/** The last nine digits — the same key match_customer_by_phone() reduces to. */
+function phoneKey(v) {
+  const d = (v || '').replace(/\D/g, '');
+  return d.length >= 9 ? d.slice(-9) : '';
+}
+
+/** Case and punctuation removed, so "Hunter-Smith" and "Hunter - Smith" agree. */
+function nameKey(v) {
+  return (v || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+}
+
 /**
  * Which conversation a website enquiry belongs to.
  *
@@ -83,10 +100,10 @@ const LEAD_STATUS = {
  * the old behaviour and still one conversation of its own.
  */
 function leadIdentityKey(e) {
-  const email = (e.email || '').trim().toLowerCase();
+  const email = emailKey(e.email);
   if (email) return `web:${email}`;
-  const digits = (e.phone || '').replace(/\D/g, '');
-  if (digits.length >= 9) return `web:${digits.slice(-9)}`;
+  const phone = phoneKey(e.phone);
+  if (phone) return `web:${phone}`;
   return `web:${e.id}`;
 }
 
@@ -1367,22 +1384,28 @@ export default function Inbox() {
   /**
    * Which website enquiries belong to someone who is already a customer.
    *
-   * Matched on EMAIL ONLY, deliberately. Phone looks like the stronger key and
-   * is not: fifteen numbers in this database are shared across customer
-   * records, and only some of those are duplicates. `John Stewart` and
-   * `Judy Stewart` are a couple on one line; one mobile sits on three
-   * unrelated clients, almost certainly a builder's. Folding on phone would
-   * merge a husband and wife into one conversation. Name is worse still —
-   * `Jett Hopko` and `Jett Hopkins` are the same person, so a name match would
-   * have missed them and a fuzzy one would have joined the Stewarts.
+   * Two matching signals are required, because no single one is identity here.
+   * A shared phone number is often a household or a trade contact —
+   * `John Stewart` and `Judy Stewart` are a couple on one line, and one mobile
+   * sits on three unrelated clients. A shared email is no better: 23 customer
+   * records carry a @lusso.com.au address a staff member typed in, one of them
+   * on 13 different people, and builders put a single office inbox on every
+   * client they refer. The name alone fails too — `Jett Hopko` and
+   * `Jett Hopkins` are one person.
+   *
+   * So: the email must match AND either the phone or the name must agree, our
+   * own domain never counts, and an ambiguous match folds nothing. Attaching a
+   * lead to the wrong customer puts a stranger's enquiry in their thread.
    */
   const customerByEnquiry = useMemo(() => {
     const byEmail = new Map();
     const byId    = new Map();
     for (const c of getCustomers()) {
       byId.set(String(c.id), c);
-      const e = (c.email || '').trim().toLowerCase();
-      if (e && !byEmail.has(e)) byEmail.set(e, c);
+      const e = emailKey(c.email);
+      if (!e) continue;
+      const list = byEmail.get(e);
+      if (list) list.push(c); else byEmail.set(e, [c]);
     }
 
     const out = new Map();
@@ -1399,12 +1422,17 @@ export default function Inbox() {
       }
     }
 
-    // Otherwise match the lead's own email.
+    // Otherwise the lead's own details have to agree twice over.
     for (const l of leads) {
       if (out.has(l.id)) continue;
-      const e = (l.email || '').trim().toLowerCase();
-      const c = e ? byEmail.get(e) : null;
-      if (c) out.set(l.id, c);
+      const e = emailKey(l.email);
+      if (!e) continue;
+      const candidates = (byEmail.get(e) ?? []).filter(c =>
+        (phoneKey(l.phone) && phoneKey(l.phone) === phoneKey(c.phone))
+        || (nameKey(l.name) && nameKey(l.name) === nameKey(c.name)));
+      // Exactly one, or none: two customers equally entitled to this enquiry
+      // is the shared-inbox case, and picking one would be a coin toss.
+      if (candidates.length === 1) out.set(l.id, candidates[0]);
     }
     return out;
   }, [leads, comms]);

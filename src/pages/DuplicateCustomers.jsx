@@ -17,7 +17,7 @@
  * where they were rather than guessing. See migrations/customer_merge.sql.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, AlertTriangle, Loader, Merge, Check, ExternalLink, Mail, Phone, MapPin,
@@ -28,17 +28,21 @@ import { hydrateFromSupabase } from '../store/db';
 import Card from '../components/Card';
 import { toast } from '../components/ToastContainer';
 
+/**
+ * Above this, both halves of the name agree or near-miss and the records are
+ * very probably one person. Below it they merely share a contact detail.
+ *
+ * The line sits at 0.35 because of where the real cases fall: every known
+ * duplicate in this database scores 0.40 or more — `Jett Hopko`/`Jett Hopkins`
+ * and `Nick Dargan`/`Nick Dargin` both 0.40, `Carmel McMahon`/`McMannon` 0.42,
+ * `Warrick`/`Warrwick Baker` 0.55 — while `John Stewart` and `Judy Stewart`,
+ * a couple sharing one number, score 0.11. See customer_name_match_score().
+ */
+const LIKELY = 0.35;
+
 const BASIS = {
-  email: {
-    label: 'Same email address',
-    tone:  'bg-emerald-50 text-emerald-700 border-emerald-200',
-    blurb: 'Two records reachable at one inbox. Almost always one person.',
-  },
-  phone: {
-    label: 'Same phone number',
-    tone:  'bg-amber-50 text-amber-700 border-amber-200',
-    blurb: 'Check before merging — couples, households and trade contacts legitimately share a number.',
-  },
+  email: { label: 'Same email address', tone: 'bg-slate-100 text-slate-600 border-slate-200' },
+  phone: { label: 'Same phone number',  tone: 'bg-slate-100 text-slate-600 border-slate-200' },
 };
 
 /** How much history a record carries. The one with the most is usually the keeper. */
@@ -111,6 +115,7 @@ function Group({ group, onMerged }) {
   const navigate = useNavigate();
   const meta = BASIS[group.basis] ?? BASIS.phone;
   const members = group.members ?? [];
+  const likely = Number(group.nameAgreement) >= LIKELY;
 
   // Default to the record carrying the most history; on a tie, the oldest.
   const [keepId, setKeepId] = useState(() =>
@@ -169,11 +174,18 @@ function Group({ group, onMerged }) {
     <Card className="p-4">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
-          <span className={`inline-flex items-center rounded-full border text-[11px] font-medium px-2.5 py-0.5 ${meta.tone}`}>
-            {meta.label}
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={`inline-flex items-center rounded-full border text-[11px] font-medium px-2.5 py-0.5 ${meta.tone}`}>
+              {meta.label}
+            </span>
+            <span className={`inline-flex items-center rounded-full border text-[11px] font-medium px-2.5 py-0.5 ${
+              likely ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                     : 'bg-amber-50 text-amber-700 border-amber-200'
+            }`}>
+              {likely ? 'Names agree' : 'Different names'}
+            </span>
+          </div>
           <p className="mt-1.5 text-sm font-medium text-slate-700 truncate">{group.matchKey}</p>
-          <p className="text-xs text-slate-500">{meta.blurb}</p>
         </div>
         <button
           onClick={merge}
@@ -211,21 +223,32 @@ export default function DuplicateCustomers() {
   const [error, setError]     = useState('');
   const [done, setDone]       = useState([]);   // matchKeys merged this session
 
-  const load = useCallback(async () => {
+  // Cancellable, and the fetch lives inside the effect rather than in a
+  // callback it calls — the same shape the inbox uses, and the one the React
+  // compiler accepts without a cascading-render warning.
+  useEffect(() => {
     if (!supabase) return;
-    const { data, error: rpcErr } = await supabase.rpc('customer_duplicate_groups');
-    if (rpcErr) { setError(rpcErr.message); setGroups([]); return; }
-    setGroups(Array.isArray(data) ? data : []);
+    let cancelled = false;
+    (async () => {
+      const { data, error: rpcErr } = await supabase.rpc('customer_duplicate_groups');
+      if (cancelled) return;
+      if (rpcErr) { setError(rpcErr.message); setGroups([]); return; }
+      setGroups(Array.isArray(data) ? data : []);
+    })();
+    return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   const remaining = useMemo(
     () => (groups ?? []).filter(g => !done.includes(`${g.basis}:${g.matchKey}`)),
     [groups, done],
   );
-  const byEmail = remaining.filter(g => g.basis === 'email');
-  const byPhone = remaining.filter(g => g.basis === 'phone');
+  // Bucketed on whether the NAMES agree, not on which contact detail matched.
+  // Sharing an email looked like the confident signal and isn't: 23 customer
+  // records carry a @lusso.com.au address a staff member typed in, and
+  // builders, architects and property managers put one office inbox on every
+  // client. What actually separates a duplicate from two people is the name.
+  const likely = remaining.filter(g => Number(g.nameAgreement) >= LIKELY);
+  const shared = remaining.filter(g => Number(g.nameAgreement) < LIKELY);
 
   const onMerged = (g) => setDone(prev => [...prev, `${g.basis}:${g.matchKey}`]);
 
@@ -236,8 +259,8 @@ export default function DuplicateCustomers() {
           <Users size={20} className="text-violet-600" /> Possible duplicates
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Records that look like the same person. Nothing merges until you say so — pick which record
-          to keep, and everything else moves onto it.
+          Records that may be the same person. Nothing merges until you say so — pick which record to
+          keep, and everything else moves onto it. Every merge can be undone.
         </p>
       </div>
 
@@ -263,32 +286,37 @@ export default function DuplicateCustomers() {
         </Card>
       )}
 
-      {byEmail.length > 0 && (
+      {likely.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Sharing an email address · {byEmail.length}
+            Likely the same person · {likely.length}
           </h2>
-          {byEmail.map(g => (
-            <Group key={`email:${g.matchKey}`} group={g} onMerged={onMerged} />
+          <p className="text-xs text-slate-500 -mt-1">
+            Both halves of the name agree or are a near-miss, and they share an email address or a
+            phone number.
+          </p>
+          {likely.map(g => (
+            <Group key={`${g.basis}:${g.matchKey}`} group={g} onMerged={onMerged} />
           ))}
         </section>
       )}
 
-      {byPhone.length > 0 && (
+      {shared.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Sharing a phone number · {byPhone.length}
+            Shares contact details, different names · {shared.length}
           </h2>
           <Card className="p-3.5 border-amber-200 bg-amber-50 flex gap-2.5">
             <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-amber-800">
-              A shared number is not proof of a duplicate. Couples share a line, and a builder's or
-              designer's mobile can sit on several unrelated clients. Read the names and the history
-              before merging these.
+              Most of these are not duplicates. Couples share a line, a builder's or architect's
+              office inbox sits on every client they refer, and a staff address sometimes stands in
+              where a customer had none. Merging two of these makes one customer out of two people.
+              Read the names and the history before touching anything here.
             </p>
           </Card>
-          {byPhone.map(g => (
-            <Group key={`phone:${g.matchKey}`} group={g} onMerged={onMerged} />
+          {shared.map(g => (
+            <Group key={`${g.basis}:${g.matchKey}`} group={g} onMerged={onMerged} />
           ))}
         </section>
       )}
