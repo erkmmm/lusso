@@ -52,6 +52,20 @@ class SendFailed extends Error {
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
 
+/**
+ * Does an item match what was typed, across the fields worth searching?
+ *
+ * The item library searched saved items by name alone and priced items by name
+ * and code, so the same query found different things in the two sections of
+ * one dropdown. `itemCode` is the SKU — the column is item_code, and 339 of
+ * the 779 priced items carry one.
+ */
+const matchesItemSearch = (item, query, fields) => {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return true;
+  return fields.some(f => String(item?.[f] ?? '').toLowerCase().includes(q));
+};
+
 // ─── Parts & Accessories catalogue ───────────────────────────────────────────
 const PRESET_PARTS = [
   { name: 'Acmeda Automate WiFi Hub',            description: 'Acmeda Automate Pulse WiFi Hub',                                      price: 340 },
@@ -1911,17 +1925,17 @@ export default function QuoteBuilder() {
                           autoFocus
                           value={itemLibSearch}
                           onChange={e => setItemLibSearch(e.target.value)}
-                          placeholder="Search items…"
+                          placeholder="Search by SKU or name…"
                           className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
                         />
                       </div>
                       <div className="max-h-72 overflow-y-auto">
                         {/* Saved items section */}
-                        {savedItems.filter(si => !itemLibSearch || si.name.toLowerCase().includes(itemLibSearch.toLowerCase())).length > 0 && (
+                        {savedItems.filter(si => matchesItemSearch(si, itemLibSearch, ['name', 'itemCode', 'sku'])).length > 0 && (
                           <>
                             <p className="text-xs font-semibold text-slate-400 px-3 py-1.5 bg-slate-50 sticky top-0">Saved Items</p>
                             {savedItems
-                              .filter(si => !itemLibSearch || si.name.toLowerCase().includes(itemLibSearch.toLowerCase()))
+                              .filter(si => matchesItemSearch(si, itemLibSearch, ['name', 'itemCode', 'sku']))
                               .map(si => (
                                 <button key={si.id} type="button" onClick={() => addSavedItem(si)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-amber-50 text-left border-b border-slate-50">
                                   <div className="flex-1 min-w-0">
@@ -1934,11 +1948,11 @@ export default function QuoteBuilder() {
                           </>
                         )}
                         {/* Priced items library section */}
-                        {pricedItems.filter(pi => !itemLibSearch || pi.itemName.toLowerCase().includes(itemLibSearch.toLowerCase()) || (pi.itemCode || '').toLowerCase().includes(itemLibSearch.toLowerCase())).length > 0 && (
+                        {pricedItems.filter(pi => matchesItemSearch(pi, itemLibSearch, ['itemName', 'itemCode', 'sku', 'category', 'supplier'])).length > 0 && (
                           <>
                             <p className="text-xs font-semibold text-slate-400 px-3 py-1.5 bg-slate-50 sticky top-0">Priced Items Library</p>
                             {pricedItems
-                              .filter(pi => !itemLibSearch || pi.itemName.toLowerCase().includes(itemLibSearch.toLowerCase()) || (pi.itemCode || '').toLowerCase().includes(itemLibSearch.toLowerCase()))
+                              .filter(pi => matchesItemSearch(pi, itemLibSearch, ['itemName', 'itemCode', 'sku', 'category', 'supplier']))
                               .map(pi => (
                                 <button key={pi.id} type="button" onClick={() => addPricedItem(pi)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-amber-50 text-left border-b border-slate-50">
                                   <div className="flex-1 min-w-0">

@@ -59,12 +59,18 @@ export default function PricedItemPicker({
     [open],
   );
 
-  // Filter by query
+  // Filter by query.
+  //
+  // `itemCode` is the SKU. This searched `i.sku`, which does not exist on a
+  // priced item — the column is item_code — so typing a code matched nothing
+  // and the only way to find a product was to remember its name. `sku` is kept
+  // alongside it because data.js maps one for the supplier-import shape.
   const q = query.trim().toLowerCase();
   const matchedItems = useMemo(() => (
     q
       ? allItems.filter(i =>
           (i.itemName    || '').toLowerCase().includes(q) ||
+          (i.itemCode    || '').toLowerCase().includes(q) ||
           (i.category    || '').toLowerCase().includes(q) ||
           (i.sku         || '').toLowerCase().includes(q) ||
           (i.description || '').toLowerCase().includes(q) ||
@@ -177,7 +183,7 @@ export default function PricedItemPicker({
                 autoFocus
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder="Search by name, category, supplier…"
+                placeholder="Search by SKU, name, category, supplier…"
                 className="flex-1 bg-transparent text-sm outline-none text-slate-800 placeholder-slate-400"
               />
               {query && (
@@ -236,6 +242,14 @@ export default function PricedItemPicker({
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-800 leading-snug">{item.itemName}</p>
                         <div className="flex items-center gap-2 mt-0.5">
+                          {/* The code earns its place in the row: searching by
+                              one and not seeing it is how you pick the wrong
+                              variant of a product whose names barely differ. */}
+                          {(item.itemCode || item.sku) && (
+                            <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded font-mono">
+                              {item.itemCode || item.sku}
+                            </span>
+                          )}
                           {item.category && (
                             <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">{item.category}</span>
                           )}
