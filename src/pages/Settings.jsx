@@ -1226,7 +1226,12 @@ function SettingRow({ label, value }) {
 function QuoteDefaultsSection() {
   const [s, setS] = useState(() => {
     const q = getQuoteSettings();
-    return { ...q, paymentDetails: { ...(q.paymentDetails || {}) }, testimonials: [...(q.testimonials || [])] };
+    return {
+      ...q,
+      paymentDetails: { ...(q.paymentDetails || {}) },
+      testimonials: [...(q.testimonials || [])],
+      trustPoints: [...(q.trustPoints || [])],
+    };
   });
   const [saved, setSaved] = useState(false);
 
@@ -1237,6 +1242,9 @@ function QuoteDefaultsSection() {
   });
   const addTesti = () => setS(prev => ({ ...prev, testimonials: [...prev.testimonials, { name: '', location: '', rating: 5, quote: '' }] }));
   const removeTesti = (i) => setS(prev => ({ ...prev, testimonials: prev.testimonials.filter((_, idx) => idx !== i) }));
+  const setTrust = (i, v) => setS(prev => { const t = [...(prev.trustPoints || [])]; t[i] = v; return { ...prev, trustPoints: t }; });
+  const addTrust = () => setS(prev => ({ ...prev, trustPoints: [...(prev.trustPoints || []), ''] }));
+  const removeTrust = (i) => setS(prev => ({ ...prev, trustPoints: (prev.trustPoints || []).filter((_, idx) => idx !== i) }));
 
   const save = () => {
     saveQuoteSettings({
@@ -1244,6 +1252,14 @@ function QuoteDefaultsSection() {
       paymentDetails: { ...s.paymentDetails, amexSurchargePercent: Number(s.paymentDetails.amexSurchargePercent) || 0 },
       googleRating: Number(s.googleRating) || undefined,
       googleReviewCount: Number(s.googleReviewCount) || undefined,
+      // Kept as '' rather than 0 when cleared: the customer page treats blank as
+      // "say nothing", and 0 would render "~0 weeks".
+      leadTimeWeeks: String(s.leadTimeWeeks ?? '').trim() === '' ? '' : (Number(s.leadTimeWeeks) || ''),
+      expiryReason: String(s.expiryReason ?? '').trim(),
+      // Blank rows are dropped rather than saved — an empty trust point would
+      // render as a stray bullet on every quote.
+      trustPoints: (s.trustPoints || []).map(t => String(t || '').trim()).filter(Boolean),
+      warrantyText: String(s.warrantyText ?? '').trim(),
     });
     setSaved(true);
     toast('Quote defaults saved');
@@ -1277,6 +1293,69 @@ function QuoteDefaultsSection() {
             {field('Website', 'businessWebsite', 'www.lusso.com.au')}
             {field('Postal address', 'businessAddress', '3 Crinum Crescent, Southport QLD 4215')}
           </div>
+        </div>
+      </Card>
+
+      {/* What the customer is told happens after they accept, and why the
+          price has a date on it. Both render nothing when blank — a timeline
+          step with an invented lead time is a promise nobody agreed to, and an
+          unexplained expiry reads as a sales tactic. */}
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100"><h2 className="font-semibold text-slate-800 text-sm">What happens next</h2></div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Lead time (weeks)</label>
+              <input type="number" min="1" max="52" value={s.leadTimeWeeks ?? ''} onChange={e => set('leadTimeWeeks', e.target.value)} placeholder="e.g. 5"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              <p className="text-[11px] text-slate-400 mt-1">Leave blank to show the step without a number.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Why the quote expires (optional)</label>
+              <input value={s.expiryReason ?? ''} onChange={e => set('expiryReason', e.target.value)} placeholder="e.g. Supplier pricing is reviewed quarterly"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              <p className="text-[11px] text-slate-400 mt-1">Shown in small text under the expiry date. Blank shows nothing at all.</p>
+            </div>
+          </div>
+          <button onClick={save} className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg transition-colors">
+            {saved ? <><Check size={13} /> Saved</> : <><Save size={13} /> Save quote defaults</>}
+          </button>
+        </div>
+      </Card>
+
+      {/* Shown as a quiet row beside the total on the customer quote. Ships
+          empty on purpose: every line here is a claim about the business that
+          a customer can check, so they have to be yours, not ours. */}
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="font-semibold text-slate-800 text-sm">Trust points & warranty</h2>
+          <button onClick={addTrust} className="flex items-center gap-1 text-xs font-medium text-amber-600 hover:text-amber-700"><Plus size={13} /> Add</button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Warranty, in one line (optional)</label>
+            <input value={s.warrantyText ?? ''} onChange={e => set('warrantyText', e.target.value)} placeholder="e.g. 5-year warranty on all motors and components"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+          </div>
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-slate-500">Trust points</label>
+            {(s.trustPoints || []).length === 0 && (
+              <p className="text-[11px] text-slate-400">
+                None set, so nothing is shown. Short and checkable works best — &ldquo;Family-owned since 1964&rdquo;,
+                &ldquo;Installed by our own team&rdquo;, &ldquo;Fully insured&rdquo;.
+              </p>
+            )}
+            {(s.trustPoints || []).map((t, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input value={t ?? ''} onChange={e => setTrust(i, e.target.value)} placeholder="e.g. Third-generation family business"
+                  className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                <button onClick={() => removeTrust(i)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={15} /></button>
+              </div>
+            ))}
+          </div>
+          <button onClick={save} className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg transition-colors">
+            {saved ? <><Check size={13} /> Saved</> : <><Save size={13} /> Save quote defaults</>}
+          </button>
         </div>
       </Card>
 

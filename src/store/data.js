@@ -3409,6 +3409,24 @@ const DEFAULT_QUOTE_SETTINGS = {
   defaultDepositValue: 50,
   defaultGSTRate: 10,
   includesGST: true,
+  // ── What the customer's "what happens next" timeline can say ──────────────
+  // Manufacturing lead time, in weeks, for the timeline on the customer quote.
+  // Deliberately blank: the step still renders, it just doesn't carry a number.
+  // A made-up "4-6 weeks" on a quote becomes a promise someone has to keep.
+  leadTimeWeeks: '',
+  // Why this quote has an expiry at all, in the customer's words — e.g.
+  // "Supplier pricing is reviewed quarterly". Blank renders nothing, which is
+  // the right default: an unexplained deadline reads as pressure, and an
+  // invented explanation is worse than none.
+  expiryReason: '',
+  // Short, checkable facts shown as a quiet row by the total — e.g.
+  // "Family-owned since 1964", "5-year warranty", "Installed by our own team".
+  // Deliberately EMPTY, for the same reason testimonials are: a claim about the
+  // business on a customer-facing quote has to be one we can stand behind, and
+  // a shipped default would be us inventing it. Add them in Settings.
+  trustPoints: [],
+  // The warranty, in one line. Blank renders nothing.
+  warrantyText: '',
   defaultTerms: 'A 50% deposit is required upon acceptance. Balance due on completion. Lead time is approximately 4–6 weeks from order. All products are custom-made and non-refundable.',
   defaultIntro: 'Thank you for the opportunity to quote on your window furnishings. Please find our detailed proposal below.',
   // Shown in the "To place your order" block on the customer quote.

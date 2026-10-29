@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { format, parseISO, isPast } from 'date-fns';
+import { format, parseISO, isPast, differenceInCalendarDays } from 'date-fns';
 import {
   getQuote, getCustomer, getQuoteSettings, fetchPublicQuoteSettings, googleReviewsLink,
   computeQuoteTotals, linePricing, markQuoteViewed, acceptQuote, declineQuote,
@@ -30,7 +30,22 @@ const T = {
   font: "'Manrope', system-ui, -apple-system, sans-serif",
 };
 
-const money = (n) => '$' + Number(n || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/**
+ * Money, as a customer reads it.
+ *
+ * A figure that lands on a whole dollar shows no cents: "$12,480" is a price,
+ * "$12,480.00" is an invoice line, and this page is asking someone to make a
+ * decision rather than reconcile an account. Anything genuinely carrying cents
+ * keeps both digits, because rounding someone's total in the display is how you
+ * get asked why the invoice disagrees with the quote.
+ */
+const money = (n) => {
+  const v = Number(n || 0);
+  // Guard the float before deciding: a computed total legitimately lands on
+  // 12479.999999999998, which is a whole dollar to everyone but toLocaleString.
+  const digits = Math.abs(v - Math.round(v)) < 0.005 ? 0 : 2;
+  return '$' + v.toLocaleString('en-AU', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+};
 const fmtDate = (d) => { try { return format(d instanceof Date ? d : parseISO(d), 'd MMMM yyyy'); } catch { return ''; } };
 // The signature bronze dash + uppercase eyebrow.
 function Eyebrow({ children, color = T.stone, dash = T.bronze }) {
@@ -58,7 +73,12 @@ function RefBadge({ children }) {
 }
 
 // Design-system Button (primary ink / secondary hairline outline; md / lg).
-function Button({ children, variant = 'primary', size = 'md', disabled = false, onClick }) {
+//
+// Renders an <a> when given an href, so an action that genuinely navigates —
+// sms:, tel:, mailto: — is a link and behaves like one: long-press to copy,
+// open in a new tab, and read out as a link rather than as a button that does
+// something unannounced. Styling and states are shared either way.
+function Button({ children, variant = 'primary', size = 'md', disabled = false, onClick, href = null }) {
   const [hover, setHover] = useState(false);
   const [active, setActive] = useState(false);
   const sizes = { md: { padding: '12px 26px', font: 15, gap: 9 }, lg: { padding: '16px 34px', font: 16, gap: 10 } };
@@ -67,19 +87,26 @@ function Button({ children, variant = 'primary', size = 'md', disabled = false, 
     primary: { background: hover && !disabled ? T.graphite : T.ink, color: T.paper, borderColor: 'transparent' },
     secondary: { background: 'transparent', color: hover && !disabled ? T.bronze : T.ink, borderColor: hover && !disabled ? T.bronze : T.stone },
   };
+  const style = {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: s.gap,
+    padding: s.padding, fontFamily: T.font, fontSize: s.font, fontWeight: 500, letterSpacing: '0.01em',
+    lineHeight: 1, borderRadius: 999, border: '0.5px solid transparent', whiteSpace: 'nowrap',
+    cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1,
+    transform: active && !disabled ? 'scale(0.98)' : 'scale(1)',
+    transition: `background 200ms ${T.ease}, color 200ms ${T.ease}, border-color 200ms ${T.ease}, transform 120ms ${T.ease}`,
+    WebkitFontSmoothing: 'antialiased', textDecoration: 'none', ...variants[variant],
+  };
+  const handlers = {
+    onMouseEnter: () => setHover(true),
+    onMouseLeave: () => { setHover(false); setActive(false); },
+    onMouseDown: () => setActive(true),
+    onMouseUp: () => setActive(false),
+  };
+  if (href) {
+    return <a href={href} onClick={onClick} {...handlers} style={style}>{children}</a>;
+  }
   return (
-    <button type="button" disabled={disabled} onClick={onClick}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => { setHover(false); setActive(false); }}
-      onMouseDown={() => setActive(true)} onMouseUp={() => setActive(false)}
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: s.gap,
-        padding: s.padding, fontFamily: T.font, fontSize: s.font, fontWeight: 500, letterSpacing: '0.01em',
-        lineHeight: 1, borderRadius: 999, border: '0.5px solid transparent', whiteSpace: 'nowrap',
-        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1,
-        transform: active && !disabled ? 'scale(0.98)' : 'scale(1)',
-        transition: `background 200ms ${T.ease}, color 200ms ${T.ease}, border-color 200ms ${T.ease}, transform 120ms ${T.ease}`,
-        WebkitFontSmoothing: 'antialiased', ...variants[variant],
-      }}>
+    <button type="button" disabled={disabled} onClick={onClick} {...handlers} style={style}>
       {children}
     </button>
   );
@@ -90,81 +117,358 @@ const fieldLabel = { fontSize: 9.5, fontWeight: 500, letterSpacing: '0.12em', te
 const hairline = { height: '0.5px', background: T.mist, margin: '16px 0', border: 0 };
 
 /**
+ * A location string, reduced to what two of them have to share to be the same
+ * window.
+ *
+ * This is the join between the plan and the quote. A takeoff row's label is
+ * copied onto the measure-sheet line as its `location`, and from there onto the
+ * quote line, so the two sides already agree — they just disagree about
+ * whitespace, case, and the "— 1 of 3" suffix a bay carries on the sheet and
+ * never shows a customer.
+ */
+const normLoc = (s) => String(s || '')
+  .replace(/\s+—\s+\d+\s+of\s+\d+$/, '')
+  .trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * The interactive layer over one rendered plan page.
+ *
+ * The runs are already painted into the image by captureQuotePlan; this draws
+ * the same geometry again as real elements on top of it. Hit-testing the raster
+ * would have been more work and given none of what this gives for free: focus,
+ * keyboard, and a screen-reader label per covering.
+ *
+ * Every stroke uses non-scaling-stroke. The page image is ~2000px wide and gets
+ * displayed at 375, so a hit area measured in page units would be four pixels
+ * across on the device this is mostly read on.
+ */
+function PlanOverlay({ page, entries, resolve, activeNumber, onActivate, onActivateEnd, onSelect }) {
+  const W = page.width || 1000;
+  const H = page.height || 700;
+  const xy = (p) => `${p.u * W},${p.v * H}`;
+  const lastPointer = useRef('mouse');
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+      role="group"
+      aria-label={`Coverings marked on plan page ${page.pageNumber}`}
+    >
+      {entries.map(e => {
+        const g = e.geometry;
+        const info = resolve(e);
+        const on = activeNumber === e.number;
+        const d = g.points ? `M ${g.points.map(xy).join(' L ')}` : null;
+        const ax = g.anchor ? g.anchor.u * W : null;
+        const ay = g.anchor ? g.anchor.v * H : null;
+        const label = [
+          e.label,
+          info.title,
+          info.priceText,
+          info.targetKey ? 'Go to this item on the quote' : null,
+        ].filter(Boolean).join('. ');
+
+        return (
+          <g
+            key={e.number}
+            role={info.targetKey ? 'button' : 'img'}
+            tabIndex={0}
+            aria-label={label}
+            onFocus={() => onActivate(e.number)}
+            onBlur={onActivateEnd}
+            onMouseEnter={() => onActivate(e.number)}
+            onMouseLeave={onActivateEnd}
+            onPointerDown={(ev) => { lastPointer.current = ev.pointerType || 'mouse'; }}
+            onKeyDown={(ev) => {
+              if (ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+              ev.preventDefault();
+              onSelect(e.number, info, 'keyboard');
+            }}
+            onClick={() => onSelect(e.number, info, lastPointer.current)}
+            style={{ cursor: info.targetKey ? 'pointer' : 'default' }}
+          >
+            {/* Emphasis. Lifting the run off the drawing with a white halo is
+                what makes it readable over a busy architectural plan — a colour
+                change alone disappears into the linework. */}
+            {d && (
+              <>
+                <path d={d} fill="none" stroke="#fff" strokeWidth={14} strokeLinecap="round" strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke" opacity={on ? 0.95 : 0} style={{ transition: `opacity 160ms ${T.ease}` }} />
+                <path d={d} fill="none" stroke={T.ink} strokeWidth={6} strokeLinecap="round" strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke" opacity={on ? 1 : 0} style={{ transition: `opacity 160ms ${T.ease}` }} />
+              </>
+            )}
+            {/* r=1 plus a fat non-scaling stroke gives a halo sized in screen
+                pixels, so it stays visible whatever the image is scaled to. */}
+            {ax !== null && (
+              <circle cx={ax} cy={ay} r={1} fill="none" stroke={T.ink} strokeWidth={30}
+                vectorEffect="non-scaling-stroke" opacity={on ? 0.18 : 0} style={{ transition: `opacity 160ms ${T.ease}` }} />
+            )}
+
+            {/* Hit areas, sized for a thumb rather than for the artwork. */}
+            {d && (
+              <path d={d} fill="none" stroke="transparent" strokeWidth={30} strokeLinecap="round"
+                vectorEffect="non-scaling-stroke" pointerEvents="stroke" />
+            )}
+            {ax !== null && (
+              <circle cx={ax} cy={ay} r={1} fill="none" stroke="transparent" strokeWidth={34}
+                vectorEffect="non-scaling-stroke" pointerEvents="stroke" />
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** The hover/tap card for one covering, anchored to its run on the plan. */
+function PlanCard({ entry, info, interactive, onJump }) {
+  const a = entry.geometry?.anchor || entry.geometry?.points?.[0];
+  if (!a) return null;
+  // Flip below the anchor near the top edge, and keep the card off the left and
+  // right edges of a phone screen.
+  const below = a.v < 0.26;
+  const left = Math.min(0.88, Math.max(0.12, a.u));
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${left * 100}%`,
+        top: `${a.v * 100}%`,
+        transform: `translate(-50%, ${below ? 'calc(0% + 18px)' : 'calc(-100% - 18px)'})`,
+        zIndex: 3,
+        pointerEvents: interactive ? 'auto' : 'none',
+        width: 'max-content',
+        maxWidth: 'min(240px, 72vw)',
+        background: T.paperPure,
+        border: `0.5px solid ${T.mist}`,
+        borderRadius: 10,
+        boxShadow: T.shadowCard,
+        padding: '12px 14px',
+      }}
+    >
+      <div style={{ ...fieldLabel, color: T.stone }}>{entry.label}</div>
+      <p style={{ margin: '6px 0 0', fontSize: 14, lineHeight: 1.4, fontWeight: 500, color: T.ink, textWrap: 'pretty' }}>
+        {info.title}
+      </p>
+      {info.priceText && (
+        <p style={{ margin: '4px 0 0', fontSize: 15, fontWeight: 500, color: T.ink }}>{info.priceText}</p>
+      )}
+      {interactive && info.targetKey && (
+        <button
+          type="button"
+          onClick={(ev) => { ev.stopPropagation(); onJump(info.targetKey); }}
+          style={{
+            marginTop: 10, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+            fontFamily: 'inherit', fontSize: 12.5, lineHeight: 1,
+            background: T.ink, color: T.paper, border: 'none',
+          }}
+        >
+          Go to this item
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * The marked-up plan, as attached to this quote.
  *
  * Answers the question a price list can't: WHERE does each of these go. Every
- * covering is drawn on the plan where it runs, colour-matched to the list
- * below, so a customer can check their own house room by room before accepting.
+ * covering is drawn on the plan where it runs, and every one of them is now
+ * live: touch it and it tells you what it is and what it costs, tap it and it
+ * takes you to that line on the quote.
  *
  * The images are a snapshot taken when the plan was attached — what the quote
  * was priced against — so nothing here moves under the customer's feet.
+ *
+ * Snapshots captured before schemaVersion 2 carry no run geometry. Those fall
+ * back to exactly what this section used to be: the images, and the list under
+ * them, permanently open.
  */
-function PlanSection({ snapshot }) {
-  // The page's `h3` is scoped inside the main component; this section lives
-  // outside it, so it carries its own copy of the same style.
+function PlanSection({ snapshot, resolve, onJump, highlightLoc }) {
   const h3 = { margin: 0, fontWeight: 300, fontSize: 20, letterSpacing: '-0.3px', color: T.ink };
   const [zoomed, setZoomed] = useState(null);
-  const showSizes = snapshot.showSizes !== false;
+  const [hovered, setHovered] = useState(null);   // mouse / keyboard focus
+  const [pinned, setPinned] = useState(null);     // left open by a tap
   const schedule = snapshot.schedule || [];
+  const interactive = schedule.some(e => e.geometry);
+  const [listOpen, setListOpen] = useState(!interactive);
+
   const measured = schedule.filter(e => e.measured).length;
   const byPage = new Map();
   for (const e of schedule) {
     if (!byPage.has(e.pageNumber)) byPage.set(e.pageNumber, []);
     byPage.get(e.pageNumber).push(e);
   }
+  const legend = snapshot.legend || [];
+
+  // A covering lit up from the other direction, by touching its line on the
+  // quote rather than its run on the plan.
+  const highlighted = highlightLoc
+    ? schedule.find(e => normLoc(e.label) === highlightLoc)?.number ?? null
+    : null;
+  const activeNumber = hovered ?? pinned ?? highlighted;
+  const activeEntry = schedule.find(e => e.number === activeNumber) || null;
+
+  const select = (number, info, pointerType) => {
+    // A mouse or a keyboard has already told us what it means. A finger hasn't:
+    // the first tap is "what is this", and only the second is "take me there",
+    // because a tap that scrolls the page out from under you is the thing you
+    // cannot undo.
+    if (pointerType === 'mouse' || pointerType === 'keyboard') {
+      if (info.targetKey) onJump(info.targetKey);
+      return;
+    }
+    if (pinned === number) {
+      if (info.targetKey) onJump(info.targetKey);
+      setPinned(null);
+    } else {
+      setPinned(number);
+    }
+  };
 
   return (
     <section style={{ ...card, padding: 22 }}>
       <Eyebrow>Your plan</Eyebrow>
       <h3 style={{ ...h3, marginTop: 14 }}>Where everything goes</h3>
       <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.7, color: T.graphite, maxWidth: '60ch' }}>
-        Each covering is marked on the plan where it runs, and numbered to match the list below.
-        Please check every room you expect is here before accepting — it&rsquo;s far easier to change now
-        than after anything is made.
+        {interactive
+          ? 'Each covering is marked on the plan where it runs. Touch one to see what it is, or tap it to jump to that item on your quote. Please check every room you expect is here before accepting — it’s far easier to change now than after anything is made.'
+          : 'Each covering is marked on the plan where it runs, and numbered to match the list below. Please check every room you expect is here before accepting — it’s far easier to change now than after anything is made.'}
       </p>
 
-      {snapshot.pages.map(pg => (
-        <figure key={pg.path} style={{ margin: '20px 0 0' }}>
-          <button
-            type="button" onClick={() => setZoomed(pg)}
-            style={{ display: 'block', width: '100%', padding: 0, border: `0.5px solid ${T.mist}`, borderRadius: 12, overflow: 'hidden', background: T.paperPure, cursor: 'zoom-in' }}
-          >
-            <img src={pg.url} alt={`Plan page ${pg.pageNumber}`} style={{ display: 'block', width: '100%', height: 'auto' }} />
-          </button>
-          {snapshot.pages.length > 1 && (
-            <figcaption style={{ ...fieldLabel, marginTop: 8 }}>Page {pg.pageNumber}</figcaption>
-          )}
-        </figure>
-      ))}
-
-      {[...byPage.entries()].map(([pageNumber, entries]) => (
-        <div key={pageNumber} style={{ marginTop: 24 }}>
-          {byPage.size > 1 && <div style={{ ...fieldLabel, marginBottom: 10 }}>Page {pageNumber}</div>}
-          <div style={{ display: 'grid', gap: 10 }}>
-            {entries.map(e => (
-              <div key={`${e.pageNumber}-${e.number}`}
-                   style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingBottom: 10, borderBottom: `0.5px solid ${T.mist}` }}>
-                <span style={{
-                  flex: '0 0 auto', width: 24, height: 24, borderRadius: '50%', background: e.colour || T.stone,
-                  color: '#fff', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                }}>{e.number}</span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 14.5, color: T.ink }}>{e.label}</div>
-                  <div style={{ fontSize: 12.5, color: T.stone, marginTop: 2 }}>
-                    {e.product || 'Product to be confirmed'}
-                    {e.quantity > 1 ? ` · ${e.quantity} of them` : ''}
-                    {e.shape ? ` · ${e.shape}` : ''}
-                    {showSizes && e.widthMm ? ` · ${e.widthMm} × ${e.dropMm || '—'} mm` : ''}
-                  </div>
-                </div>
-                <span style={{ flex: '0 0 auto', fontSize: 11, color: e.measured ? '#15803d' : T.stone }}>
-                  {e.measured ? 'Measured on site' : 'From plan'}
-                </span>
-              </div>
-            ))}
-          </div>
+      {legend.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 16 }}>
+          {legend.map(l => (
+            <span key={l.product} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, color: T.graphite }}>
+              <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: l.colour, display: 'block', flex: '0 0 auto' }} />
+              {l.product}
+            </span>
+          ))}
         </div>
-      ))}
+      )}
+
+      {snapshot.pages.map(pg => {
+        const pageEntries = (byPage.get(pg.pageNumber) || []).filter(e => e.geometry);
+        return (
+          <figure key={pg.path} style={{ margin: '20px 0 0' }}>
+            <div
+              style={{ position: 'relative', border: `0.5px solid ${T.mist}`, borderRadius: 12, background: T.paperPure }}
+              onPointerDown={(ev) => { if (ev.target === ev.currentTarget) setPinned(null); }}
+            >
+              <img src={pg.url} alt={`Plan page ${pg.pageNumber}`}
+                   style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 12 }} />
+              {interactive && pageEntries.length > 0 && (
+                <PlanOverlay
+                  page={pg}
+                  entries={pageEntries}
+                  resolve={resolve}
+                  activeNumber={activeNumber}
+                  onActivate={setHovered}
+                  onActivateEnd={() => setHovered(null)}
+                  onSelect={select}
+                />
+              )}
+              {activeEntry && activeEntry.pageNumber === pg.pageNumber && (
+                <PlanCard
+                  entry={activeEntry}
+                  info={resolve(activeEntry)}
+                  interactive={pinned === activeEntry.number}
+                  onJump={(k) => { setPinned(null); onJump(k); }}
+                />
+              )}
+              {/* Zoom used to be the whole image, which would now be a coin toss
+                  between opening the lightbox and jumping to a line. */}
+              <button
+                type="button"
+                onClick={() => setZoomed(pg)}
+                aria-label={`Enlarge plan page ${pg.pageNumber}`}
+                style={{
+                  position: 'absolute', right: 10, bottom: 10, zIndex: 4,
+                  display: 'inline-flex', alignItems: 'center', gap: 7,
+                  padding: '8px 13px', borderRadius: 999, cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 12, lineHeight: 1,
+                  background: 'rgba(255,255,255,0.94)', color: T.ink,
+                  border: `0.5px solid ${T.mist}`, boxShadow: T.shadowCard,
+                }}
+              >
+                <span aria-hidden="true">⤢</span> Enlarge
+              </button>
+            </div>
+            {snapshot.pages.length > 1 && (
+              <figcaption style={{ ...fieldLabel, marginTop: 8 }}>Page {pg.pageNumber}</figcaption>
+            )}
+          </figure>
+        );
+      })}
+
+      {/* The plan itself is the index now, so the list is folded away. It stays
+          in the DOM rather than being unmounted: it is the fallback for a
+          screen reader, and print forces it back open (see index.css). */}
+      {interactive && (
+        <button
+          type="button"
+          className="plan-schedule-toggle"
+          onClick={() => setListOpen(o => !o)}
+          aria-expanded={listOpen}
+          style={{
+            marginTop: 20, background: 'none', border: 'none', padding: '6px 0',
+            fontFamily: 'inherit', fontSize: 13, color: T.ink, cursor: 'pointer',
+            textDecoration: 'underline', textDecorationColor: T.mist, textUnderlineOffset: 4,
+          }}
+        >
+          {listOpen ? 'Hide the full list' : `See all ${schedule.length} openings as a list`}
+        </button>
+      )}
+
+      <div className="plan-schedule" style={{ display: listOpen ? 'block' : 'none' }}>
+        {[...byPage.entries()].map(([pageNumber, entries]) => (
+          <div key={pageNumber} style={{ marginTop: 24 }}>
+            {byPage.size > 1 && <div style={{ ...fieldLabel, marginBottom: 10 }}>Page {pageNumber}</div>}
+            <div style={{ display: 'grid', gap: 10 }}>
+              {entries.map(e => {
+                const info = resolve(e);
+                const row = (
+                  <>
+                    <span style={{
+                      flex: '0 0 auto', width: 24, height: 24, borderRadius: '50%', background: e.colour || T.stone,
+                      color: '#fff', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    }}>{e.number}</span>
+                    <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontSize: 14.5, color: T.ink }}>{e.label}</div>
+                      <div style={{ fontSize: 12.5, color: T.stone, marginTop: 2 }}>
+                        {e.product || 'Product to be confirmed'}
+                        {e.quantity > 1 ? ` · ${e.quantity} of them` : ''}
+                        {e.shape ? ` · ${e.shape}` : ''}
+                      </div>
+                    </div>
+                    <span style={{ flex: '0 0 auto', fontSize: 11, color: e.measured ? '#15803d' : T.stone }}>
+                      {e.measured ? 'Measured on site' : 'From plan'}
+                    </span>
+                  </>
+                );
+                const common = {
+                  display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%',
+                  paddingBottom: 10, borderBottom: `0.5px solid ${T.mist}`,
+                };
+                return info.targetKey ? (
+                  <button
+                    key={`${e.pageNumber}-${e.number}`} type="button"
+                    onClick={() => onJump(info.targetKey)}
+                    style={{ ...common, background: 'none', border: 0, borderBottom: `0.5px solid ${T.mist}`, padding: '0 0 10px', fontFamily: 'inherit', cursor: 'pointer' }}
+                  >
+                    {row}
+                  </button>
+                ) : (
+                  <div key={`${e.pageNumber}-${e.number}`} style={common}>{row}</div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* Being straight about which sizes are provisional is what keeps this
           useful rather than a thing to argue about later. */}
@@ -184,6 +488,75 @@ function PlanSection({ snapshot }) {
         </div>
       )}
     </section>
+  );
+}
+
+// The reasons a quote actually gets declined, as the five things worth telling
+// the difference between afterwards. "Other" is there so the list doesn't force
+// someone into a box that isn't theirs.
+const DECLINE_CHIPS = ['Price', 'Timing', 'Fabric or style', 'Going elsewhere', 'Other'];
+/** Which chip, if any, a reason string currently leads with. */
+const leadingChip = (text) => DECLINE_CHIPS.find(c => text === c || text.startsWith(`${c}: `)) || null;
+
+// Visually hidden, still read aloud. Used where a tick is the only thing
+// distinguishing a finished step from a pending one.
+const srOnly = {
+  position: 'absolute', width: 1, height: 1, padding: 0, margin: -1,
+  overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
+};
+
+/**
+ * What happens between accepting and the blinds being up.
+ *
+ * The gap between "I'd like to go ahead" and "someone is in my house" is where
+ * a quote goes quiet. A customer who can't picture the next five weeks has a
+ * reason to put the decision down and ask somebody about it, and that reason
+ * costs nothing to remove — this is the answer the salesperson gives on the
+ * phone anyway, written down once.
+ *
+ * Steps with no honest number don't get one: an unset lead time still renders
+ * the manufacture step, just without a duration, because a made-up "4-6 weeks"
+ * on a customer's quote becomes a promise somebody then has to keep.
+ *
+ * @param {Array}  props.steps      [{ title, body }]
+ * @param {number} props.doneCount  leading steps already behind them
+ */
+function NextSteps({ steps, doneCount = 0 }) {
+  return (
+    <ol style={{ listStyle: 'none', margin: '18px 0 0', padding: 0 }}>
+      {steps.map((s, i) => {
+        const done = i < doneCount;
+        const last = i === steps.length - 1;
+        return (
+          <li key={s.title} style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+            {/* Number rail: the marker, and the hairline that joins it to the
+                next one so the list reads as a sequence rather than bullets. */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '0 0 auto' }}>
+              <span aria-hidden="true" style={{
+                width: 26, height: 26, borderRadius: 999, flex: '0 0 auto',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 500, lineHeight: 1,
+                background: done ? T.ink : T.paperPure,
+                color: done ? T.paper : T.graphite,
+                border: `0.5px solid ${done ? T.ink : T.stone}`,
+              }}>{done ? '✓' : i + 1}</span>
+              {!last && <span style={{ flex: 1, width: '0.5px', background: T.mist, minHeight: 16 }} />}
+            </div>
+            <div style={{ paddingBottom: last ? 0 : 20, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 15, lineHeight: 1.4, fontWeight: 500, color: T.ink, textWrap: 'pretty' }}>
+                {done && <span style={srOnly}>Done. </span>}
+                {s.title}
+              </p>
+              {s.body && (
+                <p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.7, color: T.stone, maxWidth: '54ch', textWrap: 'pretty' }}>
+                  {s.body}
+                </p>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -246,6 +619,25 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const [declineReason, setDeclineReason] = useState('');
   const [busy, setBusy] = useState(false);
   const tailRef = useRef(null);
+
+  // ── Jumping from the plan to a line ──────────────────────────────────────
+  // One node per window group, registered as it renders. `flashKey` is what
+  // stops the landing being disorienting: scrolling someone to a card that
+  // looks exactly like its neighbours leaves them hunting for what moved.
+  const groupNodes = useRef(new Map());
+  const [flashKey, setFlashKey] = useState(null);
+  const flashTimer = useRef(null);
+  const [planHighlight, setPlanHighlight] = useState(null);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  const jumpToGroup = (key) => {
+    const node = groupNodes.current.get(key);
+    if (!node) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    node.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    setFlashKey(key);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashKey(null), 1900);
+  };
 
   useEffect(() => {
     if (quote || !supabase || !id || !token) return;
@@ -327,6 +719,22 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     selectedOptionals, quote.discountType, quote.discountValue,
   );
 
+  // ── Prices as the customer has to pay them ───────────────────────────────
+  // `includesGST` means GST is ADDED on top (the Xero-exclusive convention), so
+  // every figure computeQuoteTotals and linePricing return is ex-GST. This page
+  // was printing those straight onto customer-facing lines under a note reading
+  // "Prices exclude GST", leaving a homeowner to do the arithmetic on every row
+  // and compare an ex-GST line against a rival's inc-GST one. A price shown to
+  // a consumer has to be the single total they pay.
+  //
+  // So every line, subtotal and discount is grossed up for display. The maths
+  // is untouched: computeQuoteTotals still owns it, totals.total is already
+  // GST-inclusive, and nothing here feeds back into what gets saved.
+  const gstFactor = quote.includesGST ? 1 + gstRate / 100 : 1;
+  // A GST-free line (taxable === false) is left out of the GST base by
+  // computeQuoteTotals, so it must not be grossed up either.
+  const inc = (amount, taxable = true) => Number(amount || 0) * (taxable === false ? 1 : gstFactor);
+
   // ── Build room sections from the real line items ─────────────────────────
   // One heading per room, with the windows in it lettered A / B / C beneath.
   // Those letters are not invented here: the plan takeoff writes them into the
@@ -344,6 +752,64 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // quoteSections is shared with the quote builder, so what a staff member
   // assembled is laid out here exactly as they saw it.
   const rooms = quoteSections(items);
+
+  // ── Plan ↔ quote wiring ──────────────────────────────────────────────────
+  // The plan's runs and the quote's lines are two views of the same windows,
+  // joined on the location string the takeoff wrote into both. A run that finds
+  // no line stays readable but isn't clickable: a plan that jumps you to the
+  // wrong window is worse than one that doesn't jump at all.
+  const itemsByLoc = new Map();
+  items.forEach(li => {
+    const k = normLoc(li.location);
+    if (!k) return;
+    if (!itemsByLoc.has(k)) itemsByLoc.set(k, []);
+    itemsByLoc.get(k).push(li);
+  });
+  // Which on-screen window group each line belongs to, so a jump lands on the
+  // whole window rather than on one line inside it.
+  //
+  // groupByRoom only makes `entry.key` unique WITHIN a room, so "Master Bedroom
+  // A" and "Living Room A" are both `ref:A`. Keyed on that alone the ref map
+  // collided across rooms and one room's unmount deleted another room's node,
+  // which is why the first build of this jumped nowhere at all.
+  const groupId = (room, entry) => `${room}::${entry.key}`;
+  const groupKeyByItemId = new Map();
+  rooms.forEach(r => r.entries.forEach(e => (e.items || []).forEach(li => groupKeyByItemId.set(li.id, groupId(r.room, e)))));
+
+  const resolvePlanEntry = (entry) => {
+    const matched = itemsByLoc.get(normLoc(entry.label)) || [];
+    const active = matched.filter(isSelected);
+    const target = active[0] || matched[0] || null;
+    // Price follows the live selection, exactly like every other figure on this
+    // page. An unticked optional reads as what it is rather than as $0.
+    const priced = active.reduce((s, li) => s + inc(linePricing(li).lineTotal, li.taxable), 0);
+    return {
+      matched,
+      active,
+      title: active.length === 1
+        ? (active[0].displayName || active[0].productNameSnapshot || entry.product || 'Window treatment')
+        : active.length > 1
+          ? `${active.length} items at this window`
+          : matched.length ? 'Not added to your order' : (entry.product || 'Window treatment'),
+      priceText: active.length ? money(priced) : '',
+      targetKey: target ? (groupKeyByItemId.get(target.id) || null) : null,
+    };
+  };
+
+  // Everything quoted that the drawing doesn't show: remotes, handsets, taking
+  // the old blinds away. Without saying so, a plan missing them reads as a plan
+  // missing something.
+  const planLocs = new Set((quote.planSnapshot?.schedule || []).map(e => normLoc(e.label)).filter(Boolean));
+  // Only worth saying once the join is actually working. On a snapshot captured
+  // before the labels and the locations were the same string — every one taken
+  // before today — nothing matches, and an ungated version of this would tell
+  // the customer their entire quote is missing from the plan.
+  const planJoined = items.some(li => planLocs.has(normLoc(li.location)));
+  const offPlanNames = !planJoined ? [] : [...new Set(
+    items.filter(li => isSelected(li) && !planLocs.has(normLoc(li.location)))
+      .map(li => li.displayName || li.productNameSnapshot)
+      .filter(Boolean),
+  )];
 
   // Blocks the customer has to answer before they can accept. Without this a
   // quote offering "manual / battery motor / hardwired" could be accepted with
@@ -367,15 +833,48 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const gstFreeTotal = activeItems
     .filter(li => li.taxable === false)
     .reduce((sum, li) => sum + linePricing(li).lineTotal, 0);
-  const lineDiscountTotal = activeItems.reduce((s, li) => s + (linePricing(li).discountTotal || 0), 0);
-  const grossBefore = totals.grossSubtotal + lineDiscountTotal;
+  // Discounts, grossed up line by line, so a discount on a GST-free line isn't.
+  const lineDiscountInc = activeItems.reduce((s, li) => s + inc(linePricing(li).discountTotal || 0, li.taxable), 0);
+  // The effective GST uplift on the post-discount subtotal. Derived from the
+  // totals rather than re-summing the lines, which is what keeps a quote mixing
+  // taxable and GST-free lines exact: computeQuoteTotals already worked out
+  // which portion attracts GST, so totals.gst / totals.subtotal IS that share.
+  const gstUplift = quote.includesGST && totals.subtotal > 0 ? totals.gst / totals.subtotal : 0;
+  // A quote-level discount reduces the taxable base proportionally (see
+  // computeQuoteTotals), so it takes a proportional slice of GST with it.
+  const quoteDiscountInc = totals.discount * (1 + gstUplift);
+  // Built from the total OUTWARDS, not from the lines inwards: the subtotal row
+  // is defined as whatever makes the breakdown reconcile, so "subtotal less the
+  // discounts" cannot disagree with the total the customer is asked to accept.
+  const subtotalInc = totals.total + lineDiscountInc + quoteDiscountInc;
 
   const rowLabel = { fontSize: 13.5, color: T.graphite };
   const rowValue = { fontSize: 13.5, fontWeight: 500, color: T.ink, whiteSpace: 'nowrap' };
-  const summaryRows = [{ label: 'Subtotal', value: money(grossBefore), lStyle: rowLabel, vStyle: rowValue }];
-  if (lineDiscountTotal > 0) summaryRows.push({ label: 'Package discount', value: '−' + money(lineDiscountTotal), lStyle: rowLabel, vStyle: { ...rowValue, color: T.bronze } });
-  if (totals.discount > 0) summaryRows.push({ label: quote.discountLabel || (quote.discountType === 'Percentage' ? `Discount (${quote.discountValue}%)` : 'Discount'), value: '−' + money(totals.discount), lStyle: rowLabel, vStyle: { ...rowValue, color: T.bronze } });
-  if (quote.includesGST) summaryRows.push({ label: `GST ${gstRate}%`, value: money(totals.gst), lStyle: rowLabel, vStyle: rowValue });
+  const summaryRows = [];
+  // A subtotal is only worth a row when something comes off it. On a quote with
+  // no discounts — which is most of them — it is the total written twice, and
+  // the eye has to check two identical figures to find out they are the same.
+  if (lineDiscountInc > 0 || quoteDiscountInc > 0) {
+    summaryRows.push({ label: 'Subtotal', value: money(subtotalInc), lStyle: rowLabel, vStyle: rowValue });
+  }
+  if (lineDiscountInc > 0) summaryRows.push({ label: 'Package discount', value: '−' + money(lineDiscountInc), lStyle: rowLabel, vStyle: { ...rowValue, color: T.bronze } });
+  if (quoteDiscountInc > 0) summaryRows.push({ label: quote.discountLabel || (quote.discountType === 'Percentage' ? `Discount (${quote.discountValue}%)` : 'Discount'), value: '−' + money(quoteDiscountInc), lStyle: rowLabel, vStyle: { ...rowValue, color: T.bronze } });
+  // Now a disclosure rather than an addend: the rows above it already include
+  // GST, so this says how much of the total it is, and is styled to read that
+  // way instead of looking like another thing being added on.
+  if (quote.includesGST) summaryRows.push({ label: `Includes GST (${gstRate}%)`, value: money(totals.gst), lStyle: { ...rowLabel, color: T.stone }, vStyle: { ...rowValue, fontWeight: 400, color: T.stone } });
+
+  // ── Every figure this page quotes, derived once ───────────────────────────
+  // The summary, the sticky bar, the confirm sheet and the accepted state all
+  // read from here. Each of them used to format `totals` itself, which is how
+  // one page could end up quoting two different numbers for one selection.
+  const figures = {
+    total:    money(totals.total),
+    deposit:  money(totals.deposit),
+    balance:  money(Math.max(0, totals.total - totals.deposit)),
+    // The suffix that makes the headline total a lawful single price.
+    gstSuffix: quote.includesGST ? ' inc GST' : '',
+  };
 
   // ── Actions ──────────────────────────────────────────────────────────────
   const acceptable = !locked && selectedCount + requiredItems.length > 0 && unansweredRequired.length === 0;
@@ -410,6 +909,14 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     }
     setBusy(false); setSheet(null); setLocalStatus('declined'); setExpanded(false); scrollToTail();
   };
+  // Picking a chip swaps the category and keeps whatever they have typed. It
+  // used to overwrite the box outright, so anyone who wrote their reason first
+  // and then tapped the nearest label lost what they wrote.
+  const pickDeclineChip = (chip) => setDeclineReason(prev => {
+    const current = leadingChip(prev);
+    const rest = (current ? prev.slice(current.length).replace(/^:\s*/, '') : prev).trim();
+    return rest ? `${chip}: ${rest}` : chip;
+  });
   const askAccept  = () => { if (!acceptable) return; setSheet('accept'); };
   const askDecline = () => { if (locked) return; setDeclineReason(''); setSheet('decline'); };
   const reopen = () => setLocalStatus(null);
@@ -432,6 +939,68 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const depoLabel = quote.depositType === 'Percentage' ? `${quote.depositValue}%`
     : quote.depositType === 'Fixed Amount' ? money(quote.depositValue) : null;
 
+  // ── Trust, stated only where it is true ──────────────────────────────────
+  // All of these render nothing when unset. None of them ship with a default:
+  // a claim about the business on a customer's quote has to be one the business
+  // actually made, which is why Settings starts empty rather than seeded.
+  const trustPoints  = (settings.trustPoints || []).map(t => String(t || '').trim()).filter(Boolean);
+  const warrantyText = String(settings.warrantyText || '').trim();
+  const hasRating    = !!settings.googleRating;
+
+  // ── Honest urgency ───────────────────────────────────────────────────────
+  // The expiry is real — it is on the quote — so it gets said plainly and once.
+  // The countdown only appears in the last week, when it is information rather
+  // than pressure, and there is no timer, no "others are viewing", no scarcity
+  // we would have to invent.
+  const daysLeft = (!isExpired && quote.expiryDate)
+    ? differenceInCalendarDays(new Date(quote.expiryDate), new Date())
+    : null;
+  const showCountdown = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
+  const countdownText = daysLeft === 0 ? 'Last day' : daysLeft === 1 ? '1 day left' : `${daysLeft} days left`;
+  const expiryReason  = String(settings.expiryReason || '').trim();
+
+  // ── What happens next ────────────────────────────────────────────────────
+  // The check-measure step is only promised when the quote actually contains a
+  // size taken off the plan rather than off the window. Promising a visit we
+  // aren't making is worse than not mentioning it.
+  const hasUnmeasured = (quote.planSnapshot?.schedule || []).some(e => !e.measured);
+  const leadWeeks = Number(settings.leadTimeWeeks) || null;
+  const nextSteps = [
+    {
+      title: 'You accept this quote',
+      body: 'Tap accept and we are notified straight away. Your selections are saved exactly as you left them.',
+    },
+    {
+      title: depoLabel ? `You pay the ${depoLabel} deposit` : 'You pay the deposit',
+      body: 'We call within one business day to go through it, or you can transfer it straight away using our account details on this page and we will match it to your order.',
+    },
+    ...(hasUnmeasured ? [{
+      title: 'We check-measure on site',
+      body: 'Some sizes on this quote were taken from the plan. We confirm every one of them at your place before anything is ordered, and tell you in writing if a price moves.',
+    }] : []),
+    {
+      title: 'Your order is made',
+      body: leadWeeks
+        ? `Everything is made to your measurements. Allow about ${leadWeeks} week${leadWeeks === 1 ? '' : 's'} from the day your order is confirmed.`
+        : 'Everything is made to your measurements. We will confirm the timing with you once your order is placed.',
+    },
+    {
+      title: 'We install',
+      body: 'Our own installers fit everything and take the packaging away with them. We book a time that suits you.',
+    },
+  ];
+
+  // ── The soft exit ────────────────────────────────────────────────────────
+  // Somebody who is unsure has two buttons in front of them, and one of them is
+  // Decline. A question is the cheaper thing to offer, so it is offered first,
+  // on whichever channel the business actually answers.
+  const digits = (v) => String(v || '').replace(/[^\d+]/g, '');
+  const askHref = settings.businessPhoneSms
+    ? `sms:${digits(settings.businessPhoneSms)}?&body=${encodeURIComponent(`Hi, a question about quote ${quote.quoteNumber}: `)}`
+    : settings.businessPhone ? `tel:${digits(settings.businessPhone)}`
+    : settings.businessEmail ? `mailto:${settings.businessEmail}?subject=${encodeURIComponent(`Question about quote ${quote.quoteNumber}`)}`
+    : '';
+
   const container = { maxWidth: 880, margin: '0 auto', width: '100%', boxSizing: 'border-box' };
   const h3 = { margin: 0, fontWeight: 300, fontSize: 20, letterSpacing: '-0.3px', color: T.ink };
 
@@ -446,16 +1015,18 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     const clickable = !fixed && !locked;
     const desc = [item.description, item.customerNotes].filter(Boolean).join(' · ');
     const toggle = () => (choice ? selectChoice(item._group, item.id) : toggleOptional(item.id));
-    // Sizes are opt-in per quote (Settings → "Show dimensions to client"). Until
-    // now that checkbox wrote a field nothing read, so ticking it changed
-    // nothing the customer could see.
-    const sizeText = quote.showSizesToClient && Number(item.widthMm)
-      ? `${item.widthMm} × ${item.dropMm || '—'} mm`
-      : '';
-    const meta = [sizeText, qty > 1 ? `${qty} of them` : ''].filter(Boolean).join(' · ');
-    // A GST-free line must say so. Labelling it "ex GST" like everything else is
-    // what made the summary look like it had the wrong GST on it.
-    const gstNote = item.taxable === false ? 'GST free' : (quote.includesGST ? 'ex GST' : '');
+    // Sizes are never shown to the customer, whatever the per-quote flag says.
+    // A millimetre figure on a quote invites someone to check it against a tape
+    // measure in their own hallway and query the quote over a number that is
+    // ours to get right, and that the check-measure exists to confirm. It also
+    // reads as a specification when what this page is for is a decision.
+    const meta = qty > 1 ? `${qty} of them` : '';
+    // A GST-free line must say so. Labelling it like everything else is what
+    // made the summary look as though it had the wrong GST on it.
+    const gstNote = item.taxable === false ? 'GST free' : (quote.includesGST ? 'inc GST' : '');
+    // Shown inc GST, like every other price on the page.
+    const shownTotal = inc(lineTotal, item.taxable);
+    const shownUnit  = inc(finalSell, item.taxable);
     return (
       <div
         onClick={clickable ? toggle : undefined}
@@ -518,22 +1089,25 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             on its own wrapped line on a phone, where it used to float mid-card
             so no two prices lined up down the page. */}
         <div style={{ textAlign: 'right', flex: '0 0 auto', marginLeft: 'auto' }}>
-          {discountTotal > 0 && <div style={{ fontSize: 13, color: T.stone, textDecoration: 'line-through' }}>{money(preDiscountSell * qty)}</div>}
-          <div style={{ fontSize: 18, fontWeight: on ? 500 : 400, letterSpacing: '-0.2px', whiteSpace: 'nowrap', color: on ? T.ink : T.stone }}>{money(lineTotal)}</div>
+          {discountTotal > 0 && <div style={{ fontSize: 13, color: T.stone, textDecoration: 'line-through' }}>{money(inc(preDiscountSell * qty, item.taxable))}</div>}
+          <div style={{ fontSize: 18, fontWeight: on ? 500 : 400, letterSpacing: '-0.2px', whiteSpace: 'nowrap', color: on ? T.ink : T.stone }}>{money(shownTotal)}</div>
           <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.stone, marginTop: 4 }}>
-            {gstNote}{qty > 1 ? `${gstNote ? ' · ' : ''}${money(finalSell)} × ${qty}` : ''}
+            {gstNote}{qty > 1 ? `${gstNote ? ' · ' : ''}${money(shownUnit)} × ${qty}` : ''}
           </div>
           {discountTotal > 0 && (
-            <div style={{ marginTop: 8, fontSize: 10.5, fontWeight: 500, letterSpacing: '0.06em', color: T.bronze }}>Discount −{money(discountTotal)}</div>
+            <div style={{ marginTop: 8, fontSize: 10.5, fontWeight: 500, letterSpacing: '0.06em', color: T.bronze }}>Discount −{money(inc(discountTotal, item.taxable))}</div>
           )}
         </div>
       </div>
     );
   };
 
+  // "Valid until" describes the document; "Pricing held until" describes what
+  // the customer actually gets out of the date, which is that the number in
+  // front of them is the number until then.
   const validityText = isExpired
     ? `Expired ${quote.expiryDate ? fmtDate(new Date(quote.expiryDate)) : ''}`
-    : quote.expiryDate ? `Valid until ${fmtDate(new Date(quote.expiryDate))}` : 'No expiry';
+    : quote.expiryDate ? `Pricing held until ${fmtDate(new Date(quote.expiryDate))}` : 'No expiry';
 
   return (
     <div style={{ minHeight: '100vh', background: T.mist }}>
@@ -557,7 +1131,14 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 20 }}>
               <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', border: `0.5px solid ${T.borderInverse}`, borderRadius: 999, color: T.onInverseMuted }}>Issued {fmtDate(quote.createdAt)}</span>
               <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${isExpired ? T.bronze : T.borderInverse}`, color: isExpired ? T.bronze : T.onInverseMuted }}>{validityText}</span>
+              {/* Only in the last week, and only ever a count of days. */}
+              {showCountdown && (
+                <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${T.bronze}`, color: T.bronze }}>{countdownText}</span>
+              )}
             </div>
+            {expiryReason && !isExpired && (
+              <p style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.6, color: T.onInverseMuted, maxWidth: '52ch' }}>{expiryReason}</p>
+            )}
           </div>
         </header>
 
@@ -625,7 +1206,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               {hasOptions ? 'Your options' : 'What we\u2019ve quoted'}
             </h2>
             <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.7, color: T.graphite }}>
-              Everything below is quoted for your rooms.{hasOptions ? ' Toggle the pieces you want, or choose between treatments where we have offered alternatives — your total updates as you go.' : ''}{quote.includesGST ? ' Prices exclude GST.' : ''}
+              Everything below is quoted for your rooms.{hasOptions ? ' Toggle the pieces you want, or choose between treatments where we have offered alternatives, and your total updates as you go.' : ''}{quote.includesGST ? ' Every price includes GST.' : ''}
             </p>
           </div>
 
@@ -642,7 +1223,23 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               <hr style={{ ...hairline, margin: '12px 0 18px' }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                 {entries.map(entry => (
-                  <div key={entry.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                  <div
+                    key={entry.key}
+                    ref={node => { const gid = groupId(room, entry); if (node) groupNodes.current.set(gid, node); else groupNodes.current.delete(gid); }}
+                    // Lights up briefly when the plan sends someone here, and
+                    // lights the matching run on the plan on the way back.
+                    onMouseEnter={() => setPlanHighlight(normLoc(entry.items?.[0]?.location))}
+                    onMouseLeave={() => setPlanHighlight(null)}
+                    onFocus={() => setPlanHighlight(normLoc(entry.items?.[0]?.location))}
+                    onBlur={() => setPlanHighlight(null)}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 14,
+                      scrollMarginTop: 80, scrollMarginBottom: 110,
+                      borderRadius: 10, padding: 6, margin: -6,
+                      boxShadow: flashKey === groupId(room, entry) ? `0 0 0 2px ${T.bronze}` : '0 0 0 0 rgba(0,0,0,0)',
+                      transition: `box-shadow 420ms ${T.ease}`,
+                    }}
+                  >
                     <RefBadge>{entry.ref}</RefBadge>
                     <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
                       {entry.blocks.map(block => {
@@ -682,7 +1279,17 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
 
         {quote.planSnapshot?.pages?.length > 0 && (
           <div style={{ ...container, padding: '40px 22px 0' }}>
-            <PlanSection snapshot={quote.planSnapshot} />
+            <PlanSection
+              snapshot={quote.planSnapshot}
+              resolve={resolvePlanEntry}
+              onJump={jumpToGroup}
+              highlightLoc={planHighlight}
+            />
+            {offPlanNames.length > 0 && (
+              <p style={{ margin: '14px 0 0', fontSize: 12.5, lineHeight: 1.7, color: T.stone, maxWidth: '60ch' }}>
+                Also quoted, and not something the drawing shows: {listAnd(offPlanNames)}.
+              </p>
+            )}
           </div>
         )}
 
@@ -706,15 +1313,28 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             </div>
             {quote.includesGST && gstFreeTotal > 0 && (
               <p style={{ margin: '12px 0 0', fontSize: 11.5, lineHeight: 1.6, color: T.stone }}>
-                {money(gstFreeTotal)} of the items above are GST free and are left out of the GST calculation.
+                {money(gstFreeTotal)} of the items above are GST free, so no GST is included in their price.
               </p>
             )}
             <hr style={{ ...hairline, margin: '18px 0' }} />
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16 }}>
-              <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.stone }}>Total AUD</span>
-              <span style={{ fontSize: 28, fontWeight: 300, letterSpacing: '-0.5px', color: T.ink }}>{money(totals.total)}</span>
+              <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.stone }}>Total AUD{figures.gstSuffix}</span>
+              <span style={{ fontSize: 28, fontWeight: 300, letterSpacing: '-0.5px', color: T.ink }}>{figures.total}</span>
             </div>
-            {depoLabel && <p style={{ margin: '10px 0 0', fontSize: 11.5, lineHeight: 1.6, color: T.stone }}>A {depoLabel} deposit ({money(totals.deposit)}) confirms your order.</p>}
+            {depoLabel && <p style={{ margin: '10px 0 0', fontSize: 11.5, lineHeight: 1.6, color: T.stone }}>A {depoLabel} deposit ({figures.deposit}) confirms your order.</p>}
+
+            {/* What the price buys beyond the product, where the price is. Each
+                of these is set in Settings or not shown at all. */}
+            {(trustPoints.length > 0 || warrantyText) && (
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: `0.5px solid ${T.mist}`, display: 'flex', flexWrap: 'wrap', gap: '10px 20px' }}>
+                {[...trustPoints, ...(warrantyText ? [warrantyText] : [])].map((point, i) => (
+                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, lineHeight: 1.5, color: T.graphite }}>
+                    <span aria-hidden="true" style={{ width: 10, height: 1, background: T.bronze, display: 'block', flex: '0 0 auto' }} />
+                    {point}
+                  </span>
+                ))}
+              </div>
+            )}
           </section>
 
           {/* Terms & Conditions */}
@@ -789,28 +1409,46 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           </section>
 
           {/* Reviews */}
-          {testimonials.length > 0 && (
+          {/* The rating is its own fact and no longer waits on testimonials to
+              be written. It used to be nested inside this block, so a business
+              with a 4.9 from 120 reviews and an empty testimonials list showed
+              the customer neither. */}
+          {(testimonials.length > 0 || hasRating) && (
             <section style={{ marginTop: 34, borderTop: `0.5px solid ${T.mist}`, paddingTop: 28 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
                 <div>
                   <Eyebrow>Reviews</Eyebrow>
-                  {settings.googleRating && (
+                  {hasRating && (
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 12 }}>
-                      <span style={{ fontSize: 15, letterSpacing: '0.18em', color: T.bronze }}>★★★★★</span>
-                      <span style={{ fontSize: 13.5, color: T.graphite }}>{settings.googleRating} from {settings.googleReviewCount || 'many'} reviews</span>
+                      {/* Decorative: the sentence beside it carries the rating,
+                          so a screen reader isn't made to spell out five stars. */}
+                      <span aria-hidden="true" style={{ fontSize: 15, letterSpacing: '0.18em', color: T.bronze }}>★★★★★</span>
+                      <span style={{ fontSize: 13.5, color: T.graphite }}>{settings.googleRating} from {settings.googleReviewCount || 'many'} Google reviews</span>
                     </div>
                   )}
                 </div>
                 {reviewsUrl && <a href={reviewsUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: T.bronze, textDecoration: 'none' }}>See all reviews ↗</a>}
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 20 }}>
-                {testimonials.map((t, i) => (
-                  <blockquote key={i} style={{ flex: '1 1 230px', margin: 0, ...card }}>
-                    <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.75, color: T.graphite }}>{t.quote}</p>
-                    <footer style={{ marginTop: 14, fontSize: 11, letterSpacing: '0.06em', color: T.stone }}>{t.name}{t.location ? ` · ${t.location}` : ''}</footer>
-                  </blockquote>
-                ))}
-              </div>
+              {testimonials.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 20 }}>
+                  {testimonials.map((t, i) => (
+                    <blockquote key={i} style={{ flex: '1 1 230px', margin: 0, ...card }}>
+                      <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.75, color: T.graphite }}>{t.quote}</p>
+                      <footer style={{ marginTop: 14, fontSize: 11, letterSpacing: '0.06em', color: T.stone }}>{t.name}{t.location ? ` · ${t.location}` : ''}</footer>
+                    </blockquote>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* What happens next — the five weeks after the button, before the
+              button. Hidden once declined, where it would be a sales pitch. */}
+          {!declined && !isExpired && (
+            <section style={{ marginTop: 34, borderTop: `0.5px solid ${T.mist}`, paddingTop: 28 }}>
+              <Eyebrow>What happens next</Eyebrow>
+              <h3 style={{ ...h3, marginTop: 14 }}>{accepted ? 'Where your order is up to' : 'From here to installed'}</h3>
+              <NextSteps steps={nextSteps} doneCount={accepted ? 1 : 0} />
             </section>
           )}
 
@@ -820,15 +1458,27 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               <div>
                 <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, maxWidth: '60ch', color: T.graphite }}>
                   {acceptable
-                    ? `Accepting confirms your selection at ${money(totals.total)}${quote.includesGST ? ' including GST' : ''}.`
+                    ? `Accepting confirms your selection at ${figures.total}${quote.includesGST ? ' including GST' : ''}.`
                     : unansweredRequired.length
                       ? `Please choose an option under ${listAnd(unansweredRequired.map(g => g.title))} before accepting.`
                       : 'Select at least one option above to accept this quotation.'}
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 20 }}>
                   <Button size="lg" variant="primary" disabled={!acceptable} onClick={askAccept}>Accept quotation</Button>
+                  {/* Offered before Decline, and reachable on the channel the
+                      business actually answers on. Someone who is merely unsure
+                      should not have Decline as their only way to act. */}
+                  {askHref && <Button size="lg" variant="secondary" href={askHref}>Ask a question</Button>}
                   <Button size="lg" variant="secondary" onClick={askDecline}>Decline quotation</Button>
                 </div>
+                {hasRating && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 20 }}>
+                    <span aria-hidden="true" style={{ fontSize: 13, letterSpacing: '0.16em', color: T.bronze }}>★★★★★</span>
+                    <span style={{ fontSize: 12.5, color: T.stone }}>
+                      {settings.googleRating} from {settings.googleReviewCount || 'many'} Google reviews
+                    </span>
+                  </div>
+                )}
               </div>
             )}
             {!accepted && !declined && isExpired && (
@@ -847,10 +1497,51 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                   We have your selections and will call within one business day to arrange your deposit and book the install.{customer?.email ? ` A copy has been emailed to ${customer.email}.` : ''}
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginTop: 22, paddingTop: 20, borderTop: `0.5px solid ${T.borderInverse}` }}>
-                  <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Accepted total</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{money(totals.total)}</p></div>
+                  <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Accepted total{figures.gstSuffix}</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{figures.total}</p></div>
                   {hasOptions && <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Options</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{selectedLabel}</p></div>}
                   <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Accepted</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{fmtDate(new Date())}</p></div>
                 </div>
+              </div>
+            )}
+
+            {/* Pay now, if they want to. Someone who has just decided to spend
+                five figures is as ready as they will ever be, and making them
+                wait for a phone call to find out where to send the deposit is
+                the one moment of friction we control entirely. The reference is
+                the quote number so the payment matches itself up. */}
+            {/* Gated on the bank details, NOT on the deposit terms: only 15 of
+                3,700 quotes carry a structured depositType, so tying this to it
+                would have hidden the account details from almost everyone who
+                accepts — which is the exact wait this block exists to remove. */}
+            {accepted && (pay.bsb || pay.accountNumber) && (
+              <div style={{ ...card, padding: 22, marginTop: 14 }}>
+                <Eyebrow>{depoLabel ? 'Your deposit' : 'Payment'}</Eyebrow>
+                <h3 style={{ ...h3, marginTop: 14 }}>{depoLabel ? `Pay ${figures.deposit} to confirm` : 'How to pay'}</h3>
+                <p style={{ margin: '8px 0 0', fontSize: 13.5, lineHeight: 1.7, color: T.graphite, maxWidth: '56ch' }}>
+                  {depoLabel
+                    ? 'You can transfer it now using the details below, or wait for our call and we will take it over the phone. Either is fine.'
+                    : 'We will confirm your deposit when we call. If you would rather get it moving now, these are our account details.'}
+                </p>
+                <div style={{ display: 'grid', gap: 10, marginTop: 18, paddingTop: 16, borderTop: `0.5px solid ${T.mist}` }}>
+                  {pay.accountName && <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 13.5 }}><span style={{ color: T.stone }}>Account name</span><span style={{ color: T.ink, textAlign: 'right' }}>{pay.accountName}</span></div>}
+                  {pay.bsb && <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 13.5 }}><span style={{ color: T.stone }}>BSB</span><span style={{ letterSpacing: '0.06em', color: T.ink }}>{pay.bsb}</span></div>}
+                  {pay.accountNumber && <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 13.5 }}><span style={{ color: T.stone }}>Account number</span><span style={{ letterSpacing: '0.06em', color: T.ink }}>{pay.accountNumber}</span></div>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 13.5, paddingTop: 10, borderTop: `0.5px solid ${T.mist}` }}>
+                    <span style={{ color: T.stone }}>Reference</span>
+                    <span style={{ letterSpacing: '0.06em', fontWeight: 500, color: T.ink }}>{quote.quoteNumber}</span>
+                  </div>
+                  {depoLabel && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 13.5 }}>
+                      <span style={{ color: T.stone }}>Amount</span>
+                      <span style={{ fontWeight: 500, color: T.ink }}>{figures.deposit}</span>
+                    </div>
+                  )}
+                </div>
+                {depoLabel && (
+                  <p style={{ margin: '14px 0 0', fontSize: 12, lineHeight: 1.6, color: T.stone }}>
+                    The balance of {figures.balance} is due on installation.
+                  </p>
+                )}
               </div>
             )}
             {declined && !accepted && (
@@ -889,20 +1580,25 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                     {activeItems.map(li => (
                       <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 13 }}>
                         <span style={{ color: T.graphite, minWidth: 0 }}>
-                          {li.productNameSnapshot || 'Window treatment'}
+                          {/* Same name as the card above it. This sheet read the
+                              raw snapshot, so the line a customer had just
+                              chosen as "Sheer linen curtain, wave fold" was
+                              presented back to them for confirmation as
+                              "Curtain". */}
+                          {li.displayName || li.productNameSnapshot || 'Window treatment'}
                           {li.location ? <span style={{ color: T.stone }}> · {li.location}</span> : null}
                         </span>
-                        <span style={{ color: T.ink, whiteSpace: 'nowrap' }}>{money(linePricing(li).lineTotal)}</span>
+                        <span style={{ color: T.ink, whiteSpace: 'nowrap' }}>{money(inc(linePricing(li).lineTotal, li.taxable))}</span>
                       </div>
                     ))}
                   </div>
                   <div style={{ marginTop: 14, borderTop: `0.5px solid ${T.mist}`, paddingTop: 14, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16 }}>
-                    <span style={{ ...fieldLabel }}>Total AUD</span>
-                    <span style={{ fontSize: 22, fontWeight: 300, letterSpacing: '-0.4px', color: T.ink }}>{money(totals.total)}</span>
+                    <span style={{ ...fieldLabel }}>Total AUD{figures.gstSuffix}</span>
+                    <span style={{ fontSize: 22, fontWeight: 300, letterSpacing: '-0.4px', color: T.ink }}>{figures.total}</span>
                   </div>
                   {depoLabel && (
                     <p style={{ margin: '8px 0 0', fontSize: 12, lineHeight: 1.6, color: T.stone }}>
-                      A {depoLabel} deposit ({money(totals.deposit)}) will be arranged with you by phone.
+                      A {depoLabel} deposit ({figures.deposit}) will be arranged with you by phone.
                     </p>
                   )}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 22 }}>
@@ -920,8 +1616,33 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                     If anything is close but not quite right, telling us why is usually enough for us to
                     fix it — it costs you nothing and we&rsquo;ll re-quote.
                   </p>
-                  <label style={{ ...fieldLabel, display: 'block', marginTop: 18 }}>Reason (optional)</label>
+                  {/* A blank box asking "why?" gets left blank, which is how
+                      decline_reason stayed empty and nobody knew whether it was
+                      the price, the fabric or the wait. One tap fills it in,
+                      and the box is still there to say more. */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 18 }}>
+                    {DECLINE_CHIPS.map(chip => {
+                      const picked = leadingChip(declineReason) === chip;
+                      return (
+                        <button
+                          key={chip} type="button" aria-pressed={picked}
+                          onClick={() => pickDeclineChip(chip)}
+                          style={{
+                            padding: '8px 14px', borderRadius: 999, cursor: 'pointer',
+                            fontFamily: 'inherit', fontSize: 13, lineHeight: 1,
+                            background: picked ? T.ink : 'transparent',
+                            color: picked ? T.paper : T.graphite,
+                            border: `0.5px solid ${picked ? T.ink : T.stone}`,
+                            transition: `background 200ms ${T.ease}, color 200ms ${T.ease}, border-color 200ms ${T.ease}`,
+                          }}>
+                          {chip}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <label style={{ ...fieldLabel, display: 'block', marginTop: 16 }} htmlFor="decline-reason">Anything else? (optional)</label>
                   <textarea
+                    id="decline-reason"
                     value={declineReason} onChange={e => setDeclineReason(e.target.value)} rows={3}
                     placeholder="Too expensive, going with someone else, timing isn't right…"
                     style={{ width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '10px 12px', fontFamily: 'inherit', fontSize: 13.5, lineHeight: 1.6, color: T.ink, background: T.paper, border: `0.5px solid ${T.mist}`, borderRadius: 8, resize: 'vertical' }}
@@ -944,7 +1665,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             {expanded && (
               <div style={{ padding: '18px 0 4px', borderBottom: `0.5px solid ${T.mist}` }}>
                 <div style={{ display: 'grid', gap: 11, paddingBottom: 16 }}>
-                  {summaryRows.concat([{ label: 'Total AUD', value: money(totals.total), lStyle: { ...rowLabel, fontWeight: 500, color: T.ink }, vStyle: { ...rowValue, fontSize: 15 } }]).map((r, i) => (
+                  {summaryRows.concat([{ label: `Total AUD${figures.gstSuffix}`, value: figures.total, lStyle: { ...rowLabel, fontWeight: 500, color: T.ink }, vStyle: { ...rowValue, fontSize: 15 } }]).map((r, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16 }}>
                       <span style={r.lStyle}>{r.label}</span><span style={r.vStyle}>{r.value}</span>
                     </div>
@@ -955,19 +1676,33 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0 16px' }}>
               <button type="button" onClick={() => setExpanded(e => !e)} style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: '-0.4px', color: T.ink, whiteSpace: 'nowrap' }}>{money(totals.total)}</div>
+                  <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: '-0.4px', color: T.ink, whiteSpace: 'nowrap' }}>{figures.total}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
                     <span style={{ fontSize: 11, color: unansweredRequired.length ? T.bronze : T.stone, whiteSpace: 'nowrap' }}>
                       {unansweredRequired.length
                         ? `${unansweredRequired.length} choice${unansweredRequired.length > 1 ? 's' : ''} still to make`
                         : hasOptions
-                          ? `${selectedLabel} options${quote.includesGST ? ' · incl. GST' : ''}`
-                          : (quote.includesGST ? 'incl. GST' : `${items.length} item${items.length === 1 ? '' : 's'}`)}
+                          ? `${selectedLabel} options${quote.includesGST ? ' · inc GST' : ''}`
+                          : (quote.includesGST ? 'inc GST' : `${items.length} item${items.length === 1 ? '' : 's'}`)}
                     </span>
                     <span style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.bronze, whiteSpace: 'nowrap' }}>{expanded ? 'Hide ▲' : 'Breakdown ▼'}</span>
                   </div>
                 </div>
               </button>
+              {/* The question sits between the total and Accept, where someone
+                  hesitating over the number is already looking. Hidden once the
+                  quote is settled, when there is nothing left to ask about
+                  here. */}
+              {askHref && !accepted && !declined && !isExpired && (
+                <a
+                  href={askHref}
+                  style={{
+                    flex: '0 0 auto', fontSize: 13, lineHeight: 1, color: T.ink, textDecoration: 'none',
+                    padding: '11px 14px', borderRadius: 999, border: `0.5px solid ${T.stone}`, whiteSpace: 'nowrap',
+                  }}>
+                  Ask
+                </a>
+              )}
               <div style={{ flex: '0 0 auto' }}>
                 <Button size="md" variant="primary" disabled={!acceptable || accepted || declined}
                   onClick={accepted || declined ? undefined : askAccept}>

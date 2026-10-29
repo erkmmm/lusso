@@ -124,11 +124,17 @@ export async function captureQuotePlan(takeoff, quoteId, { showSizes = true, cap
   const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   const pages = [];
 
+  // How each page was rendered, so the runs drawn into the image can be
+  // described again in the snapshot. Without this the customer page gets a flat
+  // picture with the coverings painted on and no idea where any of them are.
+  const pageGeom = new Map();   // pageNumber → { scale, w, h }
+
   for (const pn of pageNumbers) {
     const base = await getPageBaseSize(pdf, pn);
     const scale = Math.min(RENDER_SCALE, MAX_EDGE / Math.max(base.width, base.height));
     await renderPageToCanvas(pdf, pn, scale, canvas, 1);
     drawRuns(canvas.getContext('2d'), scale, schedule.entries.filter(e => e.pageNumber === pn), schedule.palette);
+    pageGeom.set(pn, { scale, w: canvas.width, h: canvas.height });
 
     const blob = await toBlob(canvas);
     if (!blob) throw new Error('Could not render the plan page.');
@@ -147,6 +153,24 @@ export async function captureQuotePlan(takeoff, quoteId, { showSizes = true, cap
     });
   }
 
+  /**
+   * One run, described in fractions of its page.
+   *
+   * Normalised rather than stored in pixels because the image is served at
+   * whatever width the customer's phone decides: 0..1 survives that, a pixel
+   * coordinate doesn't. Derived from the SAME `scale` that drew the run, so the
+   * overlay lands exactly on the painted line rather than near it.
+   */
+  const geometryOf = (e) => {
+    const g = pageGeom.get(e.pageNumber);
+    if (!g) return null;
+    const u = (p) => ({ u: (p.x * g.scale) / g.w, v: (p.y * g.scale) / g.h });
+    const points = Array.isArray(e.points) && e.points.length > 1 ? e.points.map(u) : null;
+    const anchor = e.anchor ? u(e.anchor) : null;
+    if (!points && !anchor) return null;
+    return { kind: e.kind || 'line', points, anchor };
+  };
+
   return {
     takeoffId: takeoff.id,
     takeoffRevision: takeoff.revision || 1,
@@ -154,6 +178,11 @@ export async function captureQuotePlan(takeoff, quoteId, { showSizes = true, cap
     capturedAt: new Date().toISOString(),
     capturedBy,
     showSizes,
+    // Bumped when the shape of this object changes. The customer page reads it
+    // to tell a snapshot carrying run geometry from one captured before it did,
+    // and falls back to the plain list for the older ones rather than rendering
+    // an interactive plan with nothing behind it.
+    schemaVersion: 2,
     pages,
     // The palette travels with the snapshot so the customer page's legend
     // matches the pins in the images, without recomputing anything.
@@ -169,6 +198,11 @@ export async function captureQuotePlan(takeoff, quoteId, { showSizes = true, cap
       measured: e.measured,
       pageNumber: e.pageNumber,
       colour: colourFor(schedule.palette, e.product),
+      // The takeoff row this came from. Not used for matching today (the quote
+      // line's `location` is the join), but it is the stable id if the link
+      // ever needs to stop being a string comparison.
+      key: e.key || null,
+      geometry: geometryOf(e),
     })),
   };
 }

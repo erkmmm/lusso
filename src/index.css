@@ -1046,6 +1046,16 @@ textarea:focus:not(:focus-visible) {
   }
 }
 
+/* The customer quote's plan list is folded away on screen, because the plan
+   itself is the index: every covering on it is hoverable and tappable. Paper
+   has neither, so print gets the list back and loses the control that hides
+   it. The list stays in the DOM either way so a screen reader can still read
+   it straight through. */
+@media print {
+  .plan-schedule { display: block !important; }
+  .plan-schedule-toggle { display: none !important; }
+}
+
 /* ── Print styles ───────────────────────────────────────────────────── */
 .print-only { display: none; }
 
