@@ -1731,7 +1731,7 @@ export default function QuoteBuilder() {
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1.5">Introduction Message (customer-facing)</label>
                 <textarea
-                  value={form.introMessage}
+                  value={form.introMessage ?? ''}
                   onChange={e => set('introMessage', e.target.value)}
                   rows={3}
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
@@ -2123,7 +2123,7 @@ export default function QuoteBuilder() {
           <Section title="Terms & Conditions" icon={FileText} defaultOpen={false}>
             <div className="pt-4">
               <textarea
-                value={form.termsAndConditions}
+                value={form.termsAndConditions ?? ''}
                 onChange={e => set('termsAndConditions', e.target.value)}
                 rows={5}
                 placeholder="Enter your terms and conditions…"

@@ -139,8 +139,28 @@ Deno.serve(async (req: Request) => {
       // filter reads. Clients should send a real one; this is the floor.
       const subjectLine = String(subject ?? "").trim() || "Message from Lusso"
 
+      // Stamp a per-conversation Reply-To so a plain "Reply" threads back onto
+      // this job. Gated on REPLY_DOMAIN: with the secret unset an address there
+      // would bounce, so leaving it unset keeps the previous behaviour exactly.
+      const REPLY_DOMAIN = Deno.env.get("REPLY_DOMAIN") ?? ""
+      let replyTo = Deno.env.get("EMAIL_REPLY_TO") || undefined
+      let threaded = false
+      if (REPLY_DOMAIN) {
+        const token = await ensureReplyToken(admin, jobId ?? null, customerId ?? null, enquiryId ?? null)
+        if (token) {
+          replyTo = `q-${token}@${REPLY_DOMAIN}`
+          threaded = true
+        }
+      }
+
       // The message staff typed is the email — no invented heading or filler
       // copy on top of it, just the brand frame around their words.
+      //
+      // The reply line is written only when the Reply-To above is a real
+      // threading address. Customers do reply to a no-reply-looking email and
+      // then assume it was read; saying "just hit Reply" has to be true, and
+      // when there is no token it isn't — that mail goes to the shared
+      // mailbox instead, never to this conversation.
       const content = {
         preheader: String(body).replace(/\s+/g, " ").slice(0, 140),
         eyebrow:   "Message from Lusso",
@@ -148,17 +168,9 @@ Deno.serve(async (req: Request) => {
         greeting:  firstName ? `Hi ${firstName},` : "",
         body,
         signOff:   senderName,
-      }
-
-      // Stamp a per-conversation Reply-To so a plain "Reply" threads back onto
-      // this job. Gated on REPLY_DOMAIN: until reply.lusso.com.au actually
-      // resolves and Email Routing is live, an address there would bounce, so
-      // leaving the secret unset keeps the previous behaviour exactly.
-      const REPLY_DOMAIN = Deno.env.get("REPLY_DOMAIN") ?? ""
-      let replyTo = Deno.env.get("EMAIL_REPLY_TO") || undefined
-      if (REPLY_DOMAIN) {
-        const token = await ensureReplyToken(admin, jobId ?? null, customerId ?? null, enquiryId ?? null)
-        if (token) replyTo = `q-${token}@${REPLY_DOMAIN}`
+        replyNote: threaded
+          ? "Just hit Reply to this email — your reply comes straight back to us."
+          : "",
       }
 
       sentSubject = subjectLine

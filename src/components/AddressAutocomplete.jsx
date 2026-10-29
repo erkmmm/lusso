@@ -34,15 +34,19 @@ const STATE_ABBR = {
 // Matches: "Unit 3, ", "Level 2, ", "Suite 5A, ", "Apt 12, ", "Shop 3, ", "3A, ", "1/", etc.
 const UNIT_PREFIX_RE = /^((?:unit|level|suite|apt|apartment|flat|shop|office|villa|lot)\s+[\w/-]+|[\d]+[a-z]?(?:\/[\d]+)?),\s*/i;
 
-function parseUnitAndStreet(full = '') {
-  const m = full.match(UNIT_PREFIX_RE);
-  if (m) return { unit: m[1].trim(), street: full.slice(m[0].length) };
-  return { unit: '', street: full };
+// `full` arrives from stored records, where an address that was never filled in
+// is null rather than absent — a default parameter only covers undefined, so
+// coerce rather than rely on it.
+function parseUnitAndStreet(full) {
+  const str = typeof full === 'string' ? full : '';
+  const m = str.match(UNIT_PREFIX_RE);
+  if (m) return { unit: m[1].trim(), street: str.slice(m[0].length) };
+  return { unit: '', street: str };
 }
 
 function combine(unit, street) {
-  const u = unit.trim();
-  const s = street.trim();
+  const u = (unit || '').trim();
+  const s = (street || '').trim();
   if (!u) return s;
   if (!s) return u;
   return `${u}, ${s}`;
@@ -67,7 +71,7 @@ function formatAddress(addr) {
 }
 
 export default function AddressAutocomplete({
-  value        = '',
+  value,
   onChange,
   placeholder  = 'Start typing an address…',
   className    = '',
@@ -75,8 +79,11 @@ export default function AddressAutocomplete({
   disabled     = false,
   showUnit     = true,
 }) {
+  // Null, undefined or a non-string value all mean "no address yet"
+  const safeValue  = typeof value === 'string' ? value : '';
+
   // Parse unit prefix out of the incoming value on first render
-  const parsed     = parseUnitAndStreet(value);
+  const parsed     = parseUnitAndStreet(safeValue);
   const [unit,    setUnit]    = useState(parsed.unit);
   const [query,   setQuery]   = useState(parsed.street);
   const [suggestions, setSuggestions] = useState([]);
@@ -94,11 +101,11 @@ export default function AddressAutocomplete({
   // already matching the incoming value, meaning WE emitted it via onChange.
   useEffect(() => {
     const current = combine(unit, query);
-    if (current === (value || '')) return; // internal change — no re-parse needed
-    const p = parseUnitAndStreet(value || '');
+    if (current === safeValue) return; // internal change — no re-parse needed
+    const p = parseUnitAndStreet(safeValue);
     setUnit(p.unit);
     setQuery(p.street);
-  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [safeValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close on outside click
   useEffect(() => {

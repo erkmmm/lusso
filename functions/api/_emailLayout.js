@@ -160,6 +160,10 @@ function tableHtml(table) {
  * @param {string}  o.ctaNote    Line shown directly above the buttons.
  * @param {string}  o.outro      Copy below the CTA.
  * @param {string}  o.signOff    Defaults to "The Lusso Team".
+ * @param {string}  o.replyNote  "Just hit Reply" line under the sign-off. Only
+ *                               pass it when the message carries a
+ *                               per-conversation Reply-To — see
+ *                               supabase/functions/send-communication.
  * @param {string}  o.footerNote Small print under the footer rule.
  * @param {{label:string,url:string}} [o.footerLink] Footer link rendered as a
  *   real anchor. Marketing email uses it for the one-click unsubscribe the
@@ -180,6 +184,7 @@ export function renderEmail({
   ctaNote = '',
   outro = '',
   signOff = 'The Lusso Team',
+  replyNote = '',
   footerNote = '',
   footerLink = null,
 } = {}) {
@@ -228,6 +233,10 @@ export function renderEmail({
           Kind regards,<br><span style="font-weight:700;color:${BRAND.ink};">${escapeHtml(signOff)}</span>
         </td></tr>
       </table>` : ''}
+      ${replyNote ? `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
+        <tr><td style="background:${BRAND.paper};border:1px solid ${BRAND.mist};border-radius:8px;padding:12px 14px;font-family:${FONT};font-size:13px;line-height:1.6;color:${BRAND.stone};">${richText(replyNote)}</td></tr>
+      </table>` : ''}
     </td></tr>
 
     <!-- Footer -->
@@ -253,7 +262,7 @@ export function renderEmail({
  * Plain-text alternative. Sending one alongside the HTML measurably improves
  * deliverability and is what text-only clients and screen readers fall back to.
  */
-export function renderText({ greeting = '', body = '', panel = null, cta = null, outro = '', signOff = 'The Lusso Team', footerLink = null } = {}) {
+export function renderText({ greeting = '', body = '', panel = null, cta = null, outro = '', signOff = 'The Lusso Team', replyNote = '', footerLink = null } = {}) {
   const out = [];
   if (greeting) out.push(greeting);
   if (body) out.push(body);
@@ -266,6 +275,7 @@ export function renderText({ greeting = '', body = '', panel = null, cta = null,
   }
   if (cta?.url) out.push(`${cta.label}: ${cta.url}`);
   if (outro) out.push(outro);
+  if (replyNote) out.push(replyNote);
   // Internal notifications pass an empty signOff — don't leave a dangling
   // "Kind regards," with nothing after it.
   out.push(signOff ? `Kind regards,\n${signOff}\n\nLusso · Fashion for Windows` : 'Lusso · Fashion for Windows');

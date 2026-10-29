@@ -10,6 +10,7 @@
 import { requireActiveUser } from './_auth.js';
 import { renderEmail, renderText } from './_emailLayout.js';
 import { logOutboundEmail, bearerToken } from './_logComm.js';
+import { replyAddressFor, REPLY_NOTE } from './_replyToken.js';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -82,6 +83,17 @@ export async function onRequestPost(context) {
     ? `Following up on your quote – ${quoteRef}`
     : `Your quote from Lusso – ${quoteRef}`;
 
+  // A quote email already invites a reply ("just reply to this email"), which
+  // until now went to the shared mailbox and never reached the customer's
+  // thread. With a per-conversation Reply-To it goes where the copy has always
+  // implied it goes. Best-effort: null simply means the generic address and no
+  // promise about where a reply lands.
+  const callerToken  = bearerToken(context);
+  const replyAddress = await replyAddressFor(context, callerToken, {
+    jobId:      quote.jobId,
+    customerId: customer.id,
+  });
+
   const content = {
     preheader: `Quote ${quoteRef}${totalFmt ? ` · ${totalFmt}` : ''}${expiryFmt ? ` · valid until ${expiryFmt}` : ''}`,
     eyebrow:   isFollowUp ? 'Following up' : 'Quotation',
@@ -103,6 +115,7 @@ export async function onRequestPost(context) {
     outro: isFollowUp
       ? "If the timing isn't right, just reply and say so — we'd rather know than keep chasing."
       : "If you have any questions, just reply to this email — we're happy to walk you through the details.",
+    replyNote: replyAddress ? REPLY_NOTE : '',
   };
 
   const html = renderEmail(content);
@@ -119,7 +132,7 @@ export async function onRequestPost(context) {
       body: JSON.stringify({
         from:     FROM_ADDRESS,
         to:       [customer.email],
-        reply_to: context.env.EMAIL_REPLY_TO || undefined,
+        reply_to: replyAddress || context.env.EMAIL_REPLY_TO || undefined,
         subject,
         html,
         text,
@@ -139,7 +152,7 @@ export async function onRequestPost(context) {
 
     // Log it so the customer's thread shows the quote went out, and so a
     // later bounce has a row to land on. Never blocks the response.
-    await logOutboundEmail(context, bearerToken(context), {
+    await logOutboundEmail(context, callerToken, {
       externalId: resendData?.id,
       to:         customer.email,
       subject,

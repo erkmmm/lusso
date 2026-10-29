@@ -20,6 +20,13 @@ const info = buildInfo()
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Honour PORT so the dev server can be told which port to take. Vite does not
+  // read it on its own — it defaults to 5173 — which means a harness that
+  // assigns a free port and passes it through the environment would be ignored,
+  // and two dev servers would collide on the same hardcoded port instead.
+  server: {
+    port: process.env.PORT ? Number(process.env.PORT) : 5173,
+  },
   define: {
     __BUILD_SHA__: JSON.stringify(info.sha ?? 'dev'),
     __BUILT_AT__:  JSON.stringify(info.builtAt ?? new Date().toISOString()),

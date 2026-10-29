@@ -45,7 +45,21 @@ export async function ensureReplyToken(
 
   // 23505 is the conversation unique index: a concurrent send beat us to it,
   // so re-read and use theirs rather than failing the send.
-  if (error.code === "23505") return await findToken(admin, jobId, customerId, enquiryId)
+  if (error.code === "23505") {
+    const theirs = await findToken(admin, jobId, customerId, enquiryId)
+    if (theirs) return theirs
+    // A conflict with no row to show for it means the index is keyed on
+    // something other than this conversation — which is how every web enquiry
+    // after the first silently went out with no Reply-To for weeks, because
+    // the old (job_id, customer_id) index treated all of them as one
+    // conversation. Loud, because the message still sends and the only visible
+    // symptom is a customer reply that never arrives.
+    console.error(
+      `reply token conflict with no matching row — job=${jobId} customer=${customerId} enquiry=${enquiryId}: ` +
+      `${error.message}. This send has no Reply-To token, so a reply will not thread back into the CRM.`
+    )
+    return null
+  }
 
   // Any other DB problem must not cost the customer their email. Fall through
   // to no token — the message still sends, it just isn't reply-threaded.

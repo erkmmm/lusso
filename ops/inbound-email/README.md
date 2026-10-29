@@ -90,16 +90,55 @@ to customers.
    test token and the test communication row.
 
 7. **Turn on stamping.** Set the Supabase secret `REPLY_DOMAIN` to
-   `reply.lusso.com.au`. From that moment outbound customer email carries a
+   `reply.lusso.com.au`, and the same value as a Cloudflare Pages secret
+   (`wrangler pages secret put REPLY_DOMAIN --project-name=lusso`) so the quote
+   email stamps one too. Pages reads secrets at deploy time, so redeploy after
+   setting it. From that moment outbound customer email carries a
    per-conversation `Reply-To`.
 
    To switch the feature off, unset `REPLY_DOMAIN`. Existing tokens keep
    working for inbound; new mail simply stops carrying a reply address.
 
+## Who stamps a reply address
+
+| Sender | Runs on | Mints the token via |
+|---|---|---|
+| `send-communication` — inbox messages | Supabase edge | service key, `replyToken.ts` |
+| `quote-notify` — order confirmation | Supabase edge | service key, `ensure_reply_token()` RPC |
+| `functions/api/send-quote.js` — the quote | Cloudflare Pages | caller's JWT, `ensure_reply_token()` RPC |
+| `marketing-send` | Supabase edge | service key, inline |
+
+All four key the conversation on `(job_id, customer_id)`, so a customer sees
+one stable reply address however the mail reached them.
+
+The Pages Function has no Supabase service key and must not be given one: it
+would hand a public HTTP route unrestricted read/write over the whole database
+to solve a sixteen-character problem. `ensure_reply_token()` is SECURITY
+DEFINER behind the same `is_active_user()` check as the rest of the app, so
+staff get a token for a conversation they could already see and nobody gets the
+table. The service role is let through the same function for `quote-notify`,
+which the database itself calls and which therefore has no signed-in user.
+
+Installer requests and purchase orders are deliberately left on the generic
+`EMAIL_REPLY_TO`: they go to trades and suppliers, not to the customer whose
+thread a token points at.
+
 ## Notes
 
 - **One token per conversation, not per message** — the reply address stays
   stable, so the customer's mail client threads our messages together.
+- **A conversation is a job/customer *or* a web enquiry**, and the two are
+  keyed separately: `reply_tokens_conversation_idx` on
+  `(job_id, customer_id)` applies only `where enquiry_id is null`, and
+  enquiries get `reply_tokens_enquiry_uniq` on `enquiry_id`.
+  Do not fold them back into one index. A web enquiry has no customer and no
+  job, so under the original un-partitioned `(job_id, customer_id) NULLS NOT
+  DISTINCT` index every enquiry was `(null, null)` — the first lead replied to
+  claimed that key and every lead after it failed on 23505, which
+  `ensureReplyToken` swallows by design. Those sends went out with the generic
+  `EMAIL_REPLY_TO` instead, so the lead's reply landed in Microsoft 365 and
+  never reached Resend. Nothing errored; the reply simply never appeared in the
+  inbox. Fixed in `migrations/reply_tokens_enquiry_scope.sql`.
 - **Unmatched mail is still recorded** with a null `customer_id` rather than
   dropped. A message in the wrong place is recoverable; a lost one is not.
 - **Every route into `comms-inbound` authenticates**: SMS by Twilio request

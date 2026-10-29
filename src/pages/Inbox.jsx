@@ -5,7 +5,7 @@ import {
   MessageSquare, Mail, Inbox as InboxIcon, Loader, Search, X,
   Send, ArrowLeft, User, Trash2, Briefcase,
   Globe, Phone, MapPin, Clock, UserPlus, Archive, ArchiveRestore, Check,
-  ExternalLink, Compass, BarChart3,
+  ExternalLink, Compass, BarChart3, Sparkles, AlertTriangle,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import OptionsMenu from '../components/OptionsMenu';
@@ -25,6 +25,21 @@ function formatTime(dateStr) {
   if (isYesterday(d))  return 'Yesterday';
   if (isThisWeek(d))   return format(d, 'EEE');
   return format(d, 'd MMM');
+}
+
+/**
+ * The stamp under a message bubble.
+ *
+ * Time alone was ambiguous the moment a thread spanned more than a day: the
+ * date dividers say which day a run of messages belongs to, but you had to
+ * scroll back to the divider to find out which. The date now travels with the
+ * message, and the year with it once the message is older than this one.
+ */
+function formatMessageStamp(dateStr) {
+  const d = parseISO(dateStr);
+  if (isToday(d)) return format(d, 'h:mm a');
+  if (d.getFullYear() === new Date().getFullYear()) return format(d, 'd MMM, h:mm a');
+  return format(d, 'd MMM yyyy, h:mm a');
 }
 
 function formatDateDivider(dateStr) {
@@ -53,27 +68,113 @@ const LEAD_STATUS = {
   archived:  { label: 'Archived',  pill: 'bg-slate-100 text-slate-500' },
 };
 
-// Turn a web_enquiries row into a conversation-shaped object so it can live in
-// the same list as message threads. Web leads are read-only inbound items.
-function enquiryToConv(e) {
-  const status = e.status || 'new';
-  const preview = e.message?.trim()
-    || (e.interest ? `Enquiry about ${e.interest}` : 'New website enquiry');
+/**
+ * Which conversation a website enquiry belongs to.
+ *
+ * One person, one chat. Someone who fills the form twice is not two leads —
+ * Kelli Girard's "second enquiry" was her answering Debbie's email with the
+ * measurements she'd been asked for, sent through the form because the reply
+ * address on that email wasn't threaded yet. Keying on the enquiry id put her
+ * in two chats; keying on who she is puts her in one.
+ *
+ * Email first, then the last nine digits of the phone — the same key
+ * match_customer_by_phone() reduces to, so the two sides agree on what counts
+ * as the same number. A lead with neither falls back to its own id, which is
+ * the old behaviour and still one conversation of its own.
+ */
+function leadIdentityKey(e) {
+  const email = (e.email || '').trim().toLowerCase();
+  if (email) return `web:${email}`;
+  const digits = (e.phone || '').replace(/\D/g, '');
+  if (digits.length >= 9) return `web:${digits.slice(-9)}`;
+  return `web:${e.id}`;
+}
+
+// Turn one person's website enquiries into a conversation-shaped object so they
+// can live in the same list as message threads.
+//
+// `msgs` is the communications tied to any of those enquiries — the replies
+// staff have sent and whatever the lead sent back. They belong on this row
+// rather than in a thread of their own: an inbound reply carries enquiry_id and
+// no customer_id, so grouping it by address would stand a second, parallel
+// conversation up next to the lead it answers. The list therefore shows the
+// latest message in the conversation, not the form submission forever.
+function enquiryToConv(enquiries, msgs = []) {
+  const sorted = [...enquiries].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const first  = sorted[0];
+  // The newest submission carries the freshest contact details and the status
+  // that matters, so it is the one the panel and its actions bind to.
+  const e      = sorted.at(-1);
+
+  // Every submission after the first reads as a message in the thread — which
+  // is what it is. The first stays in the enquiry header above it.
+  const formBody = (x) => x.message?.trim()
+    || (x.interest ? `Enquiry about ${x.interest}` : 'New website enquiry');
+  const resubmissions = sorted.slice(1).map(x => ({
+    id: `enq-${x.id}`,
+    enquiryRow: x,
+    channel: 'web',
+    direction: 'inbound',
+    body: formBody(x),
+    created_at: x.created_at,
+    read_at: x.status && x.status !== 'new' ? x.created_at : null,
+  }));
+
+  const messages = [...resubmissions, ...msgs]
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const latest = messages.at(-1);
+
   return {
-    key: `web:${e.id}`,
+    key: leadIdentityKey(e),
     isWebLead: true,
     enquiry: e,
-    source: leadSource(e),
+    enquiries: sorted,
+    firstEnquiry: first,
+    // Where they originally came from — a second form fill is not a new source.
+    source: leadSource(first),
     customerId: null,
     customerName: e.name || 'Website enquiry',
     customerPhone: e.phone || null,
     customerEmail: e.email || null,
     jobId: null,
-    last: { channel: 'web', direction: 'inbound', body: preview, created_at: e.created_at },
-    lastAt: e.created_at || '',
-    unread: status === 'new' ? 1 : 0,
-    channels: ['web'],
-    messages: [],
+    last: latest ?? { channel: 'web', direction: 'inbound', body: formBody(first), created_at: first.created_at },
+    lastAt: latest?.created_at || first.created_at || '',
+    // A lead nobody has picked up still counts as one unread, as it always
+    // has — but that is a fact about the enquiry they came in on, not about
+    // the newest one. Reading it off the latest row double-counts a
+    // resubmission, which is both "a new enquiry" and an unread message.
+    // Anything they have sent since counts on top: an answered-then-replied-to
+    // lead is the one most worth surfacing.
+    unread: ((first.status || 'new') === 'new' ? 1 : 0)
+      + messages.filter(m => m.direction === 'inbound' && !m.read_at).length,
+    channels: ['web', ...new Set(msgs.map(m => m.channel))],
+    messages,
+  };
+}
+
+/**
+ * A website enquiry, shaped like a communications row so it can sit in an
+ * existing customer's thread rather than standing up a conversation of its own.
+ *
+ * `read_at` is always set: an enquiry from someone who is already a customer is
+ * not an unpicked-up lead, and the inbox badge counts unread *messages*. The
+ * un-actioned-lead signal belongs to Today's "Leads to call", which reads
+ * web_enquiries.status and is unaffected by any of this. The conversation still
+ * jumps to the top of the list with the enquiry as its preview.
+ */
+function enquiryMessage(e, customer) {
+  return {
+    id: `enq-${e.id}`,
+    customer_id: customer.id,
+    job_id: null,
+    enquiry_id: e.id,
+    channel: 'web',
+    direction: 'inbound',
+    subject: null,
+    body: e.message?.trim() || (e.interest ? `Enquiry about ${e.interest}` : 'New website enquiry'),
+    created_at: e.created_at,
+    read_at: e.created_at,
+    customers: { name: customer.name, phone: customer.phone, email: customer.email },
   };
 }
 
@@ -203,10 +304,13 @@ function ConvRow({ conv, selected, onClick, onDelete }) {
           <span className="text-[11px] text-slate-400 flex-shrink-0">{formatTime(conv.lastAt)}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          {conv.isWebLead && (
+          {/* "Web lead:" labels the enquiry itself. Once someone has answered
+              it, the preview is our own message, so it takes the same "You:"
+              every other outbound preview gets. */}
+          {conv.isWebLead && conv.last?.direction !== 'outbound' && (
             <span className="text-[10px] font-medium text-teal-600 flex-shrink-0">Web lead:</span>
           )}
-          {!conv.isWebLead && conv.last?.direction === 'outbound' && (
+          {conv.last?.direction === 'outbound' && (
             <span className="text-[10px] text-slate-400 flex-shrink-0">You:</span>
           )}
           <p className={`text-xs truncate ${hasUnread ? 'text-slate-700' : 'text-slate-400'}`}>
@@ -502,10 +606,19 @@ function LeadOrigin({ enquiry }) {
 
 // ── Web lead detail panel ─────────────────────────────────────────────────────
 const PREF_LABEL = { call: 'Phone call', text: 'Text message', email: 'Email' };
+const CHANNEL_LABEL = { sms: 'Text', email: 'Email', web: 'Website form' };
 
 function WebLeadView({ conv, onBack, onStatus, onConvert }) {
   const navigate = useNavigate();
+  // `e` is the newest submission — freshest contact details, and the status
+  // and actions that matter. `first` is where they came in, which is what the
+  // enquiry header above the conversation describes. Usually they are the same
+  // row; they differ for someone who filled the form more than once.
   const e = conv.enquiry;
+  const first = conv.firstEnquiry ?? e;
+  const enquiries = conv.enquiries ?? [e];
+  const enquiryIds = enquiries.map(x => x.id);
+  const enquiryKey = enquiryIds.join(',');
   const status = e.status || 'new';
   const meta = LEAD_STATUS[status] || LEAD_STATUS.new;
   const [busy, setBusy] = useState(false);
@@ -520,6 +633,8 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
     : (e.phone ? 'call' : 'email');
   const [channel, setChannel] = useState(initialChannel);
   const [body, setBody]       = useState('');
+  const [suggesting, setSuggesting] = useState(false);
+  const [needs,      setNeeds]      = useState('');
   const [subject, setSubject] = useState('Your enquiry with Lusso');
   const [sending, setSending] = useState(false);
   const [error, setError]     = useState('');
@@ -527,35 +642,102 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
   // state, so sent replies vanished on reload and a lead's reply never appeared
   // at all. Now both directions persist and survive a refresh.
   const [thread, setThread]   = useState([]);
+  // The scrolling detail pane. A reply sent from the composer lands at the
+  // bottom of the conversation, which on a long lead is below the fold — so
+  // the pane is scrolled to it rather than leaving staff wondering whether the
+  // send worked.
+  const bodyRef = useRef(null);
 
   const loadThread = useCallback(async () => {
-    if (!supabase || !e.id) return;
+    if (!supabase || !enquiryKey) return;
     const { data } = await supabase
       .from('communications')
       .select('id, channel, direction, body, created_at, status, status_detail')
-      .eq('enquiry_id', e.id)
+      .in('enquiry_id', enquiryKey.split(','))
       .order('created_at', { ascending: true });
     setThread(data ?? []);
-  }, [e.id]);
+  }, [enquiryKey]);
 
   // Cancellable so a fast click through enquiries can't land an older
   // response on top of a newer one, or set state after unmount.
+  //
+  // Re-read on the same cadence as the inbox list rather than only on mount:
+  // a lead's reply arriving while their thread is open should appear in it,
+  // not wait for someone to click away and back.
   useEffect(() => {
-    if (!supabase || !e.id) return;
+    if (!supabase || !enquiryKey) return;
     let cancelled = false;
-    (async () => {
+    const read = async () => {
       const { data } = await supabase
         .from('communications')
         .select('id, channel, direction, body, created_at, status, status_detail')
-        .eq('enquiry_id', e.id)
+        .in('enquiry_id', enquiryKey.split(','))
         .order('created_at', { ascending: true });
       if (!cancelled) setThread(data ?? []);
-    })();
-    return () => { cancelled = true; };
-  }, [e.id]);
+    };
+    // The first read is unconditional — a thread opened in a tab the browser
+    // considers hidden still has to render. Only the repeat is gated, so a
+    // backgrounded tab stops polling and catches up when it comes back.
+    read();
+    const tick = () => { if (document.visibilityState === 'visible') read(); };
+    const t = setInterval(tick, 20000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [enquiryKey]);
+
+  // Every form they sent after the first reads as a message in the thread —
+  // which is what it is. Kelli Girard's "second enquiry" was her answering an
+  // email with the measurements she'd been asked for.
+  const items = useMemo(() => {
+    const resubmissions = enquiries.slice(1).map(x => ({
+      id: `enq-${x.id}`,
+      channel: 'web',
+      direction: 'inbound',
+      body: x.message?.trim() || (x.interest ? `Enquiry about ${x.interest}` : 'New website enquiry'),
+      created_at: x.created_at,
+    }));
+    return [...resubmissions, ...thread]
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }, [enquiryKey, thread]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const canSend   = channel === 'text' ? !!e.phone : channel === 'email' ? !!e.email : !!e.phone;
   const firstName = (e.name || '').trim().split(/\s+/)[0] || 'lead';
+
+  // Draft a first reply to a website enquiry. The function reads the lead and
+  // any earlier submissions itself, so the draft reflects the whole lead
+  // rather than just what is on screen. It never sends.
+  const suggestReply = async () => {
+    if (suggesting) return;
+    setSuggesting(true); setError(''); setNeeds('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Your session has expired — please refresh and sign in again.');
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/comms-suggest-reply`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            enquiryId: e.id,
+            channel,
+            guidance: body.trim() || undefined,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || 'Could not draft a reply');
+      setBody(data.draft || '');
+      if (data.needs) setNeeds(data.needs);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   const sendReply = async () => {
     // Re-entrancy guard. The button is disabled while sending, but React state
@@ -582,6 +764,10 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send');
       await loadThread();
+      requestAnimationFrame(() => {
+        const el = bodyRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
       setBody('');
       if (status === 'new') onStatus(e, 'contacted');
       toast(`${channel === 'text' ? 'Text' : 'Email'} sent to ${firstName}.`);
@@ -613,7 +799,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-slate-50/50 space-y-5">
+      <div ref={bodyRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-slate-50/50 space-y-5">
         {/* Meta chips */}
         <div className="flex flex-wrap gap-2">
           {e.interest && (
@@ -623,7 +809,7 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
           )}
           <span className="inline-flex items-center gap-1 rounded-full bg-white border border-slate-200 text-slate-500 text-xs px-3 py-1">
             <Clock size={12} />
-            {e.created_at ? format(parseISO(e.created_at), 'd MMM yyyy, h:mm a') : ''}
+            {first.created_at ? format(parseISO(first.created_at), 'd MMM yyyy, h:mm a') : ''}
           </span>
           {e.preferred_contact && (
             <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs px-3 py-1 font-medium">
@@ -657,48 +843,58 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
           )}
         </div>
 
-        {/* Message */}
-        {e.message && (
+        {/* The enquiry they came in on. Anything they sent afterwards is in the
+            conversation below, in order, rather than replacing this. */}
+        {first.message && (
           <div>
-            <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-1.5">Message</p>
+            <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-1.5">
+              {enquiries.length > 1 ? 'First enquiry' : 'Message'}
+            </p>
             <div className="bg-white rounded-2xl border border-slate-200 px-4 py-3.5 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-              {e.message}
+              {first.message}
             </div>
           </div>
         )}
 
-        <LeadOrigin enquiry={e} />
+        <LeadOrigin enquiry={first} />
+
+        {/* Conversation so far — outbound and the lead's replies.
+            In the scrolling body rather than inside the composer: squeezed into
+            the footer it got ~112px, which is a scroll box, not a thread. Here
+            it reads top to bottom — enquiry, then where they came from, then
+            the conversation, with the reply box underneath. */}
+        {items.length > 0 && (
+          <div>
+            <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-1.5">Conversation</p>
+            <div className="space-y-2">
+              {items.map(m => {
+                const out = m.direction === 'outbound';
+                return (
+                  <div key={m.id} className={`flex ${out ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
+                      out ? 'rounded-br-sm bg-teal-600 text-white'
+                          : 'rounded-bl-sm bg-white border border-slate-200 text-slate-800'
+                    }`}>
+                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>
+                      <p className={`text-[10px] mt-1 ${out ? 'text-teal-100 text-right' : 'text-slate-400'}`}>
+                        {CHANNEL_LABEL[m.channel] ?? 'Email'} · {formatMessageStamp(m.created_at)}
+                      </p>
+                      {out && (
+                        <div className="flex justify-end mt-0.5">
+                          <DeliveryStatus status={m.status} detail={m.status_detail} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Reply composer + lifecycle actions */}
       <div className="flex-shrink-0 border-t border-slate-200 bg-white p-3 space-y-2.5">
-        {/* Conversation so far — outbound and the lead's replies */}
-        {thread.length > 0 && (
-          <div className="space-y-1.5 max-h-28 overflow-y-auto">
-            {thread.map(m => {
-              const out = m.direction === 'outbound';
-              return (
-                <div key={m.id} className={`flex ${out ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 ${
-                    out ? 'rounded-br-sm bg-teal-600 text-white'
-                        : 'rounded-bl-sm bg-white border border-slate-200 text-slate-800'
-                  }`}>
-                    <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>
-                    <p className={`text-[10px] mt-0.5 ${out ? 'text-teal-100 text-right' : 'text-slate-400'}`}>
-                      {m.channel === 'sms' ? 'Text' : 'Email'} · {format(parseISO(m.created_at), 'h:mm a')}
-                    </p>
-                    {out && (
-                      <div className="flex justify-end mt-0.5">
-                        <DeliveryStatus status={m.status} detail={m.status_detail} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         {/* Channel toggle (defaults to the lead's preferred method, marked ★) */}
         <div className="flex gap-1.5">
           {[{ k: 'call', l: 'Call' }, { k: 'text', l: 'Text' }, { k: 'email', l: 'Email' }].map(c => (
@@ -728,10 +924,16 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
               <input value={subject} onChange={ev => setSubject(ev.target.value)} placeholder="Subject"
                 className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
             )}
+            {needs && (
+              <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                <span>Check before sending — {needs}</span>
+              </div>
+            )}
             <div className="flex gap-2 items-end">
               <textarea
                 value={body}
-                onChange={ev => setBody(ev.target.value)}
+                onChange={ev => { setBody(ev.target.value); if (needs) setNeeds(''); }}
                 onKeyDown={ev => { if (ev.key === 'Enter' && !ev.shiftKey && channel === 'text') { ev.preventDefault(); sendReply(); } }}
                 placeholder={canSend ? `Write a${channel === 'text' ? ' text' : 'n email'} to ${firstName}…` : `No ${channel === 'text' ? 'phone number' : 'email'} on file`}
                 disabled={!canSend}
@@ -739,6 +941,12 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
                 className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none disabled:bg-slate-50 disabled:text-slate-400"
                 style={{ maxHeight: '120px', overflowY: 'auto' }}
               />
+              <button onClick={suggestReply} disabled={!canSend || suggesting || sending}
+                title={body.trim() ? 'Draft a reply covering what you have typed' : 'Draft a reply'}
+                aria-label="Suggest a reply"
+                className="w-10 h-10 flex items-center justify-center border border-slate-200 text-slate-500 hover:text-teal-600 hover:border-teal-300 disabled:opacity-40 rounded-xl transition-colors flex-shrink-0">
+                {suggesting ? <Loader size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              </button>
               <button onClick={sendReply} disabled={!body.trim() || !canSend || sending}
                 className="w-10 h-10 flex items-center justify-center bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-xl transition-colors flex-shrink-0">
                 {sending ? <Loader size={16} className="animate-spin" /> : <Send size={16} />}
@@ -788,6 +996,8 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
   const [channel, setChannel] = useState(conv.last?.channel ?? 'sms');
   const [sending, setSending] = useState(false);
   const [error,   setError]   = useState('');
+  const [suggesting, setSuggesting] = useState(false);
+  const [needs,      setNeeds]      = useState('');
   const navigate = useNavigate();
   const bottomRef = useRef(null);
 
@@ -820,6 +1030,7 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
   }, [conv.messages.length]);
 
   const canSend = channel === 'sms' ? !!conv.customerPhone : !!conv.customerEmail;
+  const canSuggest = !!(conv.customerId || conv.jobId);
 
   const handleSend = async () => {
     if (sending) return;   // same double-click race as sendReply
@@ -855,6 +1066,41 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
       setError(err.message);
     } finally {
       setSending(false);
+    }
+  };
+
+  // Ask the assistant for a draft. It reads the thread from the database
+  // rather than from this component's state, so what it answers is grounded in
+  // what was actually sent. The draft lands in the composer and goes nowhere
+  // until someone presses send.
+  const suggestReply = async () => {
+    if (suggesting) return;
+    setSuggesting(true); setError(''); setNeeds('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Your session has expired — please refresh and sign in again.');
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/comms-suggest-reply`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            customerId: conv.customerId,
+            jobId:      conv.jobId,
+            channel,
+            // Anything already typed is treated as a brief, not thrown away.
+            guidance:   reply.trim() || undefined,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || 'Could not draft a reply');
+      setReply(data.draft || '');
+      if (data.needs) setNeeds(data.needs);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -932,8 +1178,10 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
               }`}>
                 <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>
                 <p className={`text-[10px] mt-1 ${isOut ? 'text-violet-200' : 'text-slate-400'} text-right`}>
-                  {format(parseISO(m.created_at), 'h:mm a')}
-                  {m.channel === 'email' && <span className="ml-1">· Email</span>}
+                  {formatMessageStamp(m.created_at)}
+                  {m.channel !== 'sms' && (
+                    <span className="ml-1">· {CHANNEL_LABEL[m.channel] ?? 'Email'}</span>
+                  )}
                 </p>
                 {isOut && (
                   <div className="flex justify-end mt-0.5">
@@ -974,10 +1222,16 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
             className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
           />
         )}
+        {needs && (
+          <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>Check before sending — {needs}</span>
+          </div>
+        )}
         <div className="flex gap-2 items-end">
           <textarea
             value={reply}
-            onChange={e => setReply(e.target.value)}
+            onChange={e => { setReply(e.target.value); if (needs) setNeeds(''); }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder={canSend ? `Reply via ${channel === 'sms' ? 'SMS' : 'email'}…` : 'No contact info available'}
             disabled={!canSend}
@@ -985,6 +1239,15 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
             className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 resize-none disabled:bg-slate-50 disabled:text-slate-400"
             style={{ maxHeight: '120px', overflowY: 'auto' }}
           />
+          <button onClick={suggestReply}
+            disabled={!canSend || suggesting || sending || !canSuggest}
+            title={!canSuggest
+              ? 'This thread is not linked to a customer yet'
+              : (reply.trim() ? 'Draft a reply covering what you have typed' : 'Draft a reply')}
+            aria-label="Suggest a reply"
+            className="w-10 h-10 flex items-center justify-center border border-slate-200 text-slate-500 hover:text-violet-500 hover:border-violet-300 disabled:opacity-40 rounded-xl transition-colors flex-shrink-0">
+            {suggesting ? <Loader size={16} className="animate-spin" /> : <Sparkles size={16} />}
+          </button>
           <button onClick={handleSend} disabled={!reply.trim() || !canSend || sending}
             className="w-10 h-10 flex items-center justify-center bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white rounded-xl transition-colors flex-shrink-0">
             {sending ? <Loader size={16} className="animate-spin" /> : <Send size={16} />}
@@ -1100,6 +1363,51 @@ export default function Inbox() {
   const { displayName = '' } = useProfile() || {};
   const [comms,    setComms]    = useState(null);
   const [leads,    setLeads]    = useState([]); // web_enquiries rows
+
+  /**
+   * Which website enquiries belong to someone who is already a customer.
+   *
+   * Matched on EMAIL ONLY, deliberately. Phone looks like the stronger key and
+   * is not: fifteen numbers in this database are shared across customer
+   * records, and only some of those are duplicates. `John Stewart` and
+   * `Judy Stewart` are a couple on one line; one mobile sits on three
+   * unrelated clients, almost certainly a builder's. Folding on phone would
+   * merge a husband and wife into one conversation. Name is worse still —
+   * `Jett Hopko` and `Jett Hopkins` are the same person, so a name match would
+   * have missed them and a fuzzy one would have joined the Stewarts.
+   */
+  const customerByEnquiry = useMemo(() => {
+    const byEmail = new Map();
+    const byId    = new Map();
+    for (const c of getCustomers()) {
+      byId.set(String(c.id), c);
+      const e = (c.email || '').trim().toLowerCase();
+      if (e && !byEmail.has(e)) byEmail.set(e, c);
+    }
+
+    const out = new Map();
+
+    // A customer the backend already resolved for this enquiry wins. An
+    // inbound reply gets a customer_id from comms-inbound's sender match, and
+    // picking a different record here — easy, when four of them share an email
+    // — would split one conversation in two: the reply under the customer the
+    // backend chose, our own message under the one we chose.
+    for (const m of comms ?? []) {
+      if (m.enquiry_id && m.customer_id && !out.has(m.enquiry_id)) {
+        const c = byId.get(String(m.customer_id));
+        if (c) out.set(m.enquiry_id, c);
+      }
+    }
+
+    // Otherwise match the lead's own email.
+    for (const l of leads) {
+      if (out.has(l.id)) continue;
+      const e = (l.email || '').trim().toLowerCase();
+      const c = e ? byEmail.get(e) : null;
+      if (c) out.set(l.id, c);
+    }
+    return out;
+  }, [leads, comms]);
   const [filter,   setFilter]   = useState('all');
   const [search,   setSearch]   = useState('');
   const [selectedKey, setSelected] = useState(null);
@@ -1204,15 +1512,26 @@ export default function Inbox() {
     };
   }, [loadComms, loadLeads]);
 
-  // Mark inbound messages as read when thread is opened (web leads excluded —
-  // their key is prefixed `web:` and never matches a communications row)
+  // Mark inbound messages as read when thread is opened. A web lead's key is
+  // `web:<enquiry id>`, which matches no address — its messages are the ones
+  // carrying that enquiry_id.
   useEffect(() => {
     if (!selectedKey || !comms || !supabase) return;
-    if (selectedKey.startsWith?.('web:')) return;
+    // A web lead's key identifies the person, so its messages are the ones on
+    // any of that person's enquiries.
+    const enquiryIds = selectedKey.startsWith?.('web:')
+      ? new Set(leads.filter(l => leadIdentityKey(l) === selectedKey).map(l => l.id))
+      : null;
     const unread = comms
       .filter(c => {
-        const key = c.customer_id || (c.direction === 'inbound' ? c.from_address : c.to_address);
-        return key === selectedKey && c.direction === 'inbound' && !c.read_at;
+        if (c.direction !== 'inbound' || c.read_at) return false;
+        if (enquiryIds) return c.enquiry_id && enquiryIds.has(c.enquiry_id);
+        const key = c.customer_id || c.from_address;
+        if (key === selectedKey) return true;
+        // A reply on an enquiry folded into this customer carries the enquiry
+        // id and no customer id, so it has to be matched the same way the
+        // conversation list matched it.
+        return !!c.enquiry_id && customerByEnquiry.get(c.enquiry_id)?.id === selectedKey;
       })
       .map(c => c.id);
     if (!unread.length) return;
@@ -1275,23 +1594,29 @@ export default function Inbox() {
     try {
       let undo;
 
-      // A web lead is a single web_enquiries row, not a message thread.
+      // A web lead is one or more web_enquiries rows — every form this person
+      // sent — not a message thread. Deleting the conversation takes all of
+      // them, or the deleted chat reappears carrying their other enquiry.
       if (conv.isWebLead) {
-        const leadId = conv.enquiry.id;
-        setLeads(prev => prev.filter(l => l.id !== leadId));
+        const leadIds = (conv.enquiries ?? [conv.enquiry]).map(l => l.id);
+        const idSet = new Set(leadIds);
+        setLeads(prev => prev.filter(l => !idSet.has(l.id)));
         const { error, count } = await supabase
           .from('web_enquiries')
           .update({ deleted_at: new Date().toISOString() }, { count: 'exact' })
-          .eq('id', leadId)
+          .in('id', leadIds)
           .is('deleted_at', null);
         if (error) throw error;
         if (count === 0) throw new Error('blocked');
 
         undo = async () => {
           const { data, error: undoErr } = await supabase
-            .from('web_enquiries').update({ deleted_at: null }).eq('id', leadId).select().single();
-          if (undoErr) { toast('Could not restore the lead.', 'error'); return; }
-          setLeads(prev => prev.some(l => l.id === data.id) ? prev : [data, ...prev]);
+            .from('web_enquiries').update({ deleted_at: null }).in('id', leadIds).select();
+          if (undoErr || !data?.length) { toast('Could not restore the lead.', 'error'); return; }
+          setLeads(prev => {
+            const known = new Set(prev.map(l => l.id));
+            return [...data.filter(l => !known.has(l.id)), ...prev];
+          });
           toast(`${name} restored.`, 'info');
         };
       } else {
@@ -1381,16 +1706,55 @@ export default function Inbox() {
     }
   };
 
-  // Merge message conversations + web leads into one list, newest first
-  const leadConvs = leads.map(enquiryToConv);
-  const allConvs  = [...buildConversations(comms ?? []), ...leadConvs]
+  // Merge message conversations + web leads into one list, newest first.
+  //
+  // An enquiry from an existing customer folds into that customer's thread —
+  // it is the same person, and a separate "web lead" row next to their chat is
+  // the duplicate staff were seeing. Enquiries from people we don't know yet
+  // keep their own lead row, where the lead actions live.
+  const threadComms = [];
+  const commsByEnquiry = new Map();
+  for (const c of comms ?? []) {
+    if (!c.enquiry_id) { threadComms.push(c); continue; }
+    const cust = customerByEnquiry.get(c.enquiry_id);
+    if (!cust) {
+      const list = commsByEnquiry.get(c.enquiry_id);
+      if (list) list.push(c); else commsByEnquiry.set(c.enquiry_id, [c]);
+      continue;
+    }
+    // Replies on a folded enquiry carry no customer_id of their own — the
+    // token only knew the enquiry — so give them their customer's.
+    threadComms.push(c.customer_id ? c : {
+      ...c,
+      customer_id: cust.id,
+      customers: c.customers ?? { name: cust.name, phone: cust.phone, email: cust.email },
+    });
+  }
+
+  const standaloneLeads = [];
+  for (const l of leads) {
+    const cust = customerByEnquiry.get(l.id);
+    if (cust) threadComms.push(enquiryMessage(l, cust));
+    else standaloneLeads.push(l);
+  }
+
+  // One conversation per person, not per form submission — see leadIdentityKey.
+  const leadGroups = new Map();
+  for (const l of standaloneLeads) {
+    const k = leadIdentityKey(l);
+    const g = leadGroups.get(k);
+    if (g) g.push(l); else leadGroups.set(k, [l]);
+  }
+  const leadConvs = [...leadGroups.values()].map(group =>
+    enquiryToConv(group, group.flatMap(l => commsByEnquiry.get(l.id) ?? [])));
+  const allConvs  = [...buildConversations(threadComms), ...leadConvs]
     .sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
   const unreadTotal = allConvs.reduce((s, c) => s + c.unread, 0);
-  const webCount    = leadConvs.length;
+  const webCount    = allConvs.filter(c => c.isWebLead || c.channels.includes('web')).length;
 
   // Apply filter + search to conversation list
   const conversations = allConvs.filter(conv => {
-    if (filter === 'web')    return conv.isWebLead;
+    if (filter === 'web')    return conv.isWebLead || conv.channels.includes('web');
     if (filter === 'sms')    return conv.channels.includes('sms');
     if (filter === 'email')  return conv.channels.includes('email');
     if (filter === 'unread') return conv.unread > 0;

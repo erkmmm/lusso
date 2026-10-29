@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search, Users, Phone, Mail, MapPin, X, ChevronRight,
-  Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus, Edit3,
+  Trash2, CheckSquare, Square, AlertTriangle, Plus, UserPlus, Edit3, Merge,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { getCustomers, getCustomersFiltered, getJobs, getJobsByCustomer, saveCustomer, deleteCustomer, restoreCustomer, bulkDeleteCustomers, searchMatch, isJobOpen } from '../store/data';
@@ -89,6 +89,25 @@ export default function Customers() {
 
   const { isAM = true, displayName = '' } = useProfile() || {};
   const customers = getCustomersFiltered(isAM, displayName);
+
+  /**
+   * How many groups of records look like the same person — a shared email
+   * address, or a shared phone number. Counted here rather than asked of the
+   * server so the link only appears when there is something behind it; the
+   * review page does the authoritative pass.
+   */
+  const duplicateGroups = useMemo(() => {
+    const byEmail = new Map();
+    const byPhone = new Map();
+    for (const c of customers) {
+      const e = (c.email || '').trim().toLowerCase();
+      if (e) byEmail.set(e, (byEmail.get(e) ?? 0) + 1);
+      const p = (c.phone || '').replace(/\D/g, '').slice(-9);
+      if (p.length === 9) byPhone.set(p, (byPhone.get(p) ?? 0) + 1);
+    }
+    const count = (m) => [...m.values()].filter(n => n > 1).length;
+    return count(byEmail) + count(byPhone);
+  }, [customers]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return customers;
@@ -188,7 +207,21 @@ export default function Customers() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Customers</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{filtered.length} customer{filtered.length !== 1 ? 's' : ''}</p>
+          <p className="text-slate-500 text-sm mt-0.5">
+            {filtered.length} customer{filtered.length !== 1 ? 's' : ''}
+            {duplicateGroups > 0 && (
+              <>
+                {' · '}
+                <button
+                  onClick={() => navigate('/customers/duplicates')}
+                  className="inline-flex items-center gap-1 text-violet-600 hover:underline font-medium"
+                >
+                  <Merge size={13} />
+                  {duplicateGroups} possible duplicate{duplicateGroups !== 1 ? 's' : ''}
+                </button>
+              </>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap self-start">
           {customers.length > 0 && (

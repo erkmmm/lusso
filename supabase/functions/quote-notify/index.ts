@@ -151,6 +151,28 @@ Deno.serve(async (req: Request) => {
           : ""
         const cardLine = pay.creditCardNote ? ` ${pay.creditCardNote}` : ""
 
+        // A per-conversation Reply-To, so "please reply to this email and we
+        // will put it right" is true: the reply threads onto this customer's
+        // job in the CRM instead of landing in the shared mailbox. Same
+        // (job, customer) key the quote email and the inbox use, so the
+        // customer sees one stable reply address, not three.
+        //
+        // Best-effort — an order confirmation must go out either way.
+        let custReplyTo: string | undefined
+        try {
+          const REPLY_DOMAIN = Deno.env.get("REPLY_DOMAIN") ?? ""
+          if (REPLY_DOMAIN && (p.jobId || p.customerId)) {
+            const { data: tok, error: tokErr } = await admin.rpc("ensure_reply_token", {
+              p_job_id: p.jobId ?? null,
+              p_customer_id: p.customerId ?? null,
+            })
+            if (tokErr) console.error("ensure_reply_token:", tokErr.message)
+            else if (tok) custReplyTo = `q-${tok}@${REPLY_DOMAIN}`
+          }
+        } catch (e) {
+          console.error("reply token lookup threw:", String(e))
+        }
+
         const custContent = {
           preheader: `Order confirmed · ${p.quoteNumber} · ${money(p.grandTotal)}`,
           eyebrow: "Order confirmed",
@@ -171,6 +193,9 @@ Deno.serve(async (req: Request) => {
             + "One of our team will be in touch within one business day to confirm your measurements and arrange an installation date. "
             + "If any detail above is not as you expected, please reply to this email and we will put it right.",
           signOff: "The Lusso Team",
+          replyNote: custReplyTo
+            ? "Your reply to this email comes straight back to our team."
+            : "",
         }
 
         const custRes = await fetch("https://api.resend.com/emails", {
@@ -179,6 +204,7 @@ Deno.serve(async (req: Request) => {
           body: JSON.stringify({
             from: EMAIL_FROM,
             to: [p.customerEmail],
+            reply_to: custReplyTo,
             subject: `Order confirmed — ${p.quoteNumber}`,
             html: renderEmail(custContent),
             text: renderText(custContent),

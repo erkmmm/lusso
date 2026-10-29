@@ -44,6 +44,13 @@ export interface EmailContent {
   cta?: { label: string; url: string } | null
   outro?: string
   signOff?: string
+  /**
+   * "Just hit Reply" line under the sign-off. Pass it only when the message
+   * actually carries a per-conversation Reply-To — promising a reply will
+   * reach us when it would land in a mailbox nobody watches is worse than
+   * saying nothing. See send-communication/index.ts.
+   */
+  replyNote?: string
   footerNote?: string
   /**
    * A link in the footer, rendered as a real anchor rather than escaped text.
@@ -63,6 +70,7 @@ export function renderEmail({
   cta = null,
   outro = '',
   signOff = 'The Lusso Team',
+  replyNote = '',
   footerNote = '',
   footerLink = null,
 }: EmailContent = {}): string {
@@ -124,6 +132,10 @@ export function renderEmail({
           Kind regards,<br><span style="font-weight:700;color:${BRAND.ink};">${escapeHtml(signOff)}</span>
         </td></tr>
       </table>` : ''}
+      ${replyNote ? `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
+        <tr><td style="background:${BRAND.paper};border:1px solid ${BRAND.mist};border-radius:8px;padding:12px 14px;font-family:${FONT};font-size:13px;line-height:1.6;color:${BRAND.stone};">${richText(replyNote)}</td></tr>
+      </table>` : ''}
     </td></tr>
 
     <tr><td align="center" style="padding:22px 12px 0;">
@@ -144,12 +156,13 @@ export function renderEmail({
 </html>`
 }
 
-export function renderText({ greeting = '', body = '', cta = null, outro = '', signOff = 'The Lusso Team', footerLink = null }: EmailContent = {}): string {
+export function renderText({ greeting = '', body = '', cta = null, outro = '', signOff = 'The Lusso Team', replyNote = '', footerLink = null }: EmailContent = {}): string {
   const out: string[] = []
   if (greeting) out.push(greeting)
   if (body) out.push(body)
   if (cta?.url) out.push(`${cta.label}: ${cta.url}`)
   if (outro) out.push(outro)
+  if (replyNote) out.push(replyNote)
   // Internal notifications pass an empty signOff — don't leave a dangling
   // "Kind regards," with nothing after it.
   out.push(signOff ? `Kind regards,\n${signOff}\n\nLusso · Fashion for Windows` : 'Lusso · Fashion for Windows')
