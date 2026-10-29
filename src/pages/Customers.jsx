@@ -111,11 +111,26 @@ export default function Customers() {
     return any(byEmail) || any(byPhone);
   }, [customers]);
 
+  /**
+   * Newest first.
+   *
+   * The list was in whatever order the local cache happened to hold, which is
+   * the hydration's `created_at ASC` — so a customer added today landed at the
+   * bottom of nineteen hundred others.
+   *
+   * Ties break on id because `created_at` is nowhere near unique here: a bulk
+   * import stamped 1,981 customers across 54 distinct timestamps. That is the
+   * same total ordering fetchAllPages() uses, so a block of imported records
+   * keeps a stable order instead of shuffling between renders. Records with no
+   * date at all sort last rather than first.
+   */
   const filtered = useMemo(() => {
-    if (!search.trim()) return customers;
-    return customers.filter(c =>
-      searchMatch([c.name, c.phone, c.email, c.address], search)
-    );
+    const base = search.trim()
+      ? customers.filter(c => searchMatch([c.name, c.phone, c.email, c.address], search))
+      : customers;
+    return [...base].sort((a, b) =>
+      (new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      || String(b.id).localeCompare(String(a.id)));
   }, [customers, search]);
 
   // Per-customer job stats computed in ONE pass over all jobs, instead of
