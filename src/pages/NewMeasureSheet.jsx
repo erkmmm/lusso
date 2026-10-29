@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Copy, Printer, Maximize2, Minimize2, StickyNote, History, RotateCcw, Tag,
+  Copy, Printer, Maximize2, Minimize2, StickyNote, History, RotateCcw, Tag, GitBranch,
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
@@ -337,6 +337,12 @@ function LineSummary({ item, idx, open, issues, onToggle }) {
               Optional
             </span>
           )}
+          {item.choiceGroupId && (
+            <span title={`One of the alternatives for "${item.choiceGroupId}" — the customer picks one`}
+              className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-purple-700 bg-purple-100 border border-purple-200 rounded px-1.5 py-px">
+              Choice
+            </span>
+          )}
         </span>
         <span className="block text-xs text-slate-400 truncate">
           {[item.productNameSnapshot, item.fabricColour].filter(Boolean).join(' · ') || 'No product yet'}
@@ -559,6 +565,10 @@ const EMPTY_LINE_ITEM = () => ({
   // Priced and shown, but not part of the job unless the customer says yes.
   // Carried through to the quote as an Optional line — see msLineToQuoteLine.
   isOptional: false,
+  // Lines sharing a choiceGroupId are alternatives for the same opening, and
+  // the quote renders them as one "Choose one" block. Null means an ordinary
+  // line. See addAlternative().
+  choiceGroupId: null,
 });
 
 // Fields a new line inherits from the line above it.
@@ -1111,6 +1121,44 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       return { ...s, lineItems: items };
     });
     setOpenCards(prev => (isPhoneDevice() ? new Set([id]) : new Set([...prev, id])));
+    setOpenCards(new Set([id]));
+  }, []);
+
+  /**
+   * Offer a second way to do this opening.
+   *
+   * The window is measured once and can be quoted two ways — blockout or
+   * sunscreen, chain or motor — and the customer picks. That is a choice
+   * group: both lines carry the same choiceGroupId and the quote renders
+   * them as one "Choose one" block rather than two separate charges.
+   *
+   * The copy keeps what the opening is (room, size, quantity) and drops what
+   * the decision is about (product, fabric), because those are the fields the
+   * alternative exists to differ on — carrying them over means every new
+   * alternative starts by being wrong.
+   *
+   * The group is named after the room, since that name is shown to the
+   * customer as "Choose one — lounge".
+   */
+  const addAlternative = useCallback((idx) => {
+    const id = uuidv4();
+    setSheet(s => {
+      const source = s.lineItems[idx];
+      if (!source) return s;
+      const groupId = source.choiceGroupId
+        || (source.location || '').trim().toLowerCase().replace(/\s+/g, '-')
+        || `choice-${id.slice(0, 6)}`;
+      const items = [...s.lineItems];
+      items[idx] = { ...source, choiceGroupId: groupId };
+      items.splice(idx + 1, 0, {
+        ...source,
+        id,
+        choiceGroupId: groupId,
+        productTypeId: '', productNameSnapshot: '', pricedItemId: null,
+        fabricColour: '', liningFabricColour: '',
+      });
+      return { ...s, lineItems: items };
+    });
     setOpenCards(new Set([id]));
   }, []);
 
@@ -1965,6 +2013,17 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                         }`}
                       >
                         <Tag size={13} /> Optional
+                      </button>
+                      {/* The alternative is created from this line rather than
+                          added blank, so the opening's room and size come with
+                          it and only the decision is left to fill in. */}
+                      <button
+                        type="button"
+                        onClick={() => addAlternative(idx)}
+                        title="Offer a second product for this opening — the customer picks one"
+                        className="flex items-center gap-1.5 text-xs font-medium rounded-lg px-2.5 py-1.5 border text-slate-500 border-slate-200 hover:bg-slate-50 transition-colors"
+                      >
+                        <GitBranch size={13} /> Alternative
                       </button>
                       <span className="flex-1" />
                       <button onClick={() => copyLineItem(idx)}

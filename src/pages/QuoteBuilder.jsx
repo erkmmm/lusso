@@ -201,9 +201,14 @@ function msItemToQuoteLine(msLi, sortOrder, rates, pricedItems) {
   return {
     ...EMPTY_LINE_ITEM(),
     measureSheetLineItemId: msLi.id,
-    // An extra the customer asked about on site stays an extra on the quote.
-    // Marked once, in the room, rather than reconstructed from memory later.
-    type: msLi.isOptional ? 'Optional' : 'Required',
+    // What the line is on the quote, decided in the room rather than
+    // reconstructed from memory later. A line with alternatives is a "choose
+    // one" block; an extra they asked about is an optional; everything else is
+    // part of the job.
+    type: msLi.choiceGroupId ? 'Multiple Choice'
+        : msLi.isOptional    ? 'Optional'
+        :                      'Required',
+    choiceGroupId: msLi.choiceGroupId || null,
     pricedItemId: msLi.pricedItemId || null,
     location: msLi.location || '',
     productTypeId: msLi.productTypeId || '',
