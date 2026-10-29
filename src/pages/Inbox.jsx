@@ -639,13 +639,22 @@ function AutoTextarea({ value, className = '', ...rest }) {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
+    const cs = getComputedStyle(el);
+
+    // scrollHeight measures the content box; the height we set is the border
+    // box. Without adding the borders back the element lands two pixels short
+    // of its own content, so it is permanently scrollable by 2px and the
+    // scrollbar is drawn over the rounded corner even on a one-line reply.
+    const borders = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+
     // The ceiling lives in CSS as a share of the window rather than a fixed
     // 160px. A drafted email runs eight or nine lines, which at 160px meant
     // reading it five lines at a time through a scrolling box — you could not
     // see what you were about to send. Read the computed value back instead of
     // repeating the number here, so the CSS stays the single source of it.
-    const cap = parseFloat(getComputedStyle(el).maxHeight);
-    el.style.height = `${Number.isFinite(cap) ? Math.min(el.scrollHeight, cap) : el.scrollHeight}px`;
+    const cap = parseFloat(cs.maxHeight);
+    const wanted = el.scrollHeight + borders;
+    el.style.height = `${Number.isFinite(cap) ? Math.min(wanted, cap) : wanted}px`;
   }, [value]);
   return (
     <textarea
