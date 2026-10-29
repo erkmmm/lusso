@@ -1677,7 +1677,11 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               {quote.salesperson && <p style={{ margin: '2px 0 0', fontSize: 13.5, color: T.stone }}>{quote.salesperson}</p>}
               <hr style={hairline} />
               <div style={{ display: 'grid', gap: 12 }}>
-                {settings.businessAddress && <div><div style={fieldLabel}>Postal address</div><p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.6 }}>{settings.businessAddress}</p></div>}
+                {/* The postal address is not shown. A customer needs to know
+                    how to reach a person, not where to send a letter, and on a
+                    phone it was four lines of the rail doing nothing. The
+                    setting stays — it still backs the write-guard in db.js
+                    that stops a stale tab clobbering the shared row. */}
                 {settings.businessPhone && (
                   <div>
                     <div style={fieldLabel}>Phone</div>

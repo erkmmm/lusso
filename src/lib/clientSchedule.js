@@ -18,11 +18,27 @@ import { pointsOf } from './takeoffGeometry';
  * a hash gives two similar colours to the two product types on a job often
  * enough to matter, and the legend is the only thing telling them apart.
  */
+// Held at roughly even lightness (~48%) and a half-step back on saturation, so
+// no one covering shouts over the others and the set reads as chosen rather
+// than defaulted — the previous palette put full-strength blue and rose beside
+// a muted teal, which on a near-monochrome quote looked like stock colours.
+//
+// Ordered for colour blindness, not for prettiness: teal then terracotta,
+// because blue-orange is the one pairing that survives every common form of
+// it. The old order led with teal, amber, blue, violet, rose, which collapses
+// to near-identical pins under deuteranopia — and the pin is the only thing
+// tying a run on the drawing to its line on the quote.
+//
+// Not muted any further. These sit on a white architectural drawing at about
+// eight pixels on a phone, and past this they stop being tellable apart, which
+// is the entire job.
 const PIN_PALETTE = [
-  '#0f766e', '#b45309', '#1d4ed8', '#7c3aed', '#be123c',
-  '#0369a1', '#4d7c0f', '#a16207', '#9333ea', '#0891b2',
+  '#2E6F6B', '#B5673C', '#41548C', '#8E7A2B', '#7B4670',
+  '#56702F', '#3C7490', '#A6504F', '#574B82', '#6B6257',
 ];
-const UNSPECIFIED = '#94a3b8';
+// Warm, to sit in the brand's neutral family. The old #94a3b8 was a cool slate
+// that read faintly blue next to everything else on the page.
+const UNSPECIFIED = '#9A958C';
 
 export function buildPalette(rows) {
   const map = new Map();
