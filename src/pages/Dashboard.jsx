@@ -317,6 +317,21 @@ function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, ca
  * is a headline, a series over time and a short breakdown, and seven bespoke
  * panels would drift apart the way the two inbox panels did.
  */
+/**
+ * The panel's own background, opaque.
+ *
+ * This theme is glass by design — `--card` is rgba(38,34,31,0.52) and the
+ * Tailwind `bg-white` it overrides lands at 52%. On a surface made of numbers
+ * that is unreadable: the dashboard's figures show straight through the
+ * panel's figures. Relative colour syntax takes the theme's own hue and drops
+ * the alpha, so this stays correct in the light themes too (where `--card` is
+ * white) without hardcoding a colour. index.css already relies on
+ * `rgb(from …)`, so the support is assumed elsewhere in the app.
+ */
+// The `/ 1` is load-bearing: in relative colour syntax an omitted alpha
+// inherits the origin's, so `rgb(from var(--card) r g b)` stays at 0.52.
+const SOLID_SURFACE = { backgroundColor: 'rgb(from var(--card) r g b / 1)' };
+
 function StatDetail({ card, onClose }) {
   // Escape closes it, like every other dismissible layer in the app.
   useEffect(() => {
@@ -331,7 +346,7 @@ function StatDetail({ card, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 p-0 sm:p-6"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-6"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -339,9 +354,13 @@ function StatDetail({ card, onClose }) {
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+        style={SOLID_SURFACE}
+        className="w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
       >
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+        {/* The header is sticky, so it needs the same solid fill — content
+            scrolling beneath a translucent bar was the same problem again. */}
+        <div style={SOLID_SURFACE}
+          className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 sticky top-0 z-10">
           <span className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
             <Icon size={18} className="text-slate-500" />
           </span>
