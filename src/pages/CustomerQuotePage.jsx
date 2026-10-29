@@ -25,9 +25,28 @@ const T = {
   paper: 'var(--lusso-paper)', paperPure: 'var(--lusso-paper-pure)', mist: 'var(--lusso-mist)', stone: 'var(--lusso-stone)',
   graphite: 'var(--lusso-graphite)', ink: 'var(--lusso-ink)', bronze: 'var(--lusso-bronze)',
   onInverseMuted: 'var(--lusso-on-inverse-muted)', borderInverse: 'var(--lusso-border-inverse)',
-  shadowCard: '0 1px 2px rgba(16,17,19,0.04), 0 8px 24px rgba(16,17,19,0.05)',
   ease: 'cubic-bezier(0.22,0.61,0.36,1)',
   font: "'Manrope', system-ui, -apple-system, sans-serif",
+
+  // ── Roles, not colours ───────────────────────────────────────────────────
+  // `ink` and `paper` were each doing two jobs: ink was the heading colour AND
+  // the dark-panel fill, paper was the page AND the text on those panels. That
+  // is fine while the page is paper-coloured, but it means a theme cannot be
+  // swapped by redefining the palette — invert ink and the headings go light
+  // while the header goes white. These name the jobs separately so one class
+  // on the root can repaint the whole page. Defaults in index.css reproduce
+  // the brand kit exactly; `.quote-glass` overrides them.
+  page:     'var(--lq-page)',       // behind everything
+  surface:  'var(--lq-surface)',    // a card
+  raised:   'var(--lq-raised)',     // header, accepted panel, staff bar
+  onRaised: 'var(--lq-on-raised)',
+  accent:   'var(--lq-accent)',     // primary button, ticked control, done step
+  onAccent: 'var(--lq-on-accent)',
+  well:     'var(--lq-well)',       // a sunken group: choices, textarea, notice
+  bar:      'var(--lq-bar)',        // the sticky total bar
+  ok:       'var(--lq-ok)',         // "measured on site"
+  frost:    'var(--lq-frost)',      // backdrop-filter, `none` off glass
+  shadowCard: 'var(--lq-shadow)',
 };
 
 /**
@@ -84,7 +103,7 @@ function Button({ children, variant = 'primary', size = 'md', disabled = false, 
   const sizes = { md: { padding: '12px 26px', font: 15, gap: 9 }, lg: { padding: '16px 34px', font: 16, gap: 10 } };
   const s = sizes[size] || sizes.md;
   const variants = {
-    primary: { background: hover && !disabled ? T.graphite : T.ink, color: T.paper, borderColor: 'transparent' },
+    primary: { background: hover && !disabled ? T.graphite : T.accent, color: T.onAccent, borderColor: 'transparent' },
     secondary: { background: 'transparent', color: hover && !disabled ? T.bronze : T.ink, borderColor: hover && !disabled ? T.bronze : T.stone },
   };
   const style = {
@@ -112,7 +131,11 @@ function Button({ children, variant = 'primary', size = 'md', disabled = false, 
   );
 }
 
-const card = { background: T.paperPure, border: `0.5px solid ${T.mist}`, borderRadius: 8, padding: 20 };
+const card = {
+  background: T.surface, border: `0.5px solid ${T.mist}`, borderRadius: 8, padding: 20,
+  // Off glass this resolves to `none` and costs nothing.
+  backdropFilter: T.frost, WebkitBackdropFilter: T.frost,
+};
 const fieldLabel = { fontSize: 9.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.stone };
 const hairline = { height: '0.5px', background: T.mist, margin: '16px 0', border: 0 };
 
@@ -262,7 +285,7 @@ function PlanCard({ entry, info, interactive, onJump }) {
           style={{
             marginTop: 10, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
             fontFamily: 'inherit', fontSize: 12.5, lineHeight: 1,
-            background: T.ink, color: T.paper, border: 'none',
+            background: T.accent, color: T.onAccent, border: 'none',
           }}
         >
           Go to this item
@@ -390,7 +413,8 @@ function PlanSection({ snapshot, resolve, onJump, highlightLoc }) {
                   display: 'inline-flex', alignItems: 'center', gap: 7,
                   padding: '8px 13px', borderRadius: 999, cursor: 'pointer',
                   fontFamily: 'inherit', fontSize: 12, lineHeight: 1,
-                  background: 'rgba(255,255,255,0.94)', color: T.ink,
+                  background: T.surface, color: T.ink,
+                  backdropFilter: T.frost, WebkitBackdropFilter: T.frost,
                   border: `0.5px solid ${T.mist}`, boxShadow: T.shadowCard,
                 }}
               >
@@ -444,7 +468,7 @@ function PlanSection({ snapshot, resolve, onJump, highlightLoc }) {
                         {e.shape ? ` · ${e.shape}` : ''}
                       </div>
                     </div>
-                    <span style={{ flex: '0 0 auto', fontSize: 11, color: e.measured ? '#15803d' : T.stone }}>
+                    <span style={{ flex: '0 0 auto', fontSize: 11, color: e.measured ? T.ok : T.stone }}>
                       {e.measured ? 'Measured on site' : 'From plan'}
                     </span>
                   </>
@@ -498,6 +522,49 @@ const DECLINE_CHIPS = ['Price', 'Timing', 'Fabric or style', 'Going elsewhere', 
 /** Which chip, if any, a reason string currently leads with. */
 const leadingChip = (text) => DECLINE_CHIPS.find(c => text === c || text.startsWith(`${c}: `)) || null;
 
+/**
+ * Paper or glass.
+ *
+ * Small, in the corner, and not a thing the quote asks anyone to think about.
+ * It is a real toggle button rather than a pair of options: there are two
+ * states, the control says which one it will move you to, and aria-pressed
+ * carries the current one for anyone not looking at it.
+ */
+function SkinToggle({ dark, onToggle }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={dark}
+      aria-label={dark ? 'Switch to the light version' : 'Switch to the dark version'}
+      title={dark ? 'Light version' : 'Dark version'}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: '0 0 auto', width: 34, height: 34, borderRadius: 999, cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+        background: hover ? 'rgba(255,255,255,0.10)' : 'transparent',
+        border: `0.5px solid ${hover ? T.bronze : T.borderInverse}`,
+        color: hover ? T.bronze : T.onInverseMuted,
+        transition: `background 200ms ${T.ease}, border-color 200ms ${T.ease}, color 200ms ${T.ease}`,
+      }}
+    >
+      {dark ? (
+        // Sun: you are in the dark one, this takes you back to paper.
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 2.4v2.2M12 19.4v2.2M4.2 12H2M22 12h-2.2M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" />
+        </svg>
+      ) : (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20.5 14.3A8.6 8.6 0 1 1 9.7 3.5a6.9 6.9 0 0 0 10.8 10.8Z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 // Visually hidden, still read aloud. Used where a tick is the only thing
 // distinguishing a finished step from a pending one.
 const srOnly = {
@@ -536,9 +603,9 @@ function NextSteps({ steps, doneCount = 0 }) {
                 width: 26, height: 26, borderRadius: 999, flex: '0 0 auto',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 12, fontWeight: 500, lineHeight: 1,
-                background: done ? T.ink : T.paperPure,
-                color: done ? T.paper : T.graphite,
-                border: `0.5px solid ${done ? T.ink : T.stone}`,
+                background: done ? T.accent : T.surface,
+                color: done ? T.onAccent : T.graphite,
+                border: `0.5px solid ${done ? T.accent : T.stone}`,
               }}>{done ? '✓' : i + 1}</span>
               {!last && <span style={{ flex: 1, width: '0.5px', background: T.mist, minHeight: 16 }} />}
             </div>
@@ -628,6 +695,24 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const [flashKey, setFlashKey] = useState(null);
   const flashTimer = useRef(null);
   const [planHighlight, setPlanHighlight] = useState(null);
+  // The details rail starts folded, and only on a phone: the CSS reveals it
+  // unconditionally once there is a column to put it in.
+  const [railOpen, setRailOpen] = useState(false);
+
+  // Light is the quote. The glass skin is there for anyone who wants it and is
+  // remembered per device, but it is not what a quote arrives as: paper is what
+  // this document is, it is what prints, and it is the one a customer is least
+  // likely to be surprised by when they open a link from a text message.
+  // Deliberately NOT keyed off prefers-color-scheme — a phone in night mode
+  // should not silently change what someone's quote looks like.
+  const [darkSkin, setDarkSkin] = useState(() => {
+    try { return localStorage.getItem('lusso_quote_skin') === 'dark'; } catch { return false; }
+  });
+  const toggleSkin = () => setDarkSkin(d => {
+    const next = !d;
+    try { localStorage.setItem('lusso_quote_skin', next ? 'dark' : 'light'); } catch { /* private mode */ }
+    return next;
+  });
   useEffect(() => () => clearTimeout(flashTimer.current), []);
   const jumpToGroup = (key) => {
     const node = groupNodes.current.get(key);
@@ -686,7 +771,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
 
   if (!quote) {
     return (
-      <div style={{ minHeight: '100vh', background: T.paper, fontFamily: T.font, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ minHeight: '100vh', background: T.page, fontFamily: T.font, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ textAlign: 'center' }}>
           <p style={{ fontSize: 40, fontWeight: 300, color: T.mist, margin: 0 }}>404</p>
           <p style={{ color: T.stone, marginTop: 8 }}>Quote not found or has been removed.</p>
@@ -698,7 +783,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // Offline / not-yet-sent quotes must not be visible on the public link.
   if (!isStaffPreview && (quote.status === 'Draft' || quote.status === 'Expired')) {
     return (
-      <div style={{ minHeight: '100vh', background: T.paper, fontFamily: T.font, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ minHeight: '100vh', background: T.page, fontFamily: T.font, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ textAlign: 'center', maxWidth: 420 }}>
           <p style={{ fontSize: 40, fontWeight: 300, color: T.mist, margin: 0 }}>Unavailable</p>
           <p style={{ color: T.stone, marginTop: 8 }}>This quote isn’t currently available to view. Please contact us and we’ll send you an up-to-date version.</p>
@@ -1001,7 +1086,12 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     : settings.businessEmail ? `mailto:${settings.businessEmail}?subject=${encodeURIComponent(`Question about quote ${quote.quoteNumber}`)}`
     : '';
 
-  const container = { maxWidth: 880, margin: '0 auto', width: '100%', boxSizing: 'border-box' };
+  // One measure for the header, the body and the sticky bar, so all three share
+  // a left edge. It used to be 880 while the body shell is 1200, which put the
+  // headline 165px to the right of the first line of the quote under it.
+  // Inside the body column this is wider than the column, so it simply fills
+  // it; the line lengths that matter are capped per block.
+  const container = { maxWidth: 1200, margin: '0 auto', width: '100%', boxSizing: 'border-box' };
   const h3 = { margin: 0, fontWeight: 300, fontSize: 20, letterSpacing: '-0.3px', color: T.ink };
 
   // ── Option card ────────────────────────────────────────────────────────
@@ -1056,10 +1146,10 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           <div style={{
             flex: '0 0 auto', width: 24, height: 24, marginTop: 1, borderRadius: round,
             display: 'flex', alignItems: 'center', justifyContent: 'center', transition: `all 200ms ${T.ease}`,
-            background: on ? T.ink : T.paperPure, border: `1px solid ${on ? T.ink : T.stone}`,
+            background: on ? T.accent : T.surface, border: `1px solid ${on ? T.accent : T.stone}`,
           }}>
             {choice && on
-              ? <span style={{ width: 8, height: 8, borderRadius: 999, background: T.paper, display: 'block' }} />
+              ? <span style={{ width: 8, height: 8, borderRadius: 999, background: T.onAccent, display: 'block' }} />
               : (on ? <span style={{ fontSize: 12, lineHeight: 1, color: T.paper }}>✓</span> : null)}
           </div>
         )}
@@ -1078,7 +1168,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 12, padding: '5px 10px 5px 8px', borderRadius: 999,
               fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase',
-              background: on ? T.ink : 'transparent', border: on ? 'none' : `0.5px solid ${T.mist}`, color: on ? T.paper : T.stone,
+              background: on ? T.accent : 'transparent', border: on ? 'none' : `0.5px solid ${T.mist}`, color: on ? T.onAccent : T.stone,
             }}>
               <span style={{ width: 5, height: 5, borderRadius: 999, display: 'block', background: on ? T.bronze : T.mist }} />
               <span>{on ? 'Selected' : 'Not selected'}</span>
@@ -1110,30 +1200,39 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     : quote.expiryDate ? `Pricing held until ${fmtDate(new Date(quote.expiryDate))}` : 'No expiry';
 
   return (
-    <div style={{ minHeight: '100vh', background: T.mist }}>
+    <div className={darkSkin ? 'quote-glass' : undefined} style={{ minHeight: '100vh', background: T.page, position: 'relative' }}>
       {isStaffPreview && !previewQuote && (
-        <div style={{ position: 'sticky', top: 0, zIndex: 50, background: T.ink, color: T.paper, fontSize: 11, fontWeight: 500, letterSpacing: '0.06em', textAlign: 'center', padding: '8px 16px' }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 50, background: T.raised, color: T.onRaised, fontSize: 11, fontWeight: 500, letterSpacing: '0.06em', textAlign: 'center', padding: '8px 16px' }}>
           Staff preview — this is how the customer sees the quote. No tracking or status changes are recorded.
         </div>
       )}
 
-      <div style={{ fontFamily: T.font, background: T.paper, color: T.graphite, WebkitFontSmoothing: 'antialiased', minHeight: '100%', display: 'flex', flexDirection: 'column', fontSize: 15 }}>
+      <div style={{ fontFamily: T.font, background: 'transparent', color: T.graphite, WebkitFontSmoothing: 'antialiased', minHeight: '100%', display: 'flex', flexDirection: 'column', fontSize: 15 }}>
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
-        <header style={{ background: T.ink, color: T.paper, padding: '24px 22px 30px' }}>
-          <div style={container}>
-            <img src="/brand/lusso-white.png" alt="Lusso" style={{ width: 124, height: 'auto', display: 'block' }} />
+        {/* The gutter lives on the inner measure, not on the header box, so the
+            headline starts on the same vertical as the first line of the quote
+            rather than 22px inside it. */}
+        <header style={{ background: T.raised, color: T.onRaised, padding: '24px 0 30px' }}>
+          <div style={{ ...container, padding: '0 22px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+              <img src="/brand/lusso-white.png" alt="Lusso" style={{ width: 124, height: 'auto', display: 'block' }} />
+              <SkinToggle dark={darkSkin} onToggle={toggleSkin} />
+            </div>
             <div style={{ marginTop: 26 }}><Eyebrow color={T.bronze}>Quotation {quote.quoteNumber}</Eyebrow></div>
-            <h1 style={{ margin: '10px 0 0', fontWeight: 300, fontSize: 29, lineHeight: 1.2, letterSpacing: '-0.5px', color: T.paper, textWrap: 'pretty' }}>
+            <h1 style={{ margin: '10px 0 0', fontWeight: 300, fontSize: 29, lineHeight: 1.2, letterSpacing: '-0.5px', color: T.paper, textWrap: 'pretty', maxWidth: '26ch' }}>
               {settings.businessName} quotation for {customer?.name || 'you'}
             </h1>
             {quote.siteAddress && <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.7, color: T.onInverseMuted }}>{quote.siteAddress}</p>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 20 }}>
               <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', border: `0.5px solid ${T.borderInverse}`, borderRadius: 999, color: T.onInverseMuted }}>Issued {fmtDate(quote.createdAt)}</span>
-              <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${isExpired ? T.bronze : T.borderInverse}`, color: isExpired ? T.bronze : T.onInverseMuted }}>{validityText}</span>
+              <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${isExpired ? T.bronze : T.borderInverse}`, color: T.onInverseMuted }}>{validityText}</span>
               {/* Only in the last week, and only ever a count of days. */}
+              {/* Bronze is the accent, but bronze type on ink measures 2.88:1,
+                  so the colour goes on the hairline and the words stay on the
+                  one colour that is legible against this header. */}
               {showCountdown && (
-                <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${T.bronze}`, color: T.bronze }}>{countdownText}</span>
+                <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${T.bronze}`, color: T.onInverseMuted }}>{countdownText}</span>
               )}
             </div>
             {expiryReason && !isExpired && (
@@ -1142,48 +1241,15 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           </div>
         </header>
 
-        {/* ── From / For ─────────────────────────────────────────────────── */}
-        <div style={{ ...container, padding: '32px 22px 0' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            <div style={{ ...card, flex: '1 1 250px' }}>
-              <Eyebrow>From</Eyebrow>
-              <p style={{ margin: '14px 0 0', fontSize: 16, fontWeight: 500, color: T.ink }}>{settings.businessName}</p>
-              {quote.salesperson && <p style={{ margin: '2px 0 0', fontSize: 13.5, color: T.stone }}>{quote.salesperson}</p>}
-              <hr style={hairline} />
-              <div style={{ display: 'grid', gap: 12 }}>
-                {settings.businessAddress && <div><div style={fieldLabel}>Postal address</div><p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.6 }}>{settings.businessAddress}</p></div>}
-                {settings.businessPhone && (
-                  <div>
-                    <div style={fieldLabel}>Phone</div>
-                    <p style={{ margin: '4px 0 0', fontSize: 13.5 }}>{settings.businessPhone}</p>
-                    {settings.businessPhoneSms && (
-                      <p style={{ margin: '2px 0 0', fontSize: 12.5, color: T.stone }}>or text {settings.businessPhoneSms}</p>
-                    )}
-                  </div>
-                )}
-                {settings.businessEmail && <div><div style={fieldLabel}>Email</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}><a href={`mailto:${settings.businessEmail}`} style={{ color: T.bronze, textDecoration: 'none' }}>{settings.businessEmail}</a></p></div>}
-                {settings.businessWebsite && <div><div style={fieldLabel}>Website</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}><a href={`https://${String(settings.businessWebsite).replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer" style={{ color: T.bronze, textDecoration: 'none' }}>{settings.businessWebsite}</a></p></div>}
-                {settings.businessABN && <div><div style={fieldLabel}>ABN</div><p style={{ margin: '4px 0 0', fontSize: 13.5, letterSpacing: '0.04em' }}>{settings.businessABN}</p></div>}
-              </div>
-            </div>
-
-            <div style={{ ...card, flex: '1 1 250px' }}>
-              <Eyebrow>For</Eyebrow>
-              <p style={{ margin: '14px 0 0', fontSize: 16, fontWeight: 500, color: T.ink }}>{customer?.name || 'Valued customer'}</p>
-              {customer?.email && <p style={{ margin: '2px 0 0', fontSize: 13.5, color: T.stone }}>{customer.email}</p>}
-              <hr style={hairline} />
-              <div style={{ display: 'grid', gap: 12 }}>
-                {quote.siteAddress && <div><div style={fieldLabel}>Site address</div><p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.6 }}>{quote.siteAddress}</p></div>}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 24px' }}>
-                  <div><div style={fieldLabel}>Quote number</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}>{quote.quoteNumber}</p></div>
-                  <div><div style={fieldLabel}>Date</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}>{fmtDate(quote.createdAt)}</p></div>
-                </div>
-                {quote.expiryDate && <div><div style={fieldLabel}>Expiry date</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}>{fmtDate(new Date(quote.expiryDate))}</p></div>}
-              </div>
-            </div>
-          </div>
-        </div>
-
+        {/* ── Body: the quote, with who it is between alongside it ──────── */}
+        {/* The From/For pair used to sit between the header and the first
+            word of the quote, so the first thing a customer scrolled past was
+            our postal address and ABN. It is reference material: true, needed,
+            and not what they opened the link to read. On a wide screen it now
+            runs down the right as a rail; on a phone, where there is no right,
+            it falls to the bottom and starts folded. */}
+        <div className="quote-shell">
+          <div className="quote-main">
         {/* ── Intro message ──────────────────────────────────────────────── */}
         {/* Written per quote in the builder under a field literally labelled
             "Introduction Message (customer-facing)" — and rendered, until now,
@@ -1255,7 +1321,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                               <Eyebrow color={isChoice ? T.bronze : T.stone} dash={isChoice ? T.bronze : T.stone}>{block.eyebrow}</Eyebrow>
                             )}
                             <div style={isChoice
-                              ? { display: 'flex', flexDirection: 'column', gap: 10, background: '#EFEFEE', border: `0.5px solid ${T.mist}`, borderRadius: 12, padding: 16 }
+                              ? { display: 'flex', flexDirection: 'column', gap: 10, background: T.well, border: `0.5px solid ${T.mist}`, borderRadius: 12, padding: 16 }
                               : { display: 'flex', flexDirection: 'column', gap: 10 }}>
                               {block.items.map(item => <OptionCard key={item.id} item={{ ...item, _group: block.items }} kind={block.kind} />)}
                               {isChoice && !block.required && (
@@ -1482,7 +1548,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               </div>
             )}
             {!accepted && !declined && isExpired && (
-              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: T.mist, borderRadius: 8, padding: 18 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: T.well, borderRadius: 8, padding: 18 }}>
                 <span style={{ width: 18, height: 2, background: T.bronze, display: 'block', marginTop: 9, flex: '0 0 auto' }} />
                 <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.7, color: T.graphite }}>
                   This quotation expired on {fmtDate(new Date(quote.expiryDate))}, so it can no longer be accepted online. Call us on {settings.businessPhone} and we will refresh the pricing on the same selections.
@@ -1490,7 +1556,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               </div>
             )}
             {accepted && (
-              <div style={{ background: T.ink, borderRadius: 8, padding: 26 }}>
+              <div style={{ background: T.raised, borderRadius: 8, padding: 26, backdropFilter: T.frost, WebkitBackdropFilter: T.frost }}>
                 <Eyebrow color={T.bronze}>Accepted</Eyebrow>
                 <h3 style={{ margin: '14px 0 0', fontWeight: 300, fontSize: 23, letterSpacing: '-0.4px', color: T.paper }}>Thank you — your quotation is accepted.</h3>
                 <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.75, color: T.onInverseMuted, maxWidth: '52ch' }}>
@@ -1556,6 +1622,66 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           </section>
 
           <div style={{ height: 8 }} />
+        </div>
+          </div>
+
+          <aside className="quote-rail">
+            <button
+              type="button"
+              className="quote-rail-toggle"
+              onClick={() => setRailOpen(o => !o)}
+              aria-expanded={railOpen}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: 12, padding: '14px 0', margin: 0, background: 'none', cursor: 'pointer',
+                border: 0, borderTop: `0.5px solid ${T.mist}`, fontFamily: 'inherit',
+                fontSize: 13, color: T.graphite, textAlign: 'left',
+              }}
+            >
+              Business and contact details
+              <span aria-hidden="true" style={{ fontSize: 10, letterSpacing: '0.1em', color: T.bronze }}>
+                {railOpen ? 'HIDE ▲' : 'SHOW ▼'}
+              </span>
+            </button>
+            <div className="quote-rail-body" style={{ display: railOpen ? 'grid' : 'none', gap: 14 }}>
+            <div style={{ ...card, flex: '1 1 250px' }}>
+              <Eyebrow>From</Eyebrow>
+              <p style={{ margin: '14px 0 0', fontSize: 16, fontWeight: 500, color: T.ink }}>{settings.businessName}</p>
+              {quote.salesperson && <p style={{ margin: '2px 0 0', fontSize: 13.5, color: T.stone }}>{quote.salesperson}</p>}
+              <hr style={hairline} />
+              <div style={{ display: 'grid', gap: 12 }}>
+                {settings.businessAddress && <div><div style={fieldLabel}>Postal address</div><p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.6 }}>{settings.businessAddress}</p></div>}
+                {settings.businessPhone && (
+                  <div>
+                    <div style={fieldLabel}>Phone</div>
+                    <p style={{ margin: '4px 0 0', fontSize: 13.5 }}>{settings.businessPhone}</p>
+                    {settings.businessPhoneSms && (
+                      <p style={{ margin: '2px 0 0', fontSize: 12.5, color: T.stone }}>or text {settings.businessPhoneSms}</p>
+                    )}
+                  </div>
+                )}
+                {settings.businessEmail && <div><div style={fieldLabel}>Email</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}><a href={`mailto:${settings.businessEmail}`} style={{ color: T.bronze, textDecoration: 'none' }}>{settings.businessEmail}</a></p></div>}
+                {settings.businessWebsite && <div><div style={fieldLabel}>Website</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}><a href={`https://${String(settings.businessWebsite).replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer" style={{ color: T.bronze, textDecoration: 'none' }}>{settings.businessWebsite}</a></p></div>}
+                {settings.businessABN && <div><div style={fieldLabel}>ABN</div><p style={{ margin: '4px 0 0', fontSize: 13.5, letterSpacing: '0.04em' }}>{settings.businessABN}</p></div>}
+              </div>
+            </div>
+
+            <div style={{ ...card, flex: '1 1 250px' }}>
+              <Eyebrow>For</Eyebrow>
+              <p style={{ margin: '14px 0 0', fontSize: 16, fontWeight: 500, color: T.ink }}>{customer?.name || 'Valued customer'}</p>
+              {customer?.email && <p style={{ margin: '2px 0 0', fontSize: 13.5, color: T.stone }}>{customer.email}</p>}
+              <hr style={hairline} />
+              <div style={{ display: 'grid', gap: 12 }}>
+                {quote.siteAddress && <div><div style={fieldLabel}>Site address</div><p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.6 }}>{quote.siteAddress}</p></div>}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 24px' }}>
+                  <div><div style={fieldLabel}>Quote number</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}>{quote.quoteNumber}</p></div>
+                  <div><div style={fieldLabel}>Date</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}>{fmtDate(quote.createdAt)}</p></div>
+                </div>
+                {quote.expiryDate && <div><div style={fieldLabel}>Expiry date</div><p style={{ margin: '4px 0 0', fontSize: 13.5 }}>{fmtDate(new Date(quote.expiryDate))}</p></div>}
+              </div>
+            </div>
+            </div>
+          </aside>
         </div>
 
         {/* ── Confirm sheet ──────────────────────────────────────────────── */}
@@ -1630,8 +1756,8 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                           style={{
                             padding: '8px 14px', borderRadius: 999, cursor: 'pointer',
                             fontFamily: 'inherit', fontSize: 13, lineHeight: 1,
-                            background: picked ? T.ink : 'transparent',
-                            color: picked ? T.paper : T.graphite,
+                            background: picked ? T.accent : 'transparent',
+                            color: picked ? T.onAccent : T.graphite,
                             border: `0.5px solid ${picked ? T.ink : T.stone}`,
                             transition: `background 200ms ${T.ease}, color 200ms ${T.ease}, border-color 200ms ${T.ease}`,
                           }}>
@@ -1645,7 +1771,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                     id="decline-reason"
                     value={declineReason} onChange={e => setDeclineReason(e.target.value)} rows={3}
                     placeholder="Too expensive, going with someone else, timing isn't right…"
-                    style={{ width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '10px 12px', fontFamily: 'inherit', fontSize: 13.5, lineHeight: 1.6, color: T.ink, background: T.paper, border: `0.5px solid ${T.mist}`, borderRadius: 8, resize: 'vertical' }}
+                    style={{ width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '10px 12px', fontFamily: 'inherit', fontSize: 13.5, lineHeight: 1.6, color: T.ink, background: T.well, border: `0.5px solid ${T.mist}`, borderRadius: 8, resize: 'vertical' }}
                   />
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 20 }}>
                     <Button size="lg" variant="secondary" disabled={busy} onClick={handleDecline}>
@@ -1660,7 +1786,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         )}
 
         {/* ── Sticky summary bar ─────────────────────────────────────────── */}
-        <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: 'rgba(247,247,246,0.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderTop: `0.5px solid ${T.mist}`, zIndex: 5 }}>
+        <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: T.bar, backdropFilter: 'blur(14px) saturate(150%)', WebkitBackdropFilter: 'blur(14px) saturate(150%)', borderTop: `0.5px solid ${T.mist}`, zIndex: 5 }}>
           <div style={{ ...container, padding: '0 22px' }}>
             {expanded && (
               <div style={{ padding: '18px 0 4px', borderBottom: `0.5px solid ${T.mist}` }}>

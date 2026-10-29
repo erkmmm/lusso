@@ -1046,6 +1046,140 @@ textarea:focus:not(:focus-visible) {
   }
 }
 
+/* ── Customer quote: the two palettes ─────────────────────────────────────
+   The quote page paints entirely through these roles, so the whole surface
+   can be repainted from here without touching a single inline style. The
+   defaults below ARE the Lusso brand kit — nothing moves until .quote-glass
+   is on the root. */
+:root {
+  /* Paper, not mist. The quote used to paint the root mist and then cover it
+     with a paper wrapper; the wrapper had to go transparent so the glass
+     wallpaper could show through, which left body copy sitting on the darker
+     mist and took 13px muted text from 3.08:1 down to 2.47:1. */
+  --lq-page: var(--lusso-paper);
+  --lq-surface: var(--lusso-paper-pure);
+  --lq-raised: var(--lusso-ink);
+  --lq-on-raised: var(--lusso-paper);
+  --lq-accent: var(--lusso-ink);
+  --lq-on-accent: var(--lusso-paper);
+  --lq-well: #EFEFEE;
+  --lq-bar: rgba(247, 247, 246, 0.92);
+  --lq-ok: #15803d;
+  --lq-frost: none;
+  --lq-shadow: 0 1px 2px rgba(16, 17, 19, 0.04), 0 8px 24px rgba(16, 17, 19, 0.05);
+}
+
+/* ── Customer quote: glass ────────────────────────────────────────────────
+   The CRM's frosted skin, brought to the customer's quote. Deliberately NOT
+   the `theme-glass` rules themselves: those are scoped
+   `:not([data-public])` because a quote must look the same for every customer
+   regardless of which theme the salesperson happens to be running. This is
+   the same material, applied unconditionally, so the quote is one fixed
+   design rather than a reflection of someone's settings.
+
+   Text sits at 0.92/0.74/0.52 white rather than pure, because full white on a
+   52%-opaque panel over a photo vibrates. */
+.quote-glass {
+  --lusso-ink: rgba(255, 255, 255, 0.94);
+  --lusso-graphite: rgba(255, 255, 255, 0.76);
+  --lusso-stone: rgba(255, 255, 255, 0.52);
+  --lusso-mist: rgba(255, 255, 255, 0.14);
+  --lusso-paper: rgba(255, 255, 255, 0.94);
+  --lusso-paper-pure: rgba(38, 34, 31, 0.52);
+  --lusso-bronze: #D9A066;
+  --lusso-on-inverse-muted: rgba(255, 255, 255, 0.68);
+  --lusso-border-inverse: rgba(255, 255, 255, 0.18);
+
+  --lq-page: transparent;
+  --lq-surface: rgba(38, 34, 31, 0.52);
+  /* The header and the accepted panel sit deeper than a card so the headline
+     stays readable over the brightest part of the wallpaper. */
+  --lq-raised: rgba(26, 23, 21, 0.72);
+  --lq-on-raised: rgba(255, 255, 255, 0.94);
+  /* A primary action on a dark page is the light one. */
+  --lq-accent: rgba(255, 255, 255, 0.92);
+  --lq-on-accent: #1A1715;
+  --lq-well: rgba(255, 255, 255, 0.06);
+  --lq-bar: rgba(26, 23, 21, 0.78);
+  --lq-ok: #6FD08C;
+  --lq-frost: blur(30px) saturate(150%);
+  --lq-shadow: 0 34px 70px -28px rgba(0, 0, 0, 0.55), 0 12px 28px -16px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}
+
+/* The wallpaper. Its own, not ThemeBackground's: that one is driven by staff
+   settings and is hidden on public routes for exactly the right reason. Glass
+   over a dead-flat colour stops reading as glass, so this is a graded room. */
+.quote-glass::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(90% 70% at 18% 0%, #3a322c 0%, transparent 60%),
+    radial-gradient(80% 60% at 100% 100%, #2b2521 0%, transparent 55%),
+    linear-gradient(160deg, #241f1c 0%, #15120f 100%);
+}
+
+/* Paper has no backdrop to frost against, and a translucent panel prints as a
+   grey smear. Print reverts to the brand kit the page was designed in. */
+@media print {
+  .quote-glass {
+    --lusso-ink: #101113;
+    --lusso-graphite: #3F4349;
+    --lusso-stone: #85898F;
+    --lusso-mist: #E3E3E1;
+    --lusso-paper: #F7F7F6;
+    --lusso-paper-pure: #FFFFFF;
+    --lusso-bronze: #8A6B47;
+    --lq-page: #FFFFFF;
+    --lq-surface: #FFFFFF;
+    --lq-raised: #FFFFFF;
+    --lq-on-raised: #101113;
+    --lq-accent: #101113;
+    --lq-on-accent: #FFFFFF;
+    --lq-well: #F4F4F2;
+    --lq-bar: #FFFFFF;
+    --lq-ok: #15803d;
+    --lq-frost: none;
+    --lq-shadow: none;
+    color-scheme: light;
+  }
+  .quote-glass::before { display: none; }
+}
+
+/* ── Customer quote: body + details rail ──────────────────────────────────
+   One column on a phone, where the quote is the only thing worth the width
+   and the business details fold away at the bottom. Two columns once there is
+   room, with the details running down the right and sticking as the quote
+   scrolls past them. DOM order is main-then-rail, which is also the order a
+   screen reader and a printer want, so nothing has to be re-ordered. */
+.quote-shell { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
+.quote-rail { padding: 0 22px 4px; box-sizing: border-box; }
+
+@media (min-width: 1040px) {
+  .quote-shell {
+    max-width: 1200px;
+    margin: 0 auto;
+    grid-template-columns: minmax(0, 1fr) 312px;
+    column-gap: 40px;
+    align-items: start;
+  }
+  .quote-main { min-width: 0; }
+  /* Sticks below the fold, far enough down to clear the staff preview bar. */
+  .quote-rail { position: sticky; top: 28px; padding-top: 34px; }
+  .quote-rail-toggle { display: none !important; }
+  .quote-rail-body { display: grid !important; }
+}
+
+/* Paper has no fold and no pointer: show the details, drop the control. */
+@media print {
+  .quote-rail-toggle { display: none !important; }
+  .quote-rail-body { display: grid !important; }
+}
+
 /* The customer quote's plan list is folded away on screen, because the plan
    itself is the index: every covering on it is hoverable and tappable. Paper
    has neither, so print gets the list back and loses the control that hides
