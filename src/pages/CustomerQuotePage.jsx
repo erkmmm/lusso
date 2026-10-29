@@ -1154,8 +1154,14 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         style={{
           display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap', padding: 18, borderRadius: T.radius,
           background: fixed ? 'transparent' : T.paperPure,
+          // One hairline the whole way round. This used to carry a 2px
+          // border-left as the accent, which at an 8px radius was merely a
+          // stripe and at 14px tapers into a visible wedge where the thick
+          // edge meets the thin one through the curve. Selection is already
+          // said three other ways — the border goes to ink, the card lifts on
+          // a shadow, and the control and its pill fill in — so the stripe was
+          // a fourth that only cost us the corner.
           border: `0.5px solid ${on ? T.ink : T.mist}`,
-          borderLeft: `2px solid ${on && !fixed ? T.bronze : (fixed ? T.mist : 'transparent')}`,
           boxShadow: on && !fixed ? T.shadowCard : T.cardShadow,
           backdropFilter: fixed ? 'none' : T.frost, WebkitBackdropFilter: fixed ? 'none' : T.frost,
           cursor: fixed ? 'default' : (locked ? 'default' : 'pointer'),
