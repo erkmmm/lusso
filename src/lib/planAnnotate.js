@@ -37,6 +37,7 @@ function rotateMarkup({ measurements = [], markers = [], items = [] }, rotation,
   };
 }
 import { pointsOf, arcMetrics, arcMidpoint } from './takeoffGeometry';
+import { colourFor } from './planPalette';
 
 const RENDER_SCALE = 2;            // 144 DPI — legible when printed at A3
 const MAX_CANVAS_EDGE = 5000;
@@ -351,7 +352,7 @@ function drawRuns(ctx, scale, entries, palette) {
   for (const e of entries) {
     const pts = e.points && e.points.length > 1 ? e.points : null;
     if (!pts) continue;
-    const colour = palette.get(e.product) || '#94a3b8';
+    const colour = colourFor(palette, e.product);
 
     const trace = () => {
       ctx.beginPath();
@@ -386,7 +387,7 @@ function drawRuns(ctx, scale, entries, palette) {
     const x = S(e.anchor.x), y = S(e.anchor.y);
     ctx.beginPath();
     ctx.arc(x, y, 15, 0, Math.PI * 2);
-    ctx.fillStyle = palette.get(e.product) || '#94a3b8';
+    ctx.fillStyle = colourFor(palette, e.product);
     ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2.5;
@@ -507,7 +508,7 @@ export async function buildClientPlan(planBuffer, takeoff, schedule, meta = {}) 
     didParseCell: (data) => {
       if (data.section !== 'body' || data.column.index !== 0) return;
       const e = entries[data.row.index];
-      const hex = palette.get(e?.product) || '#94a3b8';
+      const hex = colourFor(palette, e?.product);
       data.cell.styles.fillColor = hexToRgb(hex);
       data.cell.styles.textColor = 255;
       data.cell.styles.fontStyle = 'bold';
