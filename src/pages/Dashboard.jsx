@@ -305,6 +305,118 @@ function StatCard({ icon: Icon, label, value, raw, format, valueTitle, delta, ca
 }
 
 /**
+ * The expanded version of a stat card.
+ *
+ * A card has room for one number, a delta and a sparkline, which is enough to
+ * notice something and not enough to understand it. Clicking used to jump to
+ * /jobs — away from the dashboard, into an unfiltered list, with the question
+ * you clicked on left behind. This opens the same number with its history, its
+ * parts, and a way through to the records that make it up.
+ *
+ * Driven by a descriptor rather than a component per card: every one of these
+ * is a headline, a series over time and a short breakdown, and seven bespoke
+ * panels would drift apart the way the two inbox panels did.
+ */
+function StatDetail({ card, onClose }) {
+  // Escape closes it, like every other dismissible layer in the app.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  if (!card) return null;
+  const { icon: Icon, label, value, delta, caption, series, rows, action, note } = card;
+  const maxRow = Math.max(1, ...(rows ?? []).filter(r => r.bar).map(r => r.bar));
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 p-0 sm:p-6"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[88vh] overflow-y-auto"
+      >
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 sticky top-0 bg-white">
+          <span className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+            <Icon size={16} className="text-slate-500" />
+          </span>
+          <h2 className="font-semibold text-slate-800 text-sm flex-1 min-w-0 truncate">{label}</h2>
+          <button onClick={onClose} aria-label="Close"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <div>
+            <div className="text-3xl font-bold text-slate-900"><Fig>{value}</Fig></div>
+            <div className="mt-1 flex items-center gap-1.5 text-xs">
+              {delta}
+              <span className="text-slate-400">{caption}</span>
+            </div>
+          </div>
+
+          {series && series.values.length > 1 && (
+            <div>
+              <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-2">
+                {series.label}
+              </p>
+              <AreaChart
+                values={series.values}
+                xLabels={series.xLabels}
+                color={series.color}
+                height={180}
+                format={series.format}
+              />
+            </div>
+          )}
+
+          {rows?.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-2">
+                Breakdown
+              </p>
+              <div className="space-y-2">
+                {rows.map(r => (
+                  <div key={r.label} className="flex items-center gap-3">
+                    <span className="text-xs text-slate-500 flex-1 min-w-0 truncate">{r.label}</span>
+                    {r.bar !== undefined && (
+                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden w-24 flex-shrink-0">
+                        <div className="h-full rounded-full"
+                          style={{ width: `${(r.bar / maxRow) * 100}%`, backgroundColor: r.colour || '#F59E0B' }} />
+                      </div>
+                    )}
+                    <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0">
+                      <Fig>{r.value}</Fig>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {note && <p className="text-xs text-slate-400 leading-relaxed">{note}</p>}
+
+          {action && (
+            <button
+              onClick={() => { onClose(); action.onClick(); }}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2.5 transition-colors"
+            >
+              {action.label} <ArrowRight size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * How the pipeline is distributed across age bands.
  *
  * One total cannot tell live work from quotes nobody has touched in months,
@@ -1602,6 +1714,8 @@ export default function Dashboard() {
 
   // Hero revenue chart + monthly/yearly toggle.
   const [revView, setRevView] = useState('monthly');
+  // Which stat card is expanded, if any. Null closes the layer.
+  const [detail, setDetail] = useState(null);
   const yearly = useMemo(() => {
     const cur = new Date().getMonth() >= 6 ? new Date().getFullYear() + 1 : new Date().getFullYear();
     const rows = [];
@@ -1689,8 +1803,154 @@ export default function Dashboard() {
   const revLabels = revView === 'monthly' ? monthly.map(m => m.label) : yearly.map(y => y.label);
   const revTotal  = revValues.reduce((s, v) => s + v, 0);
 
+  // ── Expanded stat cards ──────────────────────────────────────────────────
+  // One descriptor per card: the headline it already shows, the series behind
+  // it over the period, the parts it is made of, and the way through to the
+  // records. Built here because this is where analytics, monthly and insights
+  // are in scope — and every figure goes through the same lM/lI/lW masking the
+  // cards use, so Hidden mode stays hidden when a card is opened.
+  const mLabels = monthly.map(m => m.label);
+
+  // A month with no resolved quotes has no win rate, and one with no cost
+  // prices has no margin. The charts plot a null as zero, which reads as a
+  // collapse rather than an absence — so those months are dropped, labels and
+  // all, instead of being drawn at the floor. Counts and revenue keep their
+  // zeros: a month with no sales really did take nothing.
+  const definedSeries = (pick) => {
+    const pairs = monthly
+      .map(m => [pick(m), m.label])
+      .filter(([v]) => v !== null && v !== undefined && !Number.isNaN(v));
+    return pairs.length > 1
+      ? { values: pairs.map(([v]) => v), xLabels: pairs.map(([, l]) => l) }
+      : null;
+  };
+  const winRateSeries = definedSeries(m => m.winRate);
+  const marginSeries  = definedSeries(m => m.marginPct);
+  const details = {
+    revenue: {
+      icon: DollarSign, label: 'Total Revenue',
+      value: fmt$(lM(analytics.acceptedValue)),
+      delta: <DeltaBadge current={analytics.acceptedValue} previous={analytics.acceptedValuePrev} />,
+      caption: `vs same time last year · ${rangeLabel}`,
+      series: { label: 'Accepted value by month', values: monthly.map(m => lM(m.acceptedValue)), xLabels: mLabels, color: ACCENT, format: fmtCompact },
+      rows: [
+        { label: 'Quotes won', value: lI(analytics.acceptedCount) },
+        { label: 'Average won quote', value: fmt$(lM(analytics.acceptedAvg)) },
+        { label: 'Same period last year', value: fmt$(lM(analytics.acceptedValuePrev)) },
+      ],
+      action: { label: 'Open jobs', onClick: () => navigate('/jobs') },
+    },
+    pipeline: {
+      icon: BarChart2, label: 'Pipeline Value',
+      value: fmt$(lM(analytics.pipelineValue)),
+      caption: `${lI(analytics.pipelineCount)} open quote${lI(analytics.pipelineCount) === 1 ? '' : 's'}`,
+      series: { label: 'Quotes raised by month', values: monthly.map(m => lI(m.newQuotes)), xLabels: mLabels, color: '#2E6E65', format: (v) => Math.round(v) },
+      rows: [
+        { label: 'Out with the customer', value: lI(analytics.pipelineOutCount) },
+        { label: 'Still in draft', value: lI(analytics.pipelineDraftCount) },
+        ...analytics.pipelineAge.filter(b => b.value > 0).map(b => ({
+          label: `Age ${b.label}`, value: fmt$(lM(b.value)), bar: b.value, colour: b.colour,
+        })),
+      ],
+      note: 'Age bands are proportional to value, not count — ten small fresh quotes should not outweigh one large stale one.',
+      action: { label: 'Open jobs', onClick: () => navigate('/jobs') },
+    },
+    won: {
+      icon: CheckCircle2, label: 'Quotes Won',
+      value: lI(analytics.acceptedCount),
+      delta: <DeltaBadge current={analytics.acceptedCount} previous={analytics.acceptedCountPrev} />,
+      caption: `accepted · ${rangeLabel}`,
+      series: { label: 'Quotes won by month', values: monthly.map(m => lI(m.acceptedCount)), xLabels: mLabels, color: '#16A34A', format: (v) => Math.round(v) },
+      rows: [
+        { label: 'Value won', value: fmt$(lM(analytics.acceptedValue)) },
+        { label: 'Average won quote', value: fmt$(lM(analytics.acceptedAvg)) },
+        { label: 'Same period last year', value: lI(analytics.acceptedCountPrev) },
+      ],
+      action: { label: 'Open jobs', onClick: () => navigate('/jobs') },
+    },
+    winRate: {
+      icon: Percent, label: 'Win Rate',
+      value: analytics.winRate !== null ? `${lW(analytics.winRate).toFixed(0)}%` : '—',
+      delta: analytics.winRate !== null && analytics.winRatePrev !== null
+        ? <DeltaBadge current={analytics.winRate} previous={analytics.winRatePrev} /> : null,
+      caption: `of ${lI(analytics.decisions)} resolved quote${lI(analytics.decisions) === 1 ? '' : 's'}`,
+      series: winRateSeries && {
+        label: 'Win rate by month', values: winRateSeries.values.map(lW),
+        xLabels: winRateSeries.xLabels, color: '#9333EA', format: (v) => `${Math.round(v)}%`,
+      },
+      rows: [
+        { label: 'Won', value: lI(analytics.wins), bar: analytics.wins, colour: '#16A34A' },
+        { label: 'Lapsed — expired unanswered', value: lI(analytics.lapsed), bar: analytics.lapsed, colour: '#F59E0B' },
+        { label: 'Declined', value: lI(analytics.declined), bar: analytics.declined, colour: '#DC2626' },
+      ],
+      note: 'Lapsing, not declining, is how most of these are lost — a quote nobody answered counts against the rate just as a no does.',
+      action: { label: 'Open jobs', onClick: () => navigate('/jobs') },
+    },
+    margin: {
+      icon: TrendingUp, label: 'Gross Margin',
+      value: insights.marginPct !== null ? fmt$(lM(insights.marginValue)) : '—',
+      delta: insights.marginPct !== null
+        ? <span className="text-xs font-semibold text-green-600"><Fig>{insights.marginPct.toFixed(0)}%</Fig></span> : null,
+      caption: insights.marginPct !== null ? 'margin on won work' : 'no cost prices in period',
+      series: marginSeries && {
+        label: 'Margin % by month', values: marginSeries.values,
+        xLabels: marginSeries.xLabels, color: '#16A34A', format: (v) => `${Math.round(v)}%`,
+      },
+      rows: insights.marginPct !== null ? [
+        { label: 'Revenue won', value: fmt$(lM(analytics.acceptedValue)) },
+        { label: 'Margin', value: fmt$(lM(insights.marginValue)) },
+        { label: 'Costs known for', value: `${insights.knownShare.toFixed(0)}% of revenue` },
+      ] : [],
+      note: 'Only lines with a cost price count. The lower the coverage, the more this is an estimate.',
+    },
+    lapsed: {
+      icon: CalendarX, label: 'Lapsed',
+      value: fmt$(lM(analytics.lapsedValue)),
+      delta: analytics.lapsed > 0
+        ? <span className="text-xs font-semibold text-red-600"><Fig>{lI(analytics.lapsed)}</Fig></span> : null,
+      caption: analytics.lapsed > 0
+        ? `quote${lI(analytics.lapsed) === 1 ? '' : 's'} expired unanswered · ${rangeLabel}`
+        : 'nothing lapsed this period',
+      rows: [
+        { label: 'Quotes lapsed', value: lI(analytics.lapsed) },
+        { label: 'Value lapsed', value: fmt$(lM(analytics.lapsedValue)) },
+        { label: 'Won in the same period', value: lI(analytics.wins) },
+      ],
+      note: 'These expired without an answer either way. They are the cheapest pipeline you have — the work is already done.',
+      action: {
+        label: 'See these quotes',
+        onClick: () => {
+          const r = getDateRange(globalRange);
+          navigate(`/jobs?quoteExpiry=lapsed&from=${r.start.toISOString().slice(0, 10)}&to=${r.end.toISOString().slice(0, 10)}`);
+        },
+      },
+    },
+    repeat: {
+      icon: Users, label: 'Repeat Revenue',
+      value: insights.repeatPct !== null ? `${lW(insights.repeatPct).toFixed(0)}%` : '—',
+      caption: insights.repeatPct !== null
+        ? `of won revenue came from customers you had already sold to · ${rangeLabel}`
+        : 'no accepted quotes in period',
+      rows: insights.repeatPct !== null ? [
+        { label: 'Returning customers', value: lI(insights.repeatCount) },
+        { label: 'Share of won revenue', value: `${lW(insights.repeatPct).toFixed(0)}%` },
+        { label: 'Total revenue won', value: fmt$(lM(analytics.acceptedValue)) },
+      ] : [],
+      note: 'Work won from someone already on the books. It costs nothing to acquire, so a rising share is the cheapest growth there is.',
+      action: { label: 'Open customers', onClick: () => navigate('/customers') },
+    },
+    daysToWin: {
+      icon: Timer, label: 'Days to Win',
+      value: insights.medianDays !== null ? `${insights.medianDays}d` : '—',
+      caption: 'median, for the ones that waited on the customer',
+      rows: (insights.buckets ?? []).map(([label, n]) => ({ label, value: lI(n), bar: n })),
+      note: 'Quotes go out after the appointment, so “agreed before sending” means the job was already won and the paperwork followed. Those carry no decision time and sit outside the median.',
+    },
+  };
+
   return (
     <PrivacyCtx.Provider value={privacy}>
+    <StatDetail card={detail} onClose={() => setDetail(null)} />
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -1774,7 +2034,7 @@ export default function Dashboard() {
           delta={<DeltaBadge current={analytics.acceptedValue} previous={analytics.acceptedValuePrev} />}
           caption={`vs same time last year · ${rangeLabel}`}
           spark={monthly.map(m => m.acceptedValue)}
-          onClick={() => navigate('/jobs')}
+          onClick={() => setDetail(details.revenue)}
         />
         <StatCard
           icon={BarChart2} label="Pipeline Value" delay={70}
@@ -1789,7 +2049,7 @@ export default function Dashboard() {
           footer={<AgeBar bands={analytics.pipelineAge} infl={lM} />}
           spark={monthly.map(m => m.newQuotes)}
           sparkColor="#2E6E65"
-          onClick={() => navigate('/jobs')}
+          onClick={() => setDetail(details.pipeline)}
         />
         <StatCard
           icon={CheckCircle2} label="Quotes Won" delay={140}
@@ -1798,7 +2058,7 @@ export default function Dashboard() {
           caption={<>avg <Fig>{fmtCompact(lM(analytics.acceptedAvg))}</Fig></>}
           spark={monthly.map(m => m.acceptedCount)}
           sparkColor="#16A34A"
-          onClick={() => navigate('/jobs')}
+          onClick={() => setDetail(details.won)}
         />
         <StatCard
           icon={Percent} label="Win Rate" delay={210}
@@ -1818,7 +2078,7 @@ export default function Dashboard() {
             : 'no resolved quotes yet'}
           spark={monthly.map(m => m.winRate)}
           sparkColor="#9333EA"
-          onClick={() => navigate('/jobs')}
+          onClick={() => setDetail(details.winRate)}
         />
       </div>
 
@@ -1836,6 +2096,7 @@ export default function Dashboard() {
             : 'no cost prices in period'}
           spark={monthly.map(m => m.marginPct)}
           sparkColor="#16A34A"
+          onClick={() => setDetail(details.margin)}
         />
         <StatCard
           icon={CalendarX} label="Lapsed" delay={100}
@@ -1849,10 +2110,7 @@ export default function Dashboard() {
             : 'nothing lapsed this period'}
           // Carries the period with it, so the list you land on is the quotes
           // this card counted — not all 723 that have ever lapsed.
-          onClick={() => {
-            const r = getDateRange(globalRange);
-            navigate(`/jobs?quoteExpiry=lapsed&from=${r.start.toISOString().slice(0, 10)}&to=${r.end.toISOString().slice(0, 10)}`);
-          }}
+          onClick={() => setDetail(details.lapsed)}
         />
         <StatCard
           icon={Timer} label="Days to Win" delay={120}
@@ -1871,6 +2129,7 @@ export default function Dashboard() {
                 ? `median · 75% ≤ ${insights.p75Days}d`
                 : 'median wait')
             : 'no wins with dates in period'}
+          onClick={() => setDetail(details.daysToWin)}
         />
         <StatCard
           icon={Users} label="Repeat Revenue" delay={180}
@@ -1880,6 +2139,7 @@ export default function Dashboard() {
           caption={insights.repeatPct !== null
             ? `from ${lI(insights.repeatCount)} returning customer${lI(insights.repeatCount) !== 1 ? 's' : ''}`
             : 'no accepted quotes in period'}
+          onClick={() => setDetail(details.repeat)}
         />
       </div>
 
