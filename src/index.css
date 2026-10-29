@@ -54,6 +54,16 @@ html, body {
 .anim-bg body { background-color: transparent !important; }
 .anim-bg .app-shell { background-color: transparent !important; }
 .anim-bg .app-main  { background-color: transparent !important; }
+
+/* The canvas mounts at the app root, so like the glass wallpaper beside it
+   (see glass.css) it has to stand down on the customer-facing routes. Without
+   this, a customer opening their quote gets whichever animated background the
+   salesperson happens to have switched on — rendered at the same z-index as
+   the quote's own backdrop, so it paints straight over it — and pays for a
+   WebGL shader running behind a document they came to read. The whole point
+   of data-public is that a quote looks the same for everyone. */
+html[data-public] .anim-bg-layer { display: none !important; }
+html[data-public].anim-bg body { background-color: inherit !important; }
 /* Side menu keeps the same gradient but behind a mostly-solid dark scrim, so it
    reads as a darker, contrasting panel with just a hint of the animation. */
 .anim-bg .app-sidebar { background-color: rgba(6, 6, 10, 0.9) !important; }
@@ -1111,15 +1121,20 @@ html.quote-skin {
     0 20px 44px -24px rgba(23, 21, 18, 0.26),
     0 6px 16px -10px rgba(23, 21, 18, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  /* A graded room, not a photograph. Glass over a dead-flat colour stops
-     reading as glass — there is nothing for the frost to refract — so this
-     carries two soft highlights and a diagonal fall. Warm, in the brand's
-     paper tones, and quiet enough to put body copy straight on. */
+  /* A graded room, not a photograph.
+     The first pass at this was a near-flat wash and the panels had nothing to
+     separate from, which is what made it read cheap. Glass needs RANGE under
+     it — the app's own backdrop is a photo with a bright window, a warm wall
+     and a dark floor, and the frost is legible precisely because it is
+     refracting all three. These are the same pools, built as overlapping
+     radials: light top-left, warm mid-right, a grounded corner bottom-right. */
   --lq-backdrop:
-    radial-gradient(92% 72% at 16% 0%, #FFFFFF 0%, transparent 62%),
-    radial-gradient(80% 62% at 100% 100%, #EEEAE4 0%, transparent 58%),
-    linear-gradient(158deg, #F7F5F2 0%, #E8E5DF 100%);
-  --lq-under: #F1EFEB;
+    radial-gradient(70% 55% at 12% 8%,  #FFFFFF 0%, transparent 62%),
+    radial-gradient(62% 50% at 88% 18%, #E9E2D8 0%, transparent 60%),
+    radial-gradient(86% 62% at 78% 94%, #CFC9BF 0%, transparent 64%),
+    radial-gradient(54% 44% at 30% 86%, #DFD7CB 0%, transparent 58%),
+    linear-gradient(158deg, #FBFAF8 0%, #DCD7CF 100%);
+  --lq-under: #EFECE7;
 
   color-scheme: light;
   background-color: var(--lq-under) !important;
@@ -1154,13 +1169,15 @@ html.quote-skin.quote-skin-dark {
     0 34px 70px -28px rgba(0, 0, 0, 0.55),
     0 12px 28px -16px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  /* The theme's own no-photo backdrop, which is what glass.css falls back to
-     when no wallpaper is set: a warm graded room rather than a flat fill. */
+  /* The same room, lights off. Same pools, same positions — so the two skins
+     are one scene at two times of day rather than two different pictures. */
   --lq-backdrop:
-    radial-gradient(90% 70% at 18% 0%, #3A322C 0%, transparent 60%),
-    radial-gradient(80% 60% at 100% 100%, #2B2521 0%, transparent 55%),
-    linear-gradient(160deg, #241F1C 0%, #15120F 100%);
-  --lq-under: #1C1A19;
+    radial-gradient(70% 55% at 12% 8%,  #4B4036 0%, transparent 62%),
+    radial-gradient(62% 50% at 88% 18%, #2F2823 0%, transparent 60%),
+    radial-gradient(86% 62% at 78% 94%, #3B3027 0%, transparent 64%),
+    radial-gradient(54% 44% at 30% 86%, #241D18 0%, transparent 58%),
+    linear-gradient(158deg, #272119 0%, #100D0B 100%);
+  --lq-under: #15120F;
 
   color-scheme: dark;
 }
