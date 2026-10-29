@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Users, AlertTriangle, Loader, Merge, Check, ExternalLink, Mail, Phone, MapPin,
+  Users, Loader, Merge, Check, ExternalLink, Mail, Phone, MapPin,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { supabase } from '../lib/supabase';
@@ -47,6 +47,42 @@ const BASIS = {
 
 /** How much history a record carries. The one with the most is usually the keeper. */
 const weight = (m) => (m.jobs ?? 0) * 100 + (m.quotes ?? 0) * 10 + (m.messages ?? 0);
+
+/** The record a group should keep: most history, and on a tie the oldest. */
+function pickKeeper(members = []) {
+  return [...members].sort((a, b) =>
+    weight(b) - weight(a) || String(a.created_at).localeCompare(String(b.created_at)))[0];
+}
+
+/**
+ * Fold every other record in a group into `keepId`.
+ *
+ * One call per record rather than one per group, so a failure part-way leaves
+ * the records it did merge properly recorded and undoable rather than half
+ * moved. Returns the merge ids, newest last.
+ */
+async function mergeGroup(group, keepId) {
+  const ids = [];
+  for (const other of (group.members ?? []).filter(m => m.id !== keepId)) {
+    const { data, error } = await supabase.rpc('merge_customers', {
+      p_keep: keepId, p_merge: other.id,
+    });
+    if (error) throw error;
+    if (data?.mergeId) ids.push(data.mergeId);
+  }
+  return ids;
+}
+
+/** Reverse merges in the order they were made, newest first. */
+async function undoMerges(ids) {
+  for (const id of [...ids].reverse()) {
+    const { error } = await supabase.rpc('undo_customer_merge', { p_merge_id: id });
+    if (error) { toast('Could not undo the merge.', 'error'); return false; }
+  }
+  await hydrateFromSupabase();
+  window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+  return true;
+}
 
 function MemberRow({ member, keep, onKeep, navigate }) {
   const counts = [
@@ -118,9 +154,7 @@ function Group({ group, onMerged }) {
   const likely = Number(group.nameAgreement) >= LIKELY;
 
   // Default to the record carrying the most history; on a tie, the oldest.
-  const [keepId, setKeepId] = useState(() =>
-    [...members].sort((a, b) => weight(b) - weight(a)
-      || String(a.created_at).localeCompare(String(b.created_at)))[0]?.id);
+  const [keepId, setKeepId] = useState(() => pickKeeper(members)?.id);
   const [busy, setBusy] = useState(false);
 
   const keeper = members.find(m => m.id === keepId);
@@ -129,18 +163,8 @@ function Group({ group, onMerged }) {
   const merge = async () => {
     if (busy || !keeper || !others.length) return;
     setBusy(true);
-    const mergeIds = [];
     try {
-      // One call per record folded in, so a partial failure leaves the records
-      // it did merge properly recorded and undoable rather than half-moved.
-      for (const other of others) {
-        const { data, error } = await supabase.rpc('merge_customers', {
-          p_keep:  keeper.id,
-          p_merge: other.id,
-        });
-        if (error) throw error;
-        if (data?.mergeId) mergeIds.push(data.mergeId);
-      }
+      const mergeIds = await mergeGroup(group, keeper.id);
 
       await hydrateFromSupabase();
       window.dispatchEvent(new CustomEvent('lusso:data-changed'));
@@ -152,14 +176,7 @@ function Group({ group, onMerged }) {
         {
           duration: 12000,
           onUndo: async () => {
-            // Reverse order, so the record state unwinds the way it was built.
-            for (const id of [...mergeIds].reverse()) {
-              const { error } = await supabase.rpc('undo_customer_merge', { p_merge_id: id });
-              if (error) { toast('Could not undo the merge.', 'error'); return; }
-            }
-            await hydrateFromSupabase();
-            window.dispatchEvent(new CustomEvent('lusso:data-changed'));
-            toast('Merge undone.', 'info');
+            if (await undoMerges(mergeIds)) toast('Merge undone.', 'info');
           },
         },
       );
@@ -218,10 +235,156 @@ function Group({ group, onMerged }) {
   );
 }
 
+/**
+ * One section per matching condition, each clearable in one pass.
+ *
+ * The conditions are ordered by how much they can be trusted, and the bulk
+ * action carries the warning that belongs to its own section rather than one
+ * blanket caveat at the top. Clearing nine records that agree on name and
+ * email is housekeeping; clearing fifteen that share only a phone number is
+ * how a husband and wife become one customer.
+ */
+const SECTIONS = [
+  {
+    key:   'name-email',
+    title: 'Names agree, same email address',
+    blurb: 'Both halves of the name agree or are a near-miss, and the email matches. The safest set.',
+    match: (g) => Number(g.nameAgreement) >= LIKELY && g.basis === 'email',
+    warn:  null,
+  },
+  {
+    key:   'name-phone',
+    title: 'Names agree, same phone number',
+    blurb: 'The name agrees but only the phone matches. Usually one person; occasionally a parent and child who share a surname and a landline.',
+    match: (g) => Number(g.nameAgreement) >= LIKELY && g.basis === 'phone',
+    warn:  null,
+  },
+  {
+    key:   'diff-email',
+    title: 'Different names, same email address',
+    blurb: 'Most of these are not duplicates.',
+    match: (g) => Number(g.nameAgreement) < LIKELY && g.basis === 'email',
+    warn:  'A builder, architect or property manager puts one office inbox on every client they refer, and a staff address sometimes stands in where a customer had none. Merging these makes one customer out of several people.',
+  },
+  {
+    key:   'diff-phone',
+    title: 'Different names, same phone number',
+    blurb: 'Most of these are not duplicates.',
+    match: (g) => Number(g.nameAgreement) < LIKELY && g.basis === 'phone',
+    warn:  'Couples share a line and a trade contact\u2019s mobile sits on every job they referred. John Stewart and Judy Stewart share a number and are two people.',
+  },
+];
+
+/**
+ * Clear a whole section in one pass.
+ *
+ * Two clicks, never one: the first states what is about to happen in numbers,
+ * because the only honest way to offer this on a set that is "mostly not
+ * duplicates" is to say so at the moment of the decision.
+ */
+function BulkBar({ section, targets, onMerged }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [at, setAt] = useState(0);
+
+  const records = targets.reduce((n, g) => n + (g.members?.length ?? 0), 0);
+  const risky = !!section.warn;
+
+  const run = async () => {
+    if (busy || !targets.length) return;
+    setBusy(true);
+    setConfirming(false);
+    const ids = [];
+    const merged = [];
+    try {
+      for (const [i, g] of targets.entries()) {
+        setAt(i + 1);
+        // Each group keeps the record its own card already had ticked — most
+        // history, oldest on a tie — so the bulk result is what you would get
+        // clicking through them one by one.
+        ids.push(...await mergeGroup(g, pickKeeper(g.members)?.id));
+        merged.push(g);
+      }
+    } catch (err) {
+      toast(`Stopped after ${merged.length} of ${targets.length}: ${err?.message || 'merge failed'}`, 'error');
+    } finally {
+      await hydrateFromSupabase();
+      window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+      onMerged(merged);
+      setBusy(false);
+      setAt(0);
+      if (merged.length) {
+        toast(`${merged.length} duplicate${merged.length === 1 ? '' : 's'} merged.`, 'info', {
+          duration: 15000,
+          onUndo: async () => {
+            if (await undoMerges(ids)) {
+              toast(`${merged.length} merge${merged.length === 1 ? '' : 's'} undone.`, 'info');
+            }
+          },
+        });
+      }
+    }
+  };
+
+  if (!targets.length) return null;
+
+  return (
+    <Card className={`p-3.5 ${risky ? 'border-amber-200 bg-amber-50/60' : ''}`}>
+      {confirming ? (
+        <div className="space-y-2.5">
+          <p className="text-sm font-semibold text-slate-900">
+            Merge all {targets.length} group{targets.length === 1 ? '' : 's'} here ({records} records)?
+          </p>
+          <p className="text-xs text-slate-600">
+            {risky
+              ? `${section.warn} Read them first — this is the set most likely to contain people who are not duplicates.`
+              : 'Each group keeps the record with the most history, already ticked on its card, and everything else moves onto it.'}
+            {' '}It can all be undone in one click afterwards.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={run}
+              className={`inline-flex items-center gap-1.5 rounded-xl text-white text-sm font-semibold px-3.5 py-2 ${
+                risky ? 'bg-amber-600 hover:bg-amber-700' : 'bg-violet-600 hover:bg-violet-700'
+              }`}
+            >
+              <Merge size={14} /> Yes, merge {targets.length}
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              className="rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm font-medium px-3.5 py-2"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-800">{section.blurb}</p>
+            {section.warn && <p className="text-xs text-amber-800 mt-0.5">{section.warn}</p>}
+          </div>
+          <button
+            onClick={() => setConfirming(true)}
+            disabled={busy}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl text-white text-sm font-semibold px-3.5 py-2 transition-colors disabled:opacity-50 ${
+              risky ? 'bg-amber-600 hover:bg-amber-700' : 'bg-violet-600 hover:bg-violet-700'
+            }`}
+          >
+            {busy
+              ? <><Loader size={14} className="animate-spin" /> Merging {at} of {targets.length}…</>
+              : <><Merge size={14} /> Merge all {targets.length}</>}
+          </button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function DuplicateCustomers() {
-  const [groups, setGroups]   = useState(null);
-  const [error, setError]     = useState('');
-  const [done, setDone]       = useState([]);   // matchKeys merged this session
+  const [groups, setGroups] = useState(null);
+  const [error, setError]   = useState('');
+  const [done, setDone]     = useState([]);   // matchKeys merged this session
 
   // Cancellable, and the fetch lives inside the effect rather than in a
   // callback it calls — the same shape the inbox uses, and the one the React
@@ -238,29 +401,24 @@ export default function DuplicateCustomers() {
     return () => { cancelled = true; };
   }, []);
 
+  const key = (g) => `${g.basis}:${g.matchKey}`;
   const remaining = useMemo(
-    () => (groups ?? []).filter(g => !done.includes(`${g.basis}:${g.matchKey}`)),
+    () => (groups ?? []).filter(g => !done.includes(key(g))),
     [groups, done],
   );
-  // Bucketed on whether the NAMES agree, not on which contact detail matched.
-  // Sharing an email looked like the confident signal and isn't: 23 customer
-  // records carry a @lusso.com.au address a staff member typed in, and
-  // builders, architects and property managers put one office inbox on every
-  // client. What actually separates a duplicate from two people is the name.
-  const likely = remaining.filter(g => Number(g.nameAgreement) >= LIKELY);
-  const shared = remaining.filter(g => Number(g.nameAgreement) < LIKELY);
 
-  const onMerged = (g) => setDone(prev => [...prev, `${g.basis}:${g.matchKey}`]);
+  const markMerged = (merged) =>
+    setDone(prev => [...prev, ...(Array.isArray(merged) ? merged : [merged]).map(key)]);
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-5">
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
           <Users size={20} className="text-violet-600" /> Possible duplicates
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Records that may be the same person. Nothing merges until you say so — pick which record to
-          keep, and everything else moves onto it. Every merge can be undone.
+          Records that may be the same person, grouped by what they have in common. Nothing merges
+          until you say so, and every merge can be undone.
         </p>
       </div>
 
@@ -286,40 +444,21 @@ export default function DuplicateCustomers() {
         </Card>
       )}
 
-      {likely.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Likely the same person · {likely.length}
-          </h2>
-          <p className="text-xs text-slate-500 -mt-1">
-            Both halves of the name agree or are a near-miss, and they share an email address or a
-            phone number.
-          </p>
-          {likely.map(g => (
-            <Group key={`${g.basis}:${g.matchKey}`} group={g} onMerged={onMerged} />
-          ))}
-        </section>
-      )}
-
-      {shared.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Shares contact details, different names · {shared.length}
-          </h2>
-          <Card className="p-3.5 border-amber-200 bg-amber-50 flex gap-2.5">
-            <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800">
-              Most of these are not duplicates. Couples share a line, a builder's or architect's
-              office inbox sits on every client they refer, and a staff address sometimes stands in
-              where a customer had none. Merging two of these makes one customer out of two people.
-              Read the names and the history before touching anything here.
-            </p>
-          </Card>
-          {shared.map(g => (
-            <Group key={`${g.basis}:${g.matchKey}`} group={g} onMerged={onMerged} />
-          ))}
-        </section>
-      )}
+      {SECTIONS.map(section => {
+        const targets = remaining.filter(section.match);
+        if (!targets.length) return null;
+        return (
+          <section key={section.key} className="space-y-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {section.title} · {targets.length}
+            </h2>
+            <BulkBar section={section} targets={targets} onMerged={markMerged} />
+            {targets.map(g => (
+              <Group key={key(g)} group={g} onMerged={markMerged} />
+            ))}
+          </section>
+        );
+      })}
     </div>
   );
 }

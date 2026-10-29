@@ -5,7 +5,7 @@ import {
   MessageSquare, Mail, Inbox as InboxIcon, Loader, Search, X,
   Send, ArrowLeft, User, Trash2, Briefcase,
   Globe, Phone, MapPin, Clock, UserPlus, Archive, ArchiveRestore, Check,
-  ExternalLink, Compass, BarChart3, Sparkles, AlertTriangle,
+  ExternalLink, Compass, BarChart3, Sparkles, AlertTriangle, ChevronDown, PhoneCall,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import OptionsMenu from '../components/OptionsMenu';
@@ -625,6 +625,133 @@ function LeadOrigin({ enquiry }) {
 const PREF_LABEL = { call: 'Phone call', text: 'Text message', email: 'Email' };
 const CHANNEL_LABEL = { sms: 'Text', email: 'Email', web: 'Website form' };
 
+/**
+ * A reply box that grows with what you type.
+ *
+ * Both composers were `rows={1}` with a max-height and nothing that ever
+ * changed the height, so a six-line email was written through a one-line slot
+ * that scrolled internally. The height is driven off scrollHeight on every
+ * change: reset to auto first, or the box can only ever grow.
+ */
+function AutoTextarea({ value, className = '', ...rest }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    // The ceiling lives in CSS as a share of the window rather than a fixed
+    // 160px. A drafted email runs eight or nine lines, which at 160px meant
+    // reading it five lines at a time through a scrolling box — you could not
+    // see what you were about to send. Read the computed value back instead of
+    // repeating the number here, so the CSS stays the single source of it.
+    const cap = parseFloat(getComputedStyle(el).maxHeight);
+    el.style.height = `${Number.isFinite(cap) ? Math.min(el.scrollHeight, cap) : el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      rows={1}
+      className={`resize-none overflow-y-auto max-h-[45vh] ${className}`}
+      {...rest}
+    />
+  );
+}
+
+const TONE = {
+  violet: { bubble: 'bg-violet-500 text-white', stamp: 'text-violet-200' },
+  teal:   { bubble: 'bg-teal-600 text-white',   stamp: 'text-teal-100'  },
+};
+
+/**
+ * The conversation itself — one implementation for both panels.
+ *
+ * These were two separate renderings of the same thing, which is why the date
+ * format, the channel label and the delivery ticks all had to be fixed twice.
+ */
+function MessageList({ messages, tone = 'violet' }) {
+  const t = TONE[tone] ?? TONE.violet;
+  const rows = [];
+  let lastDay = '';
+  for (const m of messages) {
+    const day = format(parseISO(m.created_at), 'yyyy-MM-dd');
+    if (day !== lastDay) { rows.push({ divider: true, key: `d-${day}`, at: m.created_at }); lastDay = day; }
+    rows.push({ key: m.id, m });
+  }
+
+  return (
+    <div className="space-y-1">
+      {rows.map(row => {
+        if (row.divider) return (
+          <div key={row.key} className="flex items-center gap-3 my-4">
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-[11px] font-medium text-slate-400 flex-shrink-0">
+              {formatDateDivider(row.at)}
+            </span>
+            <div className="flex-1 h-px bg-slate-200" />
+          </div>
+        );
+        const m = row.m;
+        const out = m.direction === 'outbound';
+        return (
+          <div key={row.key} className={`flex ${out ? 'justify-end' : 'justify-start'} mb-2`}>
+            <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+              out ? `${t.bubble} rounded-br-sm`
+                  : 'bg-white text-slate-800 shadow-sm border border-slate-100 rounded-bl-sm'
+            }`}>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>
+              <p className={`text-[10px] mt-1 text-right ${out ? t.stamp : 'text-slate-400'}`}>
+                {formatMessageStamp(m.created_at)}
+                {m.channel !== 'sms' && <span className="ml-1">· {CHANNEL_LABEL[m.channel] ?? 'Email'}</span>}
+              </p>
+              {out && (
+                <div className="flex justify-end mt-0.5">
+                  <DeliveryStatus status={m.status} detail={m.status_detail} />
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Reference detail, folded away until asked for.
+ *
+ * Where a lead came from took 209px of the 476px you can see at once — 44% of
+ * the panel spent on something you read when deciding whether to chase the
+ * lead and never again, sitting between the enquiry and the conversation and
+ * pushing the conversation off the bottom of the screen. It opens by default
+ * only when there is no conversation to push down.
+ */
+function Disclosure({ label, summary, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
+      >
+        <span className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 flex-shrink-0">
+          {label}
+        </span>
+        {!open && summary && (
+          <span className="text-xs text-slate-500 truncate flex-1 min-w-0">{summary}</span>
+        )}
+        <ChevronDown
+          size={15}
+          className={`ml-auto flex-shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && <div className="px-4 pb-4 pt-1 space-y-4">{children}</div>}
+    </div>
+  );
+}
+
 function WebLeadView({ conv, onBack, onStatus, onConvert }) {
   const navigate = useNavigate();
   // `e` is the newest submission — freshest contact details, and the status
@@ -638,9 +765,15 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
   const enquiryKey = enquiryIds.join(',');
   const status = e.status || 'new';
   const meta = LEAD_STATUS[status] || LEAD_STATUS.new;
+  // Re-entrancy guard for the lifecycle actions, which now live in the header
+  // menu — and the menu is visibly inert while one runs, so a second click has
+  // nothing to land on.
   const [busy, setBusy] = useState(false);
-
-  const act = async (fn) => { setBusy(true); try { await fn(); } finally { setBusy(false); } };
+  const act = async (fn) => {
+    if (busy) return;
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
 
   // Reply composer — Call (tel:), Text (SMS via Twilio) or Email (via Resend),
   // sent through the existing send-communication edge function. Defaults to the
@@ -795,9 +928,14 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
     }
   };
 
+  const origin = leadSource(first);
+  const originSummary = [origin.sourceLabel, origin.submitLabel].filter(Boolean).join(' · ');
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
+      {/* Header. The lifecycle actions live in the menu rather than below the
+          composer: on a narrow window three stacked rows of chrome under the
+          thread was most of the screen. */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white flex-shrink-0">
         <button onClick={onBack} className="sm:hidden text-slate-400 hover:text-slate-700 -ml-1 p-1">
           <ArrowLeft size={18} />
@@ -810,62 +948,99 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
           <CustomerNameLink conv={conv} navigate={navigate} />
           <p className="text-xs text-slate-400 truncate">Website enquiry · lusso.com.au</p>
         </div>
-        <span className={`inline-flex items-center rounded-full font-medium text-xs px-2.5 py-1 ${meta.pill}`}>
+        {/* Hidden on a phone: with the call and menu buttons beside it the name
+            truncated to "Kelli Gira…", and the status is a glance-level detail
+            that the lead details line and the menu both carry anyway. */}
+        <span className={`hidden sm:inline-flex items-center rounded-full font-medium text-xs px-2.5 py-1 ${meta.pill}`}>
           {meta.label}
         </span>
+        {/* One tap to ring them, instead of a full-width button repeating a
+            number that is already tappable in the details below. */}
+        {e.phone && (
+          <a
+            href={`tel:${e.phone}`}
+            title={`Call ${e.phone}`}
+            aria-label={`Call ${e.phone}`}
+            className="w-9 h-9 flex items-center justify-center rounded-full text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors flex-shrink-0"
+          >
+            <PhoneCall size={16} />
+          </a>
+        )}
+        <div className={busy ? 'pointer-events-none opacity-50' : ''}>
+        <OptionsMenu
+          align="right"
+          items={[
+            ...(status !== 'converted'
+              ? [{ label: 'Convert to customer', icon: UserPlus, onClick: () => act(() => onConvert(e)) }]
+              : []),
+            ...(status === 'new'
+              ? [{ label: 'Mark contacted', icon: Check, onClick: () => act(() => onStatus(e, 'contacted')) }]
+              : []),
+            { divider: true },
+            status !== 'archived'
+              ? { label: 'Archive', icon: Archive, onClick: () => act(() => onStatus(e, 'archived')) }
+              : { label: 'Restore', icon: ArchiveRestore, onClick: () => act(() => onStatus(e, 'new')) },
+          ].filter(Boolean)}
+        />
+        </div>
       </div>
 
-      {/* Body */}
-      <div ref={bodyRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-slate-50/50 space-y-5">
-        {/* Meta chips */}
-        <div className="flex flex-wrap gap-2">
-          {e.interest && (
-            <span className="inline-flex items-center rounded-full bg-white border border-slate-200 text-slate-600 text-xs px-3 py-1">
-              {e.interest}
+      {/* Body — the conversation leads, the reference detail folds away */}
+      <div ref={bodyRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 bg-slate-50/50 space-y-4">
+        <Disclosure
+          label="Lead details"
+          summary={[e.interest, originSummary].filter(Boolean).join(' · ')}
+          defaultOpen={items.length === 0}
+        >
+          <div className="flex flex-wrap gap-2">
+            {e.interest && (
+              <span className="inline-flex items-center rounded-full bg-slate-50 border border-slate-200 text-slate-600 text-xs px-3 py-1">
+                {e.interest}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 border border-slate-200 text-slate-500 text-xs px-3 py-1">
+              <Clock size={12} />
+              {first.created_at ? format(parseISO(first.created_at), 'd MMM yyyy, h:mm a') : ''}
             </span>
-          )}
-          <span className="inline-flex items-center gap-1 rounded-full bg-white border border-slate-200 text-slate-500 text-xs px-3 py-1">
-            <Clock size={12} />
-            {first.created_at ? format(parseISO(first.created_at), 'd MMM yyyy, h:mm a') : ''}
-          </span>
-          {e.preferred_contact && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs px-3 py-1 font-medium">
-              Prefers {PREF_LABEL[e.preferred_contact] ?? e.preferred_contact}
-            </span>
-          )}
-        </div>
+            {e.preferred_contact && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs px-3 py-1 font-medium">
+                Prefers {PREF_LABEL[e.preferred_contact] ?? e.preferred_contact}
+              </span>
+            )}
+          </div>
 
-        {/* Contact */}
-        <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
-          {e.phone && (
-            <a href={`tel:${e.phone}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
-              <Phone size={15} className="text-slate-400" />
-              <span className="text-sm text-slate-700">{e.phone}</span>
-            </a>
-          )}
-          {e.email && (
-            <a href={`mailto:${e.email}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
-              <Mail size={15} className="text-slate-400" />
-              <span className="text-sm text-slate-700">{e.email}</span>
-            </a>
-          )}
-          {e.suburb && (
-            <div className="flex items-center gap-3 px-4 py-3">
-              <MapPin size={15} className="text-slate-400" />
-              <span className="text-sm text-slate-700">{e.suburb}</span>
-            </div>
-          )}
-          {!e.phone && !e.email && !e.suburb && (
-            <div className="px-4 py-3 text-sm text-slate-400">No contact details provided.</div>
-          )}
-        </div>
+          <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
+            {e.phone && (
+              <a href={`tel:${e.phone}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50">
+                <Phone size={15} className="text-slate-400" />
+                <span className="text-sm text-slate-700">{e.phone}</span>
+              </a>
+            )}
+            {e.email && (
+              <a href={`mailto:${e.email}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50">
+                <Mail size={15} className="text-slate-400" />
+                <span className="text-sm text-slate-700">{e.email}</span>
+              </a>
+            )}
+            {e.suburb && (
+              <div className="flex items-center gap-3 px-3 py-2.5">
+                <MapPin size={15} className="text-slate-400" />
+                <span className="text-sm text-slate-700">{e.suburb}</span>
+              </div>
+            )}
+            {!e.phone && !e.email && !e.suburb && (
+              <div className="px-3 py-2.5 text-sm text-slate-400">No contact details provided.</div>
+            )}
+          </div>
 
-        {/* The enquiry they came in on. Anything they sent afterwards is in the
-            conversation below, in order, rather than replacing this. */}
+          <LeadOrigin enquiry={first} />
+        </Disclosure>
+
+        {/* The enquiry they came in on, then everything since, in order. */}
         {first.message && (
           <div>
             <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-1.5">
-              {enquiries.length > 1 ? 'First enquiry' : 'Message'}
+              {enquiries.length > 1 ? 'First enquiry' : 'Their enquiry'}
             </p>
             <div className="bg-white rounded-2xl border border-slate-200 px-4 py-3.5 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
               {first.message}
@@ -873,48 +1048,13 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
           </div>
         )}
 
-        <LeadOrigin enquiry={first} />
-
-        {/* Conversation so far — outbound and the lead's replies.
-            In the scrolling body rather than inside the composer: squeezed into
-            the footer it got ~112px, which is a scroll box, not a thread. Here
-            it reads top to bottom — enquiry, then where they came from, then
-            the conversation, with the reply box underneath. */}
-        {items.length > 0 && (
-          <div>
-            <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-1.5">Conversation</p>
-            <div className="space-y-2">
-              {items.map(m => {
-                const out = m.direction === 'outbound';
-                return (
-                  <div key={m.id} className={`flex ${out ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
-                      out ? 'rounded-br-sm bg-teal-600 text-white'
-                          : 'rounded-bl-sm bg-white border border-slate-200 text-slate-800'
-                    }`}>
-                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>
-                      <p className={`text-[10px] mt-1 ${out ? 'text-teal-100 text-right' : 'text-slate-400'}`}>
-                        {CHANNEL_LABEL[m.channel] ?? 'Email'} · {formatMessageStamp(m.created_at)}
-                      </p>
-                      {out && (
-                        <div className="flex justify-end mt-0.5">
-                          <DeliveryStatus status={m.status} detail={m.status_detail} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {items.length > 0 && <MessageList messages={items} tone="teal" />}
       </div>
 
-      {/* Reply composer + lifecycle actions */}
-      <div className="flex-shrink-0 border-t border-slate-200 bg-white p-3 space-y-2.5">
-        {/* Channel toggle (defaults to the lead's preferred method, marked ★) */}
+      {/* Reply composer */}
+      <div className="flex-shrink-0 border-t border-slate-200 bg-white p-3 space-y-2">
         <div className="flex gap-1.5">
-          {[{ k: 'call', l: 'Call' }, { k: 'text', l: 'Text' }, { k: 'email', l: 'Email' }].map(c => (
+          {[{ k: 'text', l: 'Text' }, { k: 'email', l: 'Email' }].map(c => (
             <button key={c.k} onClick={() => { setChannel(c.k); setError(''); }}
               className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
                 channel === c.k ? 'bg-teal-600 text-white border-teal-600' : 'text-slate-500 border-slate-200 hover:border-slate-300'
@@ -926,81 +1066,39 @@ function WebLeadView({ conv, onBack, onStatus, onConvert }) {
 
         {error && <p className="text-xs text-red-500 px-1">{error}</p>}
 
-        {channel === 'call' ? (
-          e.phone ? (
-            <a href={`tel:${e.phone}`} target="_blank" rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full bg-teal-600 hover:bg-teal-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
-              <Phone size={15} /> Call {e.phone}
-            </a>
-          ) : (
-            <p className="text-xs text-slate-400 px-1 py-1.5">No phone number provided for this lead.</p>
-          )
-        ) : (
-          <>
-            {channel === 'email' && (
-              <input value={subject} onChange={ev => setSubject(ev.target.value)} placeholder="Subject"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-            )}
-            {needs && (
-              <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-                <span>Check before sending — {needs}</span>
-              </div>
-            )}
-            <div className="flex gap-2 items-end">
-              <textarea
-                value={body}
-                onChange={ev => { setBody(ev.target.value); if (needs) setNeeds(''); }}
-                onKeyDown={ev => { if (ev.key === 'Enter' && !ev.shiftKey && channel === 'text') { ev.preventDefault(); sendReply(); } }}
-                placeholder={canSend ? `Write a${channel === 'text' ? ' text' : 'n email'} to ${firstName}…` : `No ${channel === 'text' ? 'phone number' : 'email'} on file`}
-                disabled={!canSend}
-                rows={1}
-                className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none disabled:bg-slate-50 disabled:text-slate-400"
-                style={{ maxHeight: '120px', overflowY: 'auto' }}
-              />
-              <button onClick={suggestReply} disabled={!canSend || suggesting || sending}
-                title={body.trim() ? 'Draft a reply covering what you have typed' : 'Draft a reply'}
-                aria-label="Suggest a reply"
-                className="w-10 h-10 flex items-center justify-center border border-slate-200 text-slate-500 hover:text-teal-600 hover:border-teal-300 disabled:opacity-40 rounded-xl transition-colors flex-shrink-0">
-                {suggesting ? <Loader size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              </button>
-              <button onClick={sendReply} disabled={!body.trim() || !canSend || sending}
-                className="w-10 h-10 flex items-center justify-center bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-xl transition-colors flex-shrink-0">
-                {sending ? <Loader size={16} className="animate-spin" /> : <Send size={16} />}
-              </button>
-            </div>
-          </>
+        {channel === 'email' && (
+          <input value={subject} onChange={ev => setSubject(ev.target.value)} placeholder="Subject"
+            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
         )}
-
-        {/* Lifecycle actions */}
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          {status !== 'converted' ? (
-            <button disabled={busy} onClick={() => act(() => onConvert(e))}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50">
-              <UserPlus size={13} /> Convert to customer
-            </button>
-          ) : (
-            <span className="flex items-center gap-1.5 px-1 text-xs font-medium text-emerald-600">
-              <Check size={14} /> Added to customers
-            </span>
-          )}
-          {status === 'new' && (
-            <button disabled={busy} onClick={() => act(() => onStatus(e, 'contacted'))}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
-              <Check size={13} /> Mark contacted
-            </button>
-          )}
-          {status !== 'archived' ? (
-            <button disabled={busy} onClick={() => act(() => onStatus(e, 'archived'))}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50 ml-auto">
-              <Archive size={13} /> Archive
-            </button>
-          ) : (
-            <button disabled={busy} onClick={() => act(() => onStatus(e, 'new'))}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50 ml-auto">
-              <ArchiveRestore size={13} /> Restore
-            </button>
-          )}
+        {needs && (
+          <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>Check before sending — {needs}</span>
+          </div>
+        )}
+        {/* The box takes the full width and the actions sit under it. Beside a
+            one-line reply the buttons were fine; beside a drafted email they
+            left a tall empty column, and the draft was reading in a narrow
+            gutter while half the row sat unused. */}
+        <AutoTextarea
+          value={body}
+          onChange={ev => { setBody(ev.target.value); if (needs) setNeeds(''); }}
+          onKeyDown={ev => { if (ev.key === 'Enter' && !ev.shiftKey && channel === 'text') { ev.preventDefault(); sendReply(); } }}
+          placeholder={canSend ? `Write a${channel === 'text' ? ' text' : 'n email'} to ${firstName}…` : `No ${channel === 'text' ? 'phone number' : 'email'} on file`}
+          disabled={!canSend}
+          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50 disabled:text-slate-400"
+        />
+        <div className="flex justify-end gap-2">
+          <button onClick={suggestReply} disabled={!canSend || suggesting || sending}
+            title={body.trim() ? 'Draft a reply covering what you have typed' : 'Draft a reply'}
+            aria-label="Suggest a reply"
+            className="w-10 h-10 flex items-center justify-center border border-slate-200 text-slate-500 hover:text-teal-600 hover:border-teal-300 disabled:opacity-40 rounded-xl transition-colors flex-shrink-0">
+            {suggesting ? <Loader size={16} className="animate-spin" /> : <Sparkles size={16} />}
+          </button>
+          <button onClick={sendReply} disabled={!body.trim() || !canSend || sending}
+            className="w-10 h-10 flex items-center justify-center bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-xl transition-colors flex-shrink-0">
+            {sending ? <Loader size={16} className="animate-spin" /> : <Send size={16} />}
+          </button>
         </div>
       </div>
     </div>
@@ -1121,18 +1219,6 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
     }
   };
 
-  // Group messages by date for dividers
-  const messagesWithDividers = [];
-  let lastDateStr = '';
-  for (const m of conv.messages) {
-    const dateStr = format(parseISO(m.created_at), 'yyyy-MM-dd');
-    if (dateStr !== lastDateStr) {
-      messagesWithDividers.push({ type: 'divider', date: m.created_at, key: `div-${dateStr}` });
-      lastDateStr = dateStr;
-    }
-    messagesWithDividers.push({ type: 'message', data: m, key: m.id });
-  }
-
   return (
     <div className="flex flex-col h-full">
       {/* Thread header */}
@@ -1172,43 +1258,8 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-slate-50/50">
-        {messagesWithDividers.map(item => {
-          if (item.type === 'divider') return (
-            <div key={item.key} className="flex items-center gap-3 my-4">
-              <div className="flex-1 h-px bg-slate-200" />
-              <span className="text-[11px] font-medium text-slate-400 flex-shrink-0">
-                {formatDateDivider(item.date)}
-              </span>
-              <div className="flex-1 h-px bg-slate-200" />
-            </div>
-          );
-
-          const m = item.data;
-          const isOut = m.direction === 'outbound';
-          return (
-            <div key={item.key} className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-2`}>
-              <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
-                isOut
-                  ? 'bg-violet-500 text-white rounded-br-sm'
-                  : 'bg-white text-slate-800 shadow-sm border border-slate-100 rounded-bl-sm'
-              }`}>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>
-                <p className={`text-[10px] mt-1 ${isOut ? 'text-violet-200' : 'text-slate-400'} text-right`}>
-                  {formatMessageStamp(m.created_at)}
-                  {m.channel !== 'sms' && (
-                    <span className="ml-1">· {CHANNEL_LABEL[m.channel] ?? 'Email'}</span>
-                  )}
-                </p>
-                {isOut && (
-                  <div className="flex justify-end mt-0.5">
-                    <DeliveryStatus status={m.status} detail={m.status_detail} />
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div className="flex-1 overflow-y-auto px-4 py-4 bg-slate-50/50">
+        <MessageList messages={conv.messages} tone="violet" />
         <div ref={bottomRef} />
       </div>
 
@@ -1245,17 +1296,15 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
             <span>Check before sending — {needs}</span>
           </div>
         )}
-        <div className="flex gap-2 items-end">
-          <textarea
-            value={reply}
-            onChange={e => { setReply(e.target.value); if (needs) setNeeds(''); }}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder={canSend ? `Reply via ${channel === 'sms' ? 'SMS' : 'email'}…` : 'No contact info available'}
-            disabled={!canSend}
-            rows={1}
-            className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 resize-none disabled:bg-slate-50 disabled:text-slate-400"
-            style={{ maxHeight: '120px', overflowY: 'auto' }}
-          />
+        <AutoTextarea
+          value={reply}
+          onChange={e => { setReply(e.target.value); if (needs) setNeeds(''); }}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          placeholder={canSend ? `Reply via ${channel === 'sms' ? 'SMS' : 'email'}…` : 'No contact info available'}
+          disabled={!canSend}
+          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:bg-slate-50 disabled:text-slate-400"
+        />
+        <div className="flex justify-end gap-2">
           <button onClick={suggestReply}
             disabled={!canSend || suggesting || sending || !canSuggest}
             title={!canSuggest
