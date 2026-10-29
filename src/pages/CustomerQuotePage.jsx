@@ -46,7 +46,13 @@ const T = {
   bar:      'var(--lq-bar)',        // the sticky total bar
   ok:       'var(--lq-ok)',         // "measured on site"
   frost:    'var(--lq-frost)',      // backdrop-filter, `none` off glass
+  deep:     'var(--lq-deep)',       // floating: sheets, the plan's hover card
+  deepFrost:'var(--lq-deep-frost)',
+  radius:   'var(--lq-radius)',     // glass is a much softer shape than paper
   shadowCard: 'var(--lq-shadow)',
+  // Carries the inset rim light in glass. That rim is most of why the material
+  // reads as a pane of something rather than a dark rectangle.
+  cardShadow: 'var(--lq-card-shadow)',
 };
 
 /**
@@ -132,8 +138,10 @@ function Button({ children, variant = 'primary', size = 'md', disabled = false, 
 }
 
 const card = {
-  background: T.surface, border: `0.5px solid ${T.mist}`, borderRadius: 8, padding: 20,
-  // Off glass this resolves to `none` and costs nothing.
+  background: T.surface, border: `0.5px solid ${T.mist}`, borderRadius: T.radius, padding: 20,
+  // All three resolve to the brand kit's flat values off glass, so the paper
+  // version is byte-for-byte what it was.
+  boxShadow: T.cardShadow,
   backdropFilter: T.frost, WebkitBackdropFilter: T.frost,
 };
 const fieldLabel = { fontSize: 9.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.stone };
@@ -264,10 +272,11 @@ function PlanCard({ entry, info, interactive, onJump }) {
         pointerEvents: interactive ? 'auto' : 'none',
         width: 'max-content',
         maxWidth: 'min(240px, 72vw)',
-        background: T.paperPure,
+        background: T.deep,
         border: `0.5px solid ${T.mist}`,
-        borderRadius: 10,
+        borderRadius: 14,
         boxShadow: T.shadowCard,
+        backdropFilter: T.deepFrost, WebkitBackdropFilter: T.deepFrost,
         padding: '12px 14px',
       }}
     >
@@ -708,6 +717,15 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const [darkSkin, setDarkSkin] = useState(() => {
     try { return localStorage.getItem('lusso_quote_skin') === 'dark'; } catch { return false; }
   });
+  // The class goes on <html>, not on a wrapper div, for the same reason the
+  // app's own glass does: the wallpaper is a fixed layer at z-index -1, and an
+  // in-flow background on <body> paints on top of it and hides it entirely.
+  // Only <html> can put the fallback colour behind the photo.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('quote-glass', darkSkin);
+    return () => root.classList.remove('quote-glass');
+  }, [darkSkin]);
   const toggleSkin = () => setDarkSkin(d => {
     const next = !d;
     try { localStorage.setItem('lusso_quote_skin', next ? 'dark' : 'light'); } catch { /* private mode */ }
@@ -1132,11 +1150,12 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
         } : undefined}
         style={{
-          display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap', padding: 18, borderRadius: 8,
+          display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap', padding: 18, borderRadius: T.radius,
           background: fixed ? 'transparent' : T.paperPure,
           border: `0.5px solid ${on ? T.ink : T.mist}`,
           borderLeft: `2px solid ${on && !fixed ? T.bronze : (fixed ? T.mist : 'transparent')}`,
-          boxShadow: on && !fixed ? T.shadowCard : 'none',
+          boxShadow: on && !fixed ? T.shadowCard : T.cardShadow,
+          backdropFilter: fixed ? 'none' : T.frost, WebkitBackdropFilter: fixed ? 'none' : T.frost,
           cursor: fixed ? 'default' : (locked ? 'default' : 'pointer'),
           transition: `border-color 200ms ${T.ease}, box-shadow 200ms ${T.ease}`,
         }}>
@@ -1200,7 +1219,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     : quote.expiryDate ? `Pricing held until ${fmtDate(new Date(quote.expiryDate))}` : 'No expiry';
 
   return (
-    <div className={darkSkin ? 'quote-glass' : undefined} style={{ minHeight: '100vh', background: T.page, position: 'relative' }}>
+    <div style={{ minHeight: '100vh', background: T.page, position: 'relative' }}>
       {isStaffPreview && !previewQuote && (
         <div style={{ position: 'sticky', top: 0, zIndex: 50, background: T.raised, color: T.onRaised, fontSize: 11, fontWeight: 500, letterSpacing: '0.06em', textAlign: 'center', padding: '8px 16px' }}>
           Staff preview — this is how the customer sees the quote. No tracking or status changes are recorded.
@@ -1692,7 +1711,8 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           >
             <div
               role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}
-              style={{ width: '100%', maxWidth: 460, background: T.paperPure, borderRadius: 14, padding: 24, boxShadow: T.shadowCard, maxHeight: '88vh', overflowY: 'auto' }}
+              style={{ width: '100%', maxWidth: 460, background: T.deep, borderRadius: 20, padding: 24, boxShadow: T.shadowCard, maxHeight: '88vh', overflowY: 'auto',
+                       backdropFilter: T.deepFrost, WebkitBackdropFilter: T.deepFrost }}
             >
               {sheet === 'accept' ? (
                 <>

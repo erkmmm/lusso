@@ -1066,24 +1066,39 @@ textarea:focus:not(:focus-visible) {
   --lq-bar: rgba(247, 247, 246, 0.92);
   --lq-ok: #15803d;
   --lq-frost: none;
+  --lq-deep: var(--lusso-paper-pure);
+  --lq-deep-frost: none;
+  --lq-radius: 8px;
   --lq-shadow: 0 1px 2px rgba(16, 17, 19, 0.04), 0 8px 24px rgba(16, 17, 19, 0.05);
+  /* Flat on paper: the brand kit's cards carry a hairline, not a shadow. */
+  --lq-card-shadow: none;
 }
 
 /* ── Customer quote: glass ────────────────────────────────────────────────
-   The CRM's frosted skin, brought to the customer's quote. Deliberately NOT
-   the `theme-glass` rules themselves: those are scoped
-   `:not([data-public])` because a quote must look the same for every customer
-   regardless of which theme the salesperson happens to be running. This is
-   the same material, applied unconditionally, so the quote is one fixed
-   design rather than a reflection of someone's settings.
+   The CRM's frosted skin, brought to the customer's quote. Measured off the
+   running app rather than reimplemented from the token values, because the
+   first attempt matched the numbers and still looked like plain dark mode.
+   Three things were doing the work and none of them were in the tokens:
 
-   Text sits at 0.92/0.74/0.52 white rather than pure, because full white on a
-   52%-opaque panel over a photo vibrates. */
-.quote-glass {
+     • the wallpaper is a PHOTO. Glass over a flat colour has nothing to
+       refract and stops reading as glass at all.
+     • every card carries an inset rim light along its top edge.
+     • glass is a much softer shape: the theme remaps rounded-lg to 14px.
+
+   Scoped to <html> rather than a wrapper div, like the app's own glass, for
+   one specific reason: the wallpaper is fixed at z-index -1, and an in-flow
+   background on <body> paints on top of it and hides it completely. Only
+   <html> can hold the colour that sits behind the photo.
+
+   Still NOT the theme-glass rules themselves. Those are scoped
+   :not([data-public]) because a quote has to look the same for every
+   customer whatever theme the salesperson happens to be running. This is the
+   same material, applied as one fixed design. */
+html.quote-glass {
   --lusso-ink: rgba(255, 255, 255, 0.94);
   --lusso-graphite: rgba(255, 255, 255, 0.76);
-  --lusso-stone: rgba(255, 255, 255, 0.52);
-  --lusso-mist: rgba(255, 255, 255, 0.14);
+  --lusso-stone: rgba(255, 255, 255, 0.56);
+  --lusso-mist: rgba(255, 255, 255, 0.18);
   --lusso-paper: rgba(255, 255, 255, 0.94);
   --lusso-paper-pure: rgba(38, 34, 31, 0.52);
   --lusso-bronze: #D9A066;
@@ -1093,47 +1108,73 @@ textarea:focus:not(:focus-visible) {
   --lq-page: transparent;
   --lq-surface: rgba(38, 34, 31, 0.52);
   /* The header and the accepted panel sit deeper than a card so the headline
-     stays readable over the brightest part of the wallpaper. */
+     stays readable over the brightest part of the photo. */
   --lq-raised: rgba(26, 23, 21, 0.72);
   --lq-on-raised: rgba(255, 255, 255, 0.94);
   /* A primary action on a dark page is the light one. */
   --lq-accent: rgba(255, 255, 255, 0.92);
   --lq-on-accent: #1A1715;
-  --lq-well: rgba(255, 255, 255, 0.06);
-  --lq-bar: rgba(26, 23, 21, 0.78);
+  --lq-well: rgba(255, 255, 255, 0.07);
+  /* Frosted but near-opaque: the quote scrolls UNDER this bar, and at the
+     theme's own 0.52 the content ghosts through it. */
+  --lq-bar: rgba(30, 27, 24, 0.88);
   --lq-ok: #6FD08C;
   --lq-frost: blur(30px) saturate(150%);
+  --lq-deep: rgba(26, 23, 21, 0.82);
+  --lq-deep-frost: blur(40px) saturate(160%);
+  --lq-radius: 14px;
   --lq-shadow: 0 34px 70px -28px rgba(0, 0, 0, 0.55), 0 12px 28px -16px rgba(0, 0, 0, 0.4);
+  --lq-card-shadow:
+    0 34px 70px -28px rgba(0, 0, 0, 0.55),
+    0 12px 28px -16px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 
   color-scheme: dark;
+  /* Behind the photo, for the moment before it decodes. */
+  background-color: #1c1a19 !important;
 }
 
-/* The wallpaper. Its own, not ThemeBackground's: that one is driven by staff
-   settings and is hidden on public routes for exactly the right reason. Glass
-   over a dead-flat colour stops reading as glass, so this is a graded room. */
-.quote-glass::before {
+/* An in-flow background here would cover the wallpaper. See above. */
+html.quote-glass body,
+html.quote-glass #root { background-color: transparent !important; }
+
+/* The same photo the app uses, so the two really are the same room. */
+html.quote-glass body::before,
+html.quote-glass body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+}
+html.quote-glass body::before {
+  background-image: url('/glass-wallpaper.jpg');
+  background-size: cover;
+  background-position: center;
+}
+/* Dimmed harder than the app's 0.46, and for a specific reason rather than
+   taste: the app puts every string inside a panel, so the wallpaper never sits
+   directly behind body copy. A quote has bare prose — the intro, the room
+   headings — straight on the backdrop. Sampling the photo, the brightest pixel
+   under that column is a blown-out window at rgb(255,241,224), where 0.46
+   leaves body text at 2.73:1. This holds it above 5:1. */
+html.quote-glass body::after {
   background:
-    radial-gradient(90% 70% at 18% 0%, #3a322c 0%, transparent 60%),
-    radial-gradient(80% 60% at 100% 100%, #2b2521 0%, transparent 55%),
-    linear-gradient(160deg, #241f1c 0%, #15120f 100%);
+    radial-gradient(120% 85% at 50% 12%, transparent 30%, rgba(0, 0, 0, 0.45) 100%),
+    linear-gradient(rgba(12, 10, 9, 0.70), rgba(12, 10, 9, 0.70));
 }
 
 /* Paper has no backdrop to frost against, and a translucent panel prints as a
    grey smear. Print reverts to the brand kit the page was designed in. */
 @media print {
-  .quote-glass {
+  html.quote-glass {
     --lusso-ink: #101113;
-    --lusso-graphite: #3F4349;
-    --lusso-stone: #85898F;
-    --lusso-mist: #E3E3E1;
+    --lusso-graphite: #3A3B3C;
+    --lusso-stone: #8C8E8B;
+    --lusso-mist: #DEDFDC;
     --lusso-paper: #F7F7F6;
     --lusso-paper-pure: #FFFFFF;
-    --lusso-bronze: #8A6B47;
+    --lusso-bronze: #6E5A43;
     --lq-page: #FFFFFF;
     --lq-surface: #FFFFFF;
     --lq-raised: #FFFFFF;
@@ -1144,10 +1185,16 @@ textarea:focus:not(:focus-visible) {
     --lq-bar: #FFFFFF;
     --lq-ok: #15803d;
     --lq-frost: none;
+    --lq-deep: #FFFFFF;
+    --lq-deep-frost: none;
+    --lq-radius: 8px;
     --lq-shadow: none;
+    --lq-card-shadow: none;
+    background-color: #FFFFFF !important;
     color-scheme: light;
   }
-  .quote-glass::before { display: none; }
+  html.quote-glass body::before,
+  html.quote-glass body::after { display: none; }
 }
 
 /* ── Customer quote: body + details rail ──────────────────────────────────
