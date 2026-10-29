@@ -339,23 +339,25 @@ function StatDetail({ card, onClose }) {
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[88vh] overflow-y-auto"
+        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
       >
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 sticky top-0 bg-white">
-          <span className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
-            <Icon size={16} className="text-slate-500" />
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+          <span className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+            <Icon size={18} className="text-slate-500" />
           </span>
-          <h2 className="font-semibold text-slate-800 text-sm flex-1 min-w-0 truncate">{label}</h2>
+          <h2 className="font-semibold text-slate-800 text-base flex-1 min-w-0 truncate">{label}</h2>
           <button onClick={onClose} aria-label="Close"
             className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
             <X size={16} />
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-6 space-y-6">
           <div>
-            <div className="text-3xl font-bold text-slate-900"><Fig>{value}</Fig></div>
-            <div className="mt-1 flex items-center gap-1.5 text-xs">
+            <div className="text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight">
+              <Fig>{value}</Fig>
+            </div>
+            <div className="mt-1.5 flex items-center gap-2 text-sm">
               {delta}
               <span className="text-slate-400">{caption}</span>
             </div>
@@ -370,7 +372,7 @@ function StatDetail({ card, onClose }) {
                 values={series.values}
                 xLabels={series.xLabels}
                 color={series.color}
-                height={180}
+                height={260}
                 format={series.format}
               />
             </div>
@@ -381,17 +383,17 @@ function StatDetail({ card, onClose }) {
               <p className="text-[11px] font-semibold tracking-wide uppercase text-slate-400 mb-2">
                 Breakdown
               </p>
-              <div className="space-y-2">
+              <div className="divide-y divide-slate-100 border-y border-slate-100">
                 {rows.map(r => (
-                  <div key={r.label} className="flex items-center gap-3">
-                    <span className="text-xs text-slate-500 flex-1 min-w-0 truncate">{r.label}</span>
+                  <div key={r.label} className="flex items-center gap-4 py-2.5">
+                    <span className="text-sm text-slate-500 flex-1 min-w-0 truncate">{r.label}</span>
                     {r.bar !== undefined && (
-                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden w-24 flex-shrink-0">
+                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden w-28 sm:w-40 flex-shrink-0">
                         <div className="h-full rounded-full"
                           style={{ width: `${(r.bar / maxRow) * 100}%`, backgroundColor: r.colour || '#F59E0B' }} />
                       </div>
                     )}
-                    <span className="text-sm font-semibold text-slate-800 tabular-nums flex-shrink-0">
+                    <span className="text-base font-semibold text-slate-800 tabular-nums flex-shrink-0">
                       <Fig>{r.value}</Fig>
                     </span>
                   </div>
@@ -400,12 +402,12 @@ function StatDetail({ card, onClose }) {
             </div>
           )}
 
-          {note && <p className="text-xs text-slate-400 leading-relaxed">{note}</p>}
+          {note && <p className="text-sm text-slate-400 leading-relaxed">{note}</p>}
 
           {action && (
             <button
               onClick={() => { onClose(); action.onClick(); }}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2.5 transition-colors"
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-3 transition-colors"
             >
               {action.label} <ArrowRight size={15} />
             </button>
