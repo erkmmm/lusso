@@ -8,6 +8,7 @@ import {
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, HardHat, Plus, Upload,
   CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal, CheckSquare, PackageCheck,
+  Copy, Printer, FileDown,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import ConsultRecordings from '../components/ConsultRecordings';
@@ -18,6 +19,7 @@ import {
   updateJobStatus, saveJob, JOB_STATUSES, getQuotesByJob,
   deleteQuote, deleteJob,
   installProgress, getPurchaseOrdersByJob, JOB_EXIT_STATUSES,
+  duplicateMeasureSheet,
 } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -26,6 +28,8 @@ import ReviewAskModal from '../components/ReviewAskModal';
 import { useProfile } from '../contexts/UserProfileContext';
 import { getReviewRequestByJob } from '../store/data';
 import Card from '../components/Card';
+import OptionsMenu from '../components/OptionsMenu';
+import { exportMeasureSheetToBuz, isRollerBlindItem } from '../lib/buzExport';
 import InstallationSection from '../components/InstallationSection';
 import CalendarEventModal from '../components/CalendarEventModal';
 import JobAIChat from '../components/JobAIChat';
@@ -541,7 +545,23 @@ export default function JobProfile() {
           ) : (
             <div className="divide-y divide-slate-50">
               {measureSheets.map((ms) => (
-                <div key={ms.id} className="px-5 py-4">
+                /* The whole card opens the sheet. The "View" link was the only
+                   way in, which meant aiming at ten characters on a phone while
+                   the rest of the card — the name, the status, the preview you
+                   were already reading — did nothing. */
+                <div
+                  key={ms.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/measure-sheets/${ms.id}`)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`/measure-sheets/${ms.id}`);
+                    }
+                  }}
+                  className="px-5 py-4 cursor-pointer hover:bg-slate-50/70 transition-colors"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${ms.importedFromExcel ? 'bg-blue-50' : 'bg-amber-50'}`}>
@@ -560,10 +580,41 @@ export default function JobProfile() {
                         </p>
                       </div>
                     </div>
-                    <button onClick={() => navigate(`/measure-sheets/${ms.id}`)}
-                      className="flex items-center gap-1 text-xs text-amber-600 hover:underline flex-shrink-0">
-                      View <ChevronRight size={12} />
-                    </button>
+                    {/* stopPropagation throughout: every one of these sits
+                        inside the card, which now navigates on click. */}
+                    <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      <ChevronRight size={14} className="text-slate-300" />
+                      <OptionsMenu
+                        align="right"
+                        items={[
+                          { label: 'Edit', icon: Edit3,
+                            onClick: () => navigate(`/measure-sheets/${ms.id}/edit`) },
+                          // Printing needs the sheet view's own print markup,
+                          // which does not exist on this page — so this opens
+                          // it and asks it to print on arrival.
+                          { label: 'Print', icon: Printer,
+                            onClick: () => navigate(`/measure-sheets/${ms.id}?print=1`) },
+                          ...((ms.lineItems || []).some(isRollerBlindItem) ? [{
+                            label: 'Export to BUZ', icon: FileDown,
+                            onClick: () => {
+                              try {
+                                const { count } = exportMeasureSheetToBuz(ms, job);
+                                toast(`Exported ${count} roller blind${count === 1 ? '' : 's'} to BUZ.`);
+                              } catch (err) {
+                                toast(err.message || 'Could not export to BUZ.', 'error');
+                              }
+                            },
+                          }] : []),
+                          { label: 'Duplicate', icon: Copy,
+                            onClick: () => {
+                              const dupe = duplicateMeasureSheet(ms.id);
+                              if (!dupe) { toast('Could not duplicate that sheet.', 'error'); return; }
+                              toast('Measure sheet duplicated — opening the copy to edit.');
+                              navigate(`/measure-sheets/${dupe.id}/edit`);
+                            } },
+                        ]}
+                      />
+                    </div>
                   </div>
                   {/* Inline table preview */}
                   {ms.lineItems?.length > 0 && (

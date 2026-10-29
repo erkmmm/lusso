@@ -1,5 +1,5 @@
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown, StickyNote, History } from 'lucide-react';
@@ -330,6 +330,21 @@ export default function MeasureSheetView() {
     deleteMeasureSheet(id);
     navigate('/measure-sheets');
   };
+
+  // Arriving with ?print=1 means the Print action was chosen from the job page,
+  // where this page's print markup does not exist. Fire once the sheet has
+  // loaded, then strip the param so a refresh or a back-button return does not
+  // throw the print dialog up again.
+  useEffect(() => {
+    if (!sheet) return;
+    if (new URLSearchParams(window.location.search).get('print') !== '1') return;
+    const t = setTimeout(() => {
+      handlePrint();
+      navigate(`/measure-sheets/${id}`, { replace: true });
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheet]);
 
   const handleDuplicate = () => {
     const dupe = duplicateMeasureSheet(id);
