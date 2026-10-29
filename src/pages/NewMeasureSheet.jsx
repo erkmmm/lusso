@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Copy, Printer, Maximize2, Minimize2, StickyNote, History, RotateCcw,
+  Copy, Printer, Maximize2, Minimize2, StickyNote, History, RotateCcw, Tag,
 } from 'lucide-react';
 import {
   saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
@@ -331,6 +331,12 @@ function LineSummary({ item, idx, open, issues, onToggle }) {
           {!worst && incomplete && (
             <span title="This line is not finished" className="w-1.5 h-1.5 rounded-full bg-slate-300 flex-shrink-0" />
           )}
+          {item.isOptional && (
+            <span title="Quoted as an optional extra"
+              className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 border border-amber-200 rounded px-1.5 py-px">
+              Optional
+            </span>
+          )}
         </span>
         <span className="block text-xs text-slate-400 truncate">
           {[item.productNameSnapshot, item.fabricColour].filter(Boolean).join(' · ') || 'No product yet'}
@@ -550,6 +556,9 @@ const EMPTY_LINE_ITEM = () => ({
   liningFabricColour: '', hem: '', trackColour: '', baseBarColour: '',
   trackBaseBarColour: '', trackType: '',
   baseBarType: '', chainColour: '', notes: '', photoPaths: [], sortOrder: 0,
+  // Priced and shown, but not part of the job unless the customer says yes.
+  // Carried through to the quote as an Optional line — see msLineToQuoteLine.
+  isOptional: false,
 });
 
 // Fields a new line inherits from the line above it.
@@ -1939,6 +1948,24 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                         onConfirm={() => confirmLineMeasured(idx)}
                         onRevert={() => revertLineToPlan(idx)}
                       />
+                      {/* Marked on site, where the customer asks the question.
+                          The alternative is remembering at quoting time which
+                          openings were "just price it up for me". */}
+                      <button
+                        type="button"
+                        onClick={() => setLineItem(idx, 'isOptional', !item.isOptional)}
+                        aria-pressed={!!item.isOptional}
+                        title={item.isOptional
+                          ? 'Quoted as an optional extra — tap to make it part of the job'
+                          : 'Part of the job — tap to quote it as an optional extra'}
+                        className={`flex items-center gap-1.5 text-xs font-medium rounded-lg px-2.5 py-1.5 border transition-colors ${
+                          item.isOptional
+                            ? 'bg-amber-100 text-amber-700 border-amber-300'
+                            : 'text-slate-500 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Tag size={13} /> Optional
+                      </button>
                       <span className="flex-1" />
                       <button onClick={() => copyLineItem(idx)}
                         className="text-slate-300 hover:text-amber-500 transition-colors p-1.5 rounded" title="Copy to new line">

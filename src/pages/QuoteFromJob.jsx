@@ -48,7 +48,9 @@ function msLineToQuoteLine(msLi, idx, rates, pricedItems) {
   return {
     id: uuidv4(),
     sourceMeasureSheetItemId: msLi.id,        // snapshot link back to source
-    type: 'Required',
+    // An extra the customer asked about on site stays an extra on the quote.
+    // Marked once, in the room, rather than reconstructed from memory later.
+    type: msLi.isOptional ? 'Optional' : 'Required',
     location: msLi.location || '',
     productTypeId: msLi.productTypeId || '',
     productNameSnapshot: msLi.productNameSnapshot || msLi.productType || '',

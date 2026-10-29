@@ -201,6 +201,9 @@ function msItemToQuoteLine(msLi, sortOrder, rates, pricedItems) {
   return {
     ...EMPTY_LINE_ITEM(),
     measureSheetLineItemId: msLi.id,
+    // An extra the customer asked about on site stays an extra on the quote.
+    // Marked once, in the room, rather than reconstructed from memory later.
+    type: msLi.isOptional ? 'Optional' : 'Required',
     pricedItemId: msLi.pricedItemId || null,
     location: msLi.location || '',
     productTypeId: msLi.productTypeId || '',
