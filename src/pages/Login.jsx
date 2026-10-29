@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { CheckCircle2 } from 'lucide-react';
+import Turnstile from '../components/Turnstile';
+import { captchaEnabled } from '../lib/captcha';
 
 export default function Login() {
   const { signIn, signUp, error } = useAuth();
@@ -14,13 +16,27 @@ export default function Login() {
   const [signupMsg, setSignupMsg]   = useState('');
   const [pwError, setPwError]       = useState('');
 
+  // Turnstile tokens are single-use: bumping the nonce remounts the widget for
+  // a fresh one, which every retry after a failed attempt needs.
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaNonce, setCaptchaNonce] = useState(0);
+
   const MIN_PASSWORD = 12;
+  const CAPTCHA_PROMPT = 'Complete the verification check below, then try again.';
+
+  const resetCaptcha = () => {
+    setCaptchaToken('');
+    setCaptchaNonce(n => n + 1);
+  };
 
   const handleSignIn = async (e) => {
     e.preventDefault();
+    setPwError('');
+    if (captchaEnabled && !captchaToken) { setPwError(CAPTCHA_PROMPT); return; }
     setLoading(true);
-    await signIn(email, password);
+    await signIn(email, password, captchaToken);
     setLoading(false);
+    resetCaptcha(); // the token is spent either way
   };
 
   const handleSignUp = async (e) => {
@@ -30,9 +46,11 @@ export default function Login() {
       setPwError(`Use at least ${MIN_PASSWORD} characters. Avoid common or reused passwords.`);
       return;
     }
+    if (captchaEnabled && !captchaToken) { setPwError(CAPTCHA_PROMPT); return; }
     setLoading(true);
-    const result = await signUp(email, password);
+    const result = await signUp(email, password, captchaToken);
     setLoading(false);
+    resetCaptcha();
     if (result?.success) {
       if (result.needsConfirm) {
         // Supabase sent a confirmation email
@@ -49,6 +67,8 @@ export default function Login() {
     setPassword('');
     setName('');
     setSignupDone(false);
+    setPwError('');
+    resetCaptcha();
   };
 
   return (
@@ -142,13 +162,19 @@ export default function Login() {
                   />
                 </div>
 
-                {error && (
+                {(pwError || error) && (
                   <div className="bg-red-50 border border-red-200 text-red-600 text-xs px-4 py-3 rounded-xl">
-                    {error === 'Invalid login credentials'
+                    {pwError || (error === 'Invalid login credentials'
                       ? 'Incorrect email or password. Please try again.'
-                      : error}
+                      : error)}
                   </div>
                 )}
+
+                <Turnstile
+                  key={`signin-${captchaNonce}`}
+                  action="signin"
+                  onToken={setCaptchaToken}
+                />
 
                 <button
                   type="submit"
@@ -203,6 +229,12 @@ export default function Login() {
                     {pwError || error}
                   </div>
                 )}
+
+                <Turnstile
+                  key={`signup-${captchaNonce}`}
+                  action="signup"
+                  onToken={setCaptchaToken}
+                />
 
                 <button
                   type="submit"

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { ArrowLeft, Mail } from 'lucide-react';
+import Turnstile from '../components/Turnstile';
+import { captchaEnabled } from '../lib/captcha';
 
 export default function ForgotPassword() {
   const [email, setEmail]     = useState('');
@@ -9,14 +11,25 @@ export default function ForgotPassword() {
   const [sent, setSent]       = useState(false);
   const [error, setError]     = useState('');
 
+  // Single-use token — remount the widget (new key) for each attempt.
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaNonce, setCaptchaNonce] = useState(0);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+    if (captchaEnabled && !captchaToken) {
+      setError('Complete the verification check below, then try again.');
+      return;
+    }
+    setLoading(true);
     const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
+      ...(captchaToken ? { captchaToken } : {}),
     });
     setLoading(false);
+    setCaptchaToken('');
+    setCaptchaNonce(n => n + 1);
     if (err) { setError(err.message); return; }
     setSent(true);
   };
@@ -61,7 +74,7 @@ export default function ForgotPassword() {
               </p>
               <p className="text-xs text-slate-400">
                 Didn't receive it? Check your spam folder or{' '}
-                <button onClick={() => setSent(false)} className="text-amber-600 hover:underline">
+                <button onClick={() => { setSent(false); setError(''); }} className="text-amber-600 hover:underline">
                   try again
                 </button>.
               </p>
@@ -89,6 +102,12 @@ export default function ForgotPassword() {
                     {error}
                   </div>
                 )}
+
+                <Turnstile
+                  key={`recover-${captchaNonce}`}
+                  action="password-reset"
+                  onToken={setCaptchaToken}
+                />
 
                 <button
                   type="submit"

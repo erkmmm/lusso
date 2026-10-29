@@ -21,16 +21,26 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signIn = async (email, password) => {
+  // Supabase checks the Turnstile token itself (Authentication → Attack
+  // Protection → CAPTCHA). Omit the option entirely when there is no token so
+  // local builds without a site key still authenticate.
+  const captchaOptions = (captchaToken) =>
+    captchaToken ? { options: { captchaToken } } : {};
+
+  const signIn = async (email, password, captchaToken) => {
     setError('');
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: err } = await supabase.auth.signInWithPassword({
+      email, password, ...captchaOptions(captchaToken),
+    });
     if (err) setError(err.message);
     return !err;
   };
 
-  const signUp = async (email, password) => {
+  const signUp = async (email, password, captchaToken) => {
     setError('');
-    const { error: err } = await supabase.auth.signUp({ email, password });
+    const { error: err } = await supabase.auth.signUp({
+      email, password, ...captchaOptions(captchaToken),
+    });
     if (err) { setError(err.message); return { success: false, needsConfirm: false }; }
     // If session is set immediately → email confirmation is off → auto-signed in
     const { data: { session } } = await supabase.auth.getSession();
