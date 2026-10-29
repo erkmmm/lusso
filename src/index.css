@@ -1046,55 +1046,79 @@ textarea:focus:not(:focus-visible) {
   }
 }
 
-/* ── Customer quote: the two palettes ─────────────────────────────────────
-   The quote page paints entirely through these roles, so the whole surface
-   can be repainted from here without touching a single inline style. The
-   defaults below ARE the Lusso brand kit — nothing moves until .quote-glass
-   is on the root. */
-:root {
-  /* Paper, not mist. The quote used to paint the root mist and then cover it
-     with a paper wrapper; the wrapper had to go transparent so the glass
-     wallpaper could show through, which left body copy sitting on the darker
-     mist and took 13px muted text from 3.08:1 down to 2.47:1. */
-  --lq-page: var(--lusso-paper);
-  --lq-surface: var(--lusso-paper-pure);
-  --lq-raised: var(--lusso-ink);
-  --lq-on-raised: var(--lusso-paper);
-  --lq-accent: var(--lusso-ink);
-  --lq-on-accent: var(--lusso-paper);
-  --lq-well: #EFEFEE;
-  --lq-bar: rgba(247, 247, 246, 0.92);
-  --lq-ok: #15803d;
-  --lq-frost: none;
-  --lq-deep: var(--lusso-paper-pure);
-  --lq-deep-frost: none;
-  --lq-radius: 8px;
-  --lq-shadow: 0 1px 2px rgba(16, 17, 19, 0.04), 0 8px 24px rgba(16, 17, 19, 0.05);
-  /* Flat on paper: the brand kit's cards carry a hairline, not a shadow. */
-  --lq-card-shadow: none;
-}
+/* ── Customer quote: the glass skins ──────────────────────────────────────
+   Both options are glass. The quote is one material in two palettes — a
+   bright room and a dim one — not a frosted theme sitting next to a flat
+   paper one. The page paints entirely through these roles, so a palette is
+   the only thing that changes between them and no inline style moves.
 
-/* ── Customer quote: glass ────────────────────────────────────────────────
-   The CRM's frosted skin, brought to the customer's quote. Measured off the
-   running app rather than reimplemented from the token values, because the
-   first attempt matched the numbers and still looked like plain dark mode.
-   Three things were doing the work and none of them were in the tokens:
+   Measured off the running CRM rather than reimplemented from its
+   stylesheet, because a first attempt that matched the token values still
+   looked like plain dark mode. Three things were doing the work and none
+   were in the tokens: the wallpaper is a PHOTO (glass over a flat colour has
+   nothing to refract), every card carries an inset rim light along its top
+   edge, and glass is a far softer shape — the theme remaps rounded-lg to
+   14px.
 
-     • the wallpaper is a PHOTO. Glass over a flat colour has nothing to
-       refract and stops reading as glass at all.
-     • every card carries an inset rim light along its top edge.
-     • glass is a much softer shape: the theme remaps rounded-lg to 14px.
-
-   Scoped to <html> rather than a wrapper div, like the app's own glass, for
-   one specific reason: the wallpaper is fixed at z-index -1, and an in-flow
-   background on <body> paints on top of it and hides it completely. Only
-   <html> can hold the colour that sits behind the photo.
+   Scoped to <html> like the app's own glass, for the reason glass.css spells
+   out: the wallpaper is fixed at z-index -1, and an in-flow background on
+   <body> paints on top of it and hides it completely.
 
    Still NOT the theme-glass rules themselves. Those are scoped
    :not([data-public]) because a quote has to look the same for every
-   customer whatever theme the salesperson happens to be running. This is the
-   same material, applied as one fixed design. */
-html.quote-glass {
+   customer whatever theme the salesperson is running. This is the same
+   material applied as one fixed design. */
+html.quote-skin {
+  /* Shape and depth are shared. Only colour tells the two apart. */
+  --lq-radius: 14px;
+  --lq-frost: blur(30px) saturate(150%);
+  --lq-deep-frost: blur(40px) saturate(160%);
+  /* The header band is dark in BOTH skins, so the accent that sits on it is
+     the light bronze in both. Light's #6E5A43 on it is all but invisible. */
+  --lq-bronze-raised: #D9A066;
+
+  /* ── Light: a bright room ───────────────────────────────────────────── */
+  --lusso-ink: #14161A;
+  --lusso-graphite: #3A3B3C;
+  /* Darker than the brand kit's #8C8E8B. Muted text on a translucent panel
+     over a photo has a moving floor under it, and the kit's grey measured
+     2.35:1 against the darkest it can sit on. */
+  --lusso-stone: #5C5F5E;
+  --lusso-mist: rgba(20, 18, 16, 0.14);
+  --lusso-paper: rgba(255, 255, 255, 0.94);
+  --lusso-paper-pure: rgba(255, 255, 255, 0.62);
+  --lusso-bronze: #6E5A43;
+  --lusso-on-inverse-muted: rgba(255, 255, 255, 0.72);
+  --lusso-border-inverse: rgba(255, 255, 255, 0.20);
+
+  --lq-page: transparent;
+  --lq-surface: rgba(255, 255, 255, 0.62);
+  /* The header stays the dark band the brand kit has always had — it anchors
+     a bright page, and the Lusso mark on it is the white one. */
+  --lq-raised: rgba(24, 21, 19, 0.74);
+  --lq-on-raised: rgba(255, 255, 255, 0.95);
+  --lq-accent: #14161A;
+  --lq-on-accent: #FFFFFF;
+  --lq-well: rgba(20, 18, 16, 0.06);
+  --lq-bar: rgba(255, 255, 255, 0.82);
+  --lq-ok: #14703A;
+  --lq-deep: rgba(255, 255, 255, 0.88);
+  --lq-shadow: 0 20px 44px -24px rgba(23, 21, 18, 0.30), 0 6px 16px -10px rgba(23, 21, 18, 0.16);
+  --lq-card-shadow:
+    0 20px 44px -24px rgba(23, 21, 18, 0.26),
+    0 6px 16px -10px rgba(23, 21, 18, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  /* A white veil over the photo. Heavy, because the quote puts bare prose
+     straight on the backdrop where the app would have used a panel. */
+  --lq-scrim: linear-gradient(rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.74));
+  --lq-under: #EDEBE8;
+
+  color-scheme: light;
+  background-color: var(--lq-under) !important;
+}
+
+/* ── Dark: the same room, dimmed ──────────────────────────────────────── */
+html.quote-skin.quote-skin-dark {
   --lusso-ink: rgba(255, 255, 255, 0.94);
   --lusso-graphite: rgba(255, 255, 255, 0.76);
   --lusso-stone: rgba(255, 255, 255, 0.56);
@@ -1105,72 +1129,62 @@ html.quote-glass {
   --lusso-on-inverse-muted: rgba(255, 255, 255, 0.68);
   --lusso-border-inverse: rgba(255, 255, 255, 0.18);
 
-  --lq-page: transparent;
   --lq-surface: rgba(38, 34, 31, 0.52);
-  /* The header and the accepted panel sit deeper than a card so the headline
-     stays readable over the brightest part of the photo. */
   --lq-raised: rgba(26, 23, 21, 0.72);
   --lq-on-raised: rgba(255, 255, 255, 0.94);
   /* A primary action on a dark page is the light one. */
   --lq-accent: rgba(255, 255, 255, 0.92);
   --lq-on-accent: #1A1715;
   --lq-well: rgba(255, 255, 255, 0.07);
-  /* Frosted but near-opaque: the quote scrolls UNDER this bar, and at the
-     theme's own 0.52 the content ghosts through it. */
+  /* Near-opaque: the quote scrolls UNDER this bar, and at the theme's own
+     0.52 the content ghosts through it. */
   --lq-bar: rgba(30, 27, 24, 0.88);
   --lq-ok: #6FD08C;
-  --lq-frost: blur(30px) saturate(150%);
   --lq-deep: rgba(26, 23, 21, 0.82);
-  --lq-deep-frost: blur(40px) saturate(160%);
-  --lq-radius: 14px;
   --lq-shadow: 0 34px 70px -28px rgba(0, 0, 0, 0.55), 0 12px 28px -16px rgba(0, 0, 0, 0.4);
   --lq-card-shadow:
     0 34px 70px -28px rgba(0, 0, 0, 0.55),
     0 12px 28px -16px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  /* The app dims 0.46. This dims harder for the same reason the light scrim
+     is heavy: the brightest pixel under the quote's column is a blown-out
+     window at rgb(255,241,224), where 0.46 leaves body text at 2.73:1. */
+  --lq-scrim:
+    radial-gradient(120% 85% at 50% 12%, transparent 30%, rgba(0, 0, 0, 0.45) 100%),
+    linear-gradient(rgba(12, 10, 9, 0.70), rgba(12, 10, 9, 0.70));
+  --lq-under: #1c1a19;
 
   color-scheme: dark;
-  /* Behind the photo, for the moment before it decodes. */
-  background-color: #1c1a19 !important;
 }
 
 /* An in-flow background here would cover the wallpaper. See above. */
-html.quote-glass body,
-html.quote-glass #root { background-color: transparent !important; }
+html.quote-skin body,
+html.quote-skin #root { background-color: transparent !important; }
 
 /* The same photo the app uses, so the two really are the same room. */
-html.quote-glass body::before,
-html.quote-glass body::after {
+html.quote-skin body::before,
+html.quote-skin body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
 }
-html.quote-glass body::before {
+html.quote-skin body::before {
   background-image: url('/glass-wallpaper.jpg');
   background-size: cover;
   background-position: center;
 }
-/* Dimmed harder than the app's 0.46, and for a specific reason rather than
-   taste: the app puts every string inside a panel, so the wallpaper never sits
-   directly behind body copy. A quote has bare prose — the intro, the room
-   headings — straight on the backdrop. Sampling the photo, the brightest pixel
-   under that column is a blown-out window at rgb(255,241,224), where 0.46
-   leaves body text at 2.73:1. This holds it above 5:1. */
-html.quote-glass body::after {
-  background:
-    radial-gradient(120% 85% at 50% 12%, transparent 30%, rgba(0, 0, 0, 0.45) 100%),
-    linear-gradient(rgba(12, 10, 9, 0.70), rgba(12, 10, 9, 0.70));
-}
+html.quote-skin body::after { background: var(--lq-scrim); }
 
-/* Paper has no backdrop to frost against, and a translucent panel prints as a
-   grey smear. Print reverts to the brand kit the page was designed in. */
+/* Paper has no backdrop to frost against, and a translucent panel prints as
+   a grey smear. Print drops to flat ink on white, in either skin. */
 @media print {
-  html.quote-glass {
+  html.quote-skin,
+  html.quote-skin.quote-skin-dark {
     --lusso-ink: #101113;
     --lusso-graphite: #3A3B3C;
-    --lusso-stone: #8C8E8B;
+    --lusso-stone: #70726F;
     --lusso-mist: #DEDFDC;
     --lusso-paper: #F7F7F6;
     --lusso-paper-pure: #FFFFFF;
@@ -1184,8 +1198,8 @@ html.quote-glass body::after {
     --lq-well: #F4F4F2;
     --lq-bar: #FFFFFF;
     --lq-ok: #15803d;
-    --lq-frost: none;
     --lq-deep: #FFFFFF;
+    --lq-frost: none;
     --lq-deep-frost: none;
     --lq-radius: 8px;
     --lq-shadow: none;
@@ -1193,8 +1207,8 @@ html.quote-glass body::after {
     background-color: #FFFFFF !important;
     color-scheme: light;
   }
-  html.quote-glass body::before,
-  html.quote-glass body::after { display: none; }
+  html.quote-skin body::before,
+  html.quote-skin body::after { display: none; }
 }
 
 /* ── Customer quote: body + details rail ──────────────────────────────────

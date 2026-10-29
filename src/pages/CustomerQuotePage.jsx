@@ -46,6 +46,7 @@ const T = {
   bar:      'var(--lq-bar)',        // the sticky total bar
   ok:       'var(--lq-ok)',         // "measured on site"
   frost:    'var(--lq-frost)',      // backdrop-filter, `none` off glass
+  bronzeRaised: 'var(--lq-bronze-raised)', // accent ON the dark header band
   deep:     'var(--lq-deep)',       // floating: sheets, the plan's hover card
   deepFrost:'var(--lq-deep-frost)',
   radius:   'var(--lq-radius)',     // glass is a much softer shape than paper
@@ -554,8 +555,8 @@ function SkinToggle({ dark, onToggle }) {
         flex: '0 0 auto', width: 34, height: 34, borderRadius: 999, cursor: 'pointer',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0,
         background: hover ? 'rgba(255,255,255,0.10)' : 'transparent',
-        border: `0.5px solid ${hover ? T.bronze : T.borderInverse}`,
-        color: hover ? T.bronze : T.onInverseMuted,
+        border: `0.5px solid ${hover ? T.bronzeRaised : T.borderInverse}`,
+        color: hover ? T.bronzeRaised : T.onInverseMuted,
         transition: `background 200ms ${T.ease}, border-color 200ms ${T.ease}, color 200ms ${T.ease}`,
       }}
     >
@@ -723,8 +724,9 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // Only <html> can put the fallback colour behind the photo.
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle('quote-glass', darkSkin);
-    return () => root.classList.remove('quote-glass');
+    root.classList.add('quote-skin');
+    root.classList.toggle('quote-skin-dark', darkSkin);
+    return () => root.classList.remove('quote-skin', 'quote-skin-dark');
   }, [darkSkin]);
   const toggleSkin = () => setDarkSkin(d => {
     const next = !d;
@@ -1232,26 +1234,26 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         {/* The gutter lives on the inner measure, not on the header box, so the
             headline starts on the same vertical as the first line of the quote
             rather than 22px inside it. */}
-        <header style={{ background: T.raised, color: T.onRaised, padding: '24px 0 30px' }}>
+        <header style={{ background: T.raised, color: T.onRaised, padding: '24px 0 30px', backdropFilter: T.frost, WebkitBackdropFilter: T.frost }}>
           <div style={{ ...container, padding: '0 22px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
               <img src="/brand/lusso-white.png" alt="Lusso" style={{ width: 124, height: 'auto', display: 'block' }} />
               <SkinToggle dark={darkSkin} onToggle={toggleSkin} />
             </div>
-            <div style={{ marginTop: 26 }}><Eyebrow color={T.bronze}>Quotation {quote.quoteNumber}</Eyebrow></div>
+            <div style={{ marginTop: 26 }}><Eyebrow color={T.bronzeRaised} dash={T.bronzeRaised}>Quotation {quote.quoteNumber}</Eyebrow></div>
             <h1 style={{ margin: '10px 0 0', fontWeight: 300, fontSize: 29, lineHeight: 1.2, letterSpacing: '-0.5px', color: T.paper, textWrap: 'pretty', maxWidth: '26ch' }}>
               {settings.businessName} quotation for {customer?.name || 'you'}
             </h1>
             {quote.siteAddress && <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.7, color: T.onInverseMuted }}>{quote.siteAddress}</p>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 20 }}>
               <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', border: `0.5px solid ${T.borderInverse}`, borderRadius: 999, color: T.onInverseMuted }}>Issued {fmtDate(quote.createdAt)}</span>
-              <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${isExpired ? T.bronze : T.borderInverse}`, color: T.onInverseMuted }}>{validityText}</span>
+              <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${isExpired ? T.bronzeRaised : T.borderInverse}`, color: T.onInverseMuted }}>{validityText}</span>
               {/* Only in the last week, and only ever a count of days. */}
               {/* Bronze is the accent, but bronze type on ink measures 2.88:1,
                   so the colour goes on the hairline and the words stay on the
                   one colour that is legible against this header. */}
               {showCountdown && (
-                <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${T.bronze}`, color: T.onInverseMuted }}>{countdownText}</span>
+                <span style={{ fontSize: 11, letterSpacing: '0.06em', padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${T.bronzeRaised}`, color: T.onInverseMuted }}>{countdownText}</span>
               )}
             </div>
             {expiryReason && !isExpired && (
@@ -1806,7 +1808,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         )}
 
         {/* ── Sticky summary bar ─────────────────────────────────────────── */}
-        <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: T.bar, backdropFilter: 'blur(14px) saturate(150%)', WebkitBackdropFilter: 'blur(14px) saturate(150%)', borderTop: `0.5px solid ${T.mist}`, zIndex: 5 }}>
+        <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: T.bar, backdropFilter: T.frost, WebkitBackdropFilter: T.frost, borderTop: `0.5px solid ${T.mist}`, zIndex: 5 }}>
           <div style={{ ...container, padding: '0 22px' }}>
             {expanded && (
               <div style={{ padding: '18px 0 4px', borderBottom: `0.5px solid ${T.mist}` }}>
