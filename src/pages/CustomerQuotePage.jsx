@@ -1316,15 +1316,20 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             <section key={room} style={{ marginTop: 38 }}>
               {/* The room name stays put while its items scroll under it.
                   A long room ran well past a screen, and the only way to tell
-                  which room you were reading was to scroll back up to the
-                  heading. Same frosted treatment as the total bar, because
-                  this page can sit over a photograph and an opaque fill would
-                  punch a hole in it. */}
+                  which room you were reading was to scroll back up to it.
+
+                  It wears the PAGE's colour, not the total bar's. The bar is a
+                  separate surface pinned over the quote and is 82% white to
+                  say so; a room heading is part of the paper, and borrowing
+                  that white laid a hard band across the page that belonged to
+                  a different thing. Fading to transparent keeps the frosted
+                  separation without drawing an edge. */}
               <div style={{
                 position: 'sticky', top: roomStickyTop, zIndex: 3,
-                background: T.bar, backdropFilter: T.frost, WebkitBackdropFilter: T.frost,
+                background: `linear-gradient(to bottom, ${T.paper} 72%, transparent)`,
+                backdropFilter: T.frost, WebkitBackdropFilter: T.frost,
                 display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-                gap: 16, flexWrap: 'wrap', paddingTop: 10, paddingBottom: 10,
+                gap: 16, flexWrap: 'wrap', paddingTop: 10, paddingBottom: 14,
               }}>
                 <h3 style={h3}>{room}</h3>
                 <span style={{ fontSize: 11, color: T.stone }}>{entries.length} {entries.length === 1 ? 'item' : 'items'}</span>
