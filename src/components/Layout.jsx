@@ -10,6 +10,7 @@ import {
   getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
 } from '../store/data';
+import { supabase } from '../lib/supabase';
 import { useGoBack, recordVisit } from '../lib/navTrail';
 import { getEmployeeCountSync } from '../store/profiles';
 import { toast } from './ToastContainer';
@@ -30,7 +31,7 @@ const NAV_SECTIONS = [
       { to: '/today',          label: 'Today',     icon: ListChecks },
       { to: '/customers', label: 'Customers', icon: Users,     countKey: 'customers' },
       { to: '/jobs',      label: 'Projects',  icon: Briefcase, countKey: 'jobs' },
-      { to: '/inbox',     label: 'Inbox',     icon: Inbox },
+      { to: '/inbox',     label: 'Inbox',     icon: Inbox, countKey: 'inboxUnread' },
     ],
   },
   {
@@ -290,6 +291,37 @@ export default function Layout() {
     };
     window.addEventListener('lusso:data-changed', refresh);
     return () => window.removeEventListener('lusso:data-changed', refresh);
+  }, []);
+
+  // The inbox count is the one number on the nav that changes what you do
+  // next, and it is the only one not already in local storage — conversations
+  // are read straight from Supabase by the Inbox itself. Two count-only
+  // queries (`head: true`), so this asks for a number and not for rows: the
+  // nav must not become a reason the database is busy.
+  //
+  // Counts unread inbound messages plus leads nobody has picked up, which is
+  // what the Inbox's own badge adds up. One known difference: a lead who
+  // submits the form twice before anyone answers is one conversation there and
+  // two rows here, so the nav can read one high on a resubmission.
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [msgs, leads] = await Promise.all([
+          supabase.from('communications').select('id', { count: 'exact', head: true })
+            .eq('direction', 'inbound').is('read_at', null),
+          supabase.from('web_enquiries').select('id', { count: 'exact', head: true })
+            .eq('status', 'new'),
+        ]);
+        if (!cancelled) {
+          setCounts(c => ({ ...c, inboxUnread: (msgs.count || 0) + (leads.count || 0) }));
+        }
+      } catch { /* a nav badge is never worth surfacing an error for */ }
+    };
+    load();
+    window.addEventListener('lusso:data-changed', load);
+    return () => { cancelled = true; window.removeEventListener('lusso:data-changed', load); };
   }, []);
 
   // Never let a full-storage save fail silently — warn the user prominently so
@@ -713,29 +745,31 @@ export default function Layout() {
           </button>
         </div>
 
-        {/* Inbox */}
+        {/* Inbox — the one tab whose number means something has to happen.
+            "3702 projects" was a fact about the database; three unread
+            messages is a thing waiting on you. */}
         <NavLink to="/inbox" className={({ isActive }) =>
-          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
-          <Inbox size={20} />
-          <span>Inbox</span>
-        </NavLink>
-
-        {/* Projects */}
-        <NavLink to="/jobs" className={({ isActive }) =>
           `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors relative ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
           {({ isActive }) => (
             <>
               <div className="relative">
-                <Briefcase size={20} />
-                {counts.jobs > 0 && (
-                  <span className={`absolute -top-1 -right-2 text-[9px] font-bold rounded-full px-1 leading-tight ${isActive ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                    {counts.jobs > 99 ? '99+' : counts.jobs}
+                <Inbox size={20} />
+                {counts.inboxUnread > 0 && (
+                  <span className={`absolute -top-1 -right-2 text-[9px] font-bold rounded-full px-1 leading-tight ${isActive ? 'bg-amber-500 text-white' : 'bg-amber-500 text-white'}`}>
+                    {counts.inboxUnread > 99 ? '99+' : counts.inboxUnread}
                   </span>
                 )}
               </div>
-              <span>Projects</span>
+              <span>Inbox</span>
             </>
           )}
+        </NavLink>
+
+        {/* Projects */}
+        <NavLink to="/jobs" className={({ isActive }) =>
+          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
+          <Briefcase size={20} />
+          <span>Projects</span>
         </NavLink>
       </nav>
 
