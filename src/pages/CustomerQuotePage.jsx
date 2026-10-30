@@ -709,22 +709,6 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const groupNodes = useRef(new Map());
   const [flashKey, setFlashKey] = useState(null);
 
-  // Wide enough to park the contents beside the quote instead of behind a tap.
-  // The container is 1200px, so past this the option cards were running to well
-  // over a thousand pixels of line length — the rail spends that width on
-  // something useful and brings the cards back to a readable measure.
-  const WIDE = '(min-width: 1040px)';
-  const [isWide, setIsWide] = useState(() => (typeof window !== 'undefined' && window.matchMedia)
-    ? window.matchMedia(WIDE).matches
-    : false);
-  useEffect(() => {
-    if (!window.matchMedia) return undefined;
-    const mq = window.matchMedia(WIDE);
-    const onChange = (e) => setIsWide(e.matches);
-    mq.addEventListener('change', onChange);
-    setIsWide(mq.matches);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
   const flashTimer = useRef(null);
   const [planHighlight, setPlanHighlight] = useState(null);
   // The details rail starts folded, and only on a phone: the CSS reveals it
@@ -2045,18 +2029,6 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           </div>
 
           <aside className="quote-rail">
-            {/* The page already keeps a sticky rail here for the business and
-                contact details, so the contents go in it rather than opening a
-                third column and stealing the width the option cards need to
-                sit side by side. Wide screens only: below the shell's own
-                breakpoint this rail falls to the bottom of the document, where
-                a table of contents is no use to anybody — there the total bar
-                raises the same list as a sheet. */}
-            {isWide && hasOptions && (
-              <div style={{ ...card, marginBottom: 14 }}>
-                <NavList />
-              </div>
-            )}
             <button
               type="button"
               className="quote-rail-toggle"
@@ -2273,7 +2245,11 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                   <span aria-hidden="true" style={{ fontSize: 10, letterSpacing: '0.1em', color: T.bronze }}>{expanded ? '▲' : '▼'}</span>
                 </button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 3, minWidth: 0 }}>
-                  {hasOptions && !isWide ? (
+                  {/* The contents live behind this at every width now: the
+                      rail copy was taking the top of the page's right-hand
+                      column on a desktop, above the business details, for a
+                      list most people never needed open. */}
+                  {hasOptions ? (
                     <button
                       type="button" onClick={() => setSheet('contents')}
                       style={{
