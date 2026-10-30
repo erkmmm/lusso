@@ -62,9 +62,19 @@ export async function buildQuotePdf(snap) {
   }
   y += 8;
 
+  // Everything below reserves the footer band, so no block can run into the
+  // contact line and page number printed at the bottom of every page.
+  const BOTTOM = pageH - 48;
+  /** Start a new page unless `need` points still fit above the footer. */
+  const ensure = (need) => { if (y + need > BOTTOM) { doc.addPage(); y = M; } };
+
   // ── A table per room, so the paper reads in the same order as the page ────
   const money = (n) => snap.formatMoney(n);
   snap.rooms.forEach((room) => {
+    // A room heading is worth nothing on its own. If the heading plus one line
+    // won't fit, start the room on the next page rather than printing a title
+    // at the foot of this one and the blinds overleaf.
+    ensure(58);
     autoTable(doc, {
       head: [[room.room, 'Qty', 'Price']],
       body: room.lines.map(l => [
@@ -73,7 +83,6 @@ export async function buildQuotePdf(snap) {
         money(l.total),
       ]),
       startY: y,
-      margin: { left: M, right: M },
       theme: 'plain',
       styles: { fontSize: 10, cellPadding: { top: 6, bottom: 6, left: 0, right: 0 }, textColor: INK, overflow: 'linebreak' },
       headStyles: { fontStyle: 'bold', fontSize: 10, textColor: INK, lineWidth: { bottom: 0.7 }, lineColor: RULE },
@@ -85,12 +94,26 @@ export async function buildQuotePdf(snap) {
       // Repeating the room name on a page break stops a continued room from
       // reading as an untitled list of charges.
       showHead: 'everyPage',
+      // A long product name wraps to three lines; splitting those across a
+      // page break puts half a blind on each.
+      rowPageBreak: 'avoid',
+      // autoTable owns the break while it is drawing, so it needs the same
+      // footer band reserved that `ensure` respects.
+      margin: { left: M, right: M, bottom: pageH - BOTTOM },
     });
     y = (doc.lastAutoTable?.finalY || y) + 18;
   });
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  if (y > pageH - 170) { doc.addPage(); y = M; }
+  // Measured rather than guessed: the old check reserved a fixed 170pt, which
+  // was too much for a two-row summary and too little for a six-row one with a
+  // deposit note, so the total could still be split off from the figures it
+  // adds up.
+  const depositLines = snap.depositNote
+    ? doc.splitTextToSize(snap.depositNote, pageW - M * 2).length
+    : 0;
+  ensure(18 + snap.summaryRows.length * 16 + 4 + 22 + (depositLines ? depositLines * 13 + 6 : 0));
+
   doc.setDrawColor(...RULE); doc.setLineWidth(0.7);
   doc.line(M, y, pageW - M, y); y += 18;
 
@@ -116,12 +139,17 @@ export async function buildQuotePdf(snap) {
 
   // ── Terms ─────────────────────────────────────────────────────────────────
   if ((snap.terms || '').trim()) {
-    if (y > pageH - 120) { doc.addPage(); y = M; }
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...INK);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+    const termLines = doc.splitTextToSize(snap.terms.trim(), pageW - M * 2);
+    // The heading travels with the first two lines. "TERMS" alone at the foot
+    // of a page, with the terms themselves overleaf, is the one break that
+    // makes a quotation look like it was assembled carelessly.
+    ensure(14 + Math.min(2, termLines.length) * 12);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...INK);
     doc.text('TERMS', M, y); y += 14;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED);
-    doc.splitTextToSize(snap.terms.trim(), pageW - M * 2).forEach((line) => {
-      if (y > pageH - 50) { doc.addPage(); y = M; }
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...MUTED);
+    termLines.forEach((line) => {
+      ensure(12);
       doc.text(line, M, y); y += 12;
     });
   }

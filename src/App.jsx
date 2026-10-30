@@ -489,9 +489,21 @@ function SlowLoadRetry() {
   );
 }
 
+/**
+ * The customer's quote is not our app.
+ *
+ * This banner is mounted above the routes so it survives navigation, which
+ * also means it was appearing over the one page in the product that belongs to
+ * somebody outside the business. A customer reading a quotation has no build
+ * to update and no idea what the message means — it reads as the document
+ * being unreliable, on the page where that costs the most.
+ */
+const isCustomerFacing = (pathname) => /^\/quotes\/[^/]+\/preview\/?$/.test(pathname);
+
 function UpdateBanner() {
+  const { pathname } = useLocation();
   const { updateAvailable, applyUpdate } = useVersionCheck();
-  if (!updateAvailable) return null;
+  if (!updateAvailable || isCustomerFacing(pathname)) return null;
   return (
     <div className="fixed bottom-20 lg:bottom-4 left-1/2 -translate-x-1/2 z-[9999] w-[calc(100%-2rem)] max-w-sm">
       <div className="bg-slate-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
