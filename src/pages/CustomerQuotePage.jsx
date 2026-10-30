@@ -1114,6 +1114,11 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const container = { maxWidth: 1200, margin: '0 auto', width: '100%', boxSizing: 'border-box' };
   const h3 = { margin: 0, fontWeight: 300, fontSize: 20, letterSpacing: '-0.3px', color: T.ink };
 
+  // The staff-preview strip is sticky at the very top, so room headings have to
+  // start below it or they stick underneath and are never seen. Zero for a
+  // customer, who never gets that strip.
+  const roomStickyTop = (isStaffPreview && !previewQuote) ? 30 : 0;
+
   // ── Option card ────────────────────────────────────────────────────────
   const OptionCard = ({ item, kind }) => {
     const on = isSelected(item);
@@ -1309,11 +1314,22 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             let lastEyebrow = '';
             return (
             <section key={room} style={{ marginTop: 38 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+              {/* The room name stays put while its items scroll under it.
+                  A long room ran well past a screen, and the only way to tell
+                  which room you were reading was to scroll back up to the
+                  heading. Same frosted treatment as the total bar, because
+                  this page can sit over a photograph and an opaque fill would
+                  punch a hole in it. */}
+              <div style={{
+                position: 'sticky', top: roomStickyTop, zIndex: 3,
+                background: T.bar, backdropFilter: T.frost, WebkitBackdropFilter: T.frost,
+                display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+                gap: 16, flexWrap: 'wrap', paddingTop: 10, paddingBottom: 10,
+              }}>
                 <h3 style={h3}>{room}</h3>
                 <span style={{ fontSize: 11, color: T.stone }}>{entries.length} {entries.length === 1 ? 'item' : 'items'}</span>
               </div>
-              <hr style={{ ...hairline, margin: '12px 0 18px' }} />
+              <hr style={{ ...hairline, margin: '0 0 18px' }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                 {entries.map(entry => (
                   <div

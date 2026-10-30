@@ -2043,14 +2043,21 @@ export default function QuoteBuilder() {
               ) : (
                 quoteSections(form.lineItems).map(({ room, entries }) => (
                   <section key={room} className="space-y-3">
-                    {/* Room subheading — the same one the customer sees */}
-                    <div className="flex items-baseline justify-between gap-3 pt-1">
+                    {/* Room subheading — the same one the customer sees, and
+                        it stays put while the room's items scroll under it.
+                        An opaque fill because the theme's own surfaces are
+                        ~50% transparent, and line items reading through a
+                        stuck heading is worse than no heading at all. */}
+                    <div
+                      style={{ backgroundColor: 'rgb(from var(--card) r g b / 1)' }}
+                      className="sticky top-0 z-10 flex items-baseline justify-between gap-3 py-2 -mx-1 px-1"
+                    >
                       <h4 className="text-base font-semibold text-slate-800">{room}</h4>
                       <span className="text-[11px] text-slate-400">
                         {entries.length} item{entries.length === 1 ? '' : 's'}
                       </span>
                     </div>
-                    <hr className="border-slate-100" />
+                    <hr className="border-slate-100 -mt-1" />
                     {entries.map(entry => (
                       <div key={entry.key} className="flex items-start gap-2.5">
                         {/* A / B / C — the window reference, read straight out
