@@ -1337,13 +1337,6 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     // Ex-GST, like every other line on the page. GST is added once, at the end.
     const shownTotal = ex(lineTotal);
     const shownUnit  = ex(finalSell);
-    // Side by side, the number that decides it is the difference, not the
-    // total — "$798" says little next to "$486", "+$312" says what the
-    // upgrade costs. Measured against the cheapest option in the group.
-    const groupFloor = compare && Array.isArray(item._group)
-      ? Math.min(...item._group.map(g => ex(linePricing(g).lineTotal)))
-      : null;
-    const delta = groupFloor !== null ? shownTotal - groupFloor : 0;
     return (
       <div
         onClick={clickable ? toggle : undefined}
@@ -1439,9 +1432,6 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           {discountTotal > 0 && <div style={{ fontSize: 13, color: T.stone, textDecoration: 'line-through' }}>{money(ex(preDiscountSell * qty))}</div>}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, justifyContent: compare ? 'flex-start' : 'flex-end', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 18, fontWeight: on ? 500 : 400, letterSpacing: '-0.2px', whiteSpace: 'nowrap', color: on ? T.ink : T.stone }}>{money(shownTotal)}</span>
-            {delta > 0 && (
-              <span style={{ fontSize: 13, whiteSpace: 'nowrap', color: T.bronze }}>+{money(delta)}</span>
-            )}
           </div>
           {(gstNote || qty > 1) && (
             <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.stone, marginTop: 4 }}>
