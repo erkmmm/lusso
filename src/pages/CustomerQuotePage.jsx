@@ -1004,9 +1004,26 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // confirm sheet listed every live line flat, so a twelve-line order arrived
   // as twelve rows with the room repeated down the right of each one; grouped,
   // it is the quote they just worked through, shortened.
+  // Each surviving line remembers what kind of decision put it here, so the
+  // confirm sheet and the PDF can say "you chose this" rather than presenting
+  // a choice the customer made and a line that was never in question as the
+  // same thing. The shape stays a list of line items — the sheet reads them
+  // directly — with the decision hung off two underscore fields.
   const reviewRooms = rooms
-    .map(({ room, entries }) => ({ room, lines: entries.flatMap(e => e.items || []).filter(isSelected) }))
+    .map(({ room, entries }) => ({
+      room,
+      lines: entries.flatMap(e => (e.blocks || []).flatMap(b => b.items
+        .filter(isSelected)
+        .map(li => ({ ...li, _kind: b.kind, _groupSize: b.items.length })))),
+    }))
     .filter(r => r.lines.length);
+
+  /** What to print under a line to show it was the customer's decision. */
+  const decisionNote = (li) => {
+    if (li._kind === 'choice') return `Chosen from ${li._groupSize} options`;
+    if (li._kind === 'optional') return 'Optional extra, added';
+    return '';
+  };
 
   // ── Take-away copies ──────────────────────────────────────────────────────
   // Built from the SELECTION as it stands, not from the page: a customer who
@@ -1025,6 +1042,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
       lines: r.lines.map(li => ({
         name:     li.displayName || li.productNameSnapshot || 'Window treatment',
         location: li.location || '',
+        note:     decisionNote(li),
         quantity: Number(li.quantity) || 1,
         total:    ex(linePricing(li).lineTotal),
       })),
@@ -1032,6 +1050,9 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     summaryRows: summaryRows.map(r => ({ label: r.label, value: r.value })),
     total:       figures.total,
     gstSuffix:   figures.gstSuffix || '',
+    // The same sentence the total bar shows, so the document and the screen
+    // agree about how much of the quote was the customer's to decide.
+    selectionNote: hasOptions ? `${selectedLabel} options selected` : '',
     depositNote: depoLabel ? `A ${depoLabel} deposit (${figures.deposit}) confirms your order.` : '',
     terms:       quote.termsAndConditions || '',
     footer:      [settings.businessName, settings.businessPhone, settings.businessEmail].filter(Boolean).join('  ·  '),

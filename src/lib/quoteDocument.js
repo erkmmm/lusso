@@ -77,11 +77,15 @@ export async function buildQuotePdf(snap) {
     ensure(58);
     autoTable(doc, {
       head: [[room.room, 'Qty', 'Price']],
-      body: room.lines.map(l => [
-        l.location && l.location !== room.room ? `${l.name}\n${l.location}` : l.name,
-        String(l.quantity || 1),
-        money(l.total),
-      ]),
+      // Second line carries where it goes and how it got here. A line the
+      // customer chose between two alternatives, and one that was never in
+      // question, were printing identically — so the document showed what was
+      // being bought but not what had been decided.
+      body: room.lines.map((l) => {
+        const sub = [l.location && l.location !== room.room ? l.location : '', l.note]
+          .filter(Boolean).join('  ·  ');
+        return [sub ? `${l.name}\n${sub}` : l.name, String(l.quantity || 1), money(l.total)];
+      }),
       startY: y,
       theme: 'plain',
       styles: { fontSize: 10, cellPadding: { top: 6, bottom: 6, left: 0, right: 0 }, textColor: INK, overflow: 'linebreak' },
@@ -112,7 +116,9 @@ export async function buildQuotePdf(snap) {
   const depositLines = snap.depositNote
     ? doc.splitTextToSize(snap.depositNote, pageW - M * 2).length
     : 0;
-  ensure(18 + snap.summaryRows.length * 16 + 4 + 22 + (depositLines ? depositLines * 13 + 6 : 0));
+  ensure(18 + snap.summaryRows.length * 16 + 4 + 22
+    + (snap.selectionNote ? 15 : 0)
+    + (depositLines ? depositLines * 13 + 6 : 0));
 
   doc.setDrawColor(...RULE); doc.setLineWidth(0.7);
   doc.line(M, y, pageW - M, y); y += 18;
@@ -130,6 +136,11 @@ export async function buildQuotePdf(snap) {
   doc.text(`Total${snap.gstSuffix || ''}`, M, y);
   doc.text(snap.total, pageW - M, y, { align: 'right' });
   y += 22;
+
+  if (snap.selectionNote) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...MUTED);
+    doc.text(snap.selectionNote, M, y); y += 15;
+  }
 
   if (snap.depositNote) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...MUTED);
