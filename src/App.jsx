@@ -126,6 +126,32 @@ function AppRoutes() {
   const [hydrating, setHydrating] = useState(false);
   const lastHydrateRef = useRef(0); // epoch ms of the last full hydrate
 
+  /**
+   * Stop the wheel changing a focused number field.
+   *
+   * Browsers treat a scroll over a focused <input type="number"> as a spinner
+   * nudge, so scrolling a measure sheet past a width you had just tapped
+   * silently retyped it — a wrong millimetre that looks exactly like a right
+   * one, all the way to the supplier. There are 49 number inputs in this app
+   * and every one of them is a measurement, a price or a quantity.
+   *
+   * Blur rather than preventDefault: preventing the event would stop the page
+   * scrolling too, so the pointer passing over an input would snag the scroll.
+   * Blurring loses the spinner's claim on the wheel and nothing else — and
+   * losing focus is what you meant by scrolling away.
+   *
+   * Capture + passive: capture so it runs before the input sees the event,
+   * passive so it can never introduce scroll jank.
+   */
+  useEffect(() => {
+    const onWheel = () => {
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement && el.type === 'number') el.blur();
+    };
+    document.addEventListener('wheel', onWheel, { passive: true, capture: true });
+    return () => document.removeEventListener('wheel', onWheel, { capture: true });
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
