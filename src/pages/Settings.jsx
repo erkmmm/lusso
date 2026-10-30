@@ -27,6 +27,7 @@ import {
   getBuzValueMap, setBuzValueMapEntry,
   getCurtainRates, saveCurtainRates, resetCurtainRates,
 } from '../store/data';
+import { OPTION_FAMILIES, familyMapFor, hasBuiltInFamilies } from '../lib/optionFamilies';
 import { BUZ_MAP_FIELDS } from '../lib/buzExport';
 import { buzCatalogueMeta } from '../lib/buzFabricResolver';
 import { getPushStatus, enablePush, disablePush, sendTestPush, pushSupported, needsHomeScreenInstall,
@@ -747,6 +748,7 @@ export default function Settings() {
                           </div>
                           <p className="text-[11px] text-slate-400 mt-2">Width, drop, quantity, fabric and notes always show. A spec that already holds a value stays visible even if switched off.</p>
                           <TypeOptionEditor pt={pt} onChange={refresh} />
+                          <OptionFamilyEditor pt={pt} onChange={refresh} />
                         </div>
 
                         <p className="text-[11px] text-slate-400">Changes save automatically and sync to everyone on your team.</p>
@@ -1491,6 +1493,71 @@ function QuoteDefaultsSection() {
 // Lets each product type override a spec field's option list (e.g. a Roller
 // Blind's Operation Types differ from a Curtain's). Shown inside the type's spec
 // panel; only the dropdown specs the type actually uses are listed.
+/**
+ * Which operation type each measure-time option actually orders.
+ *
+ * "Battery" is what the customer says; `Li-ion Motor 2.0` is what the factory
+ * needs, and which motor that is differs by product and changes as suppliers
+ * do. Leaving this in code meant a motor change needed a deploy, so it lives
+ * here next to the option lists it chooses from.
+ *
+ * A blank mapping is a real answer, not a missing one: on most roller blinds
+ * "chain" is the absence of a motor, and the line should carry no operation
+ * type rather than an invented one.
+ */
+function OptionFamilyEditor({ pt, onChange }) {
+  const codes = getMsOptions('operationType', pt);
+  const configured = hasBuiltInFamilies(pt) || !!pt?.options?.optionFamilies;
+  const map = familyMapFor(pt);
+
+  const save = (key, code) => {
+    const next = { ...(pt.options?.optionFamilies || {}) };
+    next[key] = code;
+    saveProductType({ ...pt, options: { ...(pt.options || {}), optionFamilies: next } });
+    onChange?.();
+  };
+
+  const enable = () => {
+    saveProductType({ ...pt, options: { ...(pt.options || {}), optionFamilies: { ...map } } });
+    onChange?.();
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      <p className="text-xs font-medium text-slate-500">Options offered at measure time</p>
+      <p className="text-[11px] text-slate-400 mt-0.5">
+        &ldquo;Add option&rdquo; on a measure-sheet line clones the opening and sets only the operation.
+        These say what each one orders.
+      </p>
+
+      {!configured ? (
+        <button
+          onClick={enable}
+          className="mt-2 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:border-amber-300 transition-colors"
+        >
+          Offer these on {pt.name}
+        </button>
+      ) : (
+        <div className="mt-2 grid gap-2">
+          {OPTION_FAMILIES.map(f => (
+            <label key={f.key} className="flex items-center gap-3">
+              <span className="w-20 flex-shrink-0 text-xs text-slate-600">{f.label}</span>
+              <select
+                value={map[f.key] || ''}
+                onChange={e => save(f.key, e.target.value)}
+                className="flex-1 min-w-0 text-xs rounded-lg border border-slate-200 px-2 py-1.5 bg-white text-slate-700"
+              >
+                <option value="">No operation type</option>
+                {codes.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TypeOptionEditor({ pt, onChange }) {
   const [openField, setOpenField] = useState(null);
   const [draft, setDraft] = useState('');

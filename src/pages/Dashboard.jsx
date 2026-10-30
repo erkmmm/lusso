@@ -32,9 +32,11 @@ import { PrivacyCtx, Fig } from '../components/PrivacyFig';
 import { PIPELINE_RAMP } from '../lib/chartColors';
 import { deliverQuoteFollowUp } from '../lib/quoteDelivery';
 import { categorizeProduct } from '../lib/productCategories';
+import { withMotorisationAccessories } from '../lib/motorisationAccessories';
 import { downloadDashboardReport } from '../lib/dashboardReport';
 import { summariseLeadSources, sourceStyle } from '../lib/leadSource';
 import { useWebLeads } from '../hooks/useWebLeads';
+import { effectiveSelectedIds } from '../lib/quoteSelection';
 
 // Chart accent follows the active colour theme (Apex emerald by default).
 const ACCENT = 'var(--brand-500)';
@@ -154,16 +156,18 @@ const lostExpiredAt  = (q) => q.expiryDate || q.sentAt || q.createdAt;
 function quoteTotal(q) {
   const { total } = computeQuoteTotals(
     q.lineItems || [], q.depositType, q.depositValue,
-    q.gstRate, q.includesGST, q.selectedLineItemIds || [],
-    q.discountType, q.discountValue
+    q.gstRate, q.includesGST, effectiveSelectedIds(q.lineItems, q.selectedLineItemIds),
+    q.discountType, q.discountValue, q.motorisationPresets
   );
   return total;
 }
 
 // Line items that actually count toward a quote's total (mirrors computeQuoteTotals).
+// Derived motorisation accessories included, or the product mix would show a
+// job's motors with none of the handsets that were sold alongside them.
 function activeLineItems(q) {
-  const selected = q.selectedLineItemIds || [];
-  return (q.lineItems || []).filter(li =>
+  const selected = effectiveSelectedIds(q.lineItems, q.selectedLineItemIds);
+  return withMotorisationAccessories(q.lineItems || [], selected, q.motorisationPresets).filter(li =>
     li.type === 'Required' || li.type === 'Part' ||
     ((li.type === 'Optional' || li.type === 'Multiple Choice') && selected.includes(li.id))
   );

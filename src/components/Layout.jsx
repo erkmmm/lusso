@@ -5,7 +5,7 @@ import {
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, Users2, Inbox, ArrowLeft,
-  Globe, Eye, MessageSquare, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, Send, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+  Globe, Eye, MessageSquare, MailWarning, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, Send, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
@@ -108,6 +108,9 @@ const NOTIF_ICONS = {
   needs_booking:      { icon: CalendarDays,  color: 'text-teal-600',   bg: 'bg-teal-50' },
   review_ready:       { icon: Star,          color: 'text-yellow-500', bg: 'bg-yellow-50' },
   morning_brief:      { icon: Sun,           color: 'text-amber-500',  bg: 'bg-amber-50' },
+  // A message that never arrived. Red, like a declined quote: it is a
+  // thing that has gone wrong and needs someone to act, not an FYI.
+  comms_undelivered:  { icon: MailWarning,   color: 'text-red-500',    bg: 'bg-red-50' },
   default:            { icon: Info,          color: 'text-blue-500',   bg: 'bg-blue-50' },
 };
 

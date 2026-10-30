@@ -140,12 +140,17 @@ export const formatRoomRef = (room, ref) => (ref ? `${norm(room)} ${ref}` : norm
  * @param {Function} opts.entryKeyOf  (item) => string|null. Items in the same
  *   room sharing a key collapse into ONE lettered entry — three motor options
  *   for one window are window B, not windows B, C and D.
+ * @param {Function} opts.refless  (item) => boolean. True for something that
+ *   is not a window — a remote, a charger, a takeaway charge. An entry made
+ *   only of those never takes a letter: lettering the remote in a two-window
+ *   room invents a window C that nobody measured.
  * @param {string} opts.fallbackRoom  heading for items with no location
  * @returns {Array<{room: string, entries: Array<{ref: string, key: string, items: Array}>}>}
  */
 export function groupByRoom(items = [], opts = {}) {
   const locationOf = opts.locationOf || (it => it?.location || '');
   const entryKeyOf = opts.entryKeyOf || (() => null);
+  const reflessOf  = opts.refless    || (() => false);
   const fallback   = opts.fallbackRoom || 'General';
 
   const parsed = items.map((item, i) => {
@@ -202,6 +207,9 @@ export function groupByRoom(items = [], opts = {}) {
       let next = 0;
       for (const e of entries) {
         if (e.ref) continue;
+        // Not a window, so not a letter. Without this the remote quoted for a
+        // two-window room reads as window C.
+        if ((e.items || []).length && e.items.every(reflessOf)) continue;
         while (used.has(letterAt(next))) next++;
         e.ref = letterAt(next);
         used.add(e.ref);

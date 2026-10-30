@@ -63,6 +63,8 @@ export function quoteSections(lineItems = []) {
     // Where no letter was ever written, alternatives for one window are still
     // that window — a choice group takes one entry, not one per option.
     entryKeyOf: (li) => li.type === 'Multiple Choice' ? (li.choiceGroupId || '__default__') : null,
+    // A remote or a charger is not a window and must not take a window letter.
+    refless: (li) => li.type === 'Part',
   }).map(({ room, entries }) => ({
     room,
     entries: entries.map(entry => ({ ...entry, blocks: toBlocks(entry.items) })),
@@ -73,3 +75,27 @@ export function quoteSections(lineItems = []) {
 export const unansweredChoices = (sections, selectedIds = []) => sections
   .flatMap(r => r.entries).flatMap(e => e.blocks)
   .filter(b => b.kind === 'choice' && b.required && !b.items.some(li => selectedIds.includes(li.id)));
+
+/**
+ * What one room still wants from the customer.
+ *
+ * Both views label the room heading from this, so the editor cannot say
+ * "2 items" while the customer's copy says "1 to choose" about the same room.
+ *
+ * `open` counts every unanswered choice, required or not. Whether Accept
+ * unlocks is a separate question — that is `unansweredChoices`, which counts
+ * only the required ones — but for finding your way around a long quote, an
+ * unanswered choice is somewhere to go back to either way.
+ */
+export function roomDecisionStatus(entries = [], selectedIds = []) {
+  const blocks    = entries.flatMap(e => e.blocks || []);
+  const choices   = blocks.filter(b => b.kind === 'choice');
+  const optionals = blocks.filter(b => b.kind === 'optional');
+  const open      = choices.filter(b => !b.items.some(li => selectedIds.includes(li.id))).length;
+  const added     = optionals.filter(b => selectedIds.includes(b.items[0]?.id)).length;
+
+  if (open)            return { text: `${open} to choose`, open };
+  if (choices.length)  return { text: 'All chosen', open: 0 };
+  if (optionals.length) return { text: `${added} of ${optionals.length} added`, open: 0 };
+  return { text: `${entries.length} ${entries.length === 1 ? 'item' : 'items'}`, open: 0 };
+}

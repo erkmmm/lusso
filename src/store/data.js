@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
+import { withMotorisationAccessories, resolveAccessoryPresets } from '../lib/motorisationAccessories';
+import { effectiveSelectedIds } from '../lib/quoteSelection';
 import { lsGet, lsSet, lsVersion } from './storage';
 import { recordSheetVersion } from '../lib/sheetJournal';
 import { db, batchUpsertCustomers, batchUpsertPricedItems, hydrateFromSupabase } from './db';
@@ -958,6 +960,33 @@ export const searchMatch = (fields, rawSearch) => {
     for (const w of s.split(/[\s\-/,.()#]+/)) if (w) tokens.push(w); // word starts
   }
   return terms.every(t => tokens.some(tok => tok.startsWith(t)));
+};
+
+/**
+ * The same idea for catalogue text, where a term may land mid-word.
+ *
+ * `searchMatch` above is deliberately prefix-only: on customers and jobs,
+ * "2690" should find the job that STARTS 2690 and not every phone number with
+ * those digits buried in it. Product names are the opposite — people look for
+ * "screen" meaning "Sunscreen", and "pleat" meaning "Triple Pinch Pleat" — so
+ * here a term matches anywhere.
+ *
+ * What the two share, and the thing that was actually missing, is that the
+ * typed words do not have to appear together or in order. Every search box in
+ * the app used to test the whole query as one contiguous string, so "triple
+ * pleat" found nothing: the real name has "Pinch" sitting between those two
+ * words. Terms are now matched one at a time, all of them required (AND, so
+ * each extra word narrows the list) and each against every field at once.
+ *
+ * Fields are joined on a space, which is safe precisely because terms are
+ * split on whitespace — no term can contain one, so none can match across the
+ * join and pair the end of one field with the start of the next.
+ */
+export const searchMatchAnywhere = (fields, rawSearch) => {
+  const terms = String(rawSearch || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const hay = fields.filter(f => f != null && f !== '').map(f => String(f).toLowerCase()).join(' ');
+  return terms.every(t => hay.includes(t));
 };
 
 // ── Role-filtered getters ──────────────────────────────────────────────────────
@@ -3095,8 +3124,17 @@ export const linePricing = (li = {}) => {
   };
 };
 
-export const computeQuoteTotals = (lineItems = [], depositType = 'None', depositValue = 0, gstRate = 10, includesGST = true, selectedIds = [], discountType = 'None', discountValue = 0) => {
-  const active = lineItems.filter(li =>
+export const computeQuoteTotals = (lineItems = [], depositType = 'None', depositValue = 0, gstRate = 10, includesGST = true, selectedIds = [], discountType = 'None', discountValue = 0, motorisationPresets = null) => {
+  // Remotes and chargers are derived from whichever motors are live, not
+  // stored, so they are resolved here rather than at each of the dozen call
+  // sites that price a quote. Idempotent, so passing already-resolved items
+  // (the customer page does) cannot double-count them.
+  //
+  // `motorisationPresets` is the quote's OWN snapshot of the accessory prices
+  // (see saveQuote). Passed in rather than looked up because this function
+  // runs on every render of several pages and once per row on the quotes
+  // list, and getPricedItems() decompresses and parses 779 rows each call.
+  const active = withMotorisationAccessories(lineItems, selectedIds, motorisationPresets).filter(li =>
     li.type === 'Required' ||
     li.type === 'Part' ||
     (li.type === 'Optional' && selectedIds.includes(li.id)) ||
@@ -3508,11 +3546,22 @@ export const getNextQuoteNumber = () => {
 };
 
 export const saveQuote = (quote) => {
+  // Re-read the accessory prices out of the price library and snapshot them
+  // onto the quote. Snapshot, not a live lookup, for the same reason
+  // productNameSnapshot exists: the price a customer was shown must not move
+  // under them because someone edited an item afterwards. A re-price in
+  // Settings reaches a quote the next time it is saved.
+  const motorisationPresets = resolveAccessoryPresets(getPricedItems());
+
   // Compute and persist totals so DB columns (grand_total, gst_amount, etc.) are always populated.
+  // Against the quote's DEFAULTS where the customer hasn't answered yet, or a
+  // quote made of "choose one" groups stores a grand_total of $0 and shows up
+  // in the list and the pipeline as worth nothing.
   const { subtotal, gst, total } = computeQuoteTotals(
     quote.lineItems || [], quote.depositType, quote.depositValue,
-    quote.gstRate, quote.includesGST, quote.selectedLineItemIds || [],
-    quote.discountType, quote.discountValue
+    quote.gstRate, quote.includesGST,
+    effectiveSelectedIds(quote.lineItems, quote.selectedLineItemIds),
+    quote.discountType, quote.discountValue, motorisationPresets
   );
   const costTotal = (quote.lineItems || []).reduce((s, li) => {
     if (li.unitCostPrice !== undefined) {
@@ -3528,6 +3577,7 @@ export const saveQuote = (quote) => {
   const now  = new Date().toISOString();
   const enriched = {
     ...quote,
+    motorisationPresets,
     totalCost:  Math.round(costTotal * 100) / 100,
     totalSell:  Math.round(subtotal  * 100) / 100,
     gstAmount:  Math.round(gst       * 100) / 100,
@@ -3676,10 +3726,18 @@ export const acceptQuote = (quoteId, acceptanceInfo = {}, selectedLineItemIds = 
   // buy (and the business can see which were chosen).
   if (Array.isArray(selectedLineItemIds)) {
     updated.selectedLineItemIds = selectedLineItemIds;
+    // Motorisation accessories stop being derived at this point and become
+    // real lines. Up to here they could change with every click; now the
+    // customer has agreed to a specific set of motors, so the remotes and
+    // chargers that set implies have to be ON the quote — the purchase order,
+    // the Xero invoice and the installer's paperwork all read line_items and
+    // know nothing about the rule.
+    updated.lineItems = withMotorisationAccessories(
+      updated.lineItems || [], selectedLineItemIds, updated.motorisationPresets);
     const { subtotal, gst, total } = computeQuoteTotals(
-      updated.lineItems || [], updated.depositType, updated.depositValue,
+      updated.lineItems, updated.depositType, updated.depositValue,
       updated.gstRate, updated.includesGST, selectedLineItemIds,
-      updated.discountType, updated.discountValue
+      updated.discountType, updated.discountValue, updated.motorisationPresets
     );
     updated.totalSell  = Math.round(subtotal * 100) / 100;
     updated.gstAmount  = Math.round(gst      * 100) / 100;

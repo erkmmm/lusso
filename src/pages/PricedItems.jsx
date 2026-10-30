@@ -10,11 +10,7 @@ import {
   ToggleLeft, ToggleRight, DollarSign, Tag, ChevronDown, Cloud, CloudOff, Sparkles,
   CheckSquare, Square, Layers, Copy,
 } from 'lucide-react';
-import {
-  getPricedItems, savePricedItem, deletePricedItem,
-  getPricedItemBatches, createPricedItemBatch, runPricedItemImport,
-  savePricedItemBatch, getProductDocumentCounts,
-} from '../store/data';
+import { getPricedItems, savePricedItem, deletePricedItem, getPricedItemBatches, createPricedItemBatch, runPricedItemImport, savePricedItemBatch, getProductDocumentCounts, searchMatchAnywhere } from '../store/data';
 import { isFabricItem } from '../lib/curtainCalc';
 import Card from '../components/Card';
 import { v4 as uuidv4 } from 'uuid';
@@ -360,26 +356,14 @@ export default function PricedItems() {
   const fabricItems  = items.filter(isFabricItem);
   const productItems = items.filter(p => !isFabricItem(p));
 
-  const filteredFabrics = fabricItems.filter(p => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (p.itemName || '').toLowerCase().includes(q)
-        || (p.supplier || '').toLowerCase().includes(q)
-        || (p.description || '').toLowerCase().includes(q);
-  });
+  const filteredFabrics = fabricItems.filter(p =>
+    searchMatchAnywhere([p.itemName, p.supplier, p.description], search));
 
   const filteredItems = productItems.filter(p => {
     if (filterStatus === 'active'   && !p.isActive) return false;
     if (filterStatus === 'inactive' &&  p.isActive) return false;
     if (filterCat && p.category !== filterCat) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (p.itemName || '').toLowerCase().includes(q) ||
-             (p.itemCode || '').toLowerCase().includes(q) ||
-             (p.description || '').toLowerCase().includes(q) ||
-             (p.category || '').toLowerCase().includes(q);
-    }
-    return true;
+    return searchMatchAnywhere([p.itemName, p.itemCode, p.description, p.category], search);
   });
 
   const handleSaveItem = (item) => {

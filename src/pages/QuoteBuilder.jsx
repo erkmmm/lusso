@@ -9,33 +9,33 @@ import {
   User, FileText, Settings, DollarSign, ChevronRight, GripVertical,
   Package, ClipboardList, BookOpen, Sparkles, Info, Check, Copy,
   AlertCircle, CheckCircle2, X, Loader2, ExternalLink, Map, RefreshCw, Ruler,
-  Calculator,
+  Calculator, Paperclip, Upload, FileDown, Mail,
 } from 'lucide-react';
+import { optionDiff, benefitFor, descriptionTail } from '../lib/optionCompare';
 import AddressAutocomplete from '../components/AddressAutocomplete';
-import {
-  getQuote, getCustomers, getCustomer, getMeasureSheet, getMeasureSheets, getJob,
-  getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings,
-  getQuoteWording, DEFAULT_MARGIN_PERCENT,
-  CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS,
-  HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS,
-  computeQuoteTotals, linePricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES,
-  createQuote, saveQuote, addQuoteActivity,
-  getMeasureSheetByJob, getMessagePresets, getTakeoffByJob,
-  getCurtainRates,
-} from '../store/data';
+import { getQuote, getCustomers, getCustomer, saveCustomer, getMeasureSheet, getMeasureSheets, getJob, getActiveProductTypes, getSavedItems, getPricedItems, getQuoteTemplates, getQuoteSettings, getQuoteWording, DEFAULT_MARGIN_PERCENT, CONTROL_OPTIONS, RETURN_OPTIONS, MOTOR_SIDE_OPTIONS, FIXING_OPTIONS, HEADING_OPTIONS, HEM_OPTIONS, TRACK_COLOUR_OPTIONS, BASE_BAR_COLOUR_OPTIONS, BASE_BAR_TYPE_OPTIONS, CHAIN_COLOUR_OPTIONS, computeQuoteTotals, linePricing, QUOTE_ITEM_TYPES, DEPOSIT_TYPES, createQuote, saveQuote, addQuoteActivity, getMeasureSheetByJob, getMessagePresets, getTakeoffByJob, getCurtainRates, searchMatchAnywhere } from '../store/data';
 import Card from '../components/Card';
 import CollapsibleSection from '../components/CollapsibleSection';
 import CurtainCostPanel from '../components/CurtainCostPanel';
 import { isCurtainProduct, autoCostCurtainLine } from '../lib/curtainCalc';
-import { quoteSections } from '../lib/quoteSections';
+import { quoteSections, roomDecisionStatus} from '../lib/quoteSections';
 import { nextRoomLabel, splitRoomLabel, capitaliseRoom } from '../lib/roomNaming';
 import { describeLine } from '../lib/describeLine';
 import { curtainBlockers } from '../lib/curtainBlockers';
+import {
+  uploadQuoteDoc, removeQuoteDoc, quoteDocUrl, formatBytes, docKind,
+  ACCEPT_ATTR, titleFromFilename,
+} from '../lib/quoteDocs';
+import {
+  resolveAccessoryPresets, maxMotorisationAccessories, motorisationAccessories,
+  BLINDS_PER_CHARGER, existingAccessories, isMotorisedCovering,
+} from '../lib/motorisationAccessories';
 
 import CustomerQuotePage from './CustomerQuotePage';
 import { deliverQuote } from '../lib/quoteDelivery';
 import { captureQuotePlan, removeQuotePlan, snapshotIsStale } from '../lib/quotePlanSnapshot';
 import PricedItemPicker from '../components/PricedItemPicker';
+import { effectiveSelectedIds } from '../lib/quoteSelection';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,20 +60,19 @@ const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
  * one dropdown. `itemCode` is the SKU — the column is item_code, and 339 of
  * the 779 priced items carry one.
  */
-const matchesItemSearch = (item, query, fields) => {
-  const q = (query || '').trim().toLowerCase();
-  if (!q) return true;
-  return fields.some(f => String(item?.[f] ?? '').toLowerCase().includes(q));
-};
+const matchesItemSearch = (item, query, fields) =>
+  searchMatchAnywhere(fields.map(f => item?.[f]), query);
 
-// ─── Parts & Accessories catalogue ───────────────────────────────────────────
-const PRESET_PARTS = [
-  { name: 'Acmeda Automate WiFi Hub',            description: 'Acmeda Automate Pulse WiFi Hub',                                      price: 340 },
-  { name: 'Wall Charger 4m USB to Micro Cable',  description: 'Acmeda Li-ion Charger to charge battery operated roller blinds',      price: 38  },
-  { name: '1 Channel Remote Control – White',    description: '1 Channel Wire Free Remote Control White',                            price: 85  },
-  { name: '5 Channel Remote Control – White',    description: '5 Channel Wire Free Remote Control White',                            price: 95  },
-  { name: '15 Channel Remote Control – White',   description: '15 Channel Wire Free Remote Control White',                           price: 120 },
-];
+// ─── Parts & Accessories quick-add ───────────────────────────────────────────
+// Priced out of the item library, same as the accessories the quote derives
+// for itself, so a remote added by hand here and one added by the rule can
+// never carry different prices. Re-read per render rather than hoisted to a
+// module constant: a price edited in Settings has to show up here without a
+// reload.
+const presetParts = (pricedItems) => {
+  const p = resolveAccessoryPresets(pricedItems);
+  return [p.wifiHub, p.charger, p.remote1, p.remote5, p.remote15];
+};
 
 const EMPTY_PART_ITEM = (preset = {}) => ({
   id: uuidv4(),
@@ -506,6 +505,406 @@ function PricingFields({ item, set, pricing }) {
   );
 }
 
+// ─── RecipientsField ──────────────────────────────────────────────────────────
+
+/**
+ * Who this quote will be emailed to, and the one place to add a second person.
+ *
+ * The second contact is stored on the CUSTOMER, not the quote — a partner or
+ * an office manager is a fact about the customer, and storing it per quote
+ * would mean re-typing them on the next one and leaving follow-ups going to
+ * one of the two. But the customer record is not where anyone is standing
+ * when they remember, so the control lives here and writes through.
+ *
+ * Saving is immediate and separate from the quote's own save, for the same
+ * reason: it is a change to the customer, and leaving it to ride along with
+ * the quote would mean a cancelled quote edit silently discarded it. The toast
+ * says which record was touched so that is never a surprise.
+ */
+function RecipientsField({ customer, onSaved, onError }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState({ name: '', role: '', email: '', phone: '' });
+  const [saving, setSaving] = useState(false);
+
+  const has = !!customer.secondaryEmail || !!customer.secondaryName;
+
+  const startEdit = () => {
+    setDraft({
+      name:  customer.secondaryName  || '',
+      role:  customer.secondaryRole  || '',
+      email: customer.secondaryEmail || '',
+      phone: customer.secondaryPhone || '',
+    });
+    setOpen(true);
+  };
+
+  const persist = (patch, message) => {
+    setSaving(true);
+    try {
+      saveCustomer({ ...customer, ...patch });
+      // Other screens read the customer from the store, so tell them it moved.
+      window.dispatchEvent(new CustomEvent('lusso:data-changed'));
+      onSaved?.(message);
+      setOpen(false);
+    } catch (err) {
+      onError?.(err?.message || 'Could not save the contact.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const save = () => {
+    const email = draft.email.trim();
+    const name  = draft.name.trim();
+    if (!email && !name) { setOpen(false); return; }
+    // An email is the entire point of a second recipient. A name with no
+    // address looks saved but quietly copies nobody.
+    if (!/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(email)) {
+      onError?.('That email address doesn’t look right — the quote has to be able to reach them.');
+      return;
+    }
+    persist({
+      secondaryName:  name,
+      secondaryRole:  draft.role.trim(),
+      secondaryEmail: email,
+      secondaryPhone: draft.phone.trim(),
+    }, `${name || email} will be copied on this quote, and saved to ${customer.name}’s record.`);
+  };
+
+  const remove = () => persist(
+    { secondaryName: '', secondaryRole: '', secondaryEmail: '', secondaryPhone: '' },
+    `Removed from ${customer.name}’s record — only ${customer.email || 'the customer'} will be copied.`,
+  );
+
+  const field = (key, label, ph, type = 'text') => (
+    <div>
+      <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
+      <input
+        type={type}
+        value={draft[key]}
+        onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
+        placeholder={ph}
+        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+      />
+    </div>
+  );
+
+  return (
+    <div>
+      <label className="block text-xs font-medium text-slate-500 mb-1.5">Quote goes to</label>
+      <div className="space-y-2">
+        {/* The customer themselves, always. */}
+        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white">
+          <Mail size={14} className="flex-shrink-0 text-slate-400" />
+          <span className="flex-1 min-w-0 text-sm text-slate-700 truncate">
+            {customer.email || <span className="text-red-500">No email on file — the quote cannot be sent</span>}
+          </span>
+          <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">To</span>
+        </div>
+
+        {has && !open && (
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white">
+            <Mail size={14} className="flex-shrink-0 text-slate-400" />
+            <span className="flex-1 min-w-0 text-sm text-slate-700 truncate">
+              {customer.secondaryName
+                ? <>{customer.secondaryName}{customer.secondaryRole ? <span className="text-slate-400"> · {customer.secondaryRole}</span> : null} <span className="text-slate-400">· {customer.secondaryEmail}</span></>
+                : customer.secondaryEmail}
+            </span>
+            <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Cc</span>
+            <button type="button" onClick={startEdit} className="flex-shrink-0 text-xs text-slate-400 hover:text-amber-600 px-1">Edit</button>
+            <button type="button" onClick={remove} disabled={saving}
+              className="flex-shrink-0 p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50" title="Remove this recipient">
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
+        {open && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {field('name',  'Name',         'e.g. Sarah Dickson')}
+              {field('role',  'Relationship', 'e.g. Wife, Office manager')}
+              {field('email', 'Email',        'They are copied on the quote', 'email')}
+              {field('phone', 'Phone',        'Optional', 'tel')}
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={save} disabled={saving}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white disabled:opacity-50">
+                {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save recipient
+              </button>
+              <button type="button" onClick={() => setOpen(false)}
+                className="text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-white text-slate-500">
+                Cancel
+              </button>
+              <p className="text-[11px] text-slate-400 ml-auto">Saved to {customer.name}&rsquo;s record</p>
+            </div>
+          </div>
+        )}
+
+        {!has && !open && (
+          <button type="button" onClick={startEdit}
+            className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-slate-200 rounded-xl text-xs font-medium text-slate-400 hover:border-amber-400 hover:text-amber-600 transition-colors">
+            <Plus size={13} /> Add another recipient
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── QuoteDocumentsPanel ──────────────────────────────────────────────────────
+
+/**
+ * Attach reading material to a quote: brochures, warranty terms, a care guide.
+ *
+ * Uploads happen immediately rather than on save, because the bytes have to
+ * reach storage before the quote can reference them. The quote's `documents`
+ * array is what makes one appear on the customer's page, so a file uploaded
+ * here and never saved is an orphan in the bucket — harmless, and the price of
+ * not making the user wait for a save to find out their 20MB PDF was rejected.
+ *
+ * Removing takes the entry off the quote FIRST and deletes the bytes second:
+ * if the delete fails, the customer still stops seeing the document, which is
+ * what "remove" has to mean.
+ */
+function QuoteDocumentsPanel({ quoteId, documents, onChange, onError }) {
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef(null);
+
+  const addFiles = async (fileList) => {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+    setBusy(true);
+    const added = [];
+    for (const file of files) {
+      try {
+        added.push(await uploadQuoteDoc(quoteId, file));
+      } catch (err) {
+        onError?.(err.message || `Could not upload ${file.name}.`);
+      }
+    }
+    if (added.length) onChange([...(documents || []), ...added]);
+    setBusy(false);
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const rename = (id, name) =>
+    onChange((documents || []).map(d => (d.id === id ? { ...d, name } : d)));
+
+  const remove = (doc) => {
+    onChange((documents || []).filter(d => d.id !== doc.id));
+    removeQuoteDoc(doc);
+  };
+
+  return (
+    <div className="pt-4 space-y-3">
+      <p className="text-xs text-slate-500 leading-relaxed">
+        These appear on the customer&rsquo;s quote page and are linked in the email that goes with it.
+        Anyone the link is forwarded to can read them, so keep them to things the customer is meant
+        to see.
+      </p>
+
+      {(documents || []).length > 0 && (
+        <div className="space-y-2">
+          {documents.map(doc => (
+            <div key={doc.id} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+              <FileDown size={15} className="flex-shrink-0 text-slate-400" />
+              <input
+                value={doc.name}
+                onChange={e => rename(doc.id, e.target.value)}
+                onBlur={e => { if (!e.target.value.trim()) rename(doc.id, titleFromFilename(doc.path)); }}
+                aria-label="Name the customer sees"
+                className="flex-1 min-w-0 border border-transparent hover:border-slate-200 focus:border-amber-400 rounded-lg text-sm px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-100"
+              />
+              <span className="flex-shrink-0 text-[11px] text-slate-400 whitespace-nowrap">
+                {docKind(doc)} · {formatBytes(doc.sizeBytes)}
+              </span>
+              <a
+                href={quoteDocUrl(doc)} target="_blank" rel="noreferrer"
+                className="flex-shrink-0 text-[11px] font-medium text-slate-500 hover:text-amber-600 px-1.5"
+                title="Open the file as the customer will see it"
+              >
+                Open
+              </a>
+              <button
+                type="button" onClick={() => remove(doc)}
+                className="flex-shrink-0 p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                title="Remove from this quote"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <input
+        ref={inputRef} type="file" multiple accept={ACCEPT_ATTR} className="hidden"
+        onChange={e => addFiles(e.target.files)}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy || !quoteId}
+        className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm text-slate-400 hover:border-amber-400 hover:text-amber-600 transition-colors disabled:opacity-50"
+      >
+        {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+        {busy ? 'Uploading…' : 'Add a document'}
+      </button>
+      <p className="text-[11px] text-slate-400">PDF, Word, Excel, images or text. Up to 25MB each.</p>
+    </div>
+  );
+}
+
+/**
+ * What the customer's copy of this "choose one" will actually say.
+ *
+ * The customer's page does not print these option names as they are typed. It
+ * lifts the words the options share into a heading and leaves each card
+ * holding only the word that decides it, then adds a line saying what that
+ * word gets you. All of it is derived at render time, which means nobody
+ * chooses it and — without this panel — nobody writing the quote can see it.
+ *
+ * Two things it exists to make visible. One, how the names will be split, so
+ * a rename that wrecks the split is caught here and not by a customer. Two,
+ * when a wording falls outside the benefit list and that line silently does
+ * not appear.
+ *
+ * Same functions the customer page calls, so this cannot drift from it.
+ */
+function CustomerReadsPanel({ items }) {
+  const labels = (items || []).map(li => li.displayName || li.productNameSnapshot || '');
+  const diff = optionDiff(labels);
+
+  if (!diff) {
+    return (
+      <p className="pt-2 mt-1 border-t border-purple-100 text-[11px] leading-relaxed text-slate-400">
+        These names have too little in common to share a heading, so the customer sees each one in full —
+        which is the safe fallback, not a fault.
+      </p>
+    );
+  }
+
+  const sharedDesc = descriptionTail(
+    optionDiff((items || []).map(li => li.description || ''))?.shared || '',
+    diff.shared,
+  );
+
+  return (
+    <div className="pt-2 mt-1 border-t border-purple-100">
+      <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        <Eye size={11} /> The customer reads
+      </p>
+      <p className="text-xs font-medium text-slate-700">{diff.shared}</p>
+      {sharedDesc && <p className="text-[11px] leading-relaxed text-slate-500">{sharedDesc}</p>}
+      <div className="mt-1.5 space-y-1">
+        {diff.mids.map((mid, i) => {
+          const benefit = benefitFor(mid);
+          return (
+            <div key={i} className="text-[11px] leading-relaxed">
+              <span className="font-medium text-slate-700">{mid}</span>
+              {benefit
+                ? <span className="text-slate-500"> — {benefit}</span>
+                : <span className="text-amber-600"> — no benefit line matches this wording</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── MotorisationPanel ────────────────────────────────────────────────────────
+
+/**
+ * The remotes and chargers this quote will carry, and why.
+ *
+ * They are not editable rows because they are not stored: they are computed
+ * from whichever motors are live, so the customer picking two battery blinds
+ * instead of twelve changes the handsets and the charger count on its own.
+ * Staff still have to be able to SEE them before sending — a quote whose total
+ * includes $500 of accessories that appear nowhere in the editor is a quote
+ * nobody trusts.
+ *
+ * Where the customer has not chosen yet (every draft), the panel shows the
+ * maximum case — every motorised option taken — and says so.
+ */
+function MotorisationPanel({ lineItems, selectedIds, pricedItems }) {
+  // Today's prices out of the item library, not the quote's saved snapshot:
+  // this is the staff view of what saving will write, so it has to show the
+  // Settings price as it stands right now.
+  const presets = resolveAccessoryPresets(pricedItems);
+  const chosen = motorisationAccessories(lineItems, selectedIds, presets);
+  const max    = maxMotorisationAccessories(lineItems, presets);
+  const anyMotor = (lineItems || []).some(isMotorisedCovering);
+  // Nothing motorised anywhere on the quote: the rule has nothing to say.
+  if (!anyMotor) return null;
+
+  // Motors on the quote but nothing derived. Silence here reads as a bug, so
+  // say which of the two reasons it is — both are the rule deliberately
+  // standing aside, and both are things the person looking can act on.
+  if (!max.length) {
+    const { hasRemote, hasCharger } = existingAccessories(lineItems);
+    const unlocated = !(lineItems || []).some(li => isMotorisedCovering(li) && String(li.location || '').trim());
+    const why = unlocated
+      ? 'the motorised lines have no room on them, and the rule counts one remote per room. Give them a location and it will.'
+      : `this quote already lists ${[hasRemote && 'a remote', hasCharger && 'a charger'].filter(Boolean).join(' and ')} as a line of its own, so nothing is added on top.`;
+    return (
+      <div className="pt-2 border-t border-slate-100">
+        <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-1.5">
+          <Sparkles size={12} /> Motorisation accessories
+        </p>
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          Not adding remotes or chargers automatically: {why}
+        </p>
+      </div>
+    );
+  }
+
+  const showing = chosen.length ? chosen : max;
+  const isMaxCase = !chosen.length;
+  const total = showing.reduce((sum, li) => sum + Number(li.manualSellPrice || 0) * (Number(li.quantity) || 1), 0);
+
+  return (
+    <div className="pt-2 border-t border-slate-100">
+      <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-2">
+        <Sparkles size={12} /> Motorisation accessories — added automatically
+      </p>
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 space-y-1.5">
+        {showing.map(li => (
+          <div key={li.id} className="flex items-baseline justify-between gap-3 text-xs">
+            <span className="text-slate-700 min-w-0">
+              <span className="font-medium">{li.quantity} ×</span> {li.productNameSnapshot}
+              <span className="text-slate-400">
+                {' — '}{li.autoKind === 'charger'
+                  ? `one per ${BLINDS_PER_CHARGER} battery blinds`
+                  : li.location}
+              </span>
+            </span>
+            <span className="font-medium text-slate-600 whitespace-nowrap">
+              {fmt(Number(li.manualSellPrice || 0) * (Number(li.quantity) || 1))}
+            </span>
+          </div>
+        ))}
+        <div className="flex items-baseline justify-between gap-3 pt-1.5 border-t border-indigo-100 text-xs">
+          <span className="text-slate-500">
+            {isMaxCase
+              ? 'If the customer takes every motorised option'
+              : 'For the options currently selected'}
+          </span>
+          <span className="font-semibold text-slate-700">{fmt(total)}</span>
+        </div>
+      </div>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+        One remote per room with a motor in it (15-channel unless the room has a single blind),
+        and one charger per {BLINDS_PER_CHARGER} battery blinds for the whole job. These follow the
+        customer&rsquo;s choices on their quote &mdash; pick fewer motorised blinds and fewer appear,
+        pick none and they disappear &mdash; so there is nothing to add or remove here.
+      </p>
+    </div>
+  );
+}
+
 // ─── LineItemCard ─────────────────────────────────────────────────────────────
 
 function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock, measureSheetId, navigate }) {
@@ -864,6 +1263,24 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
                 <p className="text-[11px] text-slate-400 mt-0.5">Blocks acceptance until they pick, and hides the &ldquo;prefer none of these&rdquo; opt-out.</p>
               </div>
             </label>
+            {/* Which option is ticked when the customer first opens the quote.
+                A choice group with no default opens with nothing chosen and a
+                total that is missing the window entirely — so the customer
+                reads a figure that was never the price of the job. Setting the
+                standard option here means the quote opens at a real number and
+                the alternative reads as the upgrade it is. */}
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={item.preselected || false}
+                onChange={e => set('preselected', e.target.checked)}
+                className="mt-0.5 accent-purple-500"
+              />
+              <div>
+                <p className="text-xs font-medium text-slate-700">Tick this one by default</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">The customer opens the quote with this option chosen, and can switch.</p>
+              </div>
+            </label>
           </div>
         )}
       </div>}
@@ -878,7 +1295,7 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
  * summary bar, so reaching it means scrolling through everything the customer
  * will read. That is the whole point of routing the send through here.
  */
-function SendPreviewOverlay({ quote, recipient, isDraft, saving, onSend, onClose }) {
+function SendPreviewOverlay({ quote, recipient, ccContact, isDraft, saving, onSend, onClose }) {
 
   // Esc closes — the overlay covers the whole editor, so there has to be a way
   // out that isn't hunting for the button.
@@ -917,7 +1334,9 @@ function SendPreviewOverlay({ quote, recipient, isDraft, saving, onSend, onClose
                 </h2>
                 <p className="mt-2.5 max-w-[52ch] text-sm leading-relaxed text-slate-300">
                   {recipient
-                    ? <>Everything above goes to <span className="text-white">{recipient}</span> as a link they can open, choose their options on, and accept.</>
+                    ? <>Everything above goes to <span className="text-white">{recipient}</span>{ccContact
+                        ? <>, copied to <span className="text-white">{ccContact.name || ccContact.email}</span>{ccContact.name ? <> ({ccContact.email})</> : null}</>
+                        : null}, as a link they can open, choose their options on, and accept.</>
                     : <>This customer has no email address on file, so there is nowhere to send it. Add one on the customer record first.</>}
                   {!isDraft && ' They will see this version in place of the one they already have.'}
                 </p>
@@ -1030,6 +1449,9 @@ export default function QuoteBuilder() {
       // Attached on purpose from the Quote Details section — never inherited,
       // because a snapshot belongs to the quote that was priced against it.
       planSnapshot: null,
+      // Reading material for the customer, same reasoning: a brochure is
+      // attached to the quote it was chosen for, not inherited from the last.
+      documents: [],
       activity: [],
       comments: [],
       createdAt: new Date().toISOString(),
@@ -1497,9 +1919,19 @@ export default function QuoteBuilder() {
     }
     // A snapshot of the form as it stands — unsaved edits included, and
     // nothing is written or sent until Send is pressed at the bottom.
-    setSendPreview({ ...form, lineItems: form.lineItems.map(li => ({
-      ...li, displayName: describeLine(li, productTypes, wording),
-    })) });
+    //
+    // The accessory presets are re-resolved here rather than taken from the
+    // quote's stored snapshot: sending is what writes that snapshot, so the
+    // preview has to show the prices the send is about to use. Taken from the
+    // saved copy instead, a preview opened after a price change in Settings
+    // would quote the old figure and the customer would get the new one.
+    setSendPreview({
+      ...form,
+      motorisationPresets: resolveAccessoryPresets(pricedItems),
+      lineItems: form.lineItems.map(li => ({
+        ...li, displayName: describeLine(li, productTypes, wording),
+      })),
+    });
   };
 
   const handlePreview = async () => {
@@ -1530,14 +1962,17 @@ export default function QuoteBuilder() {
 
   const totals = computeQuoteTotals(
     form.lineItems, form.depositType, form.depositValue, form.gstRate, form.includesGST,
-    form.selectedLineItemIds || [], form.discountType, form.discountValue
+    // Against the defaults where nothing has been chosen — the staff total
+    // should read what the customer's quote will open at, not $0.
+    effectiveSelectedIds(form.lineItems, form.selectedLineItemIds),
+    form.discountType, form.discountValue,
+    // Live library prices, matching MotorisationPanel — saving snapshots
+    // these onto the quote, so what is shown here is what gets stored.
+    resolveAccessoryPresets(pricedItems)
   );
 
   const filteredCustomers = customers.filter(c =>
-    !customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-    c.email?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-    c.phone?.includes(customerSearch)
-  );
+    searchMatchAnywhere([c.name, c.email, c.phone], customerSearch));
 
   const selectedCustomer = customers.find(c => c.id === form.customerId);
 
@@ -1549,6 +1984,12 @@ export default function QuoteBuilder() {
         <SendPreviewOverlay
           quote={sendPreview}
           recipient={getCustomer(sendPreview.customerId)?.email || ''}
+          ccContact={(() => {
+            const c = getCustomer(sendPreview.customerId);
+            return c?.secondaryEmail
+              ? { name: c.secondaryName, email: c.secondaryEmail }
+              : null;
+          })()}
           isDraft={isDraft}
           saving={saving}
           onSend={handleSaveAndSend}
@@ -1710,6 +2151,18 @@ export default function QuoteBuilder() {
                   </div>
                 )}
               </div>
+
+              {/* Who the quote email goes to. Here rather than only on the
+                  customer record because this is where someone is standing
+                  when they realise a second person needs a copy, and sending
+                  them off to another page to add it is how it gets skipped. */}
+              {selectedCustomer && (
+                <RecipientsField
+                  customer={selectedCustomer}
+                  onSaved={msg => showToast('success', msg)}
+                  onError={msg => showToast('error', msg)}
+                />
+              )}
 
               {/* Site address */}
               <div>
@@ -2047,17 +2500,41 @@ export default function QuoteBuilder() {
                         it stays put while the room's items scroll under it.
                         An opaque fill because the theme's own surfaces are
                         ~50% transparent, and line items reading through a
-                        stuck heading is worse than no heading at all. */}
+                        stuck heading is worse than no heading at all.
+
+                        Shaped like the cards it labels, for the same reason
+                        the customer's copy is: a square band running out to
+                        both edges reads as a seam across the page rather than
+                        something floating over it. The rim and the radius are
+                        what make it look deliberate, and they do the job the
+                        rule under it used to do. */}
                     <div
                       style={{ backgroundColor: 'rgb(from var(--card) r g b / 1)' }}
-                      className="sticky top-0 z-10 flex items-baseline justify-between gap-3 py-2 -mx-1 px-1"
+                      className="sticky top-1 z-10 flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-[var(--border)] shadow-sm"
                     >
                       <h4 className="text-base font-semibold text-slate-800">{room}</h4>
-                      <span className="text-[11px] text-slate-400">
-                        {entries.length} item{entries.length === 1 ? '' : 's'}
-                      </span>
+                      {/* Same sentence the customer's room heading shows, from
+                          the same function — the editor saying "2 items" while
+                          their copy said "1 to choose" was a quiet way to not
+                          know what you had sent. */}
+                      {(() => {
+                        // Through the customer's defaults, not the raw field:
+                        // the editor never holds a customer's answers, so the
+                        // honest subject here is what someone opening the quote
+                        // right now would land on. A room reading "2 to choose"
+                        // is one where no default was set and the customer
+                        // arrives at an unanswered question.
+                        const st = roomDecisionStatus(
+                          entries,
+                          effectiveSelectedIds(form.lineItems, form.selectedLineItemIds),
+                        );
+                        return (
+                          <span className={`text-[11px] ${st.open ? 'text-amber-600' : 'text-slate-400'}`}>
+                            {st.text}
+                          </span>
+                        );
+                      })()}
                     </div>
-                    <hr className="border-slate-100 -mt-1" />
                     {entries.map(entry => (
                       <div key={entry.key} className="flex items-start gap-2.5">
                         {/* A / B / C — the window reference, read straight out
@@ -2100,6 +2577,9 @@ export default function QuoteBuilder() {
                                     inBlock={!!block.eyebrow}
                                   />
                                 ))}
+                                {block.kind === 'choice' && block.items.length > 1 && (
+                                  <CustomerReadsPanel items={block.items} />
+                                )}
                               </div>
                             </div>
                           ))}
@@ -2120,13 +2600,16 @@ export default function QuoteBuilder() {
                 </button>
               )}
 
+              {/* Motorisation accessories — derived, not stored */}
+              <MotorisationPanel lineItems={form.lineItems} selectedIds={form.selectedLineItemIds || []} pricedItems={pricedItems} />
+
               {/* Parts & Accessories quick-add */}
               <div className="pt-2 border-t border-slate-100">
                 <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-2">
                   <Package size={12} /> Parts &amp; Accessories — quick add
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {PRESET_PARTS.map(p => (
+                  {presetParts(pricedItems).map(p => (
                     <button
                       key={p.name}
                       type="button"
@@ -2147,6 +2630,16 @@ export default function QuoteBuilder() {
               </div>
             </div>
           </Card>
+
+          {/* Section 3b: Documents for the customer */}
+          <Section title="Documents for the customer" icon={Paperclip} defaultOpen={false}>
+            <QuoteDocumentsPanel
+              quoteId={form.id}
+              documents={form.documents || []}
+              onChange={docs => set('documents', docs)}
+              onError={msg => showToast('error', msg)}
+            />
+          </Section>
 
           {/* Section 4: Terms & Conditions */}
           <Section title="Terms & Conditions" icon={FileText} defaultOpen={false}>

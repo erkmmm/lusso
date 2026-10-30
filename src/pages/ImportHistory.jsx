@@ -6,7 +6,7 @@ import {
   History, Users, Library, Download, Search,
   ChevronDown, Filter, FileText,
 } from 'lucide-react';
-import { getImportBatches, getPricedItemBatches } from '../store/data';
+import { getImportBatches, getPricedItemBatches, searchMatchAnywhere } from '../store/data';
 import Card from '../components/Card';
 
 function csvEscape(v) {
@@ -73,13 +73,7 @@ export default function ImportHistory() {
         const d = new Date(b.completedAt || b.createdAt);
         if (d < rangeStart) return false;
       }
-      if (search) {
-        const q = search.toLowerCase();
-        if (
-          !b.fileName?.toLowerCase().includes(q) &&
-          !b.uploadedBy?.toLowerCase().includes(q)
-        ) return false;
-      }
+      if (!searchMatchAnywhere([b.fileName, b.uploadedBy], search)) return false;
       return true;
     });
   }, [allBatches, filterType, filterStatus, filterDate, search]);

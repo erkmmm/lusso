@@ -18,6 +18,16 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+/** Valid enough to hand to the mail provider. Deliberately permissive. */
+const isEmail = (v) => typeof v === 'string' && /^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(v.trim());
+
+const formatBytes = (n) => {
+  const b = Number(n) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(b < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+};
+
 const json = (status, body) =>
   new Response(JSON.stringify(body), {
     status,
@@ -35,6 +45,7 @@ export async function onRequestPost(context) {
 
   const RESEND_API_KEY = context.env.RESEND_API_KEY;
   const FROM_ADDRESS   = context.env.EMAIL_FROM || 'Lusso <onboarding@resend.dev>';
+  const SUPABASE_URL   = context.env.SUPABASE_URL || context.env.VITE_SUPABASE_URL || '';
 
   // ── Parse request body ────────────────────────────────────────────────────
   let body;
@@ -76,6 +87,20 @@ export async function onRequestPost(context) {
   // read as a new quote and leave the customer hunting for what changed.
   const isFollowUp = !!followUp;
 
+  // Documents the customer should read, as absolute links. Built here rather
+  // than trusted from the client: the caller sends the quote object, and a
+  // url field on it would be an open redirect dressed up as a brochure.
+  // Only our own storage host is linked, and only http(s).
+  const docBase = SUPABASE_URL ? `${SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/quote-docs/` : '';
+  const documents = (!docBase ? [] : Array.isArray(quote.documents) ? quote.documents : [])
+    .filter(d => d && typeof d.path === 'string' && d.path && !d.path.includes('..'))
+    .slice(0, 10)
+    .map(d => ({
+      label: String(d.name || 'Document').slice(0, 120),
+      url:   docBase + d.path.split('/').map(encodeURIComponent).join('/'),
+      meta:  d.sizeBytes ? formatBytes(d.sizeBytes) : '',
+    }));
+
   // One subject, used for both the send and the communications log. These were
   // two separate literals, so changing the email's subject silently left the
   // audit trail claiming something different had been sent.
@@ -88,6 +113,15 @@ export async function onRequestPost(context) {
   // thread. With a per-conversation Reply-To it goes where the copy has always
   // implied it goes. Best-effort: null simply means the generic address and no
   // promise about where a reply lands.
+  // Who else gets a copy: the customer's second contact. Never the primary
+  // address twice — Resend would deliver two copies of the same email to the
+  // same person — and never a malformed one, which Resend rejects outright
+  // and would take the whole send down with it.
+  const ccList = [customer.secondaryEmail]
+    .filter(isEmail)
+    .map(e => e.trim())
+    .filter(e => e.toLowerCase() !== String(customer.email).trim().toLowerCase());
+
   const callerToken  = bearerToken(context);
   const replyAddress = await replyAddressFor(context, callerToken, {
     jobId:      quote.jobId,
@@ -111,6 +145,10 @@ export async function onRequestPost(context) {
         { label: 'Valid until',  value: expiryFmt || '' },
       ],
     },
+    // Reading material attached to the quote. The quote page lists these too —
+    // they are repeated here because the email is what lands in front of
+    // someone, and "it's on the page" is one click more than most people make.
+    linkList: documents.length ? { label: 'Attachments', items: documents } : null,
     cta:   { label: isFollowUp ? 'View your quote again' : 'View your quote', url: quoteUrl },
     outro: isFollowUp
       ? "If the timing isn't right, just reply and say so — we'd rather know than keep chasing."
@@ -132,6 +170,10 @@ export async function onRequestPost(context) {
       body: JSON.stringify({
         from:     FROM_ADDRESS,
         to:       [customer.email],
+        // The second decision-maker on the customer record — a partner, an
+        // office manager. CC rather than a second `to` so each of them can see
+        // the other has it, which is the whole point of copying them in.
+        cc:       ccList.length ? ccList : undefined,
         reply_to: replyAddress || context.env.EMAIL_REPLY_TO || undefined,
         subject,
         html,
@@ -156,9 +198,12 @@ export async function onRequestPost(context) {
       externalId: resendData?.id,
       to:         customer.email,
       subject,
-      body:       isFollowUp
-        ? `Follow-up on quote ${quoteRef} emailed to ${customer.email}.`
-        : `Quote ${quoteRef} emailed to ${customer.email}.`,
+      body:       (isFollowUp
+        ? `Follow-up on quote ${quoteRef} emailed to ${customer.email}`
+        : `Quote ${quoteRef} emailed to ${customer.email}`)
+        + (ccList.length ? `, copied to ${ccList.join(', ')}` : '')
+        + (documents.length ? ` with ${documents.length} document${documents.length === 1 ? '' : 's'}` : '')
+        + '.',
       customerId: customer.id,
       jobId:      quote.jobId,
     });

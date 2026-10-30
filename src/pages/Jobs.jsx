@@ -13,6 +13,7 @@ import UrgencyBadge from '../components/UrgencyBadge';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
 import { format, parseISO, startOfDay, addDays } from 'date-fns';
+import { effectiveSelectedIds } from '../lib/quoteSelection';
 
 const fmt$ = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
 // Safe short date — tolerates missing / odd timestamps from sync.
@@ -245,7 +246,7 @@ export default function Jobs() {
       const accepted = list.find(q => q.status === 'Accepted');
       const chosen = accepted || list.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
       const total = chosen
-        ? (chosen.grandTotal ?? computeQuoteTotals(chosen.lineItems, chosen.depositType, chosen.depositValue, chosen.gstRate, chosen.includesGST, chosen.selectedLineItemIds || [], chosen.discountType, chosen.discountValue).total)
+        ? (chosen.grandTotal ?? computeQuoteTotals(chosen.lineItems, chosen.depositType, chosen.depositValue, chosen.gstRate, chosen.includesGST, effectiveSelectedIds(chosen.lineItems, chosen.selectedLineItemIds), chosen.discountType, chosen.discountValue, chosen.motorisationPresets).total)
         : 0;
       val.set(jobId, total);
     });

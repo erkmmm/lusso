@@ -9,11 +9,7 @@ import {
   UserCheck, UserPlus,
 } from 'lucide-react';
 import AddressAutocomplete from '../components/AddressAutocomplete';
-import {
-  getCustomers, getJobs, saveMeasureSheet, getMeasureSheetsByJob,
-  getActiveProductTypes, getCustomer, createJobFromMeasureSheet,
-  saveCustomer,
-} from '../store/data';
+import { getCustomers, getJobs, saveMeasureSheet, getMeasureSheetsByJob, getActiveProductTypes, getCustomer, createJobFromMeasureSheet, saveCustomer, searchMatchAnywhere } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
 
@@ -362,9 +358,7 @@ export default function ImportMeasureSheet() {
     if (!customerSearch.trim() || customerSearch.length < 2) return [];
     const q = customerSearch.toLowerCase();
     return allCustomers.filter(c =>
-      (c.name || '').toLowerCase().includes(q) ||
-      (c.phone || '').includes(q) ||
-      (c.email || '').toLowerCase().includes(q)
+      searchMatchAnywhere([c.name, c.phone, c.email], q)
     ).slice(0, 6);
   }, [customerSearch, allCustomers]);
 

@@ -18,6 +18,7 @@ import { deliverQuote } from '../lib/quoteDelivery';
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
+import { effectiveSelectedIds } from '../lib/quoteSelection';
 
 const fmt = (n) => `$${Math.round(n).toLocaleString('en-AU')}`;
 
@@ -111,7 +112,7 @@ export default function Quotes() {
     const custName = new Map(customers.map(c => [c.id, c.name || '']));
     const totalOf = new Map(quotes.map(q => [
       q.id,
-      q.grandTotal ?? computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, q.selectedLineItemIds || [], q.discountType, q.discountValue).total,
+      q.grandTotal ?? computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, effectiveSelectedIds(q.lineItems, q.selectedLineItemIds), q.discountType, q.discountValue, q.motorisationPresets).total,
     ]));
     const nameOf = (q) => custName.get(q.customerId) || '';
     const madeAt = (q) => new Date(q.createdAt || q.updatedAt || 0).getTime();
@@ -150,9 +151,9 @@ export default function Quotes() {
   const visible = filtered.slice(0, visibleCount);
 
   const stats = useMemo(() => {
-    const allTotal      = quotes.reduce((s, q) => s + (q.grandTotal ?? computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, q.selectedLineItemIds || [], q.discountType, q.discountValue).total), 0);
+    const allTotal      = quotes.reduce((s, q) => s + (q.grandTotal ?? computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, effectiveSelectedIds(q.lineItems, q.selectedLineItemIds), q.discountType, q.discountValue, q.motorisationPresets).total), 0);
     const accepted      = quotes.filter(q => q.status === 'Accepted');
-    const acceptedTotal = accepted.reduce((s, q) => s + (q.grandTotal ?? computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, q.selectedLineItemIds || [], q.discountType, q.discountValue).total), 0);
+    const acceptedTotal = accepted.reduce((s, q) => s + (q.grandTotal ?? computeQuoteTotals(q.lineItems, q.depositType, q.depositValue, q.gstRate, q.includesGST, effectiveSelectedIds(q.lineItems, q.selectedLineItemIds), q.discountType, q.discountValue, q.motorisationPresets).total), 0);
     const inProgress    = quotes.filter(q => ['Sent', 'Viewed', 'Waiting'].includes(q.status)).length;
     return { total: quotes.length, allTotal, accepted: accepted.length, acceptedTotal, inProgress };
   }, [quotes]);
@@ -391,7 +392,7 @@ export default function Quotes() {
 
           {visible.map(quote => {
             const cust      = customers.find(c => c.id === quote.customerId);
-            const total     = quote.grandTotal ?? computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, quote.selectedLineItemIds || [], quote.discountType, quote.discountValue).total;
+            const total     = quote.grandTotal ?? computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, effectiveSelectedIds(quote.lineItems, quote.selectedLineItemIds), quote.discountType, quote.discountValue, quote.motorisationPresets).total;
             const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
             const isOverdue  = isQuoteOverdue(quote);
             const reqCount   = quote.lineItems.filter(li => li.type === 'Required').length;

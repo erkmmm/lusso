@@ -12,7 +12,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, Package, Tag } from 'lucide-react';
-import { getPricedItems } from '../store/data';
+import { getPricedItems, searchMatchAnywhere } from '../store/data';
 
 export default function PricedItemPicker({
   value = '',
@@ -68,19 +68,13 @@ export default function PricedItemPicker({
   const q = query.trim().toLowerCase();
   const matchedItems = useMemo(() => (
     q
-      ? allItems.filter(i =>
-          (i.itemName    || '').toLowerCase().includes(q) ||
-          (i.itemCode    || '').toLowerCase().includes(q) ||
-          (i.category    || '').toLowerCase().includes(q) ||
-          (i.sku         || '').toLowerCase().includes(q) ||
-          (i.description || '').toLowerCase().includes(q) ||
-          (i.supplier    || '').toLowerCase().includes(q)
-        )
+      ? allItems.filter(i => searchMatchAnywhere(
+          [i.itemName, i.itemCode, i.category, i.sku, i.description, i.supplier], q))
       : allItems
   ), [allItems, q]);
 
   const matchedTypes = useMemo(
-    () => productTypes.filter(pt => !q || pt.name.toLowerCase().includes(q)),
+    () => productTypes.filter(pt => searchMatchAnywhere([pt.name], q)),
     [productTypes, q],
   );
 

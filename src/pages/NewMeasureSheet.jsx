@@ -9,18 +9,11 @@ import {
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Copy, Printer, Maximize2, Minimize2, StickyNote, History, RotateCcw, Tag, GitBranch,
+  Copy, Printer, Maximize2, Minimize2, StickyNote, History, RotateCcw, Tag, GitBranch, Check,
 } from 'lucide-react';
-import {
-  saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob,
-  getNotes, isTaskOpen, linkNotesToJob,
-  getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes,
-  getMsOptions, URGENCY_LEVELS,
-  MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers,
-  isPlanEstimate, markLineCheckMeasured, markLinePlanEstimate,
-  buildLimitsResolver, getProductDocument, sheetContentScore, getMeasureSheets,
-} from '../store/data';
+import { saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob, getNotes, isTaskOpen, linkNotesToJob, getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes, getMsOptions, URGENCY_LEVELS, MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers, isPlanEstimate, markLineCheckMeasured, markLinePlanEstimate, buildLimitsResolver, getProductDocument, sheetContentScore, getMeasureSheets, searchMatchAnywhere } from '../store/data';
 import { evaluateLine } from '../lib/productLimits';
+import { OPTION_FAMILIES, familyMapFor, familyOfLine, hasBuiltInFamilies } from '../lib/optionFamilies';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
@@ -67,14 +60,12 @@ function searchCustomers(query, customers) {
   if (!query || query.trim().length < 2) return [];
   const q = query.toLowerCase().trim();
   const qPhone = cleanPhone(query);
-  return customers.filter(c => {
-    const fields = [
-      c.name, c.company, c.email, c.address, c.suburb,
-    ].map(f => (f || '').toLowerCase());
-    const phoneFields = [cleanPhone(c.phone), cleanPhone(c.mobile)];
-    return fields.some(f => f.includes(q)) ||
-      (qPhone.length >= 6 && phoneFields.some(f => f.includes(qPhone)));
-  }).slice(0, 8);
+  return customers.filter(c =>
+    searchMatchAnywhere([c.name, c.company, c.email, c.address, c.suburb], q)
+    // Phone stays its own test: it is matched on digits only, and only once
+    // enough of them are typed to mean anything.
+    || (qPhone.length >= 6 && [cleanPhone(c.phone), cleanPhone(c.mobile)].some(f => f.includes(qPhone)))
+  ).slice(0, 8);
 }
 
 function findDuplicates(name, phone, email, address, customers) {
@@ -293,6 +284,90 @@ function SpecSelect({ label, value, onChange, options }) {
 // An unfinished line says so. On a twenty-line sheet the gap you left in the
 // back bedroom is invisible until the order bounces, so a line missing a room,
 // a product or a size carries a dot here.
+/**
+ * "Add option" — the question the customer asks while you are at the window.
+ *
+ * Offers the ways this product can be operated that the line is not already
+ * quoted as. Ticking one or more clones the opening per family and sets only
+ * the operation on each, so the measure sheet carries the choice instead of
+ * someone having to remember it and rebuild it at quoting time.
+ *
+ * Hidden on products nothing is configured for — a "Battery" alternative on a
+ * shutter is a line the factory cannot make.
+ */
+function OptionFamilyPicker({ item, productType, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState([]);
+
+  const configured = hasBuiltInFamilies(productType) || !!productType?.options?.optionFamilies;
+  const current = familyOfLine(item, productType);
+  const offerable = OPTION_FAMILIES.filter(f => f.key !== current);
+
+  if (!productType || !configured || !offerable.length) return null;
+
+  const toggle = (key) => setPicked(p => (p.includes(key) ? p.filter(k => k !== key) : [...p, key]));
+  const confirm = () => { onAdd(picked); setPicked([]); setOpen(false); };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        title="Offer this opening operated another way — the customer picks one"
+        className={`flex items-center gap-1.5 text-xs font-medium rounded-lg px-2.5 py-1.5 border transition-colors ${
+          open ? 'bg-slate-900 text-white border-slate-900' : 'text-slate-500 border-slate-200 hover:bg-slate-50'
+        }`}
+      >
+        <Plus size={13} /> Add option
+      </button>
+
+      {open && (
+        <>
+          {/* Tapping anywhere else puts it away — on a phone, held one-handed
+              at a window, there is no spare corner to aim at. */}
+          <div className="fixed inset-0 z-20" onClick={() => { setPicked([]); setOpen(false); }} />
+          <div className="absolute left-0 z-30 mt-1.5 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+            <p className="px-1.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Also quote this window as
+            </p>
+            {offerable.map((f) => {
+              const on = picked.includes(f.key);
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => toggle(f.key)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-2 text-left hover:bg-slate-50"
+                >
+                  <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${
+                    on ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300'
+                  }`}>
+                    {on && <Check size={11} />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium text-slate-700">{f.label}</span>
+                    <span className="block text-[11px] text-slate-400">{f.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              disabled={!picked.length}
+              onClick={confirm}
+              className="mt-1.5 w-full rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white disabled:bg-slate-200 disabled:text-slate-400"
+            >
+              {picked.length
+                ? `Add ${picked.length} option${picked.length > 1 ? 's' : ''}`
+                : 'Choose at least one'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function LineSummary({ item, idx, open, issues, onToggle }) {
   const size = item.widthMm && item.dropMm
     ? `${item.widthMm} × ${item.dropMm}`
@@ -1162,6 +1237,53 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
     setOpenCards(new Set([id]));
   }, []);
 
+  /**
+   * Offer this same opening operated another way.
+   *
+   * The ask is always the same on site — "what would the motorised one be?" —
+   * and until now answering it meant remembering the conversation until
+   * quoting time and then rebuilding the line by hand. This clones the
+   * opening and changes ONLY the operation, so the alternatives cannot drift
+   * apart on room, size, product or fabric: the things that make them the
+   * same window are copied, and the one thing the customer is choosing
+   * between is set.
+   *
+   * The original is folded into the group rather than replaced, because it is
+   * the line that was actually measured and may already be check-measured.
+   */
+  const addOptionFamilies = useCallback((idx, keys) => {
+    if (!keys || !keys.length) return;
+    const newIds = [];
+    setSheet(s => {
+      const source = s.lineItems[idx];
+      if (!source) return s;
+      const productType = productTypes.find(p => p.id === source.productTypeId) || null;
+      const map = familyMapFor(productType);
+      const groupId = source.choiceGroupId
+        || (source.location || '').trim().toLowerCase().replace(/\s+/g, '-')
+        || `choice-${uuidv4().slice(0, 6)}`;
+      const items = [...s.lineItems];
+      items[idx] = { ...source, choiceGroupId: groupId };
+      const clones = keys.map((key) => {
+        const id = uuidv4();
+        newIds.push(id);
+        return {
+          ...source,
+          id,
+          choiceGroupId: groupId,
+          trackType: map[key] || '',
+          // A chain line has no motor side and a motorised one has no chain
+          // colour. Carried over, they turn up on the factory paperwork as a
+          // motor fitted to a blind that was ordered with a chain.
+          ...(key === 'chain' ? { motorSide: '' } : { chainColour: '' }),
+        };
+      });
+      items.splice(idx + 1, 0, ...clones);
+      return { ...s, lineItems: items };
+    });
+    setOpenCards(new Set(newIds));
+  }, [productTypes]);
+
   const removeLineItem = useCallback((idx) => {
     allowShrinkRef.current = true;   // a deliberate delete may legitimately shrink the sheet
     setSheet(s => (
@@ -1990,7 +2112,12 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                         />
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 -mt-0.5">
+                    {/* Clear of the fields above, not tucked under them: this
+                        row used to carry a negative top margin and a 4px gap,
+                        which read as the buttons being part of the Location
+                        input rather than actions on the whole line. Wraps on a
+                        phone instead of squeezing. */}
+                    <div className="flex flex-wrap items-center gap-2 mt-3">
                       <CheckMeasureControl
                         item={item}
                         onConfirm={() => confirmLineMeasured(idx)}
@@ -2025,6 +2152,14 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                       >
                         <GitBranch size={13} /> Alternative
                       </button>
+                      {/* The motorisation version of the button above it: same
+                          idea, but it knows what it is cloning, so nothing has
+                          to be re-picked afterwards. */}
+                      <OptionFamilyPicker
+                        item={item}
+                        productType={productType}
+                        onAdd={(keys) => addOptionFamilies(idx, keys)}
+                      />
                       <span className="flex-1" />
                       <button onClick={() => copyLineItem(idx)}
                         className="text-slate-300 hover:text-amber-500 transition-colors p-1.5 rounded" title="Copy to new line">

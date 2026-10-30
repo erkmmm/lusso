@@ -117,6 +117,33 @@ function noteBlocksHtml(blocks = []) {
 }
 
 /**
+ * A list of real, clickable links — documents sent with a quote, and anything
+ * else where the recipient has to be able to open the thing rather than read
+ * about it. Separate from noteBlocks because those run through richText, which
+ * escapes HTML: a URL pasted into one arrives as text nobody can click.
+ *
+ * Only http(s) is rendered. Anything else is dropped rather than escaped into
+ * the page — an email is the last place a `javascript:` href should survive.
+ */
+function linkListHtml(list) {
+  const items = (list?.items || []).filter(i => i && i.url && /^https?:\/\//i.test(i.url));
+  if (!items.length) return '';
+  return `
+    <div style="margin:0 0 20px;">
+      ${list.label ? `<div style="font-family:${FONT};font-size:9.5px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:${BRAND.stone};padding-bottom:7px;">${escapeHtml(list.label)}</div>` : ''}
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        ${items.map(i => `
+        <tr><td style="padding:0 0 8px;">
+          <a href="${escapeHtml(i.url)}" style="display:block;background:${BRAND.paper};border:1px solid ${BRAND.mist};border-radius:8px;padding:13px 16px;font-family:${FONT};font-size:14px;line-height:1.5;color:${BRAND.ink};text-decoration:none;">
+            ${escapeHtml(i.label || 'Document')}${i.meta ? ` <span style="color:${BRAND.stone};font-size:12px;">· ${escapeHtml(i.meta)}</span>` : ''}
+            <span style="color:${BRAND.bronze};">&nbsp;&rarr;</span>
+          </a>
+        </td></tr>`).join('')}
+      </table>
+    </div>`;
+}
+
+/**
  * A data table — the installer's measure sheet. `align` is a per-column
  * 'left' | 'right' | 'center' list.
  */
@@ -154,6 +181,10 @@ function tableHtml(table) {
  * @param {string}  o.body       Body copy; newlines become line breaks.
  * @param {object}  o.panel      { title, subtitle, rows:[{label,value,strong}] }
  * @param {Array}   o.noteBlocks [{ label, text }] — bordered note panels.
+ * @param {object}  o.linkList   { label, items:[{label, url, meta}] } — a list
+ *                               of clickable links. Use this, not noteBlocks,
+ *                               whenever the recipient must be able to open
+ *                               something: noteBlocks escape their text.
  * @param {object}  o.table      { caption, head, rows, align } — data table.
  * @param {object}  o.cta        { label, url }
  * @param {object}  o.ctaSecondary  Optional outline button beside the CTA.
@@ -178,6 +209,7 @@ export function renderEmail({
   body = '',
   panel = null,
   noteBlocks = [],
+  linkList = null,
   table = null,
   cta = null,
   ctaSecondary = null,
@@ -223,6 +255,7 @@ export function renderEmail({
       ${body ? `<p style="margin:0 0 26px;font-family:${FONT};font-size:15px;line-height:1.65;color:${BRAND.graphite};">${richText(body)}</p>` : ''}
       ${panelHtml(panel)}
       ${noteBlocksHtml(noteBlocks)}
+      ${linkListHtml(linkList)}
       ${tableHtml(table)}
       ${ctaNote ? `<p style="margin:0 0 14px;font-family:${FONT};font-size:14px;line-height:1.65;color:${BRAND.graphite};">${richText(ctaNote)}</p>` : ''}
       ${ctaHtml(cta, ctaSecondary)}
@@ -262,7 +295,7 @@ export function renderEmail({
  * Plain-text alternative. Sending one alongside the HTML measurably improves
  * deliverability and is what text-only clients and screen readers fall back to.
  */
-export function renderText({ greeting = '', body = '', panel = null, cta = null, outro = '', signOff = 'The Lusso Team', replyNote = '', footerLink = null } = {}) {
+export function renderText({ greeting = '', body = '', panel = null, linkList = null, cta = null, outro = '', signOff = 'The Lusso Team', replyNote = '', footerLink = null } = {}) {
   const out = [];
   if (greeting) out.push(greeting);
   if (body) out.push(body);
@@ -272,6 +305,12 @@ export function renderText({ greeting = '', body = '', panel = null, cta = null,
     if (panel.subtitle) lines.push(panel.subtitle);
     (panel.rows || []).filter(r => r && r.value != null && r.value !== '').forEach(r => lines.push(`${r.label}: ${r.value}`));
     if (lines.length) out.push(lines.join('\n'));
+  }
+  // Same links as the HTML, so a plain-text reader isn't told about documents
+  // it has no way to open.
+  const links = (linkList?.items || []).filter(i => i && i.url && /^https?:\/\//i.test(i.url));
+  if (links.length) {
+    out.push([linkList.label || 'Documents', ...links.map(i => `${i.label || 'Document'}: ${i.url}`)].join('\n'));
   }
   if (cta?.url) out.push(`${cta.label}: ${cta.url}`);
   if (outro) out.push(outro);

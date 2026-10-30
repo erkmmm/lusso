@@ -7,7 +7,7 @@ import {
   CheckCircle2, XCircle, ChevronRight, Wrench, Save,
   Trash2, CheckSquare, Square, AlertTriangle,
 } from 'lucide-react';
-import { getInstallers, saveInstaller, deleteInstaller, bulkDeleteInstallers, getInstallRequestsByInstaller, INSTALLER_SERVICES } from '../store/data';
+import { getInstallers, saveInstaller, deleteInstaller, bulkDeleteInstallers, getInstallRequestsByInstaller, INSTALLER_SERVICES, searchMatchAnywhere } from '../store/data';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 
@@ -80,10 +80,8 @@ export default function Installers() {
     if (filter === 'active')   list = list.filter(i => i.isActive);
     if (filter === 'inactive') list = list.filter(i => !i.isActive);
     if (search) {
-      const term = search.toLowerCase();
-      list = list.filter(i =>
-        [i.name, i.businessName, i.email, i.phone, i.serviceAreas].join(' ').toLowerCase().includes(term)
-      );
+      list = list.filter(i => searchMatchAnywhere(
+        [i.name, i.businessName, i.email, i.phone, i.serviceAreas], search));
     }
     return list;
   }, [installers, search, filter]);

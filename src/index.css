@@ -1726,3 +1726,8 @@ button:not(:disabled):active {
 @media (pointer: coarse) {
   .ms-cell-input { font-size: 16px; }
 }
+
+/* Controls that make a document must not appear in the document. */
+@media print {
+  [data-noprint="true"] { display: none !important; }
+}

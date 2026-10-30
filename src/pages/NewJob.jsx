@@ -21,10 +21,7 @@ import {
 } from 'lucide-react';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import AddressAutocomplete from '../components/AddressAutocomplete';
-import {
-  getCustomers, getCustomer, saveCustomer, createJob,
-  JOB_STATUSES,
-} from '../store/data';
+import { getCustomers, getCustomer, saveCustomer, createJob, JOB_STATUSES, searchMatchAnywhere } from '../store/data';
 import Card from '../components/Card';
 
 // ─── Shared input styles ──────────────────────────────────────────────────────
@@ -108,11 +105,10 @@ export default function NewJob() {
   const filteredCustomers = useMemo(() => {
     const q = customerSearch.trim().toLowerCase();
     if (q.length < 2) return [];
-    return allCustomers.filter(c =>
-      (c.name  || '').toLowerCase().includes(q) ||
-      (c.phone || '').replace(/\s/g, '').includes(q.replace(/\s/g, '')) ||
-      (c.email || '').toLowerCase().includes(q)
-    ).slice(0, 8);
+    // The phone goes in twice — as typed and with its spaces stripped — so
+    // "0412 345" still finds a number stored as "0412345678".
+    return allCustomers.filter(c => searchMatchAnywhere(
+      [c.name, c.phone, String(c.phone || '').replace(/\s/g, ''), c.email], q)).slice(0, 8);
   }, [customerSearch, allCustomers]);
 
   // ── Customer actions ───────────────────────────────────────────────────────

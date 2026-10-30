@@ -21,6 +21,7 @@ import Card from '../components/Card';
 import { deliverQuote } from '../lib/quoteDelivery';
 import { supabase } from '../lib/supabase';
 import { xeroCreateInvoice, xeroSyncInvoice, xeroInvoiceStatusBadge } from '../lib/xero';
+import { effectiveSelectedIds } from '../lib/quoteSelection';
 
 // ── Live threshold: consider "viewing now" if heartbeat within 90s ────────────
 const LIVE_THRESHOLD_S = 90;
@@ -155,7 +156,7 @@ export default function QuoteView() {
 
   const customer   = getCustomer(quote.customerId);
   const job        = quote.jobId ? getJob(quote.jobId) : null;
-  const totals     = computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, quote.selectedLineItemIds || [], quote.discountType, quote.discountValue);
+  const totals     = computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, effectiveSelectedIds(quote.lineItems, quote.selectedLineItemIds), quote.discountType, quote.discountValue, quote.motorisationPresets);
   const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
   const isOverdue  = isQuoteOverdue(quote);
 

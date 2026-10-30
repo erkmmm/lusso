@@ -5,8 +5,12 @@ import {
   getQuote, getCustomer, getQuoteSettings, fetchPublicQuoteSettings, googleReviewsLink,
   computeQuoteTotals, linePricing, markQuoteViewed, acceptQuote, declineQuote,
 } from '../store/data';
+import { optionDiff, benefitFor, descriptionTail } from '../lib/optionCompare';
+import { downloadQuotePdf } from '../lib/quoteDocument';
 import { supabase } from '../lib/supabase';
-import { quoteSections, unansweredChoices } from '../lib/quoteSections';
+import { quoteSections, unansweredChoices, roomDecisionStatus } from '../lib/quoteSections';
+import { withMotorisationAccessories } from '../lib/motorisationAccessories';
+import { quoteDocUrl, docKind, formatBytes } from '../lib/quoteDocs';
 import { useQuoteTracking } from '../hooks/useQuoteTracking';
 import usePublicPage from '../lib/usePublicPage';
 
@@ -146,6 +150,7 @@ const card = {
   backdropFilter: T.frost, WebkitBackdropFilter: T.frost,
 };
 const fieldLabel = { fontSize: 9.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.stone };
+
 const hairline = { height: '0.5px', background: T.mist, margin: '16px 0', border: 0 };
 
 /**
@@ -703,6 +708,23 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // looks exactly like its neighbours leaves them hunting for what moved.
   const groupNodes = useRef(new Map());
   const [flashKey, setFlashKey] = useState(null);
+
+  // Wide enough to park the contents beside the quote instead of behind a tap.
+  // The container is 1200px, so past this the option cards were running to well
+  // over a thousand pixels of line length — the rail spends that width on
+  // something useful and brings the cards back to a readable measure.
+  const WIDE = '(min-width: 1040px)';
+  const [isWide, setIsWide] = useState(() => (typeof window !== 'undefined' && window.matchMedia)
+    ? window.matchMedia(WIDE).matches
+    : false);
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const mq = window.matchMedia(WIDE);
+    const onChange = (e) => setIsWide(e.matches);
+    mq.addEventListener('change', onChange);
+    setIsWide(mq.matches);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
   const flashTimer = useRef(null);
   const [planHighlight, setPlanHighlight] = useState(null);
   // The details rail starts folded, and only on a phone: the CSS reveals it
@@ -783,7 +805,18 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   if (quote?.id && seededFor !== quote.id) {
     setSeededFor(quote.id);
     const saved = quote.selectedLineItemIds;
-    if (Array.isArray(saved) && saved.length) setSelectedOptionals(saved);
+    if (Array.isArray(saved) && saved.length) {
+      setSelectedOptionals(saved);
+    } else {
+      // Nothing chosen yet, so open on the defaults the quote was built with.
+      // A quote that is all "choose one" with no default opens at a total
+      // missing every window — the customer reads a price that was never the
+      // price of the job, and has to tick twelve boxes to find the real one.
+      const defaults = (quote.lineItems || [])
+        .filter(li => li.preselected && (li.type === 'Optional' || li.type === 'Multiple Choice'))
+        .map(li => li.id);
+      if (defaults.length) setSelectedOptionals(defaults);
+    }
   }
 
   const isFirstOpen = !quote?.firstOpenedAt;
@@ -821,24 +854,25 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const gstRate = quote.gstRate || 10;
   const totals = computeQuoteTotals(
     quote.lineItems, quote.depositType, quote.depositValue, gstRate, quote.includesGST,
-    selectedOptionals, quote.discountType, quote.discountValue,
+    selectedOptionals, quote.discountType, quote.discountValue, quote.motorisationPresets,
   );
 
-  // ── Prices as the customer has to pay them ───────────────────────────────
+  // ── How GST is presented ─────────────────────────────────────────────────
   // `includesGST` means GST is ADDED on top (the Xero-exclusive convention), so
-  // every figure computeQuoteTotals and linePricing return is ex-GST. This page
-  // was printing those straight onto customer-facing lines under a note reading
-  // "Prices exclude GST", leaving a homeowner to do the arithmetic on every row
-  // and compare an ex-GST line against a rival's inc-GST one. A price shown to
-  // a consumer has to be the single total they pay.
+  // every figure computeQuoteTotals and linePricing return is already ex-GST.
+  // Lines, discounts and the subtotal are shown exactly as they come: ex-GST,
+  // the way the invoice that follows is written, with GST added once at the
+  // bottom as its own row.
   //
-  // So every line, subtotal and discount is grossed up for display. The maths
-  // is untouched: computeQuoteTotals still owns it, totals.total is already
-  // GST-inclusive, and nothing here feeds back into what gets saved.
-  const gstFactor = quote.includesGST ? 1 + gstRate / 100 : 1;
-  // A GST-free line (taxable === false) is left out of the GST base by
-  // computeQuoteTotals, so it must not be grossed up either.
-  const inc = (amount, taxable = true) => Number(amount || 0) * (taxable === false ? 1 : gstFactor);
+  // The headline total stays GST-INCLUSIVE and says so. That is the number
+  // being accepted and the number that gets paid, and under the single-price
+  // rule it has to be stated at least as prominently as the components above
+  // it — which is why it is the 28px figure at the foot of the summary and the
+  // figure in the sticky bar, while the ex-GST rows are 13.5px.
+  //
+  // Nothing here feeds back into what gets saved: computeQuoteTotals still
+  // owns the maths and totals.total is still GST-inclusive.
+  const ex = (amount) => Number(amount || 0);
 
   // ── Build room sections from the real line items ─────────────────────────
   // One heading per room, with the windows in it lettered A / B / C beneath.
@@ -847,7 +881,15 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // sheet and onto the purchase order — so the letter the customer reads is the
   // same one the installer is standing in front of. groupByRoom takes the
   // room and the letter back apart for display and never renumbers them.
-  const items = quote.lineItems || [];
+  // Remotes and chargers aren't stored on the quote — they're derived from
+  // whichever motors the customer has live right now, so a quote offering
+  // chain-or-battery at every window prices its handsets as they decide
+  // instead of charging for motorisation nobody chose. Resolved once, here,
+  // and everything below (rooms, summary, plan join, totals) reads `items`.
+  const items = withMotorisationAccessories(quote.lineItems || [], selectedOptionals, quote.motorisationPresets);
+  // Only documents with bytes behind them. A record whose upload half-failed
+  // would render as a link to nowhere on a customer's quote.
+  const quoteDocuments = (quote.documents || []).filter(d => d?.path);
   const requiredItems = items.filter(li => li.type === 'Required' || li.type === 'Part');
   const optionalItems = items.filter(li => li.type === 'Optional');
   const choiceItems   = items.filter(li => li.type === 'Multiple Choice');
@@ -887,7 +929,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     const target = active[0] || matched[0] || null;
     // Price follows the live selection, exactly like every other figure on this
     // page. An unticked optional reads as what it is rather than as $0.
-    const priced = active.reduce((s, li) => s + inc(linePricing(li).lineTotal, li.taxable), 0);
+    const priced = active.reduce((s, li) => s + ex(linePricing(li).lineTotal), 0);
     return {
       matched,
       active,
@@ -922,6 +964,162 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // missing a decision nobody had made.
   const unansweredRequired = unansweredChoices(rooms, selectedOptionals);
 
+  // ── Decision state, per room ───────────────────────────────────────────────
+  // One pass over the same rooms → entries → blocks the page renders, so the
+  // heading, the contents panel, the "next decision" jump and the review sheet
+  // all count the same things. Anything that disagreed with the total bar
+  // would be worse than not saying it.
+  //
+  // `open` counts every unanswered choice, not only the required ones. The
+  // required set still governs whether Accept unlocks — that is a contract and
+  // is left alone — but for FINDING your way around, a choice nobody has
+  // answered is a thing to go back to whether or not it blocks the button.
+  const roomStats = rooms.map(({ room, entries }) => {
+    const blocks    = entries.flatMap(e => (e.blocks || []).map(b => ({ b, entry: e })));
+    const choices   = blocks.filter(x => x.b.kind === 'choice');
+    const optionals = blocks.filter(x => x.b.kind === 'optional');
+    const open      = choices.filter(x => !x.b.items.some(li => selectedOptionals.includes(li.id)));
+    return {
+      room,
+      entryCount:  entries.length,
+      choices:     choices.length,
+      chosen:      choices.length - open.length,
+      open:        open.length,
+      optionals:   optionals.length,
+      added:       optionals.filter(x => selectedOptionals.includes(x.b.items[0]?.id)).length,
+      openKeys:    open.map(x => groupId(room, x.entry)),
+      anchorKey:   entries.length ? groupId(room, entries[0]) : null,
+      // The wording is shared with the quote builder so the two cannot
+      // describe the same room differently.
+      status:      roomDecisionStatus(entries, selectedOptionals),
+    };
+  });
+
+  /** The one fact worth putting next to a room name, and how loud to say it. */
+  const roomStatus = (st) => ({ text: st.status.text, tone: st.status.open ? T.bronze : T.stone });
+
+  /**
+   * A choice block, named the way the page names it.
+   *
+   * The blocked-accept message asked the customer to "choose an option under
+   * ${g.title}" — and a block has no `title`, only an `eyebrow` and its items,
+   * so every one of those sentences went out with a hole where the name should
+   * be. The shared half of the option names is the same heading the block is
+   * printed under, which is the thing they would be looking for.
+   */
+  const choiceLabel = (b) => {
+    const names = (b.items || []).map(li => li.displayName || li.productNameSnapshot || '').filter(Boolean);
+    return optionDiff(names)?.shared || names[0] || 'one of the alternatives';
+  };
+
+  // Every unanswered choice on the quote, in the order they appear on it, so
+  // "next decision" walks the page from the top rather than jumping about.
+  const openDecisionKeys = roomStats.flatMap(st => st.openKeys);
+
+  // What the customer is about to agree to, in the order they read it. The
+  // confirm sheet listed every live line flat, so a twelve-line order arrived
+  // as twelve rows with the room repeated down the right of each one; grouped,
+  // it is the quote they just worked through, shortened.
+  const reviewRooms = rooms
+    .map(({ room, entries }) => ({ room, lines: entries.flatMap(e => e.items || []).filter(isSelected) }))
+    .filter(r => r.lines.length);
+
+  // ── Take-away copies ──────────────────────────────────────────────────────
+  // Built from the SELECTION as it stands, not from the page: a customer who
+  // tries the battery option and saves a copy, then tries the chain one and
+  // saves another, gets two documents that each say what they were looking at.
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const quoteSnapshot = () => ({
+    quoteNumber:  quote.quoteNumber,
+    customerName: customer?.name || '',
+    title:        `${settings.businessName} quotation for ${customer?.name || 'you'}`,
+    siteAddress:  quote.siteAddress || '',
+    issued:       quote.createdAt ? fmtDate(quote.createdAt) : '',
+    expiry:       quote.expiryDate ? fmtDate(new Date(quote.expiryDate)) : '',
+    rooms: reviewRooms.map(r => ({
+      room: r.room,
+      lines: r.lines.map(li => ({
+        name:     li.displayName || li.productNameSnapshot || 'Window treatment',
+        location: li.location || '',
+        quantity: Number(li.quantity) || 1,
+        total:    ex(linePricing(li).lineTotal),
+      })),
+    })),
+    summaryRows: summaryRows.map(r => ({ label: r.label, value: r.value })),
+    total:       figures.total,
+    gstSuffix:   figures.gstSuffix || '',
+    depositNote: depoLabel ? `A ${depoLabel} deposit (${figures.deposit}) confirms your order.` : '',
+    terms:       quote.termsAndConditions || '',
+    footer:      [settings.businessName, settings.businessPhone, settings.businessEmail].filter(Boolean).join('  ·  '),
+    formatMoney: money,
+  });
+
+  const handleDownloadPdf = async () => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    // If the PDF can't be built — an old browser, a blocked dynamic import —
+    // the print dialog is the same destination by another road: every browser
+    // offers "Save as PDF" there. Failing to a dead button would leave the
+    // customer with no way to keep their quote at all.
+    try { await downloadQuotePdf(quoteSnapshot()); }
+    catch { window.print(); }
+    finally { setPdfBusy(false); }
+  };
+
+  /**
+   * The quote's contents, as a thing you can steer by.
+   *
+   * One component, two homes: parked beside the quote on a wide screen, and
+   * raised as a sheet from the total bar on a narrow one. A customer with
+   * twelve decisions spread over five rooms and nine screens of scrolling had
+   * no way to see where they were, what was left, or how to get back to it.
+   */
+  const NavList = ({ onNavigate }) => (
+    <nav aria-label="Quote contents" style={{ display: 'grid', gap: 1 }}>
+      <p style={{ ...fieldLabel, margin: '0 0 8px' }}>Contents</p>
+      {roomStats.map((st) => {
+        const status = roomStatus(st);
+        return (
+          <button
+            key={st.room}
+            type="button"
+            // Land on what this room still wants, or on the room itself once
+            // it wants nothing.
+            onClick={() => { jumpToGroup(st.openKeys[0] || st.anchorKey); onNavigate?.(); }}
+            style={{
+              display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10,
+              width: '100%', textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
+              background: st.open ? T.well : 'none',
+              border: 'none', borderRadius: 9, padding: '8px 10px', margin: 0,
+            }}
+          >
+            <span style={{ fontSize: 13.5, color: T.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{st.room}</span>
+            <span style={{ fontSize: 11, color: status.tone, whiteSpace: 'nowrap' }}>{status.text}</span>
+          </button>
+        );
+      })}
+      <div style={{ marginTop: 10, paddingTop: 12, borderTop: `0.5px solid ${T.mist}`, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+          <span style={fieldLabel}>Total{quote.includesGST ? ' inc GST' : ''}</span>
+          <span style={{ fontSize: 17, fontWeight: 300, letterSpacing: '-0.3px', color: T.ink }}>{figures.total}</span>
+        </div>
+        {openDecisionKeys.length > 0 && (
+          <button
+            type="button"
+            onClick={() => { jumpToGroup(openDecisionKeys[0]); onNavigate?.(); }}
+            style={{
+              width: '100%', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer',
+              background: 'none', border: `0.5px solid ${T.bronze}`, color: T.bronze,
+              borderRadius: 999, padding: '8px 12px', textAlign: 'center',
+            }}
+          >
+            {openDecisionKeys.length} still to choose →
+          </button>
+        )}
+      </div>
+    </nav>
+  );
+
   const selectableIds = [...optionalItems, ...choiceItems].map(li => li.id);
   const selectedCount = selectableIds.filter(sid => selectedOptionals.includes(sid)).length;
   const selectedLabel = `${selectedCount} of ${selectableIds.length}`;
@@ -938,36 +1136,39 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const gstFreeTotal = activeItems
     .filter(li => li.taxable === false)
     .reduce((sum, li) => sum + linePricing(li).lineTotal, 0);
-  // Discounts, grossed up line by line, so a discount on a GST-free line isn't.
-  const lineDiscountInc = activeItems.reduce((s, li) => s + inc(linePricing(li).discountTotal || 0, li.taxable), 0);
-  // The effective GST uplift on the post-discount subtotal. Derived from the
-  // totals rather than re-summing the lines, which is what keeps a quote mixing
-  // taxable and GST-free lines exact: computeQuoteTotals already worked out
-  // which portion attracts GST, so totals.gst / totals.subtotal IS that share.
-  const gstUplift = quote.includesGST && totals.subtotal > 0 ? totals.gst / totals.subtotal : 0;
-  // A quote-level discount reduces the taxable base proportionally (see
-  // computeQuoteTotals), so it takes a proportional slice of GST with it.
-  const quoteDiscountInc = totals.discount * (1 + gstUplift);
-  // Built from the total OUTWARDS, not from the lines inwards: the subtotal row
-  // is defined as whatever makes the breakdown reconcile, so "subtotal less the
-  // discounts" cannot disagree with the total the customer is asked to accept.
-  const subtotalInc = totals.total + lineDiscountInc + quoteDiscountInc;
+  // Every summary figure ex-GST, straight off computeQuoteTotals, so the ladder
+  // is plain addition the customer can follow:
+  //   items − discounts = totals.subtotal, + GST = totals.total.
+  const lineDiscountEx  = activeItems.reduce((s, li) => s + ex(linePricing(li).discountTotal || 0), 0);
+  const quoteDiscountEx = ex(totals.discount);
+  // What the lines came to before anything came off them. Derived from the
+  // subtotal OUTWARDS rather than re-summed from the lines, so "items less the
+  // discounts" cannot disagree with the figure GST is then charged on.
+  const itemsEx = ex(totals.subtotal) + lineDiscountEx + quoteDiscountEx;
 
   const rowLabel = { fontSize: 13.5, color: T.graphite };
   const rowValue = { fontSize: 13.5, fontWeight: 500, color: T.ink, whiteSpace: 'nowrap' };
   const summaryRows = [];
-  // A subtotal is only worth a row when something comes off it. On a quote with
-  // no discounts — which is most of them — it is the total written twice, and
-  // the eye has to check two identical figures to find out they are the same.
-  if (lineDiscountInc > 0 || quoteDiscountInc > 0) {
-    summaryRows.push({ label: 'Subtotal', value: money(subtotalInc), lStyle: rowLabel, vStyle: rowValue });
+  const hasDiscount = lineDiscountEx > 0 || quoteDiscountEx > 0;
+  // "Items" rather than a second "Subtotal": with GST added below, the row the
+  // discounts come off and the row GST is charged on are two different
+  // numbers, and calling both of them Subtotal is how a customer ends up
+  // reading the same word twice against different figures.
+  if (hasDiscount) {
+    summaryRows.push({ label: 'Items', value: money(itemsEx), lStyle: rowLabel, vStyle: rowValue });
   }
-  if (lineDiscountInc > 0) summaryRows.push({ label: 'Package discount', value: '−' + money(lineDiscountInc), lStyle: rowLabel, vStyle: { ...rowValue, color: T.bronze } });
-  if (quoteDiscountInc > 0) summaryRows.push({ label: quote.discountLabel || (quote.discountType === 'Percentage' ? `Discount (${quote.discountValue}%)` : 'Discount'), value: '−' + money(quoteDiscountInc), lStyle: rowLabel, vStyle: { ...rowValue, color: T.bronze } });
-  // Now a disclosure rather than an addend: the rows above it already include
-  // GST, so this says how much of the total it is, and is styled to read that
-  // way instead of looking like another thing being added on.
-  if (quote.includesGST) summaryRows.push({ label: `Includes GST (${gstRate}%)`, value: money(totals.gst), lStyle: { ...rowLabel, color: T.stone }, vStyle: { ...rowValue, fontWeight: 400, color: T.stone } });
+  if (lineDiscountEx > 0) summaryRows.push({ label: 'Package discount', value: '−' + money(lineDiscountEx), lStyle: rowLabel, vStyle: { ...rowValue, color: T.bronze } });
+  if (quoteDiscountEx > 0) summaryRows.push({ label: quote.discountLabel || (quote.discountType === 'Percentage' ? `Discount (${quote.discountValue}%)` : 'Discount'), value: '−' + money(quoteDiscountEx), lStyle: rowLabel, vStyle: { ...rowValue, color: T.bronze } });
+  // The base GST is charged on, then GST itself — an addend now, not a
+  // disclosure, so the three rows add up to the total printed underneath.
+  // Only worth saying when there is GST to add: on a GST-free quote with no
+  // discounts this would be the total written twice.
+  if (quote.includesGST) {
+    summaryRows.push({ label: 'Subtotal (ex GST)', value: money(ex(totals.subtotal)), lStyle: rowLabel, vStyle: rowValue });
+    summaryRows.push({ label: `GST (${gstRate}%)`, value: money(totals.gst), lStyle: rowLabel, vStyle: rowValue });
+  } else if (hasDiscount) {
+    summaryRows.push({ label: 'Subtotal', value: money(ex(totals.subtotal)), lStyle: rowLabel, vStyle: rowValue });
+  }
 
   // ── Every figure this page quotes, derived once ───────────────────────────
   // The summary, the sticky bar, the confirm sheet and the accepted state all
@@ -1120,7 +1321,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const roomStickyTop = (isStaffPreview && !previewQuote) ? 30 : 0;
 
   // ── Option card ────────────────────────────────────────────────────────
-  const OptionCard = ({ item, kind }) => {
+  const OptionCard = ({ item, kind, compare = false, titleOverride = '', benefit = '' }) => {
     const on = isSelected(item);
     const fixed = kind === 'included';
     const choice = kind === 'choice';
@@ -1129,6 +1330,12 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     const round = choice || fixed ? 999 : 4;
     const clickable = !fixed && !locked;
     const desc = [item.description, item.customerNotes].filter(Boolean).join(' · ');
+    // With a shared heading above, the card's own description is the heading
+    // again in longer words. The benefit is the thing that is not said anywhere
+    // else on the page.
+    const cardBody = titleOverride
+      ? [benefit, item.customerNotes].filter(Boolean).join(' · ')
+      : desc;
     const toggle = () => (choice ? selectChoice(item._group, item.id) : toggleOptional(item.id));
     // Sizes are never shown to the customer, whatever the per-quote flag says.
     // A millimetre figure on a quote invites someone to check it against a tape
@@ -1138,10 +1345,21 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     const meta = qty > 1 ? `${qty} of them` : '';
     // A GST-free line must say so. Labelling it like everything else is what
     // made the summary look as though it had the wrong GST on it.
-    const gstNote = item.taxable === false ? 'GST free' : (quote.includesGST ? 'inc GST' : '');
-    // Shown inc GST, like every other price on the page.
-    const shownTotal = inc(lineTotal, item.taxable);
-    const shownUnit  = inc(finalSell, item.taxable);
+    // "ex GST" under all 24 prices said once per card what the page already
+    // says at the top and the total bar repeats at the bottom. GST-free is a
+    // different matter — that one is a fact about THIS line and appears
+    // nowhere else, so it stays.
+    const gstNote = item.taxable === false ? 'GST free' : '';
+    // Ex-GST, like every other line on the page. GST is added once, at the end.
+    const shownTotal = ex(lineTotal);
+    const shownUnit  = ex(finalSell);
+    // Side by side, the number that decides it is the difference, not the
+    // total — "$798" says little next to "$486", "+$312" says what the
+    // upgrade costs. Measured against the cheapest option in the group.
+    const groupFloor = compare && Array.isArray(item._group)
+      ? Math.min(...item._group.map(g => ex(linePricing(g).lineTotal)))
+      : null;
+    const delta = groupFloor !== null ? shownTotal - groupFloor : 0;
     return (
       <div
         onClick={clickable ? toggle : undefined}
@@ -1157,7 +1375,10 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
         } : undefined}
         style={{
-          display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap', padding: 18, borderRadius: T.radius,
+          display: 'flex', gap: compare ? 10 : 14, padding: 18, borderRadius: T.radius,
+          ...(compare
+            ? { flexDirection: 'column', alignItems: 'stretch', height: '100%' }
+            : { alignItems: 'flex-start', flexWrap: 'wrap' }),
           background: fixed ? 'transparent' : T.paperPure,
           // One hairline the whole way round. This used to carry a 2px
           // border-left as the accent, which at an 8px radius was merely a
@@ -1185,20 +1406,38 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               : (on ? <span style={{ fontSize: 12, lineHeight: 1, color: T.paper }}>✓</span> : null)}
           </div>
         )}
-        <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+        {/* The 200px basis is a minimum WIDTH for the row layout, where this
+            block sits beside the price. A compare card is a column, so along
+            that axis the same basis is a minimum HEIGHT — 200px of box around
+            ~120px of text, which is the dead band that opened up between the
+            description and the price. Side by side the block should be exactly
+            as tall as what is in it. */}
+        <div style={compare
+          ? { flex: '0 1 auto', minWidth: 0 }
+          : { flex: '1 1 200px', minWidth: 0 }}>
           {/* displayName is composed and stamped by the builder on save — the
               product type alone reads "Curtain", which tells the customer
               nothing about what they are buying. Older quotes saved before it
               existed fall back to the raw snapshot. */}
-          <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4, fontWeight: 500, color: on || fixed ? T.ink : T.graphite, textWrap: 'pretty' }}>{item.displayName || item.productNameSnapshot || 'Window treatment'}</p>
-          {desc && <p style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.7, color: T.stone, textWrap: 'pretty' }}>{desc}</p>}
+          {/* Inside a "choose one" the shared half of the name is already a
+              heading over the block, so the card carries only its own half —
+              and says what that half gets you instead of repeating the spec
+              the heading just gave. */}
+          <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4, fontWeight: 500, color: on || fixed ? T.ink : T.graphite, textWrap: 'pretty' }}>
+            {titleOverride || item.displayName || item.productNameSnapshot || 'Window treatment'}
+          </p>
+          {cardBody && <p style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.7, color: T.stone, textWrap: 'pretty' }}>{cardBody}</p>}
           {meta && <p style={{ margin: '4px 0 0', fontSize: 12, lineHeight: 1.6, color: T.stone }}>{meta}</p>}
           {/* Only lines the customer can act on carry a state pill. Stamping
               "Included" on every fixed line said the same thing the whole page
               already says, once per row. */}
-          {!fixed && (
+          {/* Only the chosen card says so. "Not selected" on every other one
+              repeated what its own empty control already says, 18 times on a
+              quote this size, and gave the thing you did NOT pick the same
+              weight of furniture as the thing you did. */}
+          {!fixed && on && (
             <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 12, padding: '5px 10px 5px 8px', borderRadius: 999,
+              display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: compare ? 8 : 12, padding: '5px 10px 5px 8px', borderRadius: 999,
               fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase',
               background: on ? T.accent : 'transparent', border: on ? 'none' : `0.5px solid ${T.mist}`, color: on ? T.onAccent : T.stone,
             }}>
@@ -1210,14 +1449,23 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         {/* marginLeft:auto keeps the price hard right both inline on desktop and
             on its own wrapped line on a phone, where it used to float mid-card
             so no two prices lined up down the page. */}
-        <div style={{ textAlign: 'right', flex: '0 0 auto', marginLeft: 'auto' }}>
-          {discountTotal > 0 && <div style={{ fontSize: 13, color: T.stone, textDecoration: 'line-through' }}>{money(inc(preDiscountSell * qty, item.taxable))}</div>}
-          <div style={{ fontSize: 18, fontWeight: on ? 500 : 400, letterSpacing: '-0.2px', whiteSpace: 'nowrap', color: on ? T.ink : T.stone }}>{money(shownTotal)}</div>
-          <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.stone, marginTop: 4 }}>
-            {gstNote}{qty > 1 ? `${gstNote ? ' · ' : ''}${money(shownUnit)} × ${qty}` : ''}
+        <div style={compare
+          ? { textAlign: 'left', flex: '0 0 auto', marginTop: 'auto', paddingTop: 0 }
+          : { textAlign: 'right', flex: '0 0 auto', marginLeft: 'auto' }}>
+          {discountTotal > 0 && <div style={{ fontSize: 13, color: T.stone, textDecoration: 'line-through' }}>{money(ex(preDiscountSell * qty))}</div>}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, justifyContent: compare ? 'flex-start' : 'flex-end', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 18, fontWeight: on ? 500 : 400, letterSpacing: '-0.2px', whiteSpace: 'nowrap', color: on ? T.ink : T.stone }}>{money(shownTotal)}</span>
+            {delta > 0 && (
+              <span style={{ fontSize: 13, whiteSpace: 'nowrap', color: T.bronze }}>+{money(delta)}</span>
+            )}
           </div>
+          {(gstNote || qty > 1) && (
+            <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.stone, marginTop: 4 }}>
+              {gstNote}{qty > 1 ? `${gstNote ? ' · ' : ''}${money(shownUnit)} × ${qty}` : ''}
+            </div>
+          )}
           {discountTotal > 0 && (
-            <div style={{ marginTop: 8, fontSize: 10.5, fontWeight: 500, letterSpacing: '0.06em', color: T.bronze }}>Discount −{money(inc(discountTotal, item.taxable))}</div>
+            <div style={{ marginTop: 8, fontSize: 10.5, fontWeight: 500, letterSpacing: '0.06em', color: T.bronze }}>Discount −{money(ex(discountTotal))}</div>
           )}
         </div>
       </div>
@@ -1249,7 +1497,34 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           <div style={{ ...container, padding: '0 22px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
               <img src="/brand/lusso-white.png" alt="Lusso" style={{ width: 124, height: 'auto', display: 'block' }} />
-              <SkinToggle dark={darkSkin} onToggle={toggleSkin} />
+              {/* A quote is a thing people forward to a partner, take to a
+                  builder, or sit on for a fortnight. Up here with the masthead
+                  because that is where you look for the document's own
+                  controls, and `data-noprint` so the buttons never appear on
+                  the paper they produce. */}
+              <div data-noprint="true" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button
+                  type="button" onClick={handleDownloadPdf} disabled={pdfBusy}
+                  style={{
+                    fontFamily: 'inherit', fontSize: 11.5, letterSpacing: '0.02em', whiteSpace: 'nowrap',
+                    padding: '7px 13px', borderRadius: 999, cursor: pdfBusy ? 'default' : 'pointer',
+                    background: 'none', border: `0.5px solid ${T.borderInverse}`, color: T.onInverseMuted,
+                  }}
+                >
+                  {pdfBusy ? 'Preparing…' : 'Download PDF'}
+                </button>
+                <button
+                  type="button" onClick={() => window.print()}
+                  style={{
+                    fontFamily: 'inherit', fontSize: 11.5, letterSpacing: '0.02em', whiteSpace: 'nowrap',
+                    padding: '7px 13px', borderRadius: 999, cursor: 'pointer',
+                    background: 'none', border: `0.5px solid ${T.borderInverse}`, color: T.onInverseMuted,
+                  }}
+                >
+                  Print
+                </button>
+                <SkinToggle dark={darkSkin} onToggle={toggleSkin} />
+              </div>
             </div>
             <div style={{ marginTop: 26 }}><Eyebrow color={T.bronzeRaised} dash={T.bronzeRaised}>Quotation {quote.quoteNumber}</Eyebrow></div>
             <h1 style={{ margin: '10px 0 0', fontWeight: 300, fontSize: 29, lineHeight: 1.2, letterSpacing: '-0.5px', color: T.paper, textWrap: 'pretty', maxWidth: '26ch' }}>
@@ -1304,37 +1579,46 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               {hasOptions ? 'Your options' : 'What we\u2019ve quoted'}
             </h2>
             <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.7, color: T.graphite }}>
-              Everything below is quoted for your rooms.{hasOptions ? ' Toggle the pieces you want, or choose between treatments where we have offered alternatives, and your total updates as you go.' : ''}{quote.includesGST ? ' Every price includes GST.' : ''}
+              Everything below is quoted for your rooms.{hasOptions ? ' Toggle the pieces you want, or choose between treatments where we have offered alternatives, and your total updates as you go.' : ''}{quote.includesGST ? ' Prices are shown excluding GST; GST is added once in the summary at the end.' : ''}
             </p>
           </div>
 
-          {rooms.map(({ room, entries }) => {
+          {rooms.map(({ room, entries }, roomIdx) => {
             // "Optional — add if you want it" on three optionals in a row said
             // it three times. Label the start of a run, not every line in it.
             let lastEyebrow = '';
+            const status = roomStatus(roomStats[roomIdx]);
             return (
             <section key={room} style={{ marginTop: 38 }}>
               {/* The room name stays put while its items scroll under it.
                   A long room ran well past a screen, and the only way to tell
                   which room you were reading was to scroll back up to it.
 
-                  It wears the PAGE's colour, not the total bar's. The bar is a
-                  separate surface pinned over the quote and is 82% white to
-                  say so; a room heading is part of the paper, and borrowing
-                  that white laid a hard band across the page that belonged to
-                  a different thing. Fading to transparent keeps the frosted
-                  separation without drawing an edge. */}
+                  It is cut from the same material as the cards it labels —
+                  surface, rim, frost and radius, straight off `card`. The
+                  first attempt was a full-bleed band of page colour fading to
+                  transparent, and it read as a fault rather than a material:
+                  square corners run out to the viewport edges, and the fade
+                  leaves a visible hem part-way down wherever the thing behind
+                  it is darker than the page. Glass needs a shape and a rim to
+                  be glass. With them it is the one element allowed to float
+                  over the quote, so it needs no rule under it either. */}
               <div style={{
-                position: 'sticky', top: roomStickyTop, zIndex: 3,
-                background: `linear-gradient(to bottom, ${T.paper} 72%, transparent)`,
+                position: 'sticky', top: roomStickyTop + 8, zIndex: 3,
+                background: T.surface,
+                border: `0.5px solid ${T.mist}`,
+                borderRadius: T.radius,
+                boxShadow: T.cardShadow,
                 backdropFilter: T.frost, WebkitBackdropFilter: T.frost,
-                display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-                gap: 16, flexWrap: 'wrap', paddingTop: 10, paddingBottom: 14,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: 16, flexWrap: 'wrap', padding: '9px 16px', marginBottom: 18,
               }}>
-                <h3 style={h3}>{room}</h3>
-                <span style={{ fontSize: 11, color: T.stone }}>{entries.length} {entries.length === 1 ? 'item' : 'items'}</span>
+                <h3 style={{ ...h3, fontSize: 17 }}>{room}</h3>
+                {/* "2 items" was a fact about the quote. What someone scrolling
+                    a five-room quote needs is whether this room still wants
+                    something from them. */}
+                <span style={{ fontSize: 11, color: status.tone, whiteSpace: 'nowrap' }}>{status.text}</span>
               </div>
-              <hr style={{ ...hairline, margin: '0 0 18px' }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                 {entries.map(entry => (
                   <div
@@ -1358,23 +1642,79 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                     <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
                       {entry.blocks.map(block => {
                         const isChoice = block.kind === 'choice';
+                        // One alternative is not a comparison — a group of one
+                        // keeps the ordinary full-width row.
+                        const side = isChoice && block.items.length > 1;
                         const anyPicked = block.items.some(i => selectedOptionals.includes(i.id));
                         // A choice block always keeps its label — each one is
                         // a separate decision, even back to back.
                         const showEyebrow = !!block.eyebrow && (isChoice || block.eyebrow !== lastEyebrow);
                         lastEyebrow = block.eyebrow;
+                        // What the options share, lifted into a heading, so each
+                        // card is left holding only the word that decides it.
+                        const diff = side
+                          ? optionDiff(block.items.map(li => li.displayName || li.productNameSnapshot || ''))
+                          : null;
+                        const sharedDesc = diff
+                          ? descriptionTail(
+                              optionDiff(block.items.map(li => li.description || ''))?.shared || '',
+                              diff.shared,
+                            )
+                          : '';
                         return (
                           <div key={block.key} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                             {showEyebrow && (
                               <Eyebrow color={isChoice ? T.bronze : T.stone} dash={isChoice ? T.bronze : T.stone}>{block.eyebrow}</Eyebrow>
                             )}
+                            {diff && (
+                              <div style={{ marginTop: -2 }}>
+                                <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4, fontWeight: 500, color: T.ink, textWrap: 'pretty' }}>{diff.shared}</p>
+                                {sharedDesc && (
+                                  <p style={{ margin: '5px 0 0', fontSize: 13, lineHeight: 1.65, color: T.stone, textWrap: 'pretty' }}>{sharedDesc}</p>
+                                )}
+                              </div>
+                            )}
                             <div style={isChoice
-                              ? { display: 'flex', flexDirection: 'column', gap: 10, background: T.well, border: `0.5px solid ${T.mist}`, borderRadius: 12, padding: 16 }
+                              ? {
+                                  // Side by side, because the decision is a
+                                  // comparison. Stacked, each option read as
+                                  // another charge rather than an alternative
+                                  // to the one above it. auto-fit collapses to
+                                  // one column on a phone with no breakpoint,
+                                  // and it should: two cards squeezed into a
+                                  // 375px screen is worse than reading them
+                                  // one after the other.
+                                  //
+                                  // The floor is the LARGER of the readable
+                                  // minimum and one share of the row, so the
+                                  // track count can never exceed the number of
+                                  // options. With a bare 230px minimum a wide
+                                  // desktop row fits three tracks, and a pair
+                                  // of options left a third of the row empty —
+                                  // auto-fit could not collapse it, because
+                                  // "Prefer none of these" spans every track.
+                                  // Two options now take half the row each.
+                                  display: 'grid',
+                                  gridTemplateColumns: side
+                                    ? `repeat(auto-fit, minmax(max(${block.items.length > 2 ? 190 : 230}px, calc((100% - ${(block.items.length - 1) * 10}px) / ${block.items.length})), 1fr))`
+                                    : '1fr',
+                                  alignItems: 'stretch',
+                                  gap: 10, background: T.well, border: `0.5px solid ${T.mist}`, borderRadius: 12, padding: 16,
+                                }
                               : { display: 'flex', flexDirection: 'column', gap: 10 }}>
-                              {block.items.map(item => <OptionCard key={item.id} item={{ ...item, _group: block.items }} kind={block.kind} />)}
+                              {block.items.map((item, i) => (
+                                <OptionCard
+                                  key={item.id}
+                                  item={{ ...item, _group: block.items }}
+                                  kind={block.kind}
+                                  compare={side}
+                                  titleOverride={diff ? diff.mids[i] : ''}
+                                  benefit={diff ? benefitFor(diff.mids[i]) : ''}
+                                />
+                              ))}
                               {isChoice && !block.required && (
                                 <button type="button" onClick={() => clearChoice(block.items)} disabled={locked}
-                                  style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: '6px 0 2px', fontFamily: 'inherit', fontSize: 12.5, color: !anyPicked ? T.ink : T.stone, cursor: locked ? 'default' : 'pointer', textDecoration: 'underline', textDecorationColor: T.mist, textUnderlineOffset: 4 }}>
+                                  style={{ gridColumn: '1 / -1', justifySelf: 'start', alignSelf: 'flex-start', background: 'none', border: 'none', padding: '6px 0 2px', fontFamily: 'inherit', fontSize: 12.5, color: !anyPicked ? T.ink : T.stone, cursor: locked ? 'default' : 'pointer', textDecoration: 'underline', textDecorationColor: T.mist, textUnderlineOffset: 4 }}>
                                   Prefer none of these for now
                                 </button>
                               )}
@@ -1427,7 +1767,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             </div>
             {quote.includesGST && gstFreeTotal > 0 && (
               <p style={{ margin: '12px 0 0', fontSize: 11.5, lineHeight: 1.6, color: T.stone }}>
-                {money(gstFreeTotal)} of the items above are GST free, so no GST is included in their price.
+                {money(gstFreeTotal)} of the items above are GST free, so no GST has been added for them.
               </p>
             )}
             <hr style={{ ...hairline, margin: '18px 0' }} />
@@ -1450,6 +1790,37 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               </div>
             )}
           </section>
+
+          {/* Documents the quote came with. Placed above the terms and below
+              the price: by here the customer knows what they are buying and
+              what it costs, and this is the reading that informs the decision
+              rather than something to wade through before reaching a number. */}
+          {quoteDocuments.length > 0 && (
+            <section style={{ marginTop: 34 }}>
+              <Eyebrow>Attachments</Eyebrow>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+                {quoteDocuments.map(doc => (
+                  <a
+                    key={doc.id || doc.path}
+                    href={quoteDocUrl(doc)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px',
+                      border: `0.5px solid ${T.mist}`, borderRadius: T.radius, background: T.paperPure,
+                      fontSize: 14, color: T.ink, textDecoration: 'none',
+                    }}
+                  >
+                    <span style={{ flex: '1 1 auto', minWidth: 0 }}>{doc.name || 'Document'}</span>
+                    <span style={{ flex: '0 0 auto', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.stone, whiteSpace: 'nowrap' }}>
+                      {docKind(doc)}{doc.sizeBytes ? ` · ${formatBytes(doc.sizeBytes)}` : ''}
+                    </span>
+                    <span aria-hidden="true" style={{ flex: '0 0 auto', color: T.bronze }}>↗</span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Terms & Conditions */}
           {(termsText || settings.termsAttachmentUrl || settings.termsUrl || settings.privacyUrl) && (
@@ -1574,7 +1945,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                   {acceptable
                     ? `Accepting confirms your selection at ${figures.total}${quote.includesGST ? ' including GST' : ''}.`
                     : unansweredRequired.length
-                      ? `Please choose an option under ${listAnd(unansweredRequired.map(g => g.title))} before accepting.`
+                      ? `Please choose an option under ${listAnd(unansweredRequired.map(choiceLabel))} before accepting.`
                       : 'Select at least one option above to accept this quotation.'}
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 20 }}>
@@ -1674,6 +2045,18 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           </div>
 
           <aside className="quote-rail">
+            {/* The page already keeps a sticky rail here for the business and
+                contact details, so the contents go in it rather than opening a
+                third column and stealing the width the option cards need to
+                sit side by side. Wide screens only: below the shell's own
+                breakpoint this rail falls to the bottom of the document, where
+                a table of contents is no use to anybody — there the total bar
+                raises the same list as a sheet. */}
+            {isWide && hasOptions && (
+              <div style={{ ...card, marginBottom: 14 }}>
+                <NavList />
+              </div>
+            )}
             <button
               type="button"
               className="quote-rail-toggle"
@@ -1747,7 +2130,14 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               style={{ width: '100%', maxWidth: 460, background: T.deep, borderRadius: 20, padding: 24, boxShadow: T.shadowCard, maxHeight: '88vh', overflowY: 'auto',
                        backdropFilter: T.deepFrost, WebkitBackdropFilter: T.deepFrost }}
             >
-              {sheet === 'accept' ? (
+              {sheet === 'contents' ? (
+                <>
+                  <NavList onNavigate={() => setSheet(null)} />
+                  <div style={{ marginTop: 18 }}>
+                    <Button size="lg" variant="secondary" onClick={() => setSheet(null)}>Close</Button>
+                  </div>
+                </>
+              ) : sheet === 'accept' ? (
                 <>
                   <Eyebrow>Confirm</Eyebrow>
                   <h3 style={{ ...h3, marginTop: 14 }}>Accept this quotation?</h3>
@@ -1755,19 +2145,29 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                     This confirms your order at the total below and we&rsquo;ll call to arrange your deposit.
                     Once accepted, changes need to go through us.
                   </p>
-                  <div style={{ marginTop: 18, borderTop: `0.5px solid ${T.mist}`, paddingTop: 14, display: 'grid', gap: 8 }}>
-                    {activeItems.map(li => (
-                      <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 13 }}>
-                        <span style={{ color: T.graphite, minWidth: 0 }}>
-                          {/* Same name as the card above it. This sheet read the
-                              raw snapshot, so the line a customer had just
-                              chosen as "Sheer linen curtain, wave fold" was
-                              presented back to them for confirmation as
-                              "Curtain". */}
-                          {li.displayName || li.productNameSnapshot || 'Window treatment'}
-                          {li.location ? <span style={{ color: T.stone }}> · {li.location}</span> : null}
-                        </span>
-                        <span style={{ color: T.ink, whiteSpace: 'nowrap' }}>{money(inc(linePricing(li).lineTotal, li.taxable))}</span>
+                  <div style={{ marginTop: 18, borderTop: `0.5px solid ${T.mist}`, paddingTop: 14, display: 'grid', gap: 14 }}>
+                    {reviewRooms.map(r => (
+                      <div key={r.room} style={{ display: 'grid', gap: 7 }}>
+                        <p style={{ ...fieldLabel, margin: 0 }}>{r.room}</p>
+                        {r.lines.map(li => (
+                          <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 13 }}>
+                            <span style={{ color: T.graphite, minWidth: 0 }}>
+                              {/* Same name as the card above it. This sheet read
+                                  the raw snapshot, so the line a customer had
+                                  just chosen as "Sheer linen curtain, wave fold"
+                                  was presented back to them for confirmation as
+                                  "Curtain". */}
+                              {li.displayName || li.productNameSnapshot || 'Window treatment'}
+                              {/* The room is the heading now; a location only
+                                  earns its place when it says something the
+                                  heading does not, like which window. */}
+                              {li.location && li.location !== r.room
+                                ? <span style={{ color: T.stone }}> · {li.location}</span>
+                                : null}
+                            </span>
+                            <span style={{ color: T.ink, whiteSpace: 'nowrap' }}>{money(ex(linePricing(li).lineTotal))}</span>
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
@@ -1853,21 +2253,51 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               </div>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0 16px' }}>
-              <button type="button" onClick={() => setExpanded(e => !e)} style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: '-0.4px', color: T.ink, whiteSpace: 'nowrap' }}>{figures.total}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                    <span style={{ fontSize: 11, color: unansweredRequired.length ? T.bronze : T.stone, whiteSpace: 'nowrap' }}>
-                      {unansweredRequired.length
-                        ? `${unansweredRequired.length} choice${unansweredRequired.length > 1 ? 's' : ''} still to make`
+              {/* The counter used to be a readout inside the breakdown button:
+                  it could tell you nine decisions were outstanding but not take
+                  you to one of them, on a quote nine screens long.
+
+                  On a phone this row has about 120px to live in once Ask and
+                  Accept have taken theirs, so it gets ONE control, not three:
+                  the breakdown collapses to a chevron on the total it belongs
+                  to, and the counter opens the contents — which carries the
+                  room list and the jump together. Three separate chips wrapped
+                  the bar onto three lines and ate a fifth of the screen. */}
+              <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                <button
+                  type="button" onClick={() => setExpanded(e => !e)}
+                  aria-label={expanded ? 'Hide breakdown' : 'Show breakdown'}
+                  style={{ display: 'flex', alignItems: 'baseline', gap: 7, background: 'none', border: 'none', padding: 0, margin: 0, fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0 }}
+                >
+                  <span style={{ fontSize: 22, fontWeight: 300, letterSpacing: '-0.4px', color: T.ink, whiteSpace: 'nowrap' }}>{figures.total}</span>
+                  <span aria-hidden="true" style={{ fontSize: 10, letterSpacing: '0.1em', color: T.bronze }}>{expanded ? '▲' : '▼'}</span>
+                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 3, minWidth: 0 }}>
+                  {hasOptions && !isWide ? (
+                    <button
+                      type="button" onClick={() => setSheet('contents')}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', cursor: 'pointer',
+                        background: 'none', borderRadius: 999, padding: '3px 9px', fontSize: 11, whiteSpace: 'nowrap',
+                        border: `0.5px solid ${openDecisionKeys.length ? T.bronze : T.mist}`,
+                        color: openDecisionKeys.length ? T.bronze : T.stone,
+                      }}
+                    >
+                      {openDecisionKeys.length ? `${openDecisionKeys.length} to choose` : `${selectedLabel} options`}
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 11, color: openDecisionKeys.length ? T.bronze : T.stone, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {openDecisionKeys.length
+                        ? `${openDecisionKeys.length} still to choose`
                         : hasOptions
-                          ? `${selectedLabel} options${quote.includesGST ? ' · inc GST' : ''}`
-                          : (quote.includesGST ? 'inc GST' : `${items.length} item${items.length === 1 ? '' : 's'}`)}
+                          ? `${selectedLabel} options${quote.includesGST ? ' · total inc GST' : ''}`
+                          : (quote.includesGST ? 'total inc GST' : `${items.length} item${items.length === 1 ? '' : 's'}`)}
                     </span>
-                    <span style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.bronze, whiteSpace: 'nowrap' }}>{expanded ? 'Hide ▲' : 'Breakdown ▼'}</span>
-                  </div>
+                  )}
                 </div>
-              </button>
+              </div>
+
               {/* The question sits between the total and Accept, where someone
                   hesitating over the number is already looking. Hidden once the
                   quote is settled, when there is nothing left to ask about

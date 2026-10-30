@@ -176,6 +176,32 @@ export default function CustomerProfile() {
                     </select>
                   </div>
                 </div>
+                {/* A second decision-maker. Plenty of jobs are decided by two
+                    people, and before this the quote went to whichever of them
+                    was typed in first while the other had to be forwarded it
+                    by hand — so nobody could tell whether they had read it. */}
+                <div className="pt-3 border-t border-slate-100">
+                  <p className="text-xs font-semibold text-slate-600">Second contact</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 mb-2.5">
+                    Copied on quotes and follow-ups. Leave blank if there isn&rsquo;t one.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { key: 'secondaryName',  label: 'Name',  ph: 'e.g. Sarah Dickson' },
+                      { key: 'secondaryRole',  label: 'Relationship', ph: 'e.g. Wife, Office manager' },
+                      { key: 'secondaryEmail', label: 'Email', ph: 'Copied on the quote email' },
+                      { key: 'secondaryPhone', label: 'Phone', ph: '' },
+                    ].map(({ key, label, ph }) => (
+                      <div key={key}>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
+                        <input
+                          value={field(key)} onChange={set(key)} placeholder={ph}
+                          className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">Notes</label>
                   <textarea value={field('notes')} onChange={set('notes')} rows={3}
@@ -273,6 +299,12 @@ export default function CustomerProfile() {
               <Row label="Site Address"     value={customer.address} />
               <Row label="Billing Address"  value={customer.billingAddress} />
               <Row label="Preferred Contact" value={customer.preferredContact} />
+              {customer.secondaryName && (
+                <Row
+                  label={customer.secondaryRole ? `Second contact (${customer.secondaryRole})` : 'Second contact'}
+                  value={[customer.secondaryName, customer.secondaryEmail, customer.secondaryPhone].filter(Boolean).join(' · ')}
+                />
+              )}
             </div>
           </CollapsibleSection>
 

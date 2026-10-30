@@ -10,7 +10,7 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import OptionsMenu from '../components/OptionsMenu';
 import DeliveryStatus from '../components/DeliveryStatus';
-import { deleteCustomer, restoreCustomer, saveCustomer, getCustomers, findCustomerByIdentity } from '../store/data';
+import { deleteCustomer, restoreCustomer, saveCustomer, getCustomers, findCustomerByIdentity, searchMatchAnywhere } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import { toast } from '../components/ToastContainer';
 import { format, parseISO, isToday, isYesterday, isThisWeek } from 'date-fns';
@@ -1340,13 +1340,7 @@ function ThreadView({ conv, onBack, onSend, onDeleteCustomer, onDeleteConversati
 function CustomerPickerModal({ onClose, onPick }) {
   const [q, setQ] = useState('');
   const customers = getCustomers();
-  const term = q.trim().toLowerCase();
-  const filtered = term
-    ? customers.filter(c =>
-        c.name?.toLowerCase().includes(term) ||
-        c.phone?.toLowerCase().includes(term) ||
-        c.email?.toLowerCase().includes(term))
-    : customers;
+  const filtered = customers.filter(c => searchMatchAnywhere([c.name, c.phone, c.email], q));
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
@@ -1848,14 +1842,12 @@ export default function Inbox() {
     if (filter === 'unread') return conv.unread > 0;
     return true;
   }).filter(conv => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      conv.customerName?.toLowerCase().includes(q) ||
-      conv.customerPhone?.toLowerCase().includes(q) ||
-      conv.customerEmail?.toLowerCase().includes(q) ||
-      conv.last?.body?.toLowerCase().includes(q) ||
-      conv.messages.some(m => m.body?.toLowerCase().includes(q))
+    // Every message body is part of the haystack, so "jane invoice" finds the
+    // thread with Jane where invoices came up, whichever message said it.
+    return searchMatchAnywhere(
+      [conv.customerName, conv.customerPhone, conv.customerEmail,
+       ...conv.messages.map(m => m.body)],
+      search,
     );
   });
 

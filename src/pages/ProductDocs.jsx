@@ -18,10 +18,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   FileText, Plus, Search, X, Package, Tag, Building2, WifiOff, Loader2, FileSearch,
 } from 'lucide-react';
-import {
-  getProductDocuments, deleteProductDocument, searchProductDocumentText,
-  getPricedItems, getActiveProductTypes, getPricedItemsInScope,
-} from '../store/data';
+import { getProductDocuments, deleteProductDocument, searchProductDocumentText, getPricedItems, getActiveProductTypes, getPricedItemsInScope, searchMatchAnywhere } from '../store/data';
 import { DOC_TYPES, docTypeLabel } from '../lib/productDocs';
 import { summariseLimits } from '../lib/productLimits';
 import Card from '../components/Card';
@@ -154,9 +151,9 @@ export default function ProductDocs() {
       if (typeFilter && d.docType !== typeFilter) return false;
       if (supFilter && d.supplier !== supFilter) return false;
       if (!q) return true;
-      const local = [d.title, d.supplier, d.productCode, d.fileName, d.notes, labelFor(d).name]
-        .filter(Boolean).join(' ').toLowerCase();
-      return local.includes(q) || (hits?.has(d.id) ?? false);
+      const local = searchMatchAnywhere(
+        [d.title, d.supplier, d.productCode, d.fileName, d.notes, labelFor(d).name], q);
+      return local || (hits?.has(d.id) ?? false);
     };
 
     const map = new Map();
