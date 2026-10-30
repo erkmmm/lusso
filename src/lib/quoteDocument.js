@@ -81,11 +81,28 @@ export async function buildQuotePdf(snap) {
       // customer chose between two alternatives, and one that was never in
       // question, were printing identically — so the document showed what was
       // being bought but not what had been decided.
+      //
+      // What they turned down is printed too, with what it would have cost,
+      // because the question a quote gets asked a week later is "what was the
+      // other one again?" — but its price goes in the NAME cell, never the
+      // Price column. That column holds money being charged and nothing else,
+      // so the figures still read down to the total.
       body: room.lines.map((l) => {
-        const sub = [l.location && l.location !== room.room ? l.location : '', l.note]
+        const where = l.location && l.location !== room.room ? l.location : '';
+        const sub = [where, l.taken ? l.note : `Not taken — ${money(l.total)}`]
           .filter(Boolean).join('  ·  ');
-        return [sub ? `${l.name}\n${sub}` : l.name, String(l.quantity || 1), money(l.total)];
+        return l.taken
+          ? [sub ? `${l.name}\n${sub}` : l.name, String(l.quantity || 1), money(l.total)]
+          : [`${l.name}\n${sub}`, '', ''];
       }),
+      // A declined option must never be mistaken for a charge, so it is set
+      // in the muted grey the sub-lines use rather than the ink the order is.
+      didParseCell: (data) => {
+        if (data.section === 'body' && room.lines[data.row.index]
+            && !room.lines[data.row.index].taken) {
+          data.cell.styles.textColor = MUTED;
+        }
+      },
       startY: y,
       theme: 'plain',
       styles: { fontSize: 10, cellPadding: { top: 6, bottom: 6, left: 0, right: 0 }, textColor: INK, overflow: 'linebreak' },

@@ -1009,13 +1009,21 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // a choice the customer made and a line that was never in question as the
   // same thing. The shape stays a list of line items — the sheet reads them
   // directly — with the decision hung off two underscore fields.
+  // EVERY quoted line, each remembering what kind of decision it was and
+  // which way it went. The document wants both halves — what was taken and
+  // what was turned down — and the confirm sheet wants only what is being
+  // bought, so one derivation serves both and they cannot disagree.
   const reviewRooms = rooms
     .map(({ room, entries }) => ({
       room,
       lines: entries.flatMap(e => (e.blocks || []).flatMap(b => b.items
-        .filter(isSelected)
-        .map(li => ({ ...li, _kind: b.kind, _groupSize: b.items.length })))),
+        .map(li => ({ ...li, _kind: b.kind, _groupSize: b.items.length, _taken: isSelected(li) })))),
     }))
+    .filter(r => r.lines.length);
+
+  /** Only what the customer is actually buying — the confirm sheet's view. */
+  const acceptedRooms = reviewRooms
+    .map(r => ({ room: r.room, lines: r.lines.filter(l => l._taken) }))
     .filter(r => r.lines.length);
 
   /** What to print under a line to show it was the customer's decision. */
@@ -1040,9 +1048,13 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     rooms: reviewRooms.map(r => ({
       room: r.room,
       lines: r.lines.map(li => ({
-        name:     li.displayName || li.productNameSnapshot || 'Window treatment',
-        location: li.location || '',
-        note:     decisionNote(li),
+        // Trimmed on the way out: a room typed as "Board room A " on one line
+        // and "Board room A" on the next is invisible on screen and prints as
+        // a crooked gap in the document.
+        name:     String(li.displayName || li.productNameSnapshot || 'Window treatment').trim(),
+        location: String(li.location || '').trim(),
+        note:     li._taken ? decisionNote(li) : '',
+        taken:    li._taken,
         quantity: Number(li.quantity) || 1,
         total:    ex(linePricing(li).lineTotal),
       })),
@@ -2129,7 +2141,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                     Once accepted, changes need to go through us.
                   </p>
                   <div style={{ marginTop: 18, borderTop: `0.5px solid ${T.mist}`, paddingTop: 14, display: 'grid', gap: 14 }}>
-                    {reviewRooms.map(r => (
+                    {acceptedRooms.map(r => (
                       <div key={r.room} style={{ display: 'grid', gap: 7 }}>
                         <p style={{ ...fieldLabel, margin: 0 }}>{r.room}</p>
                         {r.lines.map(li => (
