@@ -684,6 +684,10 @@ export default function Layout() {
           untouchable screen; without it the tab row's own labels sit under the
           indicator and every bottom clearance in the app is short by that much. */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-slate-100 flex items-stretch h-16 pb-[env(safe-area-inset-bottom)] box-content shadow-[0_-4px_12px_rgba(0,0,0,0.06)] no-print">
+        {/* The four places work actually happens, in the order you move
+            through a day: what's on, what's due, who's asking, what's live.
+            Calendar and Contacts came off the bar and stay in the menu —
+            they were destinations you visit, not ones you check. */}
         {/* Home */}
         <NavLink to="/" end className={({ isActive }) =>
           `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
@@ -691,7 +695,32 @@ export default function Layout() {
           <span>Home</span>
         </NavLink>
 
-        {/* Jobs */}
+        {/* Today */}
+        <NavLink to="/today" className={({ isActive }) =>
+          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
+          <ListChecks size={20} />
+          <span>Today</span>
+        </NavLink>
+
+        {/* + New — centre pill */}
+        <div className="flex-1 flex items-center justify-center">
+          <button
+            onClick={() => setMobileNewOpen(v => !v)}
+            aria-label="Create new"
+            className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 flex items-center justify-center shadow-lg transition-colors -mt-4"
+          >
+            <Plus size={22} className="text-white" />
+          </button>
+        </div>
+
+        {/* Inbox */}
+        <NavLink to="/inbox" className={({ isActive }) =>
+          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
+          <Inbox size={20} />
+          <span>Inbox</span>
+        </NavLink>
+
+        {/* Projects */}
         <NavLink to="/jobs" className={({ isActive }) =>
           `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors relative ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
           {({ isActive }) => (
@@ -707,42 +736,6 @@ export default function Layout() {
               <span>Projects</span>
             </>
           )}
-        </NavLink>
-
-        {/* + New — centre pill */}
-        <div className="flex-1 flex items-center justify-center">
-          <button
-            onClick={() => setMobileNewOpen(v => !v)}
-            aria-label="Create new"
-            className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 flex items-center justify-center shadow-lg transition-colors -mt-4"
-          >
-            <Plus size={22} className="text-white" />
-          </button>
-        </div>
-
-        {/* Calendar */}
-        <NavLink to="/calendar" className={({ isActive }) =>
-          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors relative ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
-          {({ isActive }) => (
-            <>
-              <div className="relative">
-                <CalendarDays size={20} />
-                {counts.todayInstalls > 0 && (
-                  <span className={`absolute -top-1 -right-2 text-[9px] font-bold rounded-full px-1 leading-tight ${isActive ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                    {counts.todayInstalls}
-                  </span>
-                )}
-              </div>
-              <span>Calendar</span>
-            </>
-          )}
-        </NavLink>
-
-        {/* Customers */}
-        <NavLink to="/customers" className={({ isActive }) =>
-          `flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-amber-600' : 'text-slate-400 hover:text-slate-700'}`}>
-          <Users size={20} />
-          <span>Contacts</span>
         </NavLink>
       </nav>
 
