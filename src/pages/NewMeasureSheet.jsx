@@ -463,29 +463,94 @@ function SpecField({ specKey, item, idx, setLineItem, productType }) {
   );
 }
 
-function LiningBlock({ item, idx, setLineItem }) {
+/**
+ * None, attached, or separate — and they cost differently.
+ *
+ * Attached lining is sewn to the curtain: one curtain, one track, nothing
+ * extra to hang. Separate lining is its own curtain on its own track, so it
+ * carries a track and extra fitting, and it can be made to a different
+ * heading on a different track from the face fabric. Recording both as one
+ * "Enabled" was costing the separate ones at the attached price.
+ *
+ * `attachedLining` stays in step with the choice because the line description,
+ * the purchase order and the grid all still read it as "is there a lining".
+ */
+const LINING_MODES = [
+  ['',         'None'],
+  ['attached', 'Attached'],
+  ['separate', 'Separate'],
+];
+
+function LiningBlock({ item, idx, setLineItem, productType }) {
+  // Lines measured before separate lining existed only carry the boolean, and
+  // a boolean has always meant attached.
+  const mode = item.liningMode ?? (item.attachedLining ? 'attached' : '');
+
+  const setMode = (next) => {
+    setLineItem(idx, 'liningMode', next);
+    setLineItem(idx, 'attachedLining', next !== '');
+    if (next !== 'separate') {
+      // Its own heading and track mean nothing once it is sewn on, and left
+      // behind they would price a lining track that is not being fitted.
+      setLineItem(idx, 'liningHeading', '');
+      setLineItem(idx, 'liningTrackType', '');
+    }
+  };
+
   return (
     <>
       <div className="sm:col-span-3">
-        <label className="block text-xs font-medium text-slate-500 mb-1.5">Attached Lining</label>
+        <label className="block text-xs font-medium text-slate-500 mb-1.5">Lining</label>
         <div className="flex gap-2">
-          {[true, false].map(val => (
-            <button key={String(val)} type="button" onClick={() => setLineItem(idx, 'attachedLining', val)}
+          {LINING_MODES.map(([val, label]) => (
+            <button key={val || 'none'} type="button" onClick={() => setMode(val)}
               className={`flex-1 max-w-[120px] text-xs font-medium py-1.5 rounded-lg border transition-colors ${
-                item.attachedLining === val ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                mode === val ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}>
-              {val ? 'Enabled' : 'Disabled'}
+              {label}
             </button>
           ))}
         </div>
+        {mode === 'separate' && (
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            Hung on its own track — adds a track and extra fitting.
+          </p>
+        )}
       </div>
-      {item.attachedLining && (
+
+      {mode !== '' && (
         <div className="sm:col-span-3">
           <label className="block text-xs font-medium text-slate-500 mb-1">Lining Fabric / Colour</label>
           <input value={item.liningFabricColour}
             onChange={e => setLineItem(idx, 'liningFabricColour', e.target.value)}
             placeholder="e.g. Blockout White" className={inp()} />
         </div>
+      )}
+
+      {mode === 'separate' && (
+        <>
+          <div className="sm:col-span-3">
+            {/* No default. An attached lining is made the same way every time
+                and can fall back to the rate card; a separate one is a curtain
+                in its own right, so it is asked for rather than assumed. */}
+            <label className="block text-xs font-medium text-slate-500 mb-1">Lining Heading</label>
+            <select value={item.liningHeading || ''}
+              onChange={e => setLineItem(idx, 'liningHeading', e.target.value)}
+              className={inp()}>
+              <option value="">Select…</option>
+              {getMsOptions('heading', productType).map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="sm:col-span-3">
+            <label className="block text-xs font-medium text-slate-500 mb-1">Lining Track</label>
+            <select value={item.liningTrackType || ''}
+              onChange={e => setLineItem(idx, 'liningTrackType', e.target.value)}
+              className={inp()}>
+              <option value="">Select…</option>
+              {getMsOptions('operationType', productType).map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+        </>
       )}
     </>
   );
@@ -638,6 +703,9 @@ const EMPTY_LINE_ITEM = () => ({
   // The sum a measurement was worked out from, kept so the sheet can be
   // checked later: 1300 tells you nothing, 1200+50+50 tells you why.
   widthMmExpr: '', dropMmExpr: '',
+  // '' | 'attached' | 'separate'. See LiningBlock — a separate lining is a
+  // second curtain and costs a track and extra fitting.
+  liningMode: '', liningHeading: '', liningTrackType: '',
   returnSide: '', motorSide: '', fixing: '', heading: '', attachedLining: false,
   liningFabricColour: '', hem: '', trackColour: '', baseBarColour: '',
   trackBaseBarColour: '', trackType: '',
@@ -2298,7 +2366,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                           {dropdownSpecs.map(k => (
                             <SpecField key={k} specKey={k} item={item} idx={idx} setLineItem={setLineItem} productType={productType} />
                           ))}
-                          {liningVisible && <LiningBlock item={item} idx={idx} setLineItem={setLineItem} />}
+                          {liningVisible && <LiningBlock item={item} idx={idx} setLineItem={setLineItem} productType={productType} />}
                         </div>
                       ) : (
                         <p className="text-xs text-slate-400 italic">
@@ -2319,7 +2387,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                               {hiddenSpecs.filter(f => f.key !== 'lining').map(f => (
                                 <SpecField key={f.key} specKey={f.key} item={item} idx={idx} setLineItem={setLineItem} productType={productType} />
                               ))}
-                              {hiddenSpecs.some(f => f.key === 'lining') && <LiningBlock item={item} idx={idx} setLineItem={setLineItem} />}
+                              {hiddenSpecs.some(f => f.key === 'lining') && <LiningBlock item={item} idx={idx} setLineItem={setLineItem} productType={productType} />}
                             </div>
                           )}
                         </div>

@@ -121,6 +121,11 @@ export const DEFAULT_CURTAIN_RATES = {
     dropSurcharge: { overMm: 3000, perMm: 1000, amount: 70 },
     // Track types that need two runs fitted, so the whole charge doubles.
     dualTrackTypes: ['Dual KAW', 'Dual MKH', 'MKH and KAW'],
+    // A separate lining is a second curtain on a second track at the same
+    // opening: more work than one curtain, less than fitting two from
+    // scratch. Charged as a proportion of the fitting rather than a flat fee
+    // so it keeps tracking width and drop like everything else here.
+    separateLiningExtra: 0.7,
   },
 };
 
@@ -314,21 +319,40 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
     cost:        makingDrops * num(r.makingRatePerDrop),
   };
 
-  // ── Attached lining ────────────────────────────────────────────────────────
+  // ── Lining ─────────────────────────────────────────────────────────────────
+  // Attached: sewn to the curtain. One track, one curtain to hang, so it adds
+  // fabric and making and nothing else.
+  // Separate: its own curtain on its own track, which is why it carries a
+  // track cost and extra fitting below — and why it may be a different
+  // heading and a different track from the face fabric.
   const lin        = input.lining || {};
   const linEnabled = !!lin.enabled;
   let lining = { enabled: false, cost: 0, fabricCost: 0, makingCost: 0 };
+  let liningHeadingUsed = '';
 
   if (linEnabled) {
     const linCfg      = r.lining || {};
-    const linHeading  = lin.heading || (linCfg.followCurtain ? heading : linCfg.heading);
+    // An attached lining falls back to the rate card, because it is made the
+    // same way on every job. A separate one is a curtain in its own right —
+    // it can be a different heading from the face fabric entirely — so it is
+    // asked for and never assumed.
+    const linHeading  = lin.separate
+      ? (lin.heading || '')
+      : (lin.heading || (linCfg.followCurtain ? heading : linCfg.heading));
     const linFullness = fullnessFor(linHeading, r);
     const linWidthMm  = num(lin.fabricWidthMm) || num(linCfg.fabricWidthMm);
     const linPrice    = lin.pricePerM !== undefined && lin.pricePerM !== null && lin.pricePerM !== ''
                         ? num(lin.pricePerM) : num(linCfg.pricePerM);
 
+    liningHeadingUsed = linHeading;
+
     if (linFullness === null) {
-      warnings.push({ code: 'unknown-lining-heading', heading: linHeading, message: `Unknown lining heading "${linHeading}" — lining not priced.` });
+      warnings.push({
+        code: 'unknown-lining-heading', heading: linHeading,
+        message: linHeading
+          ? `Unknown lining heading "${linHeading}" — lining not priced.`
+          : 'Separate lining has no heading — lining not priced.',
+      });
       lining = { enabled: true, cost: 0, fabricCost: 0, makingCost: 0, heading: linHeading };
     } else {
       const lm = fabricMetreage({
@@ -357,31 +381,42 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
   }
 
   // ── Track ──────────────────────────────────────────────────────────────────
-  const trackType = input.trackType || '';
-  const widthM    = widthMm / 1000;
-  const perM      = trackRateFor(trackType, r);
-  let track;
-
-  if (perM !== null) {
-    track = { type: trackType, method: 'perMetre', ratePerM: perM, widthM, cost: perM * widthM };
-  } else {
-    const { price, reason, band, column } = osloPrice(trackType, heading, widthMm, r);
+  // Shared with the separate lining's own track: a lining on a KAW costs what
+  // a KAW costs, and a second copy of these rules would be a second place for
+  // the rate card to go stale.
+  const widthM = widthMm / 1000;
+  const priceTrack = (tType, tHeading, scope) => {
+    const perM = trackRateFor(tType, r);
+    if (perM !== null) {
+      return { type: tType, method: 'perMetre', ratePerM: perM, widthM, cost: perM * widthM };
+    }
+    const { price, reason, band: oBand, column } = osloPrice(tType, tHeading, widthMm, r);
     if (price === null) {
+      const where = scope === 'lining' ? 'Lining track' : 'Track';
       if (reason === 'over-max-width') {
         const key = Object.keys(r.oslo.prices || {})
-          .find(k => k.toLowerCase() === String(trackType).trim().toLowerCase());
-        const bands = r.oslo.prices?.[key]?.widthsMm?.length ? r.oslo.prices[key].widthsMm : (r.oslo.widthsMm || [0]);
-        warnings.push({ code: 'track-over-max', trackType, maxMm: Math.max(...bands), message: `${trackType} is not priced past ${Math.max(...bands)}mm — track costed at $0.` });
-      } else if (!trackType) {
-        warnings.push({ code: 'no-track-type', message: 'No track type — track costed at $0.' });
+          .find(k => k.toLowerCase() === String(tType).trim().toLowerCase());
+        const bands2 = r.oslo.prices?.[key]?.widthsMm?.length ? r.oslo.prices[key].widthsMm : (r.oslo.widthsMm || [0]);
+        warnings.push({ code: 'track-over-max', scope, trackType: tType, maxMm: Math.max(...bands2), message: `${tType} is not priced past ${Math.max(...bands2)}mm — ${where.toLowerCase()} costed at $0.` });
+      } else if (!tType) {
+        warnings.push({ code: 'no-track-type', scope, message: `${where} not set — costed at $0.` });
       } else {
-        warnings.push({ code: 'unknown-track-type', trackType, message: `Unknown track type "${trackType}" — track costed at $0.` });
+        warnings.push({ code: 'unknown-track-type', scope, trackType: tType, message: `Unknown track type "${tType}" — ${where.toLowerCase()} costed at $0.` });
       }
-      track = { type: trackType, method: 'none', cost: 0 };
-    } else {
-      track = { type: trackType, method: 'table', band, column, widthM, cost: price };
+      return { type: tType, method: 'none', cost: 0 };
     }
-  }
+    return { type: tType, method: 'table', band: oBand, column, widthM, cost: price };
+  };
+
+  const trackType = input.trackType || '';
+  const track = priceTrack(trackType, heading, 'curtain');
+
+  // A separate lining hangs on its own track; an attached one is sewn to the
+  // curtain and adds no hardware at all. That difference is the whole reason
+  // the two are told apart.
+  const liningTrack = (linEnabled && lin.separate)
+    ? priceTrack(lin.trackType || '', liningHeadingUsed, 'lining')
+    : null;
 
   // ── Fitting ────────────────────────────────────────────────────────────────
   const fitCfg  = r.fitting || {};
@@ -403,11 +438,20 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
   const isDual = (fitCfg.dualTrackTypes || [])
     .some(t => String(t).toLowerCase() === String(trackType).trim().toLowerCase());
 
+  // A separate lining is a second curtain to hang at the same opening: the
+  // ladder is already up and the track is already marked out, so it is charged
+  // as a proportion of the fitting rather than a second full one. The
+  // proportion lives in the rate card.
+  const separateLining = linEnabled && !!lin.separate;
+  const liningExtra    = separateLining ? num(fitCfg.separateLiningExtra) : 0;
+
   const fittingEnabled = input.fittingEnabled !== false;
+  const fittingBase    = (base + surcharge) * (isDual ? 2 : 1);
   const fitting = {
     enabled: fittingEnabled,
     base, dropSurcharge: surcharge, doubled: isDual,
-    cost: fittingEnabled ? (base + surcharge) * (isDual ? 2 : 1) : 0,
+    separateLining, liningExtra,
+    cost: fittingEnabled ? fittingBase * (1 + liningExtra) : 0,
   };
 
   // ── Totals ─────────────────────────────────────────────────────────────────
@@ -415,12 +459,12 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
 
   // Split so the app's margin model stays meaningful: bought-in goods are cost,
   // work done is labour.
-  const materialsCost = fabric.cost + lining.fabricCost + track.cost + extras;
+  const materialsCost = fabric.cost + lining.fabricCost + track.cost + (liningTrack?.cost || 0) + extras;
   const labourCost    = making.cost + (lining.makingCost || 0) + fitting.cost;
 
   return {
     warnings, priced: true,
-    fabric, making, lining, track, fitting,
+    fabric, making, lining, track, liningTrack, fitting,
     extras,
     materialsCost,
     labourCost,
@@ -446,6 +490,11 @@ export function calcCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, opts = {
     extraCost:       opts.extraCost ?? li.extraCost ?? 0,
     lining: {
       enabled:       !!li.attachedLining,
+      // `liningMode` is the newer field; older lines only ever recorded the
+      // boolean, and a boolean has always meant attached.
+      separate:      li.liningMode === 'separate',
+      heading:       li.liningHeading || '',
+      trackType:     li.liningTrackType || '',
       pricePerM:     opts.liningPricePerM ?? li.liningPricePerM,
       fabricWidthMm: opts.liningFabricWidthMm ?? li.liningFabricWidthMm,
     },
@@ -683,6 +732,9 @@ export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pric
     extraCost:       li.curtainExtraCost,
     lining: {
       enabled:   !!li.attachedLining,
+      separate:  li.liningMode === 'separate',
+      heading:   li.liningHeading || '',
+      trackType: li.liningTrackType || '',
       pricePerM: li.curtainLiningPricePerM,
     },
   }, r);
