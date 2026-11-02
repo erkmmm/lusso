@@ -19,6 +19,13 @@ const ROUTES = {
   'no-heading':            { what: 'No heading chosen',         where: 'sheet',   onLine: true },
   'no-track-type':         { what: 'No track type chosen',      where: 'sheet',   onLine: true },
   'no-fabric-price':       { what: 'No price for this fabric',  where: 'library' },
+  // The three the calculator raises when the fabric NAME is the problem: no
+  // library item matches it, several do and disagree on price, or the one that
+  // matched has no roll width (which decides cut-drops vs railroaded). All
+  // three are fixed in the price library — or by correcting the name.
+  'fabric-not-found':      { what: 'Fabric is not in the price library', where: 'library' },
+  'fabric-ambiguous':      { what: 'Fabric matches more than one price',  where: 'library' },
+  'fabric-width-assumed':  { what: 'No roll width for this fabric',       where: 'library' },
   'unknown-heading':       { what: 'Heading has no making rate', where: 'rates' },
   'unknown-lining-heading': { what: 'Lining heading has no making rate', where: 'rates' },
   'unknown-track-type':    { what: 'Track type is not on the rate card', where: 'rates' },

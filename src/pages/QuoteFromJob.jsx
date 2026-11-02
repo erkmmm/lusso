@@ -1,20 +1,23 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
   FileText, CheckSquare, Square,
-  AlertCircle, ClipboardList,
+  AlertCircle, ClipboardList, AlertTriangle, RefreshCw,
 } from 'lucide-react';
 import {
-  getJob, getCustomer, getMeasureSheetsByJob,
+  getJob, getCustomer, getMeasureSheetsByJob, getMeasureSheet, saveMeasureSheet,
   createQuote, saveQuote, addActivity, getQuotesByJob,
-  getCurtainRates, getPricedItems, DEFAULT_MARGIN_PERCENT,
+  getCurtainRates, getPricedItems, getProductTypes, DEFAULT_MARGIN_PERCENT,
 } from '../store/data';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
 import StickyActionBar from '../components/StickyActionBar';
+import QuoteGaps from '../components/QuoteGaps';
 import { autoCostCurtainLine } from '../lib/curtainCalc';
+import { resolveMeasureEntry } from '../lib/measureMath';
+import { sheetGaps, openGapKeys, gapTotals, gapId } from '../lib/sheetGaps';
 
 // Convert a measure-sheet line item → snapshot quote line item
 function msLineToQuoteLine(msLi, idx, rates, pricedItems) {
@@ -116,7 +119,7 @@ function SheetPicker({ sheets, selectedId, onSelect }) {
   );
 }
 
-function ItemRow({ item, checked, onToggle, idx }) {
+function ItemRow({ item, checked, onToggle, idx, gapCount = 0 }) {
   return (
     <button
       onClick={onToggle}
@@ -139,6 +142,14 @@ function ItemRow({ item, checked, onToggle, idx }) {
           {item.productNameSnapshot && (
             <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
               {item.productNameSnapshot}
+            </span>
+          )}
+          {/* Said here as well as in the panel below: this is the list you are
+              choosing from, so the line that is short an answer should say so
+              where you tick it. */}
+          {gapCount > 0 && (
+            <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1">
+              <AlertTriangle size={9} /> {gapCount} missing
             </span>
           )}
         </div>
@@ -170,10 +181,30 @@ export default function QuoteFromJob() {
   const [checkedIds, setCheckedIds] = useState(new Set());
   const [creating, setCreating]     = useState(false);
   const [error, setError]           = useState('');
+  // Answers typed into the missing-information panel, held here until the quote
+  // is created and then written back to the sheet in one go. Keyed by line id
+  // so unticking a line does not throw away what was typed on it.
+  const [fills, setFills]           = useState({});
+  const [dismissed, setDismissed]   = useState(() => new Set());
+  const [sheetConflict, setSheetConflict] = useState(false);
+  // Bumped to re-read the stored sheet — after a write-back, and after the
+  // user chooses to take a newer copy that was saved somewhere else.
+  const [sheetReload, setSheetReload] = useState(0);
 
+  // Read once: these are localStorage-backed and the gap check runs over every
+  // selected line on every keystroke in the panel.
+  const productTypes = useMemo(() => getProductTypes(), []);
+  const curtainRates = useMemo(() => getCurtainRates(), []);
+  const fabricLib    = useMemo(() => getPricedItems(), []);
+
+  // Read back from the store rather than held from the first render: a sheet
+  // edited in another tab, or by the write-back below, should be what the gap
+  // list is measured against.
   const selectedSheet = useMemo(
-    () => sheets.find(s => s.id === selectedSheetId) || null,
-    [sheets, selectedSheetId]
+    () => (selectedSheetId ? getMeasureSheet(selectedSheetId) : null)
+       || sheets.find(s => s.id === selectedSheetId)
+       || null,
+    [sheets, selectedSheetId, sheetReload]
   );
 
   const lineItems = useMemo(
@@ -185,6 +216,103 @@ export default function QuoteFromJob() {
   useEffect(() => {
     setCheckedIds(new Set(lineItems.map(li => li.id)));
   }, [selectedSheetId, lineItems.length]);
+
+  // Dismissals already recorded on the sheet. Somebody has answered "not on
+  // this line" once; asking again every time a quote is made off the sheet is
+  // how the panel would earn being ignored.
+  useEffect(() => {
+    const seeded = new Set();
+    lineItems.forEach(li => (li.quoteGapsDismissed || []).forEach(k => seeded.add(gapId(li.id, k))));
+    setDismissed(seeded);
+    setFills({});
+    setSheetConflict(false);
+  }, [selectedSheetId, lineItems.length]);
+
+  // ── Missing information ───────────────────────────────────────────────────
+  // The gap list is built from the line as it is STORED, not as it is being
+  // edited, so a row cannot disappear from under the cursor that is filling
+  // it. What changes as you type is whether a row counts as answered.
+  const gapOpts = useMemo(
+    () => ({ productTypes, rates: curtainRates, pricedItems: fabricLib, measureSheetId: selectedSheet?.id || null }),
+    [productTypes, curtainRates, fabricLib, selectedSheet],
+  );
+
+  const checkedLines = useMemo(
+    () => lineItems.filter(li => checkedIds.has(li.id)),
+    [lineItems, checkedIds],
+  );
+
+  const gapLines = useMemo(() => sheetGaps(checkedLines, gapOpts), [checkedLines, gapOpts]);
+
+  const patched = useCallback(
+    (li) => (fills[li.id] ? { ...li, ...fills[li.id] } : li),
+    [fills],
+  );
+
+  // Which rows have since been answered — recomputed against the edited line,
+  // so filling a heading also clears the curtain calculator's complaint about
+  // it rather than leaving a row that is no longer true.
+  const resolvedIds = useMemo(() => {
+    const out = new Set();
+    gapLines.forEach(({ id, item, gaps }) => {
+      if (!fills[id]) return;
+      const stillOpen = openGapKeys(patched(item), gapOpts);
+      gaps.forEach(g => { if (!stillOpen.has(g.key)) out.add(gapId(id, g.key)); });
+    });
+    return out;
+  }, [gapLines, fills, patched, gapOpts]);
+
+  const totals = useMemo(() => gapTotals(gapLines, dismissed, resolvedIds), [gapLines, dismissed, resolvedIds]);
+
+  // Per line, for the chip on the tick list.
+  const gapCountByLine = useMemo(() => {
+    const out = {};
+    gapLines.forEach(({ id, gaps }) => {
+      out[id] = gaps.filter(g => !dismissed.has(gapId(id, g.key)) && !resolvedIds.has(gapId(id, g.key))).length;
+    });
+    return out;
+  }, [gapLines, dismissed, resolvedIds]);
+
+  const getValue = useCallback(
+    (lineId, field) => {
+      const filled = fills[lineId];
+      if (filled && Object.prototype.hasOwnProperty.call(filled, field)) return filled[field];
+      return lineItems.find(li => li.id === lineId)?.[field] ?? '';
+    },
+    [fills, lineItems],
+  );
+
+  const setFill = useCallback((lineId, field, value) => {
+    setFills(prev => ({ ...prev, [lineId]: { ...(prev[lineId] || {}), [field]: value } }));
+  }, []);
+
+  // A width is typed as a sum as often as a number — "1200+50+50" — and the
+  // sheet keeps both the answer and the working. Same rule here, or the two
+  // places you can type a measurement would behave differently.
+  const commitMeasure = useCallback((lineId, field, raw) => {
+    const resolved = resolveMeasureEntry(raw);
+    setFills(prev => ({
+      ...prev,
+      [lineId]: {
+        ...(prev[lineId] || {}),
+        [field]: resolved ? resolved.value : raw,
+        [`${field}Expr`]: resolved ? resolved.expression : '',
+      },
+    }));
+  }, []);
+
+  const dismissGap  = useCallback((id) => setDismissed(prev => new Set(prev).add(id)), []);
+  const restoreGap  = useCallback((id) => setDismissed(prev => { const n = new Set(prev); n.delete(id); return n; }), []);
+  const dismissLine = useCallback((lineId) => setDismissed((prev) => {
+    const next = new Set(prev);
+    gapLines.find(l => l.id === lineId)?.gaps.forEach(g => next.add(gapId(lineId, g.key)));
+    return next;
+  }), [gapLines]);
+  const dismissAll = useCallback(() => setDismissed((prev) => {
+    const next = new Set(prev);
+    gapLines.forEach(({ id, gaps }) => gaps.forEach(g => next.add(gapId(id, g.key))));
+    return next;
+  }), [gapLines]);
 
   if (!job) {
     return (

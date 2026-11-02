@@ -16,6 +16,7 @@ import { evaluateLine } from '../lib/productLimits';
 import { OPTION_FAMILIES, familyMapFor, familyOfLine, hasBuiltInFamilies } from '../lib/optionFamilies';
 import { resolveMeasureEntry } from '../lib/measureMath';
 import { nextWindowLabel } from '../lib/roomNaming';
+import { isRollerBlindItem } from '../lib/buzExport';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
@@ -376,7 +377,11 @@ function LineSummary({ item, idx, open, issues, onToggle }) {
     : item.widthMm || item.dropMm
       ? `${item.widthMm || '—'} × ${item.dropMm || '—'}`
       : null;
-  const incomplete = !item.location || !item.productTypeId || !item.widthMm || !item.dropMm;
+  // A roller with no roll direction is as unfinished as one with no width:
+  // the factory cannot make it either way, and the gap is invisible once the
+  // card is closed.
+  const incomplete = !item.location || !item.productTypeId || !item.widthMm || !item.dropMm
+    || (isRollerBlindItem(item) && !item.heading);
   const worst = issues?.some(r => r.severity === 'error') ? 'error'
     : issues?.length ? 'warning' : null;
 
@@ -2324,6 +2329,38 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                           onChange={e => setLineItem(idx, 'fabricColour', e.target.value)} placeholder="e.g. Arctic White" className={inp()} />
                       </div>
                     </div>
+
+                    {/* Roll direction decides which way the fabric comes off
+                        the tube — whether it hangs against the glass or clears
+                        a handle — and it is not something anyone can work out
+                        later from the sheet. It was a dropdown among a dozen
+                        others behind "Add specifications", which is why lines
+                        reached the factory without it. On a roller it is a
+                        question the card asks out loud. */}
+                    {isRollerBlindItem(item) && (() => {
+                      const rolls = getMsOptions('heading', productType).filter(o => /roll/i.test(o));
+                      const options = rolls.length ? rolls : ['Standard Roll', 'Reverse Roll'];
+                      return (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">
+                            Roll direction {!item.heading && <span className="text-amber-600">· needed</span>}
+                          </label>
+                          <div className="flex gap-2">
+                            {options.map(o => (
+                              <button key={o} type="button"
+                                onClick={() => setLineItem(idx, 'heading', o)}
+                                className={`flex-1 text-xs font-medium py-2 rounded-lg border transition-colors ${
+                                  item.heading === o
+                                    ? 'bg-amber-500 text-white border-amber-500'
+                                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}>
+                                {o}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* What the supplier's spec sheet says about what was just
