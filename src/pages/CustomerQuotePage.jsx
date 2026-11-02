@@ -750,16 +750,27 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     flashTimer.current = setTimeout(() => setFlashKey(null), 1900);
   };
 
+  // Set only when the lookup has actually come back with nothing. Until then
+  // the quote is "not here yet", which is not the same as "not found" — see
+  // the three states below the hooks.
+  const [lookupFailed, setLookupFailed] = useState(false);
+
   useEffect(() => {
     if (quote || !supabase || !id || !token) return;
+    let cancelled = false;
     // Returns a hand-picked, already-camelCase projection: sell prices only,
     // with unitCostPrice / labourCost / marginPercent / supplier left behind on
     // the server. It used to hand the browser the whole quotes row, so anyone
     // with the link — or with a guess at an id — could read our cost base and
     // margin on every line.
     supabase.rpc('get_public_quote', { p_id: id, p_token: token }).then(({ data, error }) => {
+      if (cancelled) return;
       if (!error && data) setQuote(data);
+      // Wrong token, deleted quote, or an id that never existed — all of them
+      // land here, and only now is "not found" the honest answer.
+      else setLookupFailed(true);
     });
+    return () => { cancelled = true; };
   }, [id, token, quote]);
 
   // The customer's own device has no localStorage copy of the customer record,
@@ -816,15 +827,54 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const isFirstOpen = !quote?.firstOpenedAt;
   const { trackAccept, trackDecline } = useQuoteTracking((!isStaffPreview && quote) ? id : null, isFirstOpen, token);
 
+  // Three different things were all showing the same "404 — not found or has
+  // been removed":
+  //
+  //   · the quote is still being fetched, which is EVERY customer for the
+  //     first moment of every visit, because their browser has no local copy.
+  //     They were told their quote did not exist while it was on its way.
+  //   · the link arrived without its ?t=, which mail clients and copy-paste do
+  //     routinely. Nothing is missing; the address is incomplete.
+  //   · the quote genuinely is not there.
+  //
+  // Only the last one is a 404, and only it should mention removal — the other
+  // two had customers ringing to ask whether their quote had been cancelled.
   if (!quote) {
-    return (
+    const shell = (body) => (
       <div style={{ minHeight: '100vh', background: T.page, fontFamily: T.font, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: 40, fontWeight: 300, color: T.mist, margin: 0 }}>404</p>
-          <p style={{ color: T.stone, marginTop: 8 }}>Quote not found or has been removed.</p>
-        </div>
+        <div style={{ textAlign: 'center', maxWidth: 420 }}>{body}</div>
       </div>
     );
+
+    // A customer with no token cannot be fetched for, so this never resolves —
+    // say what is wrong instead of spinning forever. Staff previewing without
+    // a token fall through to the 404, which is the truthful answer for them.
+    if (!isStaffPreview && !token) {
+      return shell(<>
+        <p style={{ fontSize: 28, fontWeight: 300, color: T.stone, margin: 0 }}>Incomplete link</p>
+        <p style={{ color: T.stone, marginTop: 8, lineHeight: 1.7 }}>
+          This link is missing the part that opens your quote — it can get cut off when a link is
+          copied or forwarded. Open it from the original email, or reply and we will send it again.
+        </p>
+      </>);
+    }
+
+    if (!lookupFailed) {
+      return shell(<>
+        <div aria-hidden="true" style={{
+          width: 26, height: 26, margin: '0 auto', borderRadius: 999,
+          border: `2px solid ${T.mist}`, borderTopColor: T.stone,
+          animation: 'lq-spin 700ms linear infinite',
+        }} />
+        <style>{'@keyframes lq-spin{to{transform:rotate(360deg)}}'}</style>
+        <p style={{ color: T.stone, marginTop: 14 }}>Loading your quote…</p>
+      </>);
+    }
+
+    return shell(<>
+      <p style={{ fontSize: 40, fontWeight: 300, color: T.mist, margin: 0 }}>404</p>
+      <p style={{ color: T.stone, marginTop: 8 }}>Quote not found or has been removed.</p>
+    </>);
   }
 
   // Offline / not-yet-sent quotes must not be visible on the public link.
