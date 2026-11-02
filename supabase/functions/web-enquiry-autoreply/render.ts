@@ -366,7 +366,13 @@ export function renderAutoReply(
     + `To save time on that call, hit reply and tell us:\n\n`
     + `• Roughly how many windows are involved\n`
     + `• New build or renovation, or replacing what's there\n`
-    + `• Any timeframe you're working to\n\n`
+    + `• Any timeframe you're working to\n`
+    // Asked in writing rather than on the call on purpose: there is no social
+    // pressure in an email, so people answer honestly or skip it, and either
+    // is useful. The reason clause is load-bearing — "if you have one in mind"
+    // plus a benefit gets an answer where a bare "What's your budget?" reads
+    // as qualifying them and gets ignored.
+    + `• A budget range, if you have one in mind — it helps us bring the right samples\n\n`
     // The second path, for the landlord, the builder, and anyone who does not
     // want a stranger in their lounge room. "Rough is fine to start" is doing
     // real work: a customer who thinks they need exact numbers sends nothing
