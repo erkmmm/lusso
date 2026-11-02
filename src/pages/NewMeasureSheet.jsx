@@ -782,6 +782,9 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   const resumed = initial.resumed;
 
   const [sheet, setSheet] = useState(initial.sheet);
+  // Which line is one tap from deletion. One at a time, so arming a second
+  // disarms the first and there is never more than one live red button.
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   function buildNewSheet() {
     if (prelinkedCustomer) {
@@ -2193,13 +2196,14 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                         onAdd={(keys) => addOptionFamilies(idx, keys)}
                       />
                       <span className="flex-1" />
+                      {/* Delete used to sit here, one icon away from Copy and
+                          the same size and colour — a mis-tap on a phone threw
+                          away an opening that had just been measured. It lives
+                          at the foot of the card now, apart from everything
+                          that is safe to tap twice. */}
                       <button onClick={() => copyLineItem(idx)}
-                        className="text-slate-300 hover:text-amber-500 transition-colors p-1.5 rounded" title="Copy to new line">
+                        className="text-slate-300 hover:text-amber-500 transition-colors p-1.5 rounded" title="Copy to next window">
                         <Copy size={14} />
-                      </button>
-                      <button onClick={() => removeLineItem(idx)}
-                        className="text-slate-300 hover:text-red-400 transition-colors p-1.5 rounded" title="Remove item">
-                        <Trash2 size={14} />
                       </button>
                     </div>
                   </div>
@@ -2342,7 +2346,34 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                       window by window shouldn't involve the scrollbar at all,
                       and this is what stops you sailing past the one you
                       wanted. The last line offers a new one instead. */}
-                  <div className="border-t border-slate-100 px-3 py-2 flex items-center justify-between gap-2">
+                  <div className="border-t border-slate-100 px-3 py-2 flex items-center gap-2">
+                    {/* Two taps, and the second is the only red thing on the
+                        card. An opening is twenty seconds of measuring and a
+                        trip back to site if it goes. */}
+                    {confirmDelete === item.id ? (
+                      <span className="flex items-center gap-1">
+                        <button type="button"
+                          onClick={() => { setConfirmDelete(null); removeLineItem(idx); }}
+                          className="text-xs font-semibold text-red-600 hover:text-red-700 px-2 py-1.5">
+                          Delete opening
+                        </button>
+                        <button type="button" onClick={() => setConfirmDelete(null)}
+                          className="text-xs font-medium text-slate-400 hover:text-slate-600 px-2 py-1.5">
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button type="button"
+                        onClick={() => setConfirmDelete(item.id)}
+                        disabled={sheet.lineItems.length <= 1}
+                        title={sheet.lineItems.length <= 1
+                          ? 'A sheet keeps at least one opening'
+                          : 'Remove this opening'}
+                        className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-slate-400 px-2 py-1.5">
+                        <Trash2 size={13} /> Delete
+                      </button>
+                    )}
+                    <span className="flex-1" />
                     <button type="button" onClick={() => toggleCard(item.id)}
                       className="text-xs font-medium text-slate-400 hover:text-slate-600 px-2 py-1.5">
                       Collapse

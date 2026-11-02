@@ -129,6 +129,9 @@ const Row = memo(function Row({
   onConfirmMeasured, onRevertToPlan, onOpenLimitDoc,
   cellRefs, onCellMouseDown, onCellFocus, onHandleDown,
 }) {
+  // Armed for deletion. Local to the row, so one armed trash never leaves
+  // another row looking dangerous.
+  const [armed, setArmed] = useState(false);
   // Worst severity per measured field, so the offending cell can say so itself.
   const issueBy = {};
   for (const r of issues || []) {
@@ -310,8 +313,18 @@ const Row = memo(function Row({
             <Copy size={14} />
           </button>
         )}
-        <button type="button" onClick={() => removeLineItem(idx)} disabled={!canRemove} tabIndex={-1}
-          title="Remove line" className="text-slate-300 hover:text-red-500 disabled:opacity-30 p-1.5">
+        {/* Two taps. The icon cannot move away from Copy here — it is a grid
+            row and the actions share one cell — so the safety is in the
+            sequence: the first tap turns it red and says what the next one
+            does, and moving focus away disarms it. */}
+        <button type="button"
+          onClick={() => { if (armed) { setArmed(false); removeLineItem(idx); } else setArmed(true); }}
+          onBlur={() => setArmed(false)}
+          disabled={!canRemove} tabIndex={-1}
+          title={armed ? 'Tap again to remove this line' : 'Remove line'}
+          className={`p-1.5 disabled:opacity-30 ${armed
+            ? 'text-white bg-red-500 rounded'
+            : 'text-slate-300 hover:text-red-500'}`}>
           <Trash2 size={14} />
         </button>
       </td>
