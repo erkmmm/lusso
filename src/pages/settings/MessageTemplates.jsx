@@ -100,6 +100,108 @@ const PRESET_FIELDS = [
  * fire-and-forget, so a broken send looks exactly like a quiet week. "Last
  * sent 20 minutes ago" is the only thing on this screen that proves otherwise.
  */
+/**
+ * The wording, editable.
+ *
+ * Empty means "use the built-in", not "send nothing" — so the boxes start
+ * blank with the shipped copy described beside them, and clearing one puts
+ * the default back. That is the only sane reading: a business that has never
+ * opened this must keep getting the message we wrote, and an accidental
+ * select-all-delete must not post an empty email to a lead.
+ *
+ * The per-enquiry intelligence survives a rewrite through tokens. {{opening}}
+ * is the whole first sentence, already branched for advice / commercial /
+ * product and carrying the suburb if there was a usable one; {{call_line}}
+ * carries the phone number and the worked-out call window. Someone can move
+ * them, or drop them and write their own, but they cannot be reconstructed by
+ * hand — which is why they are offered rather than inlined.
+ */
+function AutoReplyCopy({ cfg, canEdit, onSaved }) {
+  const [subject, setSubject] = useState(cfg.subject ?? '');
+  const [body, setBody]       = useState(cfg.body ?? '');
+  const [sms, setSms]         = useState(cfg.sms ?? '');
+  const [saving, setSaving]   = useState(false);
+
+  const dirty = subject !== (cfg.subject ?? '')
+    || body !== (cfg.body ?? '')
+    || sms !== (cfg.sms ?? '');
+
+  // Over 160 and Twilio bills two segments per lead rather than one. The RPC
+  // refuses it as well; this is so nobody finds out by pressing Save.
+  const smsOver = sms.trim().length > 160;
+
+  const save = async () => {
+    if (!canEdit || saving || smsOver) return;
+    setSaving(true);
+    const { data, error } = await supabase.rpc('web_autoreply_set_template', {
+      p_subject: subject, p_body: body, p_sms: sms,
+    });
+    setSaving(false);
+    if (error) { toast(error.message || 'Could not save the wording.'); return; }
+    onSaved(data);
+    toast('Saved. New website leads will get this wording.');
+  };
+
+  const field = 'w-full text-xs rounded-lg border border-slate-200 px-2.5 py-2 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:bg-slate-50 disabled:text-slate-400';
+
+  return (
+    <div className="border-t border-slate-100 pt-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-slate-500">Edit the wording</p>
+        {dirty && canEdit && (
+          <button type="button" onClick={save} disabled={saving || smsOver}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-400">
+            {saving ? 'Saving…' : 'Save wording'}
+          </button>
+        )}
+      </div>
+
+      <p className="text-[11px] text-slate-400">
+        Leave a box empty to use the built-in wording described above. Clearing one puts the
+        default back rather than sending a blank message.
+      </p>
+
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-slate-500">Subject</label>
+        <input value={subject} onChange={e => setSubject(e.target.value)} disabled={!canEdit}
+          placeholder="Your Lusso enquiry — and a quick question" className={field} />
+      </div>
+
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-slate-500">Message</label>
+        <textarea value={body} onChange={e => setBody(e.target.value)} disabled={!canEdit}
+          rows={8} placeholder="Using the built-in message." className={field} />
+        <p className="text-[11px] text-slate-400">
+          Tokens: <code>{'{{opening}}'}</code> the first sentence, already tailored to what they asked
+          about and where they are · <code>{'{{call_line}}'}</code> who will call, on what number, and
+          when · <code>{'{{first_name}}'}</code> · <code>{'{{suburb}}'}</code> ·
+          <code> {'{{interest}}'}</code> · <code>{'{{phone}}'}</code> ·
+          <code> {'{{call_window}}'}</code> · <code>{'{{office_phone}}'}</code>
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <label className="block text-[11px] font-medium text-slate-500">After-hours SMS</label>
+          <span className={`text-[11px] tabular-nums ${smsOver ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>
+            {sms.trim().length}/160
+          </span>
+        </div>
+        <textarea value={sms} onChange={e => setSms(e.target.value)} disabled={!canEdit}
+          rows={2} placeholder="Using the built-in SMS." className={field} />
+        <p className="text-[11px] text-slate-400">
+          Plain characters only — one curly apostrophe or an en dash doubles what every message costs.
+          {smsOver && <span className="text-red-600 font-medium"> Too long: over 160 bills as two messages per lead.</span>}
+        </p>
+      </div>
+
+      {!canEdit && (
+        <p className="text-[11px] text-slate-400">Only an account manager can change the wording.</p>
+      )}
+    </div>
+  );
+}
+
 function WebAutoReplySection() {
   const { isAM } = useProfile() ?? {};
   const [cfg, setCfg]       = useState(null);   // null while loading
@@ -219,18 +321,20 @@ function WebAutoReplySection() {
             <p className="text-xs text-slate-400">Only an account manager can change this setting.</p>
           )}
 
-          <div className="text-xs text-slate-400 border-t border-slate-100 pt-3 space-y-1">
-            <p className="font-medium text-slate-500">What it says</p>
-            <p>
+          <div className="border-t border-slate-100 pt-3 space-y-1">
+            <p className="text-xs font-medium text-slate-500">What it says</p>
+            <p className="text-xs text-slate-400">
               Thanks them by name for the product they asked about, tells them a consultant will call
               — today, tomorrow morning or Monday, worked out from the actual time of day — explains the
               free in-home consultation, and asks them to reply with their window count, whether it is new
               or a replacement, and their timeframe. Their reply threads back onto the lead in the Inbox.
             </p>
-            <p>
+            <p className="text-xs text-slate-400">
               Newsletter signups never receive it, and nobody is emailed twice for the same enquiry.
             </p>
           </div>
+
+          <AutoReplyCopy cfg={cfg} canEdit={canEdit} onSaved={setCfg} />
         </>)}
       </div>
     </SettingsCard>
