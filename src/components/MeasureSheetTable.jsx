@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
+import { resolveMeasureEntry } from '../lib/measureMath';
 import { Trash2, Copy, Pin, PinOff, Rows3, Rows4 } from 'lucide-react';
 import { getMsOptions, MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers } from '../store/data';
 import PricedItemPicker from './PricedItemPicker';
@@ -167,9 +168,31 @@ const Row = memo(function Row({
       );
     }
     if (col.type === 'number') {
+      // Width and drop take a sum — "1200+50" — and resolve it when the cell
+      // is left, the same rule as the card view. Quantity does not: there is
+      // no arithmetic in "how many of these", and leaving it a number input
+      // keeps its spinner and its numeric keypad.
+      //
+      // The working is not shown here. A second line inside a grid cell would
+      // cost every row its height for something the card view already carries,
+      // and the sum is stored either way.
+      const isMeasure = col.field === 'widthMm' || col.field === 'dropMm';
       return (
-        <input type="number" inputMode="numeric" min="0" value={item[col.field] ?? ''}
+        <input
+          type={isMeasure ? 'text' : 'number'}
+          inputMode={isMeasure ? undefined : 'numeric'}
+          min={isMeasure ? undefined : '0'}
+          value={item[col.field] ?? ''}
           onChange={e => setLineItem(idx, col.field, e.target.value)}
+          onBlur={isMeasure ? (e) => {
+            const resolved = resolveMeasureEntry(e.target.value);
+            if (resolved) {
+              setLineItem(idx, col.field, resolved.value);
+              setLineItem(idx, `${col.field}Expr`, resolved.expression);
+            } else {
+              setLineItem(idx, `${col.field}Expr`, '');
+            }
+          } : undefined}
           placeholder={col.key === 'quantity' ? '' : 'mm'}
           className={`${inputCls(density)} no-spin text-right ${col.highlight ? 'font-semibold text-slate-900 bg-amber-50/50 focus:bg-amber-100' : ''}`} />
       );

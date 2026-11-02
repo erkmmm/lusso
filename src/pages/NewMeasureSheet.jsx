@@ -14,6 +14,7 @@ import {
 import { saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob, getNotes, isTaskOpen, linkNotesToJob, getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes, getMsOptions, URGENCY_LEVELS, MS_SPEC_FIELDS, getVisibleSpecKeys, makeProductSelectHandlers, isPlanEstimate, markLineCheckMeasured, markLinePlanEstimate, buildLimitsResolver, getProductDocument, sheetContentScore, getMeasureSheets, searchMatchAnywhere } from '../store/data';
 import { evaluateLine } from '../lib/productLimits';
 import { OPTION_FAMILIES, familyMapFor, familyOfLine, hasBuiltInFamilies } from '../lib/optionFamilies';
+import { resolveMeasureEntry } from '../lib/measureMath';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
@@ -633,6 +634,9 @@ const EMPTY_LINE_ITEM = () => ({
   id: uuidv4(), location: '', productTypeId: '', productNameSnapshot: '',
   pricedItemId: null, // links to price library item
   quantity: 1, widthMm: '', dropMm: '', fabricColour: '', control: '',
+  // The sum a measurement was worked out from, kept so the sheet can be
+  // checked later: 1300 tells you nothing, 1200+50+50 tells you why.
+  widthMmExpr: '', dropMmExpr: '',
   returnSide: '', motorSide: '', fixing: '', heading: '', attachedLining: false,
   liningFabricColour: '', hem: '', trackColour: '', baseBarColour: '',
   trackBaseBarColour: '', trackType: '',
@@ -1283,6 +1287,25 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
     });
     setOpenCards(new Set(newIds));
   }, [productTypes]);
+
+  /**
+   * Turn a typed sum into a measurement when the field is left.
+   *
+   * Only ever acts on something that IS a sum. A plain "1800" is left exactly
+   * as typed, and an unfinished one — "1200+" — is left alone too rather than
+   * quietly becoming 1200, because a number nobody meant is worse on a measure
+   * sheet than a number that is obviously wrong.
+   */
+  const commitMeasure = useCallback((idx, field, raw) => {
+    const resolved = resolveMeasureEntry(raw);
+    if (resolved) {
+      setLineItem(idx, field, resolved.value);
+      setLineItem(idx, `${field}Expr`, resolved.expression);
+    } else {
+      // Typed over with a plain number: the old working no longer explains it.
+      setLineItem(idx, `${field}Expr`, '');
+    }
+  }, [setLineItem]);
 
   const removeLineItem = useCallback((idx) => {
     allowShrinkRef.current = true;   // a deliberate delete may legitimately shrink the sheet
@@ -2176,17 +2199,33 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                       large touch targets + numeric keyboards for on-site use. */}
                   <div className="px-4 pt-3 pb-2 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
-                      {[['widthMm', 'Width', '1800'], ['dropMm', 'Drop', '2400']].map(([field, label, eg]) => (
+                      {[['widthMm', 'Width', '1800'], ['dropMm', 'Drop', '2400']].map(([field, label, eg]) => {
+                        const working = item[`${field}Expr`];
+                        const typed   = String(item[field] ?? '');
+                        const notANumber = typed !== '' && !Number.isFinite(Number(typed));
+                        return (
                         <div key={field}>
                           <label className="block text-xs font-semibold text-slate-700 mb-1">
                             {label} <span className="font-normal text-slate-400">mm</span>
                           </label>
-                          <input type="number" inputMode="numeric" min="1" value={item[field]}
+                          {/* Text, not number: a number input silently discards
+                              "1200+50" before it ever reaches us. The full
+                              keyboard is the cost of being able to type a sum
+                              over a tape measure. */}
+                          <input type="text" value={item[field]}
                             onChange={e => setLineItem(idx, field, e.target.value)} placeholder={eg}
                             onFocus={e => e.target.select()}
+                            onBlur={e => commitMeasure(idx, field, e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                             className="w-full border border-slate-200 rounded-xl text-2xl font-semibold text-slate-900 px-2 py-3.5 bg-white text-center tabular-nums no-spin placeholder:text-slate-300 placeholder:font-normal placeholder:text-lg focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200" />
+                          {notANumber ? (
+                            <p className="mt-1 text-center text-[11px] text-red-500">Not a number</p>
+                          ) : working ? (
+                            <p className="mt-1 text-center text-[11px] text-slate-400 tabular-nums">{working}</p>
+                          ) : null}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     {/* Qty is 1 on almost every opening and fabric is typed by
                         hand, so the space goes to fabric. */}
