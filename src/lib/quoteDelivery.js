@@ -21,7 +21,7 @@
 
 import {
   getQuote, getCustomer, sendQuote, getMessagePresets, addActivity,
-  recordQuoteFollowUp,
+  recordQuoteFollowUp, addQuoteActivity, isQuoteLive,
 } from '../store/data';
 import { sendQuoteEmail } from './email';
 
@@ -115,6 +115,76 @@ export async function deliverQuoteFollowUp(quoteOrId, { user = 'Admin' } = {}) {
       jobId: quote.jobId,
       type: 'quote_followed_up',
       message: `Follow-up on quote ${quote.quoteNumber} sent to ${customer.email}`,
+      user,
+    });
+  }
+
+  return { quote: getQuote(quote.id) || quote, customer, unconfirmed: !!result?.unconfirmed };
+}
+
+/**
+ * Send the customer their quote again, unchanged.
+ *
+ * This is the "I can't open it" call: the link got mangled in a forward, the
+ * email went to spam, the customer deleted it. Nothing about the quote has
+ * changed and nothing about it should — so this is neither of the two sends
+ * above.
+ *
+ * Not deliverQuote(): that calls sendQuote(), which sets the status back to
+ * 'Sent' and would throw away the fact that the customer had already opened it.
+ *
+ * Not deliverQuoteFollowUp(): that one is a chase. It writes lastFollowUpAt,
+ * which the dashboard reads to decide who has been nudged and who is still
+ * waiting, and it sends under the follow-up intro. Someone who rang up because
+ * the page wouldn't load has not been chased, and the email they need is the
+ * original one, not a "just following up".
+ *
+ * So: the same email, the same intro, and no lifecycle change at all. The only
+ * trace is an activity entry, which is the honest record of what happened.
+ *
+ * The customer link must be live — an offline quote's link 404s, and sending
+ * someone a dead link a second time is worse than not sending it.
+ *
+ * @param {object|string} quoteOrId
+ * @param {object} [opts]
+ * @param {string} [opts.user]
+ * @returns {Promise<{quote: object, customer: object, unconfirmed?: boolean}>}
+ * @throws {Error} with a user-facing message
+ */
+export async function resendQuote(quoteOrId, { user = 'Admin' } = {}) {
+  const quote = typeof quoteOrId === 'string' ? getQuote(quoteOrId) : quoteOrId;
+  if (!quote) throw new Error('Quote not found.');
+
+  if (!quote.sentAt) {
+    throw new Error(
+      `Quote ${quote.quoteNumber || ''} hasn't been sent yet — use Send Quote to issue it.`.trim()
+    );
+  }
+
+  if (!isQuoteLive(quote)) {
+    throw new Error(
+      `Quote ${quote.quoteNumber || ''} is offline, so its link won't open for the customer. `.trim() +
+      'Make it live first, then resend.'
+    );
+  }
+
+  const customer = getCustomer(quote.customerId);
+  if (!customer?.email) {
+    throw new Error(
+      `${customer?.name || 'This customer'} has no email address on file. ` +
+      'Add one to the customer record, then resend the quote.'
+    );
+  }
+
+  const result = await sendQuoteEmail(quote, customer, getMessagePresets().quoteEmailIntro);
+
+  addQuoteActivity(quote.id, 'resent', `Quote resent to ${customer.email}`, user);
+
+  if (quote.jobId) {
+    addActivity({
+      jobId: quote.jobId,
+      type: 'quote_resent',
+      message: `Quote ${quote.quoteNumber} resent to ${customer.email}`,
       user,
     });
   }

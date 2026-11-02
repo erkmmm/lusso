@@ -18,7 +18,7 @@ import {
   isQuoteLive, isQuoteOverdue, publicQuoteUrl,
 } from '../store/data';
 import Card from '../components/Card';
-import { deliverQuote } from '../lib/quoteDelivery';
+import { deliverQuote, resendQuote } from '../lib/quoteDelivery';
 import { supabase } from '../lib/supabase';
 import { xeroCreateInvoice, xeroSyncInvoice, xeroInvoiceStatusBadge } from '../lib/xero';
 import { effectiveSelectedIds } from '../lib/quoteSelection';
@@ -41,6 +41,7 @@ const ACTIVITY_META = {
   unaccepted:        { emoji: '↩️', label: 'Acceptance reversed' },
   commented:         { emoji: '💬', label: 'Comment' },
   followed_up:       { emoji: '📞', label: 'Follow-up' },
+  resent:            { emoji: '📨', label: 'Resent' },
   deposit_requested: { emoji: '💰', label: 'Deposit' },
 };
 
@@ -136,6 +137,31 @@ export default function QuoteView() {
     } catch (err) {
       console.error('[QuoteView] Send quote error:', err);
       setSendError(err.message || 'Failed to send quote email. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  }, [quote, refresh]);
+
+  // Resending is its own thing, not a second Send: the quote is unchanged and
+  // so is where the customer stands with it. See resendQuote() for why it must
+  // not go through deliverQuote().
+  const handleResend = useCallback(async () => {
+    const customer = getCustomer(quote?.customerId);
+    if (!window.confirm(
+      `Resend quote ${quote?.quoteNumber || ''} to ${customer?.email || 'the customer'}?\n\n` +
+      'Same quote, same link, same expiry — they just get the email again.'
+    )) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      const { unconfirmed, customer: to } = await resendQuote(quote, { user: 'Admin' });
+      refresh();
+      toast(unconfirmed
+        ? `Resend submitted, but delivery wasn't confirmed. Check with ${to.email}.`
+        : `Quote ${quote.quoteNumber || ''} re-sent to ${to.email}.`);
+    } catch (err) {
+      console.error('[QuoteView] Resend quote error:', err);
+      setSendError(err.message || 'Failed to resend the quote email. Please try again.');
     } finally {
       setSending(false);
     }
@@ -372,6 +398,13 @@ export default function QuoteView() {
                   title="Put the customer link back up and restart the expiry timer, without emailing the customer"
                   className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors">
                   <Wifi size={13} /> Make live (no email)
+                </button>
+              )}
+              {quote.sentAt && isLive && (
+                <button onClick={handleResend} disabled={sending}
+                  title={`Email the same quote and link again${customer?.email ? ` to ${customer.email}` : ''} — nothing changes, the expiry doesn't move`}
+                  className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-60">
+                  <Send size={13} /> {sending ? 'Sending…' : 'Resend'}
                 </button>
               )}
               <button onClick={() => navigate(`/quotes/${quote.id}/edit`)}
