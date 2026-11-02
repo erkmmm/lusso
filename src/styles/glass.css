@@ -40,6 +40,13 @@ html:is(.theme-glass, .theme-glass-light):not([data-public]) {
      them stays readable over a busy photo. */
   --glass-deep: rgba(26, 23, 21, 0.82);
 
+  /* The phone's top bar and bottom nav. Separate from the panels: they sit
+     against the edge of the screen rather than floating on it, so they carry
+     more weight than a card does. */
+  --glass-chrome: rgba(26, 23, 21, 0.6);
+  --glass-chrome-strong: rgba(26, 23, 21, 0.72);
+  --glass-hairline: rgba(255, 255, 255, 0.1);
+
   --glass-shadow:
     0 34px 70px -28px rgba(0, 0, 0, 0.55),
     0 12px 28px -16px rgba(0, 0, 0, 0.4);
@@ -117,6 +124,14 @@ html:is(.theme-glass, .theme-glass-light):not([data-public]) {
    z-index:-1 wallpaper and hides it completely. */
 html:is(.theme-glass, .theme-glass-light):not([data-public]) {
   background-color: #1c1a19 !important;
+}
+
+/* The daylight skin's fallback. Same job — the colour behind the wallpaper,
+   seen while the photo decodes and anywhere it does not reach — but a dark
+   one here turns the whole app black for that moment, and black is exactly
+   what this skin exists not to be. */
+html.theme-glass-light:not([data-public]) {
+  background-color: #efeae4 !important;
 }
 
 html:is(.theme-glass, .theme-glass-light):not([data-public]) body {
@@ -335,29 +350,31 @@ html:is(.theme-glass, .theme-glass-light):not([data-public]) .hover\:bg-slate-10
 /* 7d · Tinted status chips (bg-green-50, bg-red-50, …). The 50-weight tints
    are designed for white paper and vanish on glass; re-cut them as a wash of
    their own hue at a weight that survives. */
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-green-50'] { background-color: rgba(94, 230, 154, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-red-50'] { background-color: rgba(255, 125, 125, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-amber-50'] { background-color: rgba(255, 201, 92, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-orange-50'] { background-color: rgba(255, 170, 92, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-blue-50'] { background-color: rgba(118, 180, 255, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-sky-50'] { background-color: rgba(120, 200, 255, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-teal-50'] { background-color: rgba(94, 226, 210, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-violet-50'] { background-color: rgba(155, 140, 255, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-purple-50'] { background-color: rgba(176, 140, 255, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-yellow-50'] { background-color: rgba(255, 221, 92, 0.16); }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) [class*='bg-slate-100'] { background-color: rgba(255, 255, 255, 0.12); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-green-50'] { background-color: rgba(94, 230, 154, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-red-50'] { background-color: rgba(255, 125, 125, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-amber-50'] { background-color: rgba(255, 201, 92, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-orange-50'] { background-color: rgba(255, 170, 92, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-blue-50'] { background-color: rgba(118, 180, 255, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-sky-50'] { background-color: rgba(120, 200, 255, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-teal-50'] { background-color: rgba(94, 226, 210, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-violet-50'] { background-color: rgba(155, 140, 255, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-purple-50'] { background-color: rgba(176, 140, 255, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-yellow-50'] { background-color: rgba(255, 221, 92, 0.16); }
+html:is(.theme-glass, .theme-glass-light):not([data-public]) [class~='bg-slate-100'] { background-color: rgba(255, 255, 255, 0.12); }
 
 /* Their text needs lifting to match — the 600/700 weights were picked against
-   a near-white tint. */
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-green-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-green-700, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-green-800 { color: #7df0ae; }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-red-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-red-700, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-red-800 { color: #ff9b9b; }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-orange-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-orange-700 { color: #ffc08a; }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-blue-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-blue-700, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-blue-800 { color: #9ccaff; }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-sky-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-sky-700 { color: #93d4ff; }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-teal-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-teal-700 { color: #80e8da; }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-violet-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-violet-700 { color: #b9adff; }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-purple-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-purple-700 { color: #c9a9ff; }
-html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-yellow-600, html:is(.theme-glass, .theme-glass-light):not([data-public]) .text-yellow-700 { color: #ffe08a; }
+   a near-white tint. Dark skin only: on Glass Light the tint IS near-white
+   again, so Tailwind's own 600/700 are already the right weights and lifting
+   them to pastel is what made the status pills unreadable. */
+html.theme-glass:not([data-public]) .text-green-600, html.theme-glass:not([data-public]) .text-green-700, html.theme-glass:not([data-public]) .text-green-800 { color: #7df0ae; }
+html.theme-glass:not([data-public]) .text-red-600, html.theme-glass:not([data-public]) .text-red-700, html.theme-glass:not([data-public]) .text-red-800 { color: #ff9b9b; }
+html.theme-glass:not([data-public]) .text-orange-600, html.theme-glass:not([data-public]) .text-orange-700 { color: #ffc08a; }
+html.theme-glass:not([data-public]) .text-blue-600, html.theme-glass:not([data-public]) .text-blue-700, html.theme-glass:not([data-public]) .text-blue-800 { color: #9ccaff; }
+html.theme-glass:not([data-public]) .text-sky-600, html.theme-glass:not([data-public]) .text-sky-700 { color: #93d4ff; }
+html.theme-glass:not([data-public]) .text-teal-600, html.theme-glass:not([data-public]) .text-teal-700 { color: #80e8da; }
+html.theme-glass:not([data-public]) .text-violet-600, html.theme-glass:not([data-public]) .text-violet-700 { color: #b9adff; }
+html.theme-glass:not([data-public]) .text-purple-600, html.theme-glass:not([data-public]) .text-purple-700 { color: #c9a9ff; }
+html.theme-glass:not([data-public]) .text-yellow-600, html.theme-glass:not([data-public]) .text-yellow-700 { color: #ffe08a; }
 
 /* ── 8 · The side dock ─────────────────────────────────────────────────────
    The kit's dock is a floating pill of glass, not a wall. The sidebar keeps
@@ -433,13 +450,13 @@ html:is(.theme-glass, .theme-glass-light):not([data-public]) .app-sidebar a[aria
    Both are `bg-white` so §4 already frosts them; these just restore the edge
    treatment the kit uses (a hairline, no hard border). */
 html:is(.theme-glass, .theme-glass-light):not([data-public]) header.bg-white {
-  background-color: rgba(26, 23, 21, 0.6);
-  border-bottom-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--glass-chrome);
+  border-bottom-color: var(--glass-hairline);
 }
 
 html:is(.theme-glass, .theme-glass-light):not([data-public]) nav.bg-white {
-  background-color: rgba(26, 23, 21, 0.72);
-  border-top-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--glass-chrome-strong);
+  border-top-color: var(--glass-hairline);
 }
 
 /* ── 10 · Tables ───────────────────────────────────────────────────────────
@@ -720,3 +737,73 @@ html.theme-glass-light:not([data-public]) {
   --background: transparent;
   --foreground: #1c1917;
 }
+
+/* ── 13 · Daylight corrections ─────────────────────────────────────────────
+   Everything §4–§11 does structurally is right for both skins. These are the
+   places that named a colour instead of a token, and a colour chosen for a
+   dark panel is wrong on a pale one by definition.
+
+   Kept as one block rather than threaded through the sections above so the
+   dark skin reads exactly as it did, and so the cost of the light one is
+   visible in a single place. */
+
+/* The phone's bars. Pale and heavier than a card — they are the edge of the
+   screen, not something floating on it. */
+html.theme-glass-light:not([data-public]) {
+  --glass-chrome: rgba(255, 255, 255, 0.74);
+  --glass-chrome-strong: rgba(255, 255, 255, 0.86);
+  --glass-hairline: rgba(28, 25, 23, 0.08);
+}
+
+/* The active nav item is the one opaque thing on screen in both skins. On
+   dark glass that means white; on light it has to go the other way, or a
+   white pill on a white sidebar says nothing at all. */
+html.theme-glass-light:not([data-public]) .app-sidebar a[aria-current='page'] {
+  background-color: #241f1c;
+  color: #faf8f6;
+  box-shadow: 0 10px 24px -10px rgba(40, 34, 28, 0.35);
+}
+html.theme-glass-light:not([data-public]) .app-sidebar a[aria-current='page'] svg {
+  color: #faf8f6;
+}
+
+/* Status tints. The dark skin glows them up off a dark panel; here they are
+   washes on white, so they go back toward the weights Tailwind picked for a
+   light background in the first place. */
+html.theme-glass-light:not([data-public]) [class~='bg-green-50']  { background-color: rgba(34, 197, 94, 0.14); }
+html.theme-glass-light:not([data-public]) [class~='bg-red-50']    { background-color: rgba(239, 68, 68, 0.12); }
+html.theme-glass-light:not([data-public]) [class~='bg-amber-50']  { background-color: rgba(245, 158, 11, 0.16); }
+html.theme-glass-light:not([data-public]) [class~='bg-orange-50'] { background-color: rgba(249, 115, 22, 0.14); }
+html.theme-glass-light:not([data-public]) [class~='bg-blue-50']   { background-color: rgba(59, 130, 246, 0.12); }
+html.theme-glass-light:not([data-public]) [class~='bg-sky-50']    { background-color: rgba(14, 165, 233, 0.12); }
+html.theme-glass-light:not([data-public]) [class~='bg-teal-50']   { background-color: rgba(20, 184, 166, 0.12); }
+html.theme-glass-light:not([data-public]) [class~='bg-violet-50'] { background-color: rgba(139, 92, 246, 0.12); }
+html.theme-glass-light:not([data-public]) [class~='bg-purple-50'] { background-color: rgba(168, 85, 247, 0.12); }
+html.theme-glass-light:not([data-public]) [class~='bg-yellow-50'] { background-color: rgba(234, 179, 8, 0.16); }
+html.theme-glass-light:not([data-public]) [class~='bg-slate-100'] { background-color: rgba(28, 25, 23, 0.06); }
+
+/* index.css lifts these to --brand-bright under .dark, which is still on for
+   this skin. Bronze reads on a pale chip; the dark skin's lifted tints do not. */
+html.theme-glass-light:not([data-public]) .text-green-600,
+html.theme-glass-light:not([data-public]) .text-green-700  { color: #15803d; }
+html.theme-glass-light:not([data-public]) .text-red-600,
+html.theme-glass-light:not([data-public]) .text-red-700    { color: #b91c1c; }
+html.theme-glass-light:not([data-public]) .text-orange-600,
+html.theme-glass-light:not([data-public]) .text-orange-700 { color: #c2410c; }
+html.theme-glass-light:not([data-public]) .text-blue-600,
+html.theme-glass-light:not([data-public]) .text-blue-700   { color: #1d4ed8; }
+html.theme-glass-light:not([data-public]) .text-sky-600,
+html.theme-glass-light:not([data-public]) .text-sky-700    { color: #0369a1; }
+html.theme-glass-light:not([data-public]) .text-teal-600,
+html.theme-glass-light:not([data-public]) .text-teal-700   { color: #0f766e; }
+html.theme-glass-light:not([data-public]) .text-violet-600,
+html.theme-glass-light:not([data-public]) .text-violet-700 { color: #6d28d9; }
+html.theme-glass-light:not([data-public]) .text-purple-600,
+html.theme-glass-light:not([data-public]) .text-purple-700 { color: #7e22ce; }
+html.theme-glass-light:not([data-public]) .text-yellow-600,
+html.theme-glass-light:not([data-public]) .text-yellow-700 { color: #a16207; }
+
+/* The wordmark pair is switched by `.dark`, which this skin keeps on for the
+   remapping rules — so without this it shows the white logo on a pale bar. */
+html.theme-glass-light:not([data-public]) .brand-logo-light { display: inline; }
+html.theme-glass-light:not([data-public]) .brand-logo-dark  { display: none; }

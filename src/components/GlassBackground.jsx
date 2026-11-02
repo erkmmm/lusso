@@ -11,7 +11,10 @@ export const DEFAULT_WALLPAPER = '/glass-wallpaper.jpg';
 // whole page would flash bright before settling.
 export default function GlassBackground() {
   const { colorTheme, glassBg, customUrl } = useTheme();
-  if (colorTheme !== 'glass') return null;
+  // Both glass skins get the wallpaper — it is the thing the panels are
+  // frosting. Gated on the dark one alone, Glass Light rendered its panels
+  // over the bare fallback colour and looked like a broken dark theme.
+  if (colorTheme !== 'glass' && colorTheme !== 'glass-light') return null;
 
   // 'custom' with no image yet means the file is still coming back out of
   // IndexedDB. Fall through to no photo for that frame rather than flashing

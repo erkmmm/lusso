@@ -434,7 +434,11 @@ export default function Layout() {
           ) : (
             <>
               <div>
-                <img src="/brand/lusso-white.png" alt="Lusso" className="h-6 w-auto" />
+                {/* The pair, not the white one on its own: this sat in a
+                    dark header until Glass Light, where a white wordmark on a
+                    pale bar is a smudge. */}
+                <img src="/brand/lusso-black.png" alt="Lusso" className="brand-logo-light h-6 w-auto" />
+                <img src="/brand/lusso-white.png" alt="" aria-hidden="true" className="brand-logo-dark h-6 w-auto" />
                 <div className="text-slate-400 text-xs mt-1">Job Management</div>
               </div>
               <button
