@@ -220,3 +220,35 @@ export function groupByRoom(items = [], opts = {}) {
     return { room, entries };
   });
 }
+
+/**
+ * The next free window label in the same room: "Office 1 B" → "Office 1 C".
+ *
+ * Copying a line on site means "another window like this one", and the thing
+ * that actually differs is the window reference. The copy used to be labelled
+ * "Office 1 B (copy)", which is never what anybody wanted it to say: either
+ * they retyped it, or it went through to the quote, the order and the
+ * customer's copy with "(copy)" printed on it.
+ *
+ * Skips labels already in use, so copying twice gives C then D rather than two
+ * Cs — two lines sharing a location are read as the same window by
+ * groupByRoom, which is how a copy would quietly merge into its source.
+ *
+ * A label with no letter to increment — "Kitchen", "Whole home" — comes back
+ * unchanged. Inventing "Kitchen B" for a room that has never used letters
+ * would be worse than leaving a duplicate for someone to name.
+ *
+ * @param {string} label     the source line's location
+ * @param {string[]} taken   every location already on the sheet
+ */
+export function nextWindowLabel(label, taken = []) {
+  const { room, letter } = splitRoomLabel(label);
+  if (!letter) return norm(label);
+
+  const used = new Set(taken.map(key).filter(Boolean));
+  for (let i = indexOfLetter(letter) + 1; i < indexOfLetter(letter) + 27; i += 1) {
+    const candidate = `${room} ${letterAt(i)}`;
+    if (!used.has(key(candidate))) return candidate;
+  }
+  return norm(label);
+}

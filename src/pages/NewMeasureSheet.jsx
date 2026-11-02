@@ -15,6 +15,7 @@ import { saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, g
 import { evaluateLine } from '../lib/productLimits';
 import { OPTION_FAMILIES, familyMapFor, familyOfLine, hasBuiltInFamilies } from '../lib/optionFamilies';
 import { resolveMeasureEntry } from '../lib/measureMath';
+import { nextWindowLabel } from '../lib/roomNaming';
 import { syncNow } from '../store/db';
 import { useProfile } from '../contexts/UserProfileContext';
 import Card from '../components/Card';
@@ -1194,7 +1195,15 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
     setSheet(s => {
       const source = s.lineItems[idx];
       if (!source) return s;
-      const copy = { ...source, id, location: source.location ? `${source.location} (copy)` : '' };
+      // "Office 1 B" copies to "Office 1 C", not "Office 1 B (copy)" — the
+      // window reference is the thing that actually differs between an opening
+      // and the next one like it, and "(copy)" printed its way through to the
+      // quote and the order whenever somebody forgot to retype it.
+      const copy = {
+        ...source,
+        id,
+        location: nextWindowLabel(source.location, s.lineItems.map(li => li.location)),
+      };
       const items = [...s.lineItems];
       items.splice(idx + 1, 0, copy); // insert right after the source
       return { ...s, lineItems: items };
