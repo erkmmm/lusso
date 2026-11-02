@@ -34,7 +34,9 @@ const ROUTES = {
 
 const DESTINATIONS = {
   rates:   { label: 'Curtain rate card', href: '/settings?section=curtains' },
-  library: { label: 'Price library',     href: '/settings?section=pricing' },
+  // Straight to the library page. It used to go via Settings → Price Library,
+  // which was a card whose only content was a button to this same page.
+  library: { label: 'Price library',     href: '/priced-items' },
 };
 
 /**

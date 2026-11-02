@@ -88,6 +88,7 @@ const KEYS = {
   schedulingDismissals: 'lusso_scheduling_dismissals',
   quoteFollowUpDismissals: 'lusso_quote_followup_dismissals',
   curtainRates:         'lusso_curtain_rates',
+  messagePresets:       'lusso_message_preset_rows',
   buzFabricCodes:       'lusso_buz_fabric_codes',
   buzValueMaps:         'lusso_buz_value_map_rows',
   productDocuments:     'lusso_product_documents',
@@ -288,6 +289,11 @@ const TABLES = [
   { table: 'calendar_events',        key: 'lusso_calendar_events' },
   { table: 'tasks',                  key: KEYS.tasks },
   { table: 'po_message_presets',     key: 'lusso_po_message_presets' },
+  // Quote email / SMS presets. One row per preset key — these were
+  // localStorage-only, so "default messages used across quotes, emails and SMS"
+  // meant a different set on every device, while the PO presets directly above
+  // synced. See the note in store/data.js.
+  { table: 'message_presets',        key: KEYS.messagePresets },
   { table: 'suppliers',              key: 'lusso_suppliers' },
   { table: 'purchase_orders',        key: 'lusso_purchase_orders' },
   { table: 'takeoffs',               key: KEYS.takeoffs },
@@ -1125,6 +1131,11 @@ export const db = {
   // Measure-sheet custom dropdown options
   // Curtain calculator rate card (single 'default' row)
   saveCurtainRates:         (r) => upsert('curtain_rates', r),
+
+  // Quote email / SMS presets — one row per preset key, hard-deleted like the
+  // measure-sheet options below.
+  saveMessagePreset:        (r) => upsert('message_presets', r),
+  deleteMessagePreset:      (id) => remove('message_presets', id),
 
   saveMeasureSheetOption:   (r) => upsert('measure_sheet_options', r),
   deleteMeasureSheetOption: (id) => remove('measure_sheet_options', id),

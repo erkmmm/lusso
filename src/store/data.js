@@ -4181,8 +4181,121 @@ export const DEFAULT_MESSAGE_PRESETS = {
   smsInstallationBooked: `Hi {name}, your installation has been booked for {date}. Our team will arrive between {time}. Please ensure access to the property. See you then!`,
 };
 
-export const getMessagePresets = () => ({ ...DEFAULT_MESSAGE_PRESETS, ...(get('lusso_message_presets') || {}) });
-export const saveMessagePresets = (s) => set('lusso_message_presets', { ...getMessagePresets(), ...s });
+// Stored as ROWS (`lusso_message_preset_rows`, synced to `message_presets`)
+// rather than the single object they used to live in. Two reasons, in order of
+// how much they cost us:
+//
+//  1. The object was localStorage-only, so "default messages used across quotes,
+//     emails and SMS" meant a different set of messages on every device. The
+//     PO presets in the next card on the same Settings page synced; these did
+//     not, and nothing on screen said so.
+//  2. The sync layer moves arrays of records keyed by id, and a nested blob
+//     would make two people editing different presets overwrite each other
+//     wholesale — the same failure that cost us the public business_settings
+//     row for two months.
+//
+// The row id IS the preset key ('quoteEmailIntro', 'smsQuoteReady', …), so an
+// edit to one preset can never carry a stale copy of another. The read API
+// still hands back the flat object, so QuoteBuilder, quoteDelivery and the
+// Comms tab are unchanged.
+const MSG_PRESET_ROWS   = 'lusso_message_preset_rows';
+const MSG_PRESET_LEGACY = 'lusso_message_presets';
+
+// One-time lift of the old per-device object into rows, pushing the rescued
+// presets up so the wording someone has been using for months becomes the
+// team's rather than vanishing the moment this ships. The legacy key is cleared
+// afterwards so it can never run twice.
+//
+// Whoever opens Settings first wins a genuine conflict here, which is the
+// honest outcome: before this there was no shared answer to converge on, only
+// N private ones.
+let msgRowsMigrated = false;
+const migrateMessagePresets = () => {
+  if (msgRowsMigrated) return;
+  msgRowsMigrated = true;
+  const legacy = get(MSG_PRESET_LEGACY);
+  if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) return;
+  const existing = get(MSG_PRESET_ROWS) || [];
+  const have = new Set(existing.map(r => r.id));
+  const now = new Date().toISOString();
+  const added = [];
+  for (const [key, body] of Object.entries(legacy)) {
+    // An explicit '' is a deliberate "say nothing" and is carried across; only
+    // a key that was never set is skipped.
+    if (body === undefined || body === null || have.has(key)) continue;
+    const row = { id: key, body: String(body), createdAt: now, updatedAt: now };
+    added.push(row);
+    db.saveMessagePreset?.(row);
+  }
+  if (added.length) set(MSG_PRESET_ROWS, [...existing, ...added]);
+  try { localStorage.removeItem(MSG_PRESET_LEGACY); } catch { /* private mode */ }
+};
+
+// Rows that pre-date the sync (migrated on an earlier load, or saved while
+// offline) are not in the outbox and would otherwise sit on one device forever.
+// Push them once per session; upsert is keyed by id so re-sending is harmless.
+let msgPresetsPushed = false;
+const pushLegacyMessagePresets = () => {
+  if (msgPresetsPushed) return;
+  msgPresetsPushed = true;
+  for (const row of get(MSG_PRESET_ROWS) || []) {
+    if (row?.id) db.saveMessagePreset?.(row);
+  }
+};
+
+const messagePresetRows = () => {
+  migrateMessagePresets();
+  pushLegacyMessagePresets();
+  return get(MSG_PRESET_ROWS) || [];
+};
+
+/**
+ * Every preset, as { key: text }, with the built-in defaults filling any gap.
+ *
+ * A stored empty string wins over its default — that is how a preset is turned
+ * off — so rows are spread in regardless of whether the body is blank. Only the
+ * absence of a row falls back.
+ */
+export const getMessagePresets = () => {
+  const saved = {};
+  for (const r of messagePresetRows()) {
+    if (r?.id) saved[r.id] = String(r.body ?? '');
+  }
+  return { ...DEFAULT_MESSAGE_PRESETS, ...saved };
+};
+
+/**
+ * Drop a preset's override so it falls back to its built-in default.
+ *
+ * A real delete, not a write of the current default text. Storing the default
+ * would freeze today's wording into the database, and any later correction to
+ * a shipped default would then never reach anyone who had pressed Reset.
+ */
+export const resetMessagePreset = (key) => {
+  const rows = messagePresetRows();
+  const next = rows.filter(r => r.id !== key);
+  if (next.length === rows.length) return getMessagePresets();
+  set(MSG_PRESET_ROWS, next);
+  db.deleteMessagePreset?.(key);
+  return getMessagePresets();
+};
+
+/** Save one or more presets. Only the keys passed in are written. */
+export const saveMessagePresets = (patch) => {
+  const rows = [...messagePresetRows()];
+  const now = new Date().toISOString();
+  for (const [key, body] of Object.entries(patch || {})) {
+    if (body === undefined) continue;
+    const idx = rows.findIndex(r => r.id === key);
+    const row = idx >= 0
+      ? { ...rows[idx], body: String(body ?? ''), updatedAt: now }
+      : { id: key, body: String(body ?? ''), createdAt: now, updatedAt: now };
+    if (idx >= 0) rows[idx] = row; else rows.push(row);
+    db.saveMessagePreset?.(row);
+  }
+  set(MSG_PRESET_ROWS, rows);
+  return getMessagePresets();
+};
 
 // The SMS presets, in the order they're offered as quick messages in the Comms
 // tab. These used to be editable in Settings and read by nothing at all — the
