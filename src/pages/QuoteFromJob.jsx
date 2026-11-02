@@ -185,11 +185,14 @@ export default function QuoteFromJob() {
   // is created and then written back to the sheet in one go. Keyed by line id
   // so unticking a line does not throw away what was typed on it.
   const [fills, setFills]           = useState({});
-  const [dismissed, setDismissed]   = useState(() => new Set());
+  // Dismissals this visit, as a diff over the ones already on the sheet —
+  // added and taken back. A diff rather than a set because a dismissal from
+  // last time is remembered on the line, and undoing one has to stick too.
+  const [dismissEdits, setDismissEdits] = useState({ add: new Set(), remove: new Set() });
   const [sheetConflict, setSheetConflict] = useState(false);
-  // Bumped to re-read the stored sheet — after a write-back, and after the
-  // user chooses to take a newer copy that was saved somewhere else.
-  const [sheetReload, setSheetReload] = useState(0);
+  // A freshly re-read copy of the sheet, after a write-back or after taking a
+  // newer copy somebody else saved.
+  const [reread, setReread] = useState(null);
 
   // Read once: these are localStorage-backed and the gap check runs over every
   // selected line on every keystroke in the panel.
@@ -197,14 +200,15 @@ export default function QuoteFromJob() {
   const curtainRates = useMemo(() => getCurtainRates(), []);
   const fabricLib    = useMemo(() => getPricedItems(), []);
 
-  // Read back from the store rather than held from the first render: a sheet
-  // edited in another tab, or by the write-back below, should be what the gap
-  // list is measured against.
+  // Read from the store rather than from the list this page loaded with: the
+  // measure sheet is routinely open in another tab, and the gap list should be
+  // measured against what is actually stored.
   const selectedSheet = useMemo(
-    () => (selectedSheetId ? getMeasureSheet(selectedSheetId) : null)
+    () => (reread?.id === selectedSheetId ? reread : null)
+       || (selectedSheetId ? getMeasureSheet(selectedSheetId) : null)
        || sheets.find(s => s.id === selectedSheetId)
        || null,
-    [sheets, selectedSheetId, sheetReload]
+    [sheets, selectedSheetId, reread]
   );
 
   const lineItems = useMemo(
@@ -217,16 +221,17 @@ export default function QuoteFromJob() {
     setCheckedIds(new Set(lineItems.map(li => li.id)));
   }, [selectedSheetId, lineItems.length]);
 
-  // Dismissals already recorded on the sheet. Somebody has answered "not on
-  // this line" once; asking again every time a quote is made off the sheet is
-  // how the panel would earn being ignored.
-  useEffect(() => {
-    const seeded = new Set();
-    lineItems.forEach(li => (li.quoteGapsDismissed || []).forEach(k => seeded.add(gapId(li.id, k))));
-    setDismissed(seeded);
-    setFills({});
-    setSheetConflict(false);
-  }, [selectedSheetId, lineItems.length]);
+  // What has been dismissed: what the sheet already remembers, plus this
+  // visit's diff. Remembering them is the point — somebody has answered "not on
+  // this line" once, and asking again on every quote off the same sheet is how
+  // the panel would earn being ignored.
+  const dismissed = useMemo(() => {
+    const all = new Set();
+    lineItems.forEach(li => (li.quoteGapsDismissed || []).forEach(k => all.add(gapId(li.id, k))));
+    dismissEdits.add.forEach(id => all.add(id));
+    dismissEdits.remove.forEach(id => all.delete(id));
+    return all;
+  }, [lineItems, dismissEdits]);
 
   // ── Missing information ───────────────────────────────────────────────────
   // The gap list is built from the line as it is STORED, not as it is being
@@ -301,18 +306,29 @@ export default function QuoteFromJob() {
     }));
   }, []);
 
-  const dismissGap  = useCallback((id) => setDismissed(prev => new Set(prev).add(id)), []);
-  const restoreGap  = useCallback((id) => setDismissed(prev => { const n = new Set(prev); n.delete(id); return n; }), []);
-  const dismissLine = useCallback((lineId) => setDismissed((prev) => {
-    const next = new Set(prev);
-    gapLines.find(l => l.id === lineId)?.gaps.forEach(g => next.add(gapId(lineId, g.key)));
-    return next;
-  }), [gapLines]);
-  const dismissAll = useCallback(() => setDismissed((prev) => {
-    const next = new Set(prev);
-    gapLines.forEach(({ id, gaps }) => gaps.forEach(g => next.add(gapId(id, g.key))));
-    return next;
-  }), [gapLines]);
+  const editDismissals = useCallback((ids, dismissing) => {
+    setDismissEdits((prev) => {
+      const add = new Set(prev.add);
+      const remove = new Set(prev.remove);
+      ids.forEach((id) => {
+        if (dismissing) { add.add(id); remove.delete(id); }
+        else { remove.add(id); add.delete(id); }
+      });
+      return { add, remove };
+    });
+  }, []);
+
+  const dismissGap  = useCallback((id) => editDismissals([id], true),  [editDismissals]);
+  const restoreGap  = useCallback((id) => editDismissals([id], false), [editDismissals]);
+  const dismissLine = useCallback((lineId) => {
+    const line = gapLines.find(l => l.id === lineId);
+    editDismissals((line?.gaps || []).map(g => gapId(lineId, g.key)), true);
+  }, [gapLines, editDismissals]);
+  const dismissAll = useCallback(() => {
+    const ids = [];
+    gapLines.forEach(({ id, gaps }) => gaps.forEach(g => ids.push(gapId(id, g.key))));
+    editDismissals(ids, true);
+  }, [gapLines, editDismissals]);
 
   if (!job) {
     return (
@@ -338,6 +354,67 @@ export default function QuoteFromJob() {
     });
   };
 
+  /**
+   * Put the answers back on the measure sheet before the quote is built.
+   *
+   * The sheet is the source of truth for a measurement, so a drop typed here
+   * has to land there or the two disagree from the moment the quote exists —
+   * and the next quote off the same sheet would ask for it again.
+   *
+   * Written FIRST, and the quote is abandoned if the write is refused. A
+   * refusal means somebody else saved the sheet since this page loaded (it is
+   * routinely open in another tab), and the alternative is a quote built from
+   * numbers that were never recorded anywhere.
+   *
+   * @returns {boolean} false when the write was refused and nothing should proceed
+   */
+  const writeAnswersBack = () => {
+    if (!selectedSheet) return true;
+    const edited = Object.keys(fills).filter(id => Object.keys(fills[id] || {}).length);
+    const byLine = {};          // line id → { add: Set, remove: Set } of gap keys
+    const bucket = (id) => (byLine[id] ||= { add: new Set(), remove: new Set() });
+    dismissEdits.add.forEach((id) => {
+      const [lineId, key] = id.split('::');
+      if (key) bucket(lineId).add.add(key);
+    });
+    dismissEdits.remove.forEach((id) => {
+      const [lineId, key] = id.split('::');
+      if (key) bucket(lineId).remove.add(key);
+    });
+    if (!edited.length && !Object.keys(byLine).length) return true;
+
+    const nextLines = (selectedSheet.lineItems || []).map((li) => {
+      const fill = fills[li.id];
+      const diff = byLine[li.id];
+      if (!fill && !diff) return li;
+      const next = { ...li, ...(fill || {}) };
+      if (diff) {
+        const keys = new Set(li.quoteGapsDismissed || []);
+        diff.add.forEach(k => keys.add(k));
+        diff.remove.forEach(k => keys.delete(k));
+        next.quoteGapsDismissed = [...keys];
+      }
+      return next;
+    });
+
+    const saved = saveMeasureSheet(
+      { ...selectedSheet, lineItems: nextLines },
+      { baseUpdatedAt: selectedSheet.updatedAt || null },
+    );
+    if (saved?.__conflict) { setSheetConflict(true); return false; }
+    // The answers are on the sheet now, so they are no longer a pending diff.
+    setReread(saved || getMeasureSheet(selectedSheet.id));
+    setDismissEdits({ add: new Set(), remove: new Set() });
+    setFills({});
+    return true;
+  };
+
+  const takeNewerSheet = () => {
+    setSheetConflict(false);
+    setReread(getMeasureSheet(selectedSheetId));
+    setError('');
+  };
+
   const handleCreate = async () => {
     if (creating) return;
     if (lineItems.length > 0 && checkedIds.size === 0) {
@@ -348,10 +425,15 @@ export default function QuoteFromJob() {
     setCreating(true);
     setError('');
     try {
-      const curtainRates = getCurtainRates();
-      const fabricLib    = getPricedItems();
+      if (!writeAnswersBack()) {
+        setError('The measure sheet was saved somewhere else while this was open. Take the newer copy, then create the quote.');
+        setCreating(false);
+        return;
+      }
+
       const selectedLines = lineItems
         .filter(li => checkedIds.has(li.id))
+        .map(patched)
         .map((li, i) => msLineToQuoteLine(li, i, curtainRates, fabricLib));
 
       const quote = createQuote({
@@ -442,7 +524,21 @@ export default function QuoteFromJob() {
               </div>
             </div>
           ) : (
-            <SheetPicker sheets={sheets} selectedId={selectedSheetId} onSelect={id => { setSelectedSheetId(id); setCheckedIds(new Set()); }} />
+            <SheetPicker
+              sheets={sheets}
+              selectedId={selectedSheetId}
+              onSelect={(id) => {
+                // A different sheet is a different set of questions: typed
+                // answers and dismissals belong to the one they were given for.
+                setSelectedSheetId(id);
+                setCheckedIds(new Set());
+                setFills({});
+                setDismissEdits({ add: new Set(), remove: new Set() });
+                setSheetConflict(false);
+                setReread(null);
+                setError('');
+              }}
+            />
           )}
         </div>
       </Card>
@@ -482,6 +578,7 @@ export default function QuoteFromJob() {
                   item={li}
                   idx={i}
                   checked={checkedIds.has(li.id)}
+                  gapCount={checkedIds.has(li.id) ? (gapCountByLine[li.id] || 0) : 0}
                   onToggle={() => toggleItem(li.id)}
                 />
               ))}
@@ -490,11 +587,60 @@ export default function QuoteFromJob() {
         </Card>
       )}
 
+      {/* What the sheet is still short of, with somewhere to answer it */}
+      {sheetConflict && (
+        <Card className="px-5 py-4 border-amber-300 bg-amber-50">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-900">This measure sheet was saved somewhere else</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Someone saved a newer copy while this page was open, so your answers
+                were not written to it. Take the newer copy — anything you typed
+                here stays on screen.
+              </p>
+              <button
+                type="button"
+                onClick={takeNewerSheet}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 border border-amber-300 bg-white hover:bg-amber-100 px-2.5 py-1.5 rounded-lg"
+              >
+                <RefreshCw size={12} /> Take the newer copy
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <QuoteGaps
+        lines={gapLines}
+        totals={totals}
+        resolvedIds={resolvedIds}
+        dismissed={dismissed}
+        getValue={getValue}
+        onChange={setFill}
+        onCommitMeasure={commitMeasure}
+        onDismiss={dismissGap}
+        onRestore={restoreGap}
+        onDismissLine={dismissLine}
+        onDismissAll={dismissAll}
+        productTypes={productTypes}
+      />
+
       {/* Sticky action bar */}
       <StickyActionBar>
         {error && (
           <p className="text-xs text-red-600 flex items-center gap-1 mb-2 justify-center">
             <AlertCircle size={12} /> {error}
+          </p>
+        )}
+        {/* Said on the bar too, because the button is what people reach for
+            without scrolling. It never blocks: a quote with holes in it is
+            often exactly what is wanted on the day. */}
+        {totals.total > 0 && (
+          <p className="text-xs text-amber-700 flex items-center gap-1 mb-2 justify-center">
+            <AlertTriangle size={12} />
+            {totals.total} missing on {totals.lines} line{totals.lines !== 1 ? 's' : ''}
+            {totals.price > 0 && <span className="text-slate-500">· {totals.price} stop{totals.price !== 1 ? '' : 's'} a line being priced</span>}
           </p>
         )}
         <div className="flex items-center justify-between gap-2 flex-wrap">

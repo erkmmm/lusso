@@ -334,7 +334,7 @@ function AppRoutes() {
         <img src="/brand/lusso-black.png" alt="Lusso" className="loading-logo-light h-9 w-auto animate-pulse" />
         <img src="/brand/lusso-white.png" alt="Lusso" className="loading-logo-dark h-9 w-auto animate-pulse" />
         {hydrating && (
-          <p className="text-slate-500 dark:text-slate-300 text-sm font-medium animate-pulse">Syncing from cloud…</p>
+          <p className="text-slate-500 text-sm font-medium animate-pulse">Syncing from cloud…</p>
         )}
         {/* Escape hatch — if loading hangs (e.g. a stale cached build), let the
             user force a fresh reload instead of being stranded here. */}
@@ -475,13 +475,13 @@ function SlowLoadRetry() {
     <div className="mt-3 flex flex-col items-center gap-2">
       <button
         onClick={() => window.location.reload()}
-        className="text-xs font-medium text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 hover:text-slate-600 transition-colors"
+        className="text-xs font-medium text-slate-400 border border-slate-200 rounded-lg px-3 py-1.5 hover:text-slate-600 transition-colors"
       >
         Taking a while? Tap to reload
       </button>
       <button
         onClick={hardReset}
-        className="text-xs font-medium text-slate-400 dark:text-slate-500 hover:text-slate-600 underline"
+        className="text-xs font-medium text-slate-400 hover:text-slate-600 underline"
       >
         Still stuck? Sign out and start over
       </button>

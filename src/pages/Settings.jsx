@@ -223,10 +223,17 @@ export default function Settings() {
     refresh();
   };
 
+  // Adding puts the spec at the end, where it is visible and can be dragged
+  // into place. Order is stored data now, so this is a real position rather
+  // than a value the canonical list was about to overwrite.
   const handleToggleSpec = (pt, key) => {
     const current = getTypeSpecKeys(pt);
     const next = current.includes(key) ? current.filter(k => k !== key) : [...current, key];
     saveProductType({ ...pt, specs: next });
+    refresh();
+  };
+  const handleReorderSpecs = (pt, keys) => {
+    saveProductType({ ...pt, specs: keys });
     refresh();
   };
   const handleResetSpecs = (pt) => {
@@ -240,7 +247,8 @@ export default function Settings() {
   const { theme, setTheme, colorTheme, setColorTheme, animBg, setAnimBg, bgStyle, setBgStyle } = useTheme();
 
   const COLOR_OPTIONS = [
-    { value: 'glass',     label: 'Glass',     desc: 'Frosted panels over a room — the default. Always dark.', swatch: '#8a7d72' },
+    { value: 'glass',       label: 'Glass',       desc: 'Frosted panels over a room — the default. Always dark.', swatch: '#8a7d72' },
+    { value: 'glass-light', label: 'Glass Light', desc: 'The same frosted panels, in daylight.', swatch: '#efeae4' },
     { value: 'lusso',     label: 'Lusso',     desc: 'Brand kit — bronze on paper.', swatch: '#6E5A43' },
     { value: 'apex',      label: 'Apex',      desc: 'Emerald & charcoal — demo style.', swatch: '#009368' },
     { value: 'taupe',     label: 'Taupe',     desc: 'Warm taupe & cream.',   swatch: '#644a40' },
@@ -733,20 +741,13 @@ export default function Settings() {
                               <button onClick={() => handleResetSpecs(pt)} className="text-xs text-slate-400 hover:text-amber-600 transition-colors">Reset to default</button>
                             )}
                           </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {MS_SPEC_FIELDS.map(f => {
-                              const on = specKeys.includes(f.key);
-                              return (
-                                <button key={f.key} onClick={() => handleToggleSpec(pt, f.key)}
-                                  className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
-                                    on ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-500 border-slate-200 hover:border-amber-300'
-                                  }`}>
-                                  {f.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <p className="text-[11px] text-slate-400 mt-2">Width, drop, quantity, fabric and notes always show. A spec that already holds a value stays visible even if switched off.</p>
+                          <SpecOrderEditor
+                            specKeys={specKeys}
+                            onReorder={(keys) => handleReorderSpecs(pt, keys)}
+                            onRemove={(key) => handleToggleSpec(pt, key)}
+                            onAdd={(key) => handleToggleSpec(pt, key)}
+                          />
+                          <p className="text-[11px] text-slate-400 mt-2">Shown in this order on the measure sheet card and table. Width, drop, quantity, fabric and notes always show. A spec that already holds a value stays visible even if switched off.</p>
                           <TypeOptionEditor pt={pt} onChange={refresh} />
                           <OptionFamilyEditor pt={pt} onChange={refresh} />
                         </div>

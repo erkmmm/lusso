@@ -109,7 +109,7 @@ function GapEditor({ gap, value, onChange, onCommitMeasure, productTypes, onProd
 }
 
 function GapRow({
-  lineId, gap, value, resolved, dismissed,
+  gap, value, resolved, dismissed,
   onChange, onCommitMeasure, onDismiss, onRestore, productTypes, onProductPick,
 }) {
   const sev = SEVERITY[gap.severity] || SEVERITY.order;
@@ -233,7 +233,6 @@ function LineBlock({
         {gaps.map(gap => (
           <GapRow
             key={gap.key}
-            lineId={id}
             gap={gap}
             value={gap.field ? getValue(id, gap.field) : ''}
             resolved={resolvedIds.has(gapId(id, gap.key))}

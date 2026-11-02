@@ -2308,23 +2308,17 @@ export const setBuzValueMapEntry = (field, fromValue, toValue) => {
 // itemField = the property stored on the line item (note: Operation Type reads
 // from `trackType` but pulls its dropdown from the `operationType` option list).
 /**
- * Every spec a line item can carry, IN THE ORDER THEY ARE SHOWN.
+ * Every spec a line item can carry — the registry of what exists, not the
+ * order anything is shown in.
  *
- * This array is the single source of display order: both the measure sheet's
- * card view and its table read it through getVisibleSpecKeys / MS_SPEC_KEYS,
- * which re-filter by this order. A product type's own `specs` array therefore
- * controls WHICH specs appear, never the sequence — and the Settings editor is
- * a toggle grid with no ordering control, so this list is the only place the
- * sequence can be set.
+ * Display order belongs to each product type (see DEFAULT_TYPE_SPECS and the
+ * stored `specs` array, which Settings lets you drag into the order you want).
+ * This list only decides which specs are offered, how each maps onto the line
+ * item, and which option family fills its dropdown.
  *
- * Ordered the way a blind is actually specified on site: how it mounts, how
- * it's operated, then the hardware, then the colours. For a roller blind that
- * reads Fixing → Control → Operation Type → Bottom Rail Type → Bottom Rail
- * Colour → Chain Colour. Type before colour throughout, since the type is what
- * constrains the colours offered.
- *
- * Motor Side sits with the operating mechanism rather than the colours — it
- * only means anything once Operation Type says the blind is motorised.
+ * The order here is still a reasonable fallback — it is what a product type
+ * with no configuration at all falls back to — so it is kept sensible rather
+ * than arbitrary. But nothing on a configured type reads it for sequence.
  */
 export const MS_SPEC_FIELDS = [
   { key: 'fixing',        itemField: 'fixing',         optionKey: 'fixing',         label: 'Fixing' },
@@ -2345,32 +2339,48 @@ const MS_SPEC_BY_KEY = Object.fromEntries(MS_SPEC_FIELDS.map(f => [f.key, f]));
 
 // Sensible defaults, keyed by product-type slug. Used until a type is explicitly
 // configured in Settings. Editable there — these are just the starting point.
+//
+// THE ORDER OF EACH ARRAY IS THE ORDER THE SPECS ARE SHOWN. Blinds read how it
+// mounts → how it's operated → the hardware → the colours, with type before the
+// colour it constrains. Curtains lead with heading, because that is the first
+// thing decided about a curtain and the thing everything else hangs off.
 const DEFAULT_TYPE_SPECS = {
-  'curtain':              ['heading', 'control', 'returnSide', 'motorSide', 'fixing', 'trackColour', 'hem', 'operationType', 'lining'],
-  'roller-blind':         ['control', 'motorSide', 'fixing', 'chainColour', 'baseBarColour', 'baseBarType', 'operationType'],
-  'dual-roller-blind':    ['control', 'motorSide', 'fixing', 'chainColour', 'baseBarColour', 'baseBarType', 'operationType'],
-  'roman-blind':          ['control', 'motorSide', 'fixing', 'chainColour', 'hem', 'lining'],
-  'venetian-blind':       ['control', 'fixing', 'chainColour'],
-  'shutter':              ['control', 'fixing'],
-  'pleated-blind':        ['control', 'fixing', 'chainColour', 'baseBarColour'],
-  'external-blind':       ['control', 'motorSide', 'fixing', 'operationType', 'baseBarColour'],
-  'internal-glidescreen': ['control', 'fixing'],
+  'curtain':              ['heading', 'control', 'operationType', 'trackColour', 'fixing', 'returnSide', 'motorSide', 'hem', 'lining'],
+  'roller-blind':         ['fixing', 'control', 'operationType', 'motorSide', 'baseBarType', 'baseBarColour', 'chainColour'],
+  'dual-roller-blind':    ['fixing', 'control', 'operationType', 'motorSide', 'baseBarType', 'baseBarColour', 'chainColour'],
+  'roman-blind':          ['fixing', 'control', 'operationType', 'motorSide', 'hem', 'chainColour', 'lining'],
+  'venetian-blind':       ['fixing', 'control', 'chainColour'],
+  'shutter':              ['fixing', 'control'],
+  'pleated-blind':        ['fixing', 'control', 'baseBarColour', 'chainColour'],
+  'external-blind':       ['fixing', 'control', 'operationType', 'motorSide', 'baseBarColour'],
+  'internal-glidescreen': ['fixing', 'control'],
   'pelmet':               ['fixing', 'heading'],
-  'cellular-blind':       ['control', 'fixing', 'chainColour', 'baseBarColour'],
-  'awning':               ['control', 'motorSide', 'fixing', 'operationType'],
+  'cellular-blind':       ['fixing', 'control', 'baseBarColour', 'chainColour'],
+  'awning':               ['fixing', 'control', 'operationType', 'motorSide'],
 };
 
 const typeSlug = (pt) =>
   pt?.slug || String(pt?.name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-/** The spec keys a product type is configured to use (explicit → default → all). */
+/**
+ * The spec keys a product type uses, IN THE ORDER IT WANTS THEM SHOWN.
+ *
+ * Both branches used to re-filter through MS_SPEC_KEYS, which silently threw
+ * the configured order away and imposed one global sequence on every product.
+ * A roller blind and a curtain do not want the same order — a curtain leads
+ * with its heading, a blind leads with how it mounts — and there was no way to
+ * express that. The stored array's order is now authoritative.
+ *
+ * Unknown keys are dropped rather than trusted: `specs` is stored data and a
+ * key retired from MS_SPEC_FIELDS would otherwise render as a blank field.
+ */
 export const getTypeSpecKeys = (productType) => {
-  if (!productType) return MS_SPEC_KEYS;                       // no type chosen → show everything
-  if (Array.isArray(productType.specs)) {                       // explicit config wins (canonical order)
-    return MS_SPEC_KEYS.filter(k => productType.specs.includes(k));
+  if (!productType) return MS_SPEC_KEYS;                        // no type chosen → show everything
+  if (Array.isArray(productType.specs)) {                       // explicit config wins, order and all
+    return productType.specs.filter(k => MS_SPEC_BY_KEY[k]);
   }
   const def = DEFAULT_TYPE_SPECS[typeSlug(productType)];
-  return def ? MS_SPEC_KEYS.filter(k => def.includes(k)) : MS_SPEC_KEYS; // unknown type → show everything
+  return def ? def.filter(k => MS_SPEC_BY_KEY[k]) : MS_SPEC_KEYS; // unknown type → show everything
 };
 
 /** True if a line item already holds a value for a given spec key. */
@@ -2389,9 +2399,13 @@ export const specHasValue = (item, key) => {
  * user already entered — it stays visible and editable.
  */
 export const getVisibleSpecKeys = (item, productType) => {
-  const show = new Set(getTypeSpecKeys(productType));
-  MS_SPEC_KEYS.forEach(k => { if (specHasValue(item, k)) show.add(k); });
-  return MS_SPEC_KEYS.filter(k => show.has(k));
+  const configured = getTypeSpecKeys(productType);
+  const seen = new Set(configured);
+  // Anything the type doesn't ask for but the item already holds a value for
+  // goes after the configured specs, in MS_SPEC_FIELDS order. It is a rescued
+  // stray, so it should not push a deliberately-ordered spec down the card.
+  const strays = MS_SPEC_KEYS.filter(k => !seen.has(k) && specHasValue(item, k));
+  return [...configured, ...strays];
 };
 
 // Shared product-selection wiring for the measure-sheet card AND table pickers,

@@ -17,14 +17,21 @@ const GLASS_DIM_KEY = 'lusso_glass_dim';    // 0–0.85, how far the photo is di
 const GLASS_DIM_DEFAULT = 0.46;
 
 // Colour themes — class applied to <html> (taupe has no class).
-const COLOR_THEMES = ['lusso', 'taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta', 'twitter', 'glass'];
+const COLOR_THEMES = ['lusso', 'taupe', 'green', 'apex', 'cyberpunk', 'matrix', 'mono', 'neon-magenta', 'twitter', 'glass', 'glass-light'];
 
-// These themes are neon-on-black by nature — they always render dark, overriding
-// the light/dark setting (the app's dark-mode surface machinery is what makes
-// them look right).
+// Themes whose surfaces are token-driven rather than literal: `.dark` stays on
+// for all of them, because that class is what makes the remapping rules in
+// index.css fire — the ones turning `bg-white` into `var(--surf-card)` and
+// `text-slate-900` into `var(--txt-primary)`.
+//
+// For the neon-on-black themes that also means they look dark, which is the
+// point. Glass Light is the exception that proves the rule: it keeps `.dark`
+// so the same machinery runs, and redefines the tokens it reads to daylight
+// values. Without the class its panels would paint literal white and never
+// frost at all.
 // Glass joins them for a different reason: it is translucent panels over a
 // photograph, so there is no light surface for a light mode to sit on.
-const FORCE_DARK_THEMES = new Set(['cyberpunk', 'matrix', 'mono', 'neon-magenta', 'glass']);
+const FORCE_DARK_THEMES = new Set(['cyberpunk', 'matrix', 'mono', 'neon-magenta', 'glass', 'glass-light']);
 
 // One-time switch to Glass, the current default. After this has run once the
 // user can still pick any theme in Settings and it sticks.

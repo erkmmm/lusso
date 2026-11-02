@@ -36,6 +36,7 @@ import {
 import { autoCostCurtainLine, isCurtainProduct } from './curtainCalc';
 import { curtainBlockers } from './curtainBlockers';
 import { familyOfLine } from './optionFamilies';
+import { isRollerBlindItem } from './buzExport';
 
 const SPEC_BY_KEY = Object.fromEntries(MS_SPEC_FIELDS.map(f => [f.key, f]));
 
@@ -103,7 +104,9 @@ export function lineGaps(item, { productTypes = [], rates = null, pricedItems = 
   // ── What it is ────────────────────────────────────────────────────────────
   // First, because every other answer depends on it: the spec fields a line is
   // asked for are the ones its product type uses.
-  if (!item.productTypeId && !item.pricedItemId && blank(item.productNameSnapshot) && blank(item.productType)) {
+  const noProduct =
+    !item.productTypeId && !item.pricedItemId && blank(item.productNameSnapshot) && blank(item.productType);
+  if (noProduct) {
     out.push({
       key: 'product', field: 'productNameSnapshot', label: 'Product',
       what: 'No product chosen', severity: 'price', editor: 'product',
@@ -136,12 +139,34 @@ export function lineGaps(item, { productTypes = [], rates = null, pricedItems = 
     });
   }
 
+  // ── Roll direction ────────────────────────────────────────────────────────
+  // A roller keeps its roll direction in `heading`, which is not one of the
+  // roller's configured specs — so without this it is the one unfinished field
+  // the list would not ask about, which is how it reached the factory blank.
+  // Same test as the measure sheet's own prompt and the BUZ export.
+  const isRoller = isRollerBlindItem(item);
+  if (isRoller && blank(item.heading)) {
+    const rolls = getMsOptions('heading', pt).filter(o => /roll/i.test(o));
+    out.push({
+      key: 'rollDirection', field: 'heading', label: 'Roll direction',
+      what: 'No roll direction chosen', severity: 'order', editor: 'select',
+      options: rolls.length ? rolls : ['Standard Roll', 'Reverse Roll'],
+      hint: 'Which way the fabric comes off the tube',
+    });
+  }
+
   // ── Specs the product type actually uses ──────────────────────────────────
+  // With no product there is no "actually uses" — an unknown type matches every
+  // spec there is, and asking a nameless line for a bottom rail type, a heading
+  // AND a track colour is a wall of questions that half contradict each other.
+  // The product is the question; the rest follows from its answer.
   const operation = operationOf(item, pt);
-  getTypeSpecKeys(pt).forEach((key) => {
+  (noProduct ? [] : getTypeSpecKeys(pt)).forEach((key) => {
     // A lining is a yes/no, and "no" is the common answer — an unticked box is
     // not a hole in the sheet.
     if (key === 'lining') return;
+    // Asked above, in the words a roller blind uses for it.
+    if (key === 'heading' && isRoller) return;
     if (specHasValue(item, key)) return;
     const need = OPERATION_DEPENDENT[key];
     if (need && operation !== need) return;
@@ -167,9 +192,13 @@ export function lineGaps(item, { productTypes = [], rates = null, pricedItems = 
     const costed = autoCostCurtainLine(item, rates || undefined, pricedItems);
     if (costed?.blocked) {
       const have = new Set(out.map(g => g.key));
+      const raised = new Set(costed.warnings.map(w => (typeof w === 'string' ? '' : w?.code)));
       curtainBlockers(costed.warnings, { measureSheetId }).forEach((b) => {
         const covered = COVERED_BY_FIELD[b.code];
         if (covered && have.has(covered)) return;      // already listed as a field
+        // A fabric nothing matched has no roll width either — the second row is
+        // the first one again, one step further down the calculation.
+        if (b.code === 'fabric-width-assumed' && raised.has('fabric-not-found')) return;
         out.push({
           key: `calc:${b.code}`,
           label: 'Pricing',
