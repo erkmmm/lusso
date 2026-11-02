@@ -2307,17 +2307,36 @@ export const setBuzValueMapEntry = (field, fromValue, toValue) => {
 //
 // itemField = the property stored on the line item (note: Operation Type reads
 // from `trackType` but pulls its dropdown from the `operationType` option list).
+/**
+ * Every spec a line item can carry, IN THE ORDER THEY ARE SHOWN.
+ *
+ * This array is the single source of display order: both the measure sheet's
+ * card view and its table read it through getVisibleSpecKeys / MS_SPEC_KEYS,
+ * which re-filter by this order. A product type's own `specs` array therefore
+ * controls WHICH specs appear, never the sequence — and the Settings editor is
+ * a toggle grid with no ordering control, so this list is the only place the
+ * sequence can be set.
+ *
+ * Ordered the way a blind is actually specified on site: how it mounts, how
+ * it's operated, then the hardware, then the colours. For a roller blind that
+ * reads Fixing → Control → Operation Type → Bottom Rail Type → Bottom Rail
+ * Colour → Chain Colour. Type before colour throughout, since the type is what
+ * constrains the colours offered.
+ *
+ * Motor Side sits with the operating mechanism rather than the colours — it
+ * only means anything once Operation Type says the blind is motorised.
+ */
 export const MS_SPEC_FIELDS = [
-  { key: 'control',       itemField: 'control',        optionKey: 'control',       label: 'Control' },
-  { key: 'returnSide',    itemField: 'returnSide',     optionKey: 'returnSide',     label: 'Return' },
-  { key: 'motorSide',     itemField: 'motorSide',      optionKey: 'motorSide',      label: 'Motor Side' },
   { key: 'fixing',        itemField: 'fixing',         optionKey: 'fixing',         label: 'Fixing' },
+  { key: 'control',       itemField: 'control',        optionKey: 'control',        label: 'Control' },
+  { key: 'operationType', itemField: 'trackType',      optionKey: 'operationType',  label: 'Operation Type' },
+  { key: 'motorSide',     itemField: 'motorSide',      optionKey: 'motorSide',      label: 'Motor Side' },
+  { key: 'returnSide',    itemField: 'returnSide',     optionKey: 'returnSide',     label: 'Return' },
   { key: 'heading',       itemField: 'heading',        optionKey: 'heading',        label: 'Heading' },
   { key: 'hem',           itemField: 'hem',            optionKey: 'hem',            label: 'Hem' },
-  { key: 'trackColour',   itemField: 'trackColour',    optionKey: 'trackColour',    label: 'Track Colour' },
-  { key: 'baseBarColour', itemField: 'baseBarColour',  optionKey: 'baseBarColour',  label: 'Bottom Rail Colour' },
-  { key: 'operationType', itemField: 'trackType',      optionKey: 'operationType',  label: 'Operation Type' },
   { key: 'baseBarType',   itemField: 'baseBarType',    optionKey: 'baseBarType',    label: 'Bottom Rail Type' },
+  { key: 'baseBarColour', itemField: 'baseBarColour',  optionKey: 'baseBarColour',  label: 'Bottom Rail Colour' },
+  { key: 'trackColour',   itemField: 'trackColour',    optionKey: 'trackColour',    label: 'Track Colour' },
   { key: 'chainColour',   itemField: 'chainColour',    optionKey: 'chainColour',    label: 'Chain Colour' },
   { key: 'lining',        itemField: 'attachedLining', optionKey: null,             label: 'Lining' },
 ];
