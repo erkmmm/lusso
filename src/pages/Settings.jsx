@@ -9,6 +9,7 @@ import {
   Link2, Link2Off, ExternalLink, Building2, Loader, Bot, Trash2,
   MessageSquare, Database, Zap, ClipboardList, FileDown, Bell, BellOff, Smartphone,
   Calculator, RotateCcw, Type, CheckSquare, Square, Image as ImageIcon,
+  GripVertical,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../contexts/ThemeContext';
@@ -1492,6 +1493,98 @@ function QuoteDefaultsSection() {
 
 // ─── Per-product-type dropdown options ────────────────────────────────────────
 // Lets each product type override a spec field's option list (e.g. a Roller
+
+// ─── Spec order editor ────────────────────────────────────────────────────────
+//
+// The spec order used to be ignored: whatever you picked here was re-sorted
+// into one global sequence, so a curtain and a roller blind were stuck with the
+// same arrangement. The stored order is authoritative now, which only helps if
+// it can actually be set — hence this.
+//
+// Drag to reorder, with up/down buttons alongside. The buttons are not a
+// nicety: HTML5 drag-and-drop does not fire on touch, and this app is used on
+// an iPad. Anyone on a tablet would otherwise be locked out of the feature.
+function SpecOrderEditor({ specKeys, onReorder, onRemove, onAdd }) {
+  const [dragKey, setDragKey] = useState(null);
+  const [overKey, setOverKey] = useState(null);
+
+  const labelOf = (k) => (MS_SPEC_FIELDS.find(f => f.key === k) || {}).label || k;
+  const unused  = MS_SPEC_FIELDS.filter(f => !specKeys.includes(f.key));
+
+  const move = (from, to) => {
+    if (to < 0 || to >= specKeys.length || from === to) return;
+    const next = [...specKeys];
+    const [m] = next.splice(from, 1);
+    next.splice(to, 0, m);
+    onReorder(next);
+  };
+
+  const onDrop = (targetKey) => {
+    const from = specKeys.indexOf(dragKey);
+    const to   = specKeys.indexOf(targetKey);
+    setDragKey(null); setOverKey(null);
+    if (from >= 0 && to >= 0) move(from, to);
+  };
+
+  return (
+    <div>
+      {specKeys.length === 0 ? (
+        <p className="text-xs text-slate-400 italic py-1">No specs shown for this type yet — add one below.</p>
+      ) : (
+        <ul className="space-y-1">
+          {specKeys.map((k, i) => (
+            <li
+              key={k}
+              draggable
+              onDragStart={() => setDragKey(k)}
+              onDragEnd={() => { setDragKey(null); setOverKey(null); }}
+              onDragOver={(e) => { e.preventDefault(); if (overKey !== k) setOverKey(k); }}
+              onDrop={(e) => { e.preventDefault(); onDrop(k); }}
+              className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 bg-white transition-colors ${
+                dragKey === k ? 'opacity-40 border-amber-300'
+                : overKey === k ? 'border-amber-400 bg-amber-50'
+                : 'border-slate-200'
+              }`}
+            >
+              <GripVertical size={13} className="text-slate-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
+              <span className="text-[11px] text-slate-400 tabular-nums w-4 flex-shrink-0">{i + 1}</span>
+              <span className="text-xs font-medium text-slate-700 flex-1 min-w-0 truncate">{labelOf(k)}</span>
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <button type="button" onClick={() => move(i, i - 1)} disabled={i === 0}
+                  aria-label={`Move ${labelOf(k)} up`}
+                  className="text-slate-300 hover:text-slate-600 disabled:opacity-20 transition-colors p-0.5">
+                  <ChevronUp size={13} />
+                </button>
+                <button type="button" onClick={() => move(i, i + 1)} disabled={i === specKeys.length - 1}
+                  aria-label={`Move ${labelOf(k)} down`}
+                  className="text-slate-300 hover:text-slate-600 disabled:opacity-20 transition-colors p-0.5">
+                  <ChevronDown size={13} />
+                </button>
+                <button type="button" onClick={() => onRemove(k)}
+                  aria-label={`Remove ${labelOf(k)}`}
+                  className="text-slate-300 hover:text-red-500 transition-colors p-0.5 ml-0.5">
+                  <X size={13} />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {unused.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {unused.map(f => (
+            <button key={f.key} type="button" onClick={() => onAdd(f.key)}
+              className="text-xs font-medium px-2.5 py-1 rounded-full border border-slate-200 bg-white text-slate-500 hover:border-amber-300 hover:text-amber-600 transition-colors flex items-center gap-1">
+              <Plus size={11} /> {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Blind's Operation Types differ from a Curtain's). Shown inside the type's spec
 // panel; only the dropdown specs the type actually uses are listed.
 /**
