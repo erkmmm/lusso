@@ -2017,7 +2017,7 @@ function CurtainRatesSection() {
         </div>
 
         {/* Lining */}
-        <h3 className="text-xs font-semibold text-slate-700 mb-2">Attached lining</h3>
+        <h3 className="text-xs font-semibold text-slate-700 mb-2">Lining</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <RateNum label="Lining price" value={rates.lining.pricePerM} prefix="$" suffix="/m"
             onChange={v => put('lining.pricePerM', v)} />
@@ -2037,7 +2037,10 @@ function CurtainRatesSection() {
               <option value="__follow">Match the curtain&apos;s heading</option>
               {headings.map(h => <option key={h} value={h}>{h}</option>)}
             </select>
-            <p className="text-[11px] text-slate-400 mt-1">The spreadsheet always used Gathered.</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Used for attached linings, which are made the same way every time. A separate
+              lining is asked for on the line instead — it is a curtain in its own right.
+            </p>
           </div>
         </div>
 
@@ -2045,7 +2048,8 @@ function CurtainRatesSection() {
         <h3 className="text-xs font-semibold text-slate-700 mb-2">Fitting</h3>
         <p className="text-[11px] text-slate-400 mb-3">
           Charged on the width band, plus a surcharge for tall drops. Doubled for dual tracks
-          ({rates.fitting.dualTrackTypes.join(', ')}).
+          ({rates.fitting.dualTrackTypes.join(', ')}), and increased by the separate-lining
+          percentage below when a lining hangs on its own track.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
           {rates.fitting.bands.map((b, i) => (
@@ -2064,6 +2068,15 @@ function CurtainRatesSection() {
           <RateNum label="…per extra metre of drop" value={rates.fitting.dropSurcharge.amount} prefix="$"
             onChange={v => put('fitting.dropSurcharge.amount', v)}
             hint="Whole metres only, rounded down." />
+          {/* Stored as a fraction, shown as a percentage: nobody sets a
+              surcharge in 0.7s. A proportion rather than a flat fee so it
+              keeps tracking width and drop like the rest of fitting. */}
+          <RateNum
+            label="Separate lining — extra fitting"
+            value={Math.round((rates.fitting.separateLiningExtra ?? 0) * 1000) / 10}
+            suffix="%"
+            onChange={v => put('fitting.separateLiningExtra', v === '' ? '' : Number(v) / 100)}
+            hint="Added on top when a lining hangs on its own track." />
         </div>
 
         {/* Tracks priced per metre */}
