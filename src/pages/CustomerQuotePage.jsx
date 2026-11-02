@@ -803,6 +803,16 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     }
   }
 
+  // MUST stay above the early returns below. A customer's browser has no
+  // local copy of the quote, so the first render has no quote and bails out to
+  // the 404 screen; the fetch then resolves and the full page renders. Any
+  // hook declared past those returns runs only on that second pass, and React
+  // throws #310 — "rendered more hooks than during the previous render" — and
+  // unmounts the page to a blank screen. Staff never saw it: getQuote() finds
+  // the quote in localStorage on the first render, so the early return never
+  // happens and the hook count never changes.
+  const [pdfBusy, setPdfBusy] = useState(false);
+
   const isFirstOpen = !quote?.firstOpenedAt;
   const { trackAccept, trackDecline } = useQuoteTracking((!isStaffPreview && quote) ? id : null, isFirstOpen, token);
 
@@ -1037,7 +1047,6 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // Built from the SELECTION as it stands, not from the page: a customer who
   // tries the battery option and saves a copy, then tries the chain one and
   // saves another, gets two documents that each say what they were looking at.
-  const [pdfBusy, setPdfBusy] = useState(false);
   const quoteSnapshot = () => ({
     quoteNumber:  quote.quoteNumber,
     customerName: customer?.name || '',
