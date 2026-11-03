@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/generate-icons.js && node scripts/stamp-version.js && vite build",
+    "build": "node scripts/check-env.js && node scripts/generate-icons.js && node scripts/stamp-version.js && vite build",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=lusso --commit-dirty=true",
     "lint": "eslint .",
     "preview": "vite preview"
