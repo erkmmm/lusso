@@ -1,4 +1,4 @@
-import {AnimatePresence,motion,useReducedMotion} from 'motion/react';
+import {AnimatePresence,animate,motion,useReducedMotion} from 'motion/react';
 import {openingFocusView} from '../lib/planSpecFocus';
 import OpeningWorkspace from '../components/takeoff/OpeningWorkspace';
 import { OPENING_FIELDS, linkedSheetLine, WIDTH_BASES } from '../lib/openingWorkflow';
@@ -106,6 +106,9 @@ export default function JobTakeoff() {
   // more moves than React commits renders, so gesture maths must read the value
   // it just wrote, not the one from the last render.
   const viewRef = useRef({ scale: 1, tx: 0, ty: 0 });
+  const viewAnimation=useRef(null);
+  const cancelViewAnimation=useCallback(()=>{viewAnimation.current?.stop();viewAnimation.current=null;},[]);
+  useEffect(()=>cancelViewAnimation,[cancelViewAnimation]);
 
   // interaction
   const dataTick = useDataRefresh();
@@ -396,12 +399,31 @@ export default function JobTakeoff() {
   // phase, where reading a gesture ref that a finger-up has since cleared throws
   // and takes the whole page down to the error boundary.
   const setViewNow = useCallback((next) => {
+    cancelViewAnimation();
     viewRef.current = next;
     setView(next);
-  }, []);
+  }, [cancelViewAnimation]);
+
+  const animateViewTo=useCallback(next=>{
+    cancelViewAnimation();
+    if(reducedMotion){setViewNow(next);scheduleRaster(next.scale);return;}
+    const start={...viewRef.current};
+    // One shared camera moves the PDF, labels and handles together. Do not
+    // animate the canvas alone: its marks would briefly point at other windows.
+    viewAnimation.current=animate(0,1,{
+      duration:0.36,ease:[0.16,1,0.3,1],
+      onUpdate:progress=>{
+        const frame={scale:start.scale+(next.scale-start.scale)*progress,tx:start.tx+(next.tx-start.tx)*progress,ty:start.ty+(next.ty-start.ty)*progress};
+        viewRef.current=frame;
+        setView(frame);
+      },
+      onComplete:()=>{viewAnimation.current=null;scheduleRaster(next.scale);},
+    });
+  },[cancelViewAnimation,reducedMotion,setViewNow,scheduleRaster]);
 
   // Selecting a spec card changes the view only; stored drawing coordinates stay untouched.
   const focusOpeningOnPlan=useCallback(line=>{
+    cancelViewAnimation();
     if(!line.takeoffItemId || line.takeoffRemoved){setSelectedIds(new Set());setPlanFocus(null);return;}
     const t=takeoffRef.current;
     const item=t?.items?.find(i=>i.id===line.takeoffItemId);
@@ -411,23 +433,28 @@ export default function JobTakeoff() {
     setSelectedIds(new Set([line.takeoffItemId]));
     setPageNumber(page);
     setPlanFocus({itemId:line.takeoffItemId,page});
-  },[]);
+  },[cancelViewAnimation]);
   useEffect(()=>{
     if(!planFocus || !specsOpen || pageNumber!==planFocus.page || pageBaseNumber.current!==pageNumber || !pageBaseSize)return;
     const stage=stageRef.current;
     if(!stage)return;
-    const centreOpening=()=>{
+    let lastSize=null;
+    const centreOpening=(smooth=false)=>{
       const rect=stage.getBoundingClientRect();
+      lastSize=`${rect.width}:${rect.height}`;
       const marks=(takeoffRef.current?.measurements || []).filter(m=>m.pageNumber===pageNumber && (m.itemId===planFocus.itemId || m.id===planFocus.itemId));
       const points=marks.flatMap(m=>pointsOf(m));
       const next=openingFocusView(points,pageBaseSize,rotation,rect);
-      if(next){setViewNow(next);scheduleRaster(next.scale);}
+      if(next){if(smooth)animateViewTo(next);else{setViewNow(next);scheduleRaster(next.scale);}}
     };
-    centreOpening();
-    const observer=new ResizeObserver(centreOpening);
+    centreOpening(true);
+    const observer=new ResizeObserver(()=>{
+      const rect=stage.getBoundingClientRect();
+      if(`${rect.width}:${rect.height}`!==lastSize)centreOpening();
+    });
     observer.observe(stage);
-    return ()=>observer.disconnect();
-  },[planFocus,specsOpen,pageNumber,pageBaseSize,rotation,setViewNow,scheduleRaster]);
+    return ()=>{observer.disconnect();cancelViewAnimation();};
+  },[planFocus,specsOpen,pageNumber,pageBaseSize,rotation,setViewNow,scheduleRaster,animateViewTo,cancelViewAnimation]);
 
   // ── Persistence ─────────────────────────────────────────────────────────
   // Structural edits (add/delete/scale) write straight through. Typing —
@@ -660,6 +687,7 @@ export default function JobTakeoff() {
   /** Start dragging one end of a placed measurement. */
   const onHandleDown = (e, id, index) => {
     if (status !== 'ready') return;
+    cancelViewAnimation();
     try { stageRef.current?.setPointerCapture?.(e.pointerId); } catch { /* non-capturable */ }
     handleDrag.current = { id, index, moved: false };
     setActiveHandle(index);
@@ -668,6 +696,7 @@ export default function JobTakeoff() {
 
   const onPointerDown = (e) => {
     if (status !== 'ready') return;
+    cancelViewAnimation();
     if (handleDrag.current) return;
     try { stageRef.current?.setPointerCapture?.(e.pointerId); } catch { /* non-capturable pointer */ }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -2293,7 +2322,7 @@ export default function JobTakeoff() {
               <div className="takeoff-spec-panel-inner h-full overflow-y-auto p-4">
               <OpeningWorkspace jobId={jobId} takeoff={takeoff} pdf={pdf} initialItemId={openingEditor.itemId}
                 embeddedInPlan onFocusOpening={focusOpeningOnPlan}
-                onClose={()=>{setOpeningEditor(null);setPlanFocus(null);}}
+                onClose={()=>{cancelViewAnimation();setOpeningEditor(null);setPlanFocus(null);}}
                 onJump={(page,itemId)=>{setPageNumber(page);if(itemId)focusOpeningOnPlan({takeoffItemId:itemId,takeoffPage:page});}}
                 onPlace={lineId=>{setOpeningEditor(null);setPlanFocus(null);setPlacementLineId(lineId);setMode('window');toast('Choose the correct plan page, then draw the width for this existing opening.');}} />
               </div>
