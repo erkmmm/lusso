@@ -22,11 +22,12 @@ test('Mac service authenticates staff, refuses unrelated origins and verifies ac
  const dir=await mkdtemp(join(tmpdir(),'lusso-assistant-test-'));
  const fake=join(dir,'fake-claude');
  await writeFile(fake,`#!/usr/bin/env node\nif(process.argv.includes('auth')){console.log(JSON.stringify({loggedIn:true}));process.exit();}\nprocess.stdin.resume();process.stdin.on('end',()=>{console.log(JSON.stringify({type:'result',session_id:'test-session',structured_output:${JSON.stringify(valid)}}));});\n`,{mode:0o700});
+ let actualJob='job1';
  const sb=http.createServer((req,res)=>{
   res.setHeader('Content-Type','application/json');
   if(req.headers.authorization!=='Bearer test'){res.writeHead(401);res.end('{}');return;}
   const u=new URL(req.url,'http://test');
-  const out=u.pathname==='/auth/v1/user'?{id:'user'}:u.pathname.endsWith('/profiles')?[{status:'active'}]:u.pathname.endsWith('/jobs')?[{id:'job1',job_number:'LUS-1',customer_id:'customer1'}]:u.pathname.endsWith('/measure_sheets')?[{id:'sheet1',updated_at:'1',line_items:[{id:'a'}]}]:u.pathname.endsWith('/customers')?[{name:'Client',address:'Address'}]:u.searchParams.has('id')?[{id:'quote1',job_id:'job1',status:'Draft',grand_total:100}]:[];
+  const out=u.pathname==='/auth/v1/user'?{id:'user'}:u.pathname.endsWith('/profiles')?[{status:'active'}]:u.pathname.endsWith('/jobs')?[{id:'job1',job_number:'LUS-1',customer_id:'customer1'}]:u.pathname.endsWith('/measure_sheets')?[{id:'sheet1',updated_at:'1',line_items:[{id:'a'}]}]:u.pathname.endsWith('/customers')?[{name:'Client',address:'Address'}]:u.searchParams.has('id')?[{id:'quote1',job_id:actualJob,status:'Draft',grand_total:100}]:[];
   res.end(JSON.stringify(out));
  });
  sb.listen(0,'127.0.0.1');await once(sb,'listening');
@@ -43,5 +44,11 @@ test('Mac service authenticates staff, refuses unrelated origins and verifies ac
   let run;for(let i=0;i<30;i++){run=(await fetch(base+'/runs',{headers}).then(r=>r.json())).runs[0];if(run.status==='completed')break;await new Promise(r=>setTimeout(r,30));}
   assert.equal(run.status,'completed');assert.equal(run.totalIncGst,100);assert.equal(run.draftQuoteUrl,valid.draftQuoteUrl);
   assert.equal('sessionId' in run,false);assert.equal('instructions' in run,false);
+  actualJob='different-job';
+  const second=await fetch(base+'/runs',{method:'POST',headers,body:JSON.stringify({jobId:'job1',sheetId:'sheet1'})});assert.equal(second.status,202);
+  const secondRun=await second.json();
+  for(let i=0;i<30;i++){run=(await fetch(base+'/runs',{headers}).then(r=>r.json())).runs.find(r=>r.id===secondRun.id);if(run.status==='needs_input')break;await new Promise(r=>setTimeout(r,30));}
+  assert.equal(run.status,'needs_input');assert.ok(run.summary.includes('could not be verified'));
+
  }finally{child.kill('SIGTERM');await once(child,'exit');await new Promise(r=>sb.close(r));await rm(dir,{recursive:true,force:true});}
 });
