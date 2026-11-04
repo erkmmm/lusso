@@ -7,7 +7,7 @@ import {Field} from './OpeningFields';
 export default function OpeningQuestions({lines,savedLines,productTypes,onChange,onReview}){
   const questions=lines.map(line=>({line,fields:openingQuestionFields(savedLines.find(s=>s.id===line.id) || line,line)})).filter(q=>q.fields.length);
   if(!questions.length)return <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">No missing quote details on the measure sheet. You can continue quoting below.</p>;
-  return <div className="space-y-3"><p className="text-sm text-slate-600">Fill in these boxes, then choose Save answers.</p>{questions.map(({line,fields})=>{
+  return <div className="quote-question-fields space-y-3"><p className="text-sm text-slate-600">Fill in these boxes, then choose Save answers.</p>{questions.map(({line,fields})=>{
     const pt=productTypes.find(p=>p.id===line.productTypeId),curtain=/curtain/i.test(line.productNameSnapshot || pt?.name || '');
     return <section key={line.id} aria-label={`Answers for ${line.location || 'Unnamed opening'}`} className="rounded-xl border border-amber-200 bg-white p-4 space-y-3">
       <h3 className="text-sm font-semibold text-slate-900">{line.location || 'Unnamed opening'}</h3>

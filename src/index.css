@@ -1766,3 +1766,10 @@ button:not(:disabled):active {
 @media (prefers-reduced-motion: reduce) {
   .opening-content-enter { animation: none; }
 }
+
+/* Keep unanswered quote boxes visible in both the plain and glass themes. */
+html .quote-question-fields input[aria-required="true"],
+html .quote-question-fields select[aria-required="true"] {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 2px rgb(245 158 11 / 25%) !important;
+}
