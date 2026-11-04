@@ -1,4 +1,4 @@
-import {OPERATION_REQUESTS,CURTAIN_SETUPS,CURTAIN_SETUP_LABELS,curtainSetupForLine} from '../lib/openingWorkflow';
+import {OPERATION_REQUESTS,CURTAIN_SETUPS,CURTAIN_SETUP_LABELS,curtainSetupForLine,openingOperation} from '../lib/openingWorkflow';
 import {useState} from 'react';
 import {Plus,Trash2,ChevronDown,ChevronUp,Copy,Tag,GitBranch,Check} from 'lucide-react';
 import {getMsOptions,MS_SPEC_FIELDS,getVisibleSpecKeys,makeProductSelectHandlers,isPlanEstimate} from '../store/data';
@@ -590,7 +590,7 @@ return (
                       )}
 
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        <SpecSelect label="Operation requested" value={item.operationRequest} options={OPERATION_REQUESTS} onChange={v=>setLineItem(idx,'operationRequest',v)} />
+                        <SpecSelect label="Operation requested" value={openingOperation(item)} options={OPERATION_REQUESTS} onChange={v=>setLineItem(idx,'operationRequest',v)} />
                         {/curtain/i.test(item.productNameSnapshot || productType?.name || '') && <>
                           <SpecSelect label="Curtain setup" hint="Choose sheer only, blockout only, or both. Separate blockout means a second curtain, not lining sewn onto the sheer." value={curtainSetupForLine(item)} options={CURTAIN_SETUPS} optionLabels={CURTAIN_SETUP_LABELS} onChange={v=>setLineItem(idx,'curtainLayers',v)} />
                           <SpecSelect label="Track arrangement" value={item.trackArrangement} options={['Single track','Double tracks with dual brackets','Two separate tracks','Existing track — fabric only']} onChange={v=>setLineItem(idx,'trackArrangement',v)} />

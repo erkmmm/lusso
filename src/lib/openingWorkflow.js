@@ -70,21 +70,29 @@ export function curtainSetupForLine(line={}) {
   if(/curtain/i.test(product) && /blockout|blackout/i.test(product) && !/sheer|double|dual/i.test(product))return 'Blockout only';
   return '';
 }
+export function openingOperation(line={}) {
+  if(hasValue(line.operationRequest))return line.operationRequest;
+  const product=line.productNameSnapshot || '';
+  const manual=/\bmanual\b|wand operation|wand operated|cord drawn|chain operated/i.test(product);
+  const motorised=/motoris|motoriz|\bbattery\b|\b240\s*v\b|\belectric\b/i.test(product);
+  return manual!==motorised?(manual?'Manual':'Automated'):'';
+}
 export function openingGaps(line = {}) {
   const pricing = [], ordering = [];
   if (isScopePlaceholder(line)) pricing.push('Opening count / mapping');
   if (!positive(line.widthMm) || !positive(line.dropMm)) pricing.push('Measurements');
   if (!hasValue(line.productNameSnapshot || line.productTypeId)) pricing.push('Product');
   if (!hasValue(line.fabricColour)) pricing.push('Fabric');
-  if (!hasValue(line.operationRequest)) pricing.push('Operation');
+  const operation=openingOperation(line);
+  if (!hasValue(operation)) pricing.push('Operation');
   const curtain = /curtain/i.test(line.productNameSnapshot || '');
   const curtainSetup=curtainSetupForLine(line);
   if (curtain && !hasValue(curtainSetup)) pricing.push('Curtain setup');
   if (curtain && !hasValue(line.heading)) pricing.push('Heading');
   if (curtain && /separate|attached/i.test(curtainSetup) && !hasValue(line.liningFabricColour)) pricing.push('Blockout / lining fabric');
   if (!hasValue(line.fixing)) ordering.push('Fixing');
-  if (line.operationRequest==='Manual and automated alternatives' && (!hasValue(line.manualTrackType) || !hasValue(line.automatedTrackType))) pricing.push(curtain?'Track models for both options':'Hardware for both options');
-  else if (curtain && line.operationRequest!=='Manual and automated alternatives' && !hasValue(line.trackType)) pricing.push('Track model');
+  if (operation==='Manual and automated alternatives' && (!hasValue(line.manualTrackType) || !hasValue(line.automatedTrackType))) pricing.push(curtain?'Track models for both options':'Hardware for both options');
+  else if (curtain && operation!=='Manual and automated alternatives' && !hasValue(line.trackType)) pricing.push('Track model');
   if (curtain && !hasValue(line.trackRecess)) ordering.push('Track recess');
   if (!hasValue(line.control)) ordering.push('Opening / control direction');
   if (line.measureSource !== 'site') ordering.push('Check measure');
@@ -130,7 +138,7 @@ export function expandOperationAlternatives(line) {
   return ['Manual','Automated'].map(operation=>({...line,operationRequest:operation,choiceGroupId:line.choiceGroupId || `operation:${line.id}`,trackType:operation==='Manual'?line.manualTrackType || '':line.automatedTrackType || '',operationAlternative:operation}));
 }
 export function openingQuoteSnapshot(line) {
-  const setup=curtainSetupForLine(line);
-  if(setup)line={...line,curtainLayers:setup};
+  const setup=curtainSetupForLine(line),operation=openingOperation(line);
+  line={...line,...(setup?{curtainLayers:setup}:{}),...(operation?{operationRequest:operation}:{})};
   return Object.fromEntries(['operationRequest','operationAlternative','curtainLayers','trackArrangement','trackRecess','motorPower','manualTrackType','automatedTrackType','liningFabricColour','planSources','makeSizeCalculation','source','measureSource','scopePlaceholder','quantityConfirmed','takeoffRemoved','pendingPlanChanges','planRevisionReview'].filter(k=>line[k]!==undefined).map(k=>[k,line[k]]));
 }

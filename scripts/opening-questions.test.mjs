@@ -17,3 +17,10 @@ test('changing an answer exposes the additional price-affecting boxes without as
  const legacy={...complete,curtainLayers:'',liningMode:'separate',liningFabricColour:'Simplicity Off White'};
  assert.deepEqual(openingQuestionFields(legacy),[]);
 });
+
+test('explicit existing wand/manual product specifications do not create repeat questions',()=>{
+ for(const product of ['Lusso Double Curtain Track — Wand Operation','Lusso Manual Reverse Pleat Sheer Curtain']){
+  assert.deepEqual(openingQuestionFields({...complete,operationRequest:'',productNameSnapshot:product}),[]);
+ }
+ assert.deepEqual(openingQuestionFields({...complete,operationRequest:'',productNameSnapshot:'Curtain'}),['operationRequest']);
+});
