@@ -114,6 +114,7 @@ export default function JobTakeoff() {
   const dataTick = useDataRefresh();
   const [openingEditor, setOpeningEditor] = useState(null);
   const specsOpen=Boolean(openingEditor);
+  const openingCloseRef=useRef(null);
   const reducedMotion=useReducedMotion();
   const [planFocus,setPlanFocus] = useState(null);
   const pageBaseNumber = useRef(null);
@@ -1893,7 +1894,7 @@ export default function JobTakeoff() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {takeoff && !clientView && <button onClick={()=>{flushSave();setOpeningEditor({});}} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white">Openings & specs</button>}
+          {takeoff && !clientView && <button aria-expanded={specsOpen} aria-controls="takeoff-opening-specifications" onClick={()=>{if(specsOpen){openingCloseRef.current?.close();return;}flushSave();setOpeningEditor({});}} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white">Openings & specs</button>}
 
           {!clientView && ['window','chain','arc'].includes(mode) && <label className="hidden sm:block text-xs text-slate-500">Measuring<select aria-label="New width measurement basis" value={newWidthBasis} onChange={e=>setNewWidthBasis(e.target.value)} className="ml-1 rounded border border-slate-200 bg-white p-1">{WIDTH_BASES.map(b=><option key={b}>{b}</option>)}</select></label>}
           {placementLineId && <button className="text-xs text-amber-700" onClick={()=>setPlacementLineId(null)}>Cancel opening placement</button>}
@@ -2313,7 +2314,7 @@ export default function JobTakeoff() {
             />
           ) : <>
             <AnimatePresence initial={false}>
-            {openingEditor && <motion.aside key="opening-specifications" aria-label="Opening specifications beside plan"
+            {openingEditor && <motion.aside key="opening-specifications" id="takeoff-opening-specifications" aria-label="Opening specifications beside plan"
               className="takeoff-spec-panel min-h-0 flex-1 overflow-hidden border-t lg:border-t-0 lg:border-l border-slate-200 bg-white lg:flex-none"
               initial={{width:0,opacity:0,x:24}}
               animate={{width:'var(--opening-panel-width)',opacity:1,x:0}}
@@ -2321,7 +2322,7 @@ export default function JobTakeoff() {
               transition={{duration:reducedMotion?0:0.24,ease:[0.16,1,0.3,1]}}>
               <div className="takeoff-spec-panel-inner h-full overflow-y-auto p-4">
               <OpeningWorkspace jobId={jobId} takeoff={takeoff} pdf={pdf} initialItemId={openingEditor.itemId}
-                embeddedInPlan onFocusOpening={focusOpeningOnPlan}
+                embeddedInPlan closeRef={openingCloseRef} onFocusOpening={focusOpeningOnPlan}
                 onClose={()=>{cancelViewAnimation();setOpeningEditor(null);setPlanFocus(null);}}
                 onJump={(page,itemId)=>{setPageNumber(page);if(itemId)focusOpeningOnPlan({takeoffItemId:itemId,takeoffPage:page});}}
                 onPlace={lineId=>{setOpeningEditor(null);setPlanFocus(null);setPlacementLineId(lineId);setMode('window');toast('Choose the correct plan page, then draw the width for this existing opening.');}} />

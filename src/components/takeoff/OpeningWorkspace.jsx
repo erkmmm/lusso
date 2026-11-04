@@ -1,7 +1,7 @@
 import MeasureSheetOpeningCard from '../MeasureSheetOpeningCard';
 import {resolveMeasureEntry} from '../../lib/measureMath';
 import {markLineCheckMeasured,markLinePlanEstimate} from '../../store/data';
-import {useRef,useState,useEffect} from 'react';
+import {useRef,useState,useEffect,useImperativeHandle} from 'react';
 import {v4 as uuidv4} from 'uuid';
 import {X,Loader2,ExternalLink} from 'lucide-react';
 import {getMeasureSheetByJob,getMeasureSheet,getMeasureSheetsByJob,getProductTypes,saveOpeningChanges} from '../../store/data';
@@ -15,7 +15,7 @@ import OpeningFields,{Field,inputClass} from './OpeningFields';
 import MakeSizeCalculator from './MakeSizeCalculator';
 const action='rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40';
 const secondary='rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 disabled:opacity-40';
-export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemId,onClose,onJump,onPlace,onFocusOpening,embeddedInPlan=false,onSaved=()=>{},onEditing=()=>{}}) {
+export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemId,onClose,onJump,onPlace,onFocusOpening,embeddedInPlan=false,closeRef,onSaved=()=>{},onEditing=()=>{}}) {
   useDataRefresh();
   const editorRoot=useRef(null);
   const sheets=getMeasureSheetsByJob(jobId).filter(s=>!s.deletedAt);
@@ -147,7 +147,9 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
     const pending={...active.pendingPlanChanges};delete pending[key];
     patch(active.id,{[key]:suggestion.value,pendingPlanChanges:pending,...(key!=='location'?{measureSource:'plan'}:{})});
   }
+  useImperativeHandle(closeRef,()=>({close}));
   function close() {
+    if(busy)return;
     if(dirty && !window.confirm('Discard the unsaved answers in this editor?')) return;
     onClose?.();
   }
