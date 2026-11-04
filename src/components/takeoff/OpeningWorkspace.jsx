@@ -1,3 +1,6 @@
+import MeasureSheetOpeningCard from '../MeasureSheetOpeningCard';
+import {resolveMeasureEntry} from '../../lib/measureMath';
+import {markLineCheckMeasured,markLinePlanEstimate} from '../../store/data';
 import {useRef,useState,useEffect} from 'react';
 import {v4 as uuidv4} from 'uuid';
 import {X,Loader2,ExternalLink} from 'lucide-react';
@@ -22,6 +25,8 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
   const baseline=useRef(sheet?.updatedAt);
   useEffect(()=>{if(!baseline.current && sheet?.updatedAt) baseline.current=sheet.updatedAt;},[sheet?.updatedAt]);
   const [tab,setTab]=useState('Openings');
+  const [expandedSpecs,setExpandedSpecs]=useState(new Set());
+  const [otherSpecs,setOtherSpecs]=useState(new Set());
   const [fills,setFills]=useState({});
   const [additions,setAdditions]=useState([]);
   const [activeId,setActiveId]=useState(()=>initialItemId?(sheet?.lineItems?.find(l=>l.takeoffItemId===initialItemId)?.id || ''):'');
@@ -61,7 +66,6 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
       values[key==='widthMm'?'widthBasis':'dropBasis']=key==='widthMm'?'Finished track width':'Finished make drop';
       if(current?.makeSizeCalculation) values.makeSizeCalculation={...current.makeSizeCalculation,reviewedAt:null,reviewed:false};
     }
-    if(key==='curtainLayers') values.attachedLining=value==='Curtain with attached lining';
     patch(id,values);
   }
   const toggle=(set,id)=>set(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});
@@ -147,20 +151,29 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
     {tab==='Openings' && <>
       <div className="rounded-xl bg-slate-50 p-3"><p className="text-sm font-medium">{lines.length} opening / scope entries · {lines.filter(l=>isScopePlaceholder(l)).length} need opening count or mapping confirmed</p><div className="mt-2 flex flex-wrap gap-2">{groups.map(g=><button key={`${g.stage}:${g.label}`} onClick={()=>setFilter(g.label)} className={`rounded-full border px-2 py-1 text-xs ${g.stage==='pricing'?'border-amber-200 text-amber-800':'border-slate-200 text-slate-500'}`}>{g.lineIds.length} · {g.label}{g.stage==='ordering'?' · before ordering':''}</button>)}</div></div>
       <Field label="Find room or missing decision" value={filter} onChange={setFilter}/>
-      <div className="space-y-2">{filtered.map(line=>{const gaps=openingGaps(line),open=activeId===line.id;return <section key={line.id} className="rounded-xl border border-slate-200 overflow-hidden"><div className="flex items-center gap-2 bg-slate-50 p-3"><input type="checkbox" aria-label={`Select ${line.location}`} checked={selected.has(line.id)} onChange={()=>toggle(setSelected,line.id)}/><button className="flex-1 text-left" onClick={()=>chooseActive(open?'':line.id)}><span className="text-sm font-semibold">{line.location || 'Unnamed opening'}</span><span className="block text-xs text-slate-500">{line.productNameSnapshot || 'Product undecided'} · {line.widthMm || '—'} × {line.dropMm || '—'} mm{line.operationRequest?` · ${line.operationRequest}`:''}</span><span className="block text-xs text-amber-700">{gaps.pricing.length?`For pricing: ${gaps.pricing.join(', ')}`:'Pricing specifications recorded'}{isScopePlaceholder(line)?' · Scope placeholder':''}</span></button></div>
-        {open && <div className="p-4 space-y-4">
+      <div className="space-y-3">{filtered.map(line=>{const gaps=openingGaps(line),idx=lines.findIndex(l=>l.id===line.id);return <section key={line.id}>
+        <div className="mb-1 flex items-center gap-2 px-1"><input type="checkbox" aria-label={`Select ${line.location}`} checked={selected.has(line.id)} onChange={()=>toggle(setSelected,line.id)}/><span className="text-xs text-amber-700">{gaps.pricing.length?`For pricing: ${gaps.pricing.join(', ')}`:'Pricing specifications recorded'}</span></div>
+        <MeasureSheetOpeningCard item={line} idx={idx} productTypes={types} sheetId={sheet.id} lineCount={lines.length}
+          cardOpen={activeId===line.id} isExpanded={expandedSpecs.has(line.id)} otherOpen={otherSpecs.has(line.id)}
+          nextItem={filtered[filtered.findIndex(l=>l.id===line.id)+1]}
+          toggleCard={id=>chooseActive(activeId===id?'':id)} openOnly={chooseActive}
+          toggleItemExpand={id=>toggle(setExpandedSpecs,id)} toggleOtherSpecs={id=>toggle(setOtherSpecs,id)}
+          setLineItem={(_idx,key,value)=>field(line.id,key,value)}
+          commitMeasure={(_idx,key,raw)=>{const result=resolveMeasureEntry(raw);if(result)field(line.id,key,result.value);patch(line.id,{[`${key}Expr`]:result?.expression || ''});}}
+          confirmLineMeasured={()=>patch(line.id,markLineCheckMeasured(line,{by:displayName}))}
+          revertLineToPlan={()=>patch(line.id,markLinePlanEstimate(line))}
+          setLinePhotos={(_id,paths)=>patch(line.id,{photoPaths:paths})}>
+          <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={!isScopePlaceholder(line)} onChange={e=>patch(line.id,{quantityConfirmed:e.target.checked,scopePlaceholder:!e.target.checked,...(isScopePlaceholder(line) && !line.measureSource?{measureSource:'plan'}:{})})}/>Opening count and mapping confirmed</label>
           <div className="flex flex-wrap gap-2">{onJump && line.takeoffPage && <button className={secondary} onClick={()=>{if(dirty){setError('Save or discard your answers before returning to the plan.');return;}onJump(line.takeoffPage,line.takeoffItemId);}}>Show on plan · page {line.takeoffPage}</button>}{onPlace && !line.takeoffItemId && <button className={secondary} onClick={()=>{if(dirty){setError('Save your answers before placing this opening.');return;}onPlace(line.id);}}>Place this opening on the plan</button>}</div>
           {line.planRevisionReview && <div className="rounded-lg border border-amber-200 p-3 text-sm"><p>Plan revision changed from r{line.planRevisionReview.from} to r{line.planRevisionReview.to}. Confirm this opening still matches the drawing. Existing specifications and site sizes are retained.</p><button className={secondary} onClick={()=>patch(line.id,{planRevisionReview:null,reviewedRevision:line.planRevisionReview.to})}>I compared this opening with the revised plan</button></div>}
           {line.takeoffRemoved && <div className="rounded-lg bg-amber-50 p-3 text-sm">This opening was removed from the current plan markup. Its sheet details are retained. Reposition it or confirm the scope before pricing.</div>}
           {Object.entries(line.pendingPlanChanges || {}).map(([key,value])=><div key={key} className="rounded-lg border border-amber-200 p-3 text-sm"><p>Plan proposes {key==='widthMm'?'width':key==='dropMm'?'drop':key}: <strong>{value.value}</strong>; current answer: <strong>{line[key] || '—'}</strong>.</p><p className="text-xs text-slate-500">{value.fileName} · p{value.page} · r{value.revision} · {value.reason}</p><div className="mt-2 flex gap-2"><button className={secondary} onClick={()=>acceptPlanChange(key,value)}>Use plan value (provisional)</button><button className={secondary} onClick={()=>{const next={...line.pendingPlanChanges};delete next[key];patch(line.id,{pendingPlanChanges:next,reviewedPlanValues:{...line.reviewedPlanValues,[key]:value.value}});}}>Keep my answer</button></div></div>)}
-          <OpeningFields line={line} productTypes={types} onChange={(key,value)=>field(line.id,key,value)}/>
-          <div className="grid gap-3 sm:grid-cols-2"><Field label="Finished width (mm)" type="number" value={line.widthMm} onChange={v=>field(line.id,'widthMm',v)}/><Field label="Finished drop (mm)" type="number" value={line.dropMm} onChange={v=>field(line.id,'dropMm',v)}/></div>
           <MakeSizeCalculator key={line.id} line={line} onApply={values=>patch(line.id,values)} onInputsChange={inputs=>patch(line.id,{makeSizeCalculation:{inputs,reviewed:false}})}/>
           <button className={secondary} onClick={()=>{setQuery(line.location || '');setTab('Plan evidence');}}>Find heights / schedules in plans</button>
           {!!line.planSources?.length && <div className="space-y-2"><h3 className="text-sm font-semibold">Plan references</h3>{line.planSources.map((s,i)=><div key={i} className="rounded-lg bg-slate-50 p-3 text-xs"><p>{s.fileName} · revision {s.revision} · page {s.page}</p><p className="whitespace-pre-wrap mt-1">{s.excerpt}</p>{onJump && <button className="mt-1 underline" onClick={()=>{if(dirty){setError('Save your answers before opening this drawing.');return;}onJump(s.page);}}>Open source drawing</button>}</div>)}</div>}
           {!!line.briefEvidence?.length && <details><summary className="cursor-pointer text-xs text-slate-500">Customer brief evidence</summary>{line.briefEvidence.map((e,i)=><p key={i} className="mt-2 text-xs">{e.excerpt}</p>)}</details>}
           {!!line.specHistory?.length && <details><summary className="cursor-pointer text-xs text-slate-500">Change history ({line.specHistory.length})</summary>{[...line.specHistory].reverse().map((h,i)=><div key={i} className="mt-2 rounded-lg bg-slate-50 p-3 text-xs"><p>{h.at} · {h.by} · {h.source}</p>{h.changes.map(c=><p key={c.field}>{c.field}: {JSON.stringify(c.from)} → {JSON.stringify(c.to)}</p>)}<button className="mt-1 underline" onClick={()=>patch(line.id,Object.fromEntries(h.changes.map(c=>[c.field,c.from])))}>Restore these previous values to my unsaved answers</button></div>)}</details>}
-        </div>}
+        </MeasureSheetOpeningCard>
       </section>;})}</div>
     </>}
     {tab==='Bulk edit' && <div className="space-y-4"><p className="text-sm">Select the openings to share these answers. Different product types can have different hardware; group similar products together.</p><div className="grid gap-2 sm:grid-cols-2">{lines.map(l=><label key={l.id} className="flex gap-2 text-sm"><input type="checkbox" checked={selected.has(l.id)} onChange={()=>toggle(setSelected,l.id)}/>{l.location}</label>)}</div><button className={secondary} onClick={()=>setSelected(new Set(lines.map(l=>l.id)))}>Select all entries</button><OpeningFields bulk line={bulkEditor} productTypes={types} onChange={(key,value)=>{setBulk(p=>({...p,[key]:value,...(key==='curtainLayers'?{attachedLining:value==='Curtain with attached lining'}:{})}));setBulkPreview(null);}}/><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={overwrite} onChange={e=>{setOverwrite(e.target.checked);setBulkPreview(null);}}/>Replace existing answers too</label><button className={secondary} onClick={()=>setBulkPreview(previewBulk(lines,[...selected],bulk,overwrite))}>Preview changes to {selected.size} entries</button>{bulkPreview && <div className="rounded-xl border border-slate-200 p-3 space-y-2"><p className="text-sm font-semibold">{bulkPreview.length} entries will change</p>{bulkPreview.map(({line,patch:values})=><div key={line.id} className="text-xs"><strong>{line.location}</strong>{Object.entries(values).map(([key,value])=><p key={key}>{key}: {String(line[key] || 'blank')} → {String(value)}</p>)}</div>)}<button disabled={!bulkPreview.length} className={action} onClick={()=>{for(const change of bulkPreview)patch(change.line.id,change.patch);setBulkPreview(null);setTab('Openings');}}>Apply this preview to my unsaved answers</button></div>}</div>}
