@@ -2,9 +2,9 @@ import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown, StickyNote, History } from 'lucide-react';
+import { Edit3, User, Briefcase, ClipboardList, Phone, Mail, MapPin, Trash2, AlertTriangle, Printer, Plus, Link, Maximize2, X, Copy, FileDown, StickyNote, History, Ruler } from 'lucide-react';
 import useFullscreenPane from '../hooks/useFullscreenPane';
-import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, duplicateMeasureSheet, createJobFromMeasureSheet, getPurchaseOrdersBySheet } from '../store/data';
+import { getMeasureSheet, getCustomer, getJob, getJobs, getQuotes, deleteMeasureSheet, saveMeasureSheet, duplicateMeasureSheet, createJobFromMeasureSheet, getPurchaseOrdersBySheet, getTakeoffByJob } from '../store/data';
 import { exportMeasureSheetToBuz, isRollerBlindItem } from '../lib/buzExport';
 import { toast } from '../components/ToastContainer';
 import Card from '../components/Card';
@@ -271,6 +271,7 @@ export default function MeasureSheetView() {
   const sheet    = getMeasureSheet(id);
   const customer = sheet ? getCustomer(sheet.customerId) : null;
   const job      = sheet?.jobId ? getJob(sheet.jobId) : null; // read directly
+  const takeoff = sheet?.jobId ? getTakeoffByJob(sheet.jobId) : null;
   const quotes   = getQuotes();
   const isLinked = quotes.some(q => q.measureSheetId === id) || Boolean(sheet?.jobId);
   const purchaseOrders = getPurchaseOrdersBySheet(id);
@@ -423,6 +424,7 @@ export default function MeasureSheetView() {
                 <Briefcase size={13} /> View Job
               </button>
             )}
+            {takeoff?.filePath && <button onClick={()=>navigate(`/jobs/${sheet.jobId}/takeoff`)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium hover:bg-slate-50"><Ruler size={13} /> View / edit takeoff</button>}
             {sheet.jobId && <button onClick={()=>navigate(`/measure-sheets/${id}/openings`)} className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white">Openings & specs</button>}
             <button onClick={() => navigate(`/measure-sheets/${id}/edit`)}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
