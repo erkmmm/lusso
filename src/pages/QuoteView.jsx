@@ -204,7 +204,7 @@ export default function QuoteView({embedded=false}) {
   // So "Make live" is only offered for a quote that has been out and is
   // currently down — pulled back for edits, taken offline, or expired. A
   // never-sent draft goes out with Send Quote and nothing else.
-  const canMakeLive = wasEverLive && !isLive
+  const canMakeLive = !isTestQuote(quote) && wasEverLive && !isLive
     && !['Accepted', 'Declined', 'Completed'].includes(quote.status);
 
   const handleDuplicate = () => {
@@ -437,7 +437,7 @@ export default function QuoteView({embedded=false}) {
                 <Copy size={13} /> Duplicate
               </button>
             </div>
-            {!['Accepted','Declined','Completed'].includes(quote.status) && (
+            {!isTestQuote(quote) && !['Accepted','Declined','Completed'].includes(quote.status) && (
               <div className="flex flex-wrap gap-2">
                 <button onClick={handleAccept}
                   className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-green-200 text-green-700 hover:bg-green-50">

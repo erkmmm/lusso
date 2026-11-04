@@ -12,7 +12,10 @@ test('actual takeoff reconciliation protects sheet answers, removals, heights an
   const data=await vite.ssrLoadModule('/src/store/data.js');
   const job='fixture-job';
   const trial={id:'test-quote',jobId:job,title:'TEST – supplier trial',status:'Draft',lineItems:[],grandTotal:0};
+  data.saveJob({id:job,customerId:'fixture-customer',status:'Measured'});
   data.saveQuote(trial);
+  assert.equal(data.getJob(job).status,'Measured');
+  assert.throws(()=>data.acceptQuote(trial.id),/TEST/);
   assert.throws(()=>data.sendQuote(trial.id),/TEST/);
   assert.throws(()=>data.reactivateQuote(trial.id),/TEST/);
   assert.equal(data.getQuote(trial.id).status,'Draft');

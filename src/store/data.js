@@ -3682,7 +3682,7 @@ export const saveQuote = (quote) => {
   }
   set('lusso_quotes', list);
   db.saveQuote(list[list.findIndex(q => q.id === quote.id)]);
-  advanceJobStatus(enriched.jobId, 'Quote Required', enriched.salesperson || 'System');
+  if(!isTestQuote(enriched))advanceJobStatus(enriched.jobId, 'Quote Required', enriched.salesperson || 'System');
 };
 
 export const createQuote = (data) => {
@@ -3796,6 +3796,7 @@ export const acceptQuote = (quoteId, acceptanceInfo = {}, selectedLineItemIds = 
   const list = getQuotes();
   const idx  = list.findIndex(q => q.id === quoteId);
   if (idx < 0) return null;
+  if(isTestQuote(list[idx]))throw new Error('TEST quotes cannot be accepted.');
   const now = new Date().toISOString();
   const info = { ...acceptanceInfo, acceptedAt: now };
   const updated = { ...list[idx], status: 'Accepted', acceptedAt: now, acceptedBy: info, updatedAt: now };
