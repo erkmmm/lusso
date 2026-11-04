@@ -4,6 +4,7 @@ import { Sparkles, Loader, CheckCircle2, AlertCircle, ArrowLeft, ExternalLink } 
 import { getJob, getCustomer, getMeasureSheetsByJob } from '../store/data';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { macQuoteAssistant } from '../lib/macQuoteAssistant';
+import AssistantSheetGaps from '../components/AssistantSheetGaps';
 import { supplierForLine } from '../lib/quoteAssistant';
 
 const field = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400';
@@ -23,10 +24,13 @@ export default function QuoteAssistant() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [answer, setAnswer] = useState('');
+  const [sheetEditing, setSheetEditing] = useState(false);
+  const [approvedSheet, setApprovedSheet] = useState(null);
   const [setup, setSetup] = useState(false);
   const selectedId = sheetId || (sheets.length === 1 ? sheets[0].id : '');
   const sheet = sheets.find(s => s.id === selectedId);
   const current = runs.find(r => r.jobId === jobId);
+  const activeSheet = sheets.find(s => s.id === current?.sheetId) || sheet;
   const inProgress = current && ['running', 'starting', 'needs_input'].includes(current.status);
 
   const refresh = useCallback(async (background = false) => {
@@ -68,12 +72,13 @@ export default function QuoteAssistant() {
     {current && <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-4" aria-live="polite">
       <div className="flex items-center gap-2">{current.status === 'running' ? <Loader size={18} className="animate-spin text-amber-600" /> : <CheckCircle2 size={18} className="text-amber-700" />}<h2 className="font-semibold text-slate-900">{labels[current.status] || current.status}</h2></div>
       <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{current.summary}</p>
+      {current.status === 'needs_input' && activeSheet && <AssistantSheetGaps key={activeSheet.id} sheet={activeSheet} onSaved={setApprovedSheet} onEditing={editing => { setSheetEditing(editing); if (editing) setApprovedSheet(null); }} />}
       {!!current.questions?.length && <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">{current.questions.map((q,i)=><li key={i}>{q}</li>)}</ul>}
       {!!current.warnings?.length && <ul className="list-disc pl-5 space-y-2 text-sm text-amber-800">{current.warnings.map((q,i)=><li key={i}>{q}</li>)}</ul>}
       {current.supplierReference && <p className="text-sm text-slate-600">Supplier reference: <strong>{current.supplierReference}</strong></p>}
       {Number.isFinite(current.totalIncGst) && <p className="text-lg font-semibold">{new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(current.totalIncGst)} including GST</p>}
       {current.draftQuoteUrl && <a href={current.draftQuoteUrl} className={button}>Review draft quote <ExternalLink size={15} /></a>}
-      {current.status === 'needs_input' && <div className="space-y-3"><label className="block text-sm font-medium" htmlFor="quote-answer">Your answers</label><textarea id="quote-answer" rows={4} value={answer} onChange={e=>setAnswer(e.target.value)} className={field} placeholder="Answer the questions above, then continue…" /><button className={button} disabled={busy||!answer.trim()} onClick={()=>action(`/runs/${current.id}/continue`,{answer})}>Continue quoting</button></div>}
+      {current.status === 'needs_input' && <div className="space-y-3"><label className="block text-sm font-medium" htmlFor="quote-answer">Additional answers or instructions</label><textarea id="quote-answer" rows={4} value={answer} onChange={e=>setAnswer(e.target.value)} className={field} placeholder="Any decisions not covered by the fields above…" /><button className={button} disabled={busy||sheetEditing||(!answer.trim()&&!approvedSheet)} onClick={()=>action(`/runs/${current.id}/continue`,{answer:answer.trim() || 'Use the specifications I saved to the measure sheet. Recheck any remaining gaps before supplier entry.', approvedSheetUpdatedAt:approvedSheet?.updatedAt})}>Continue quoting</button></div>}
       {inProgress && <button disabled={busy} onClick={()=>action(`/runs/${current.id}/stop`,{})} className="ml-3 text-sm text-slate-500 underline">Stop this request</button>}
       {!!current.events?.length && <details className="border-t border-slate-100 pt-3"><summary className="cursor-pointer text-sm text-slate-500">Activity</summary><div className="mt-3 max-h-64 overflow-auto space-y-2">{current.events.map((event,i)=><p key={i} className="whitespace-pre-wrap text-xs leading-5 text-slate-600">{event.text}</p>)}</div></details>}
     </section>}

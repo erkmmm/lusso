@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { ORIGINS, RUN_SCHEMA, validId, validateResult, publicRun } from './protocol.mjs';
+import { ORIGINS, RUN_SCHEMA, validId, validateResult, publicRun, sameSheetVersion } from './protocol.mjs';
 import { makeQuotingPrompt, QUOTE_SYSTEM } from './prompt.mjs';
 import { loadProjectPlans } from './plans.mjs';
 const exec = promisify(execFile);
@@ -30,7 +30,7 @@ async function authorize(req) { const token=(req.headers.authorization||'').repl
 async function authStatus(){try{const {stdout}=await exec(claude,['auth','status','--json'],{timeout:15000});return Boolean(JSON.parse(stdout).loggedIn);}catch{return false;}}
 async function body(req){let text='';for await(const chunk of req){text+=chunk;if(text.length>48000)throw Object.assign(new Error('This request is too large.'),{status:413});}return text?JSON.parse(text):{};}
 function addEvent(run,text){run.events=[...(run.events||[]),{at:new Date().toISOString(),text:String(text).slice(0,1200)}].slice(-40);}
-async function start(run, token, answer='') {
+async function start(run, token, answer='', approvedSheetUpdatedAt=null) {
   if(active)throw Object.assign(new Error('Another quote is using Chrome. Finish or stop it first.'),{status:409});
   if(!await authStatus())throw Object.assign(new Error('Sign in to Claude Code on this Mac, then connect Chrome with /chrome. The app has not started supplier work.'),{status:428});
   active=run.id;
@@ -45,7 +45,7 @@ async function start(run, token, answer='') {
     if(!job||job.deleted_at||!sheet||sheet.deleted_at||!(sheet.line_items||[]).length)throw new Error('This job or measure sheet is unavailable or empty. Reload the job.');
     const customers=await sb(`/rest/v1/customers?id=eq.${job.customer_id}&select=name,address`,token);
     if(!customers[0])throw new Error('The customer could not be read.');
-    if(answer && run.sheetUpdatedAt!==sheet.updated_at)throw new Error('The measure sheet changed while the assistant was waiting. Start a new request from the current sheet.');
+    if(answer && !sameSheetVersion(approvedSheetUpdatedAt || run.sheetUpdatedAt,sheet.updated_at))throw new Error('The measure sheet changed while the assistant was waiting. Review and save the current sheet before continuing.');
     run.sheetUpdatedAt=sheet.updated_at;run.status='running';run.summary='Working through the measure sheet and supplier draft.';
     run.questions=[];run.warnings=[];
     addEvent(run,answer?'Continuing with your answers.':'Reading the current job and measure sheet.');
@@ -113,7 +113,7 @@ const server=http.createServer(async(req,res)=>{
       if(match[2]==='stop'){run.status='cancelled';run.summary='Stopped. Any supplier or CRM draft already saved remains available; nothing has been ordered or sent by this action.';run.process?.kill('SIGTERM');await persist(run);send(200,publicRun(run));return;}
       const data=await body(req);if(run.status!=='needs_input')throw new Error('This request is not waiting for an answer.');
       if(!String(data.answer||'').trim())throw new Error('Enter your answers or instructions before continuing.');
-      await start(run,token,String(data.answer).slice(0,12000));send(202,publicRun(run));return;
+      await start(run,token,String(data.answer).slice(0,12000),data.approvedSheetUpdatedAt);send(202,publicRun(run));return;
     }
     send(404,{error:'Not found'});
   }catch(e){send(e.status||400,{error:e.message||'The Mac assistant could not complete the request.'});}

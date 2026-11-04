@@ -263,6 +263,7 @@ export default function QuoteGaps({
   onDismissLine,
   onDismissAll,
   productTypes = [],
+  answeredText = 'All answered. Anything you filled in is saved back to the measure sheet.',
 }) {
   if (!lines.length) return null;
 
@@ -280,7 +281,7 @@ export default function QuoteGaps({
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             {allAnswered
-              ? 'All answered. Anything you filled in is saved back to the measure sheet.'
+              ? answeredText
               : <>
                   {totals.total} missing on {totals.lines} line{totals.lines !== 1 ? 's' : ''}
                   {totals.price > 0 && <> · <span className="text-red-600 font-medium">{totals.price} {SEVERITY.price.note}</span></>}

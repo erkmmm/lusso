@@ -6,7 +6,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { ORIGINS, validateResult } from '../mac-assistant/protocol.mjs';
+import { ORIGINS, validateResult, sameSheetVersion } from '../mac-assistant/protocol.mjs';
 import { makeQuotingPrompt } from '../mac-assistant/prompt.mjs';
 const valid={status:'completed',summary:'Draft saved',questions:[],warnings:[],draftQuoteUrl:'https://app.lusso.com.au/quotes/quote1/edit',supplierReference:'BUZ 123',totalIncGst:100};
 test('completion requires a genuine Lusso draft URL, source reference and positive total',()=>{
@@ -23,12 +23,13 @@ test('Mac service authenticates staff, refuses unrelated origins and verifies ac
  const fake=join(dir,'fake-claude');
  await writeFile(fake,`#!/usr/bin/env node\nif(process.argv.includes('auth')){console.log(JSON.stringify({loggedIn:true}));process.exit();}\nprocess.stdin.resume();process.stdin.on('end',()=>{console.log(JSON.stringify({type:'result',session_id:'test-session',structured_output:${JSON.stringify(valid)}}));});\n`,{mode:0o700});
  let actualJob='job1';
+ let sheetVersion='2026-11-04T07:00:00Z';
  const sb=http.createServer((req,res)=>{
   res.setHeader('Content-Type','application/json');
   if(req.headers.authorization!=='Bearer test'){res.writeHead(401);res.end('{}');return;}
   const u=new URL(req.url,'http://test');
   if(u.pathname.endsWith('/quotes') && (u.searchParams.get('select')||'').includes('measure_sheet_id')){res.writeHead(400);res.end(JSON.stringify({message:'column quotes.measure_sheet_id does not exist'}));return;}
-  const out=u.pathname==='/auth/v1/user'?{id:'user'}:u.pathname.endsWith('/profiles')?[{status:'active'}]:u.pathname.endsWith('/jobs')?[{id:'job1',job_number:'LUS-1',customer_id:'customer1'}]:u.pathname.endsWith('/measure_sheets')?[{id:'sheet1',updated_at:'1',line_items:[{id:'a'}]}]:u.pathname.endsWith('/customers')?[{name:'Client',address:'Address'}]:u.searchParams.has('id')?[{id:'quote1',job_id:actualJob,status:'Draft',grand_total:100}]:[];
+  const out=u.pathname==='/auth/v1/user'?{id:'user'}:u.pathname.endsWith('/profiles')?[{status:'active'}]:u.pathname.endsWith('/jobs')?[{id:'job1',job_number:'LUS-1',customer_id:'customer1'}]:u.pathname.endsWith('/measure_sheets')?[{id:'sheet1',updated_at:sheetVersion,line_items:[{id:'a'}]}]:u.pathname.endsWith('/customers')?[{name:'Client',address:'Address'}]:u.searchParams.has('id')?[{id:'quote1',job_id:actualJob,status:'Draft',grand_total:100}]:[];
   res.end(JSON.stringify(out));
  });
  sb.listen(0,'127.0.0.1');await once(sb,'listening');
@@ -50,6 +51,16 @@ test('Mac service authenticates staff, refuses unrelated origins and verifies ac
   const secondRun=await second.json();
   for(let i=0;i<30;i++){run=(await fetch(base+'/runs',{headers}).then(r=>r.json())).runs.find(r=>r.id===secondRun.id);if(run.status==='needs_input')break;await new Promise(r=>setTimeout(r,30));}
   assert.equal(run.status,'needs_input');assert.ok(run.summary.includes('could not be verified'));
+  sheetVersion='2026-11-04T07:01:00Z';
+  const resume=body=>fetch(base+`/runs/${run.id}/continue`,{method:'POST',headers,body:JSON.stringify(body)});
+  assert.equal((await resume({answer:'Continue'})).status,400);
+  assert.equal((await resume({answer:'Use my saved answers',approvedSheetUpdatedAt:sheetVersion})).status,202);
 
  }finally{child.kill('SIGTERM');await once(child,'exit');await new Promise(r=>sb.close(r));await rm(dir,{recursive:true,force:true});}
+});
+
+test('continuing from saved answers requires the exact reviewed sheet version',()=>{
+ assert.equal(sameSheetVersion('2026-11-04T07:00:00.000Z','2026-11-04T07:00:00+00:00'),true);
+ assert.equal(sameSheetVersion('2026-11-04T07:00:00Z','2026-11-04T07:00:01Z'),false);
+ assert.equal(sameSheetVersion(undefined,undefined),false);
 });

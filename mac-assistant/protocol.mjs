@@ -23,3 +23,9 @@ export function publicRun(run) {
   const { id, jobId, sheetId, userId, status, summary, questions, warnings, draftQuoteUrl, supplierReference, totalIncGst, startedAt, updatedAt, events } = run;
   return { id, jobId, sheetId, userId, status, summary, questions, warnings, draftQuoteUrl, supplierReference, totalIncGst, startedAt, updatedAt, events };
 }
+
+// Continue only with the exact sheet version the user reviewed or just saved.
+export function sameSheetVersion(expected, actual) {
+  const value = Date.parse(expected);
+  return Number.isFinite(value) && value === Date.parse(actual);
+}
