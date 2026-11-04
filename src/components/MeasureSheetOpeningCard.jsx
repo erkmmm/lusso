@@ -364,7 +364,7 @@ return (
                       issues={limitIssues[item.id]} onToggle={() => toggleCard(item.id)} />
                   )}
 
-                  {cardOpen && <>
+                  {cardOpen && <div className="opening-content-enter">
                   {/* Open: the summary becomes a sticky title bar, so however
                       far you scroll into this opening's fields you can still
                       see which room you're in — the thing that was missing. */}
@@ -574,7 +574,7 @@ return (
                       Any spec that already holds a value stays visible too, so
                       changing the product type never hides entered data. */}
                   {isExpanded && (
-                    <div className="border-t border-slate-100 px-4 py-3 bg-slate-50/40 space-y-3">
+                    <div className="opening-content-enter border-t border-slate-100 px-4 py-3 bg-slate-50/40 space-y-3">
                       {(dropdownSpecs.length > 0 || liningVisible) ? (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           {dropdownSpecs.map(k => (
@@ -691,7 +691,7 @@ return (
                       </button>
                     ) : null}
                   </div>
-                  </>}
+                  </div>}
                 </div>
 );
 }

@@ -1,3 +1,4 @@
+import {AnimatePresence,motion,useReducedMotion} from 'motion/react';
 import {openingFocusView} from '../lib/planSpecFocus';
 import OpeningWorkspace from '../components/takeoff/OpeningWorkspace';
 import { OPENING_FIELDS, linkedSheetLine, WIDTH_BASES } from '../lib/openingWorkflow';
@@ -110,6 +111,7 @@ export default function JobTakeoff() {
   const dataTick = useDataRefresh();
   const [openingEditor, setOpeningEditor] = useState(null);
   const specsOpen=Boolean(openingEditor);
+  const reducedMotion=useReducedMotion();
   const [planFocus,setPlanFocus] = useState(null);
   const pageBaseNumber = useRef(null);
   const [placementLineId, setPlacementLineId] = useState(requestedPlacement);
@@ -356,7 +358,7 @@ export default function JobTakeoff() {
       const key = `${pageNumber}:${rotation}:${Math.round(viewSize.width)}x${Math.round(viewSize.height)}:${Math.round(r.width)}x${Math.round(r.height)}`;
       if (fittedKey.current === key) return;
       fittedKey.current = key;
-      fitPage(viewSize);
+      fitPage(viewSize,{deferRaster:true});
     };
     tryFit();
     const ro = new ResizeObserver(tryFit);
@@ -373,7 +375,7 @@ export default function JobTakeoff() {
   }, [maxRaster]);
 
   // ── Fit page into the stage, centered ───────────────────────────────────
-  function fitPage(size = viewSize) {
+  function fitPage(size = viewSize,{deferRaster=false}={}) {
     const stage = stageRef.current;
     if (!stage || !size) return;
     const rect = stage.getBoundingClientRect();
@@ -385,7 +387,8 @@ export default function JobTakeoff() {
     const tx = (rect.width - size.width * scale) / 2;
     const ty = (rect.height - size.height * scale) / 2;
     setViewNow({ scale, tx, ty });
-    setRasterScale(clamp(scale, 0.1, maxRaster));
+    if(deferRaster)scheduleRaster(scale);
+    else setRasterScale(clamp(scale, 0.1, maxRaster));
   }
 
   // Single writer for the view: keeps the ref and the state in lockstep and
@@ -2279,15 +2282,24 @@ export default function JobTakeoff() {
               collapsed={panelCollapsed}
               onToggleCollapsed={togglePanel}
             />
-          ) : openingEditor ? (
-            <aside aria-label="Opening specifications beside plan" className="min-h-0 flex-1 overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-200 bg-white p-4 lg:w-[430px] xl:w-[480px] lg:flex-none">
+          ) : <>
+            <AnimatePresence initial={false}>
+            {openingEditor && <motion.aside key="opening-specifications" aria-label="Opening specifications beside plan"
+              className="takeoff-spec-panel min-h-0 flex-1 overflow-hidden border-t lg:border-t-0 lg:border-l border-slate-200 bg-white lg:flex-none"
+              initial={{width:0,opacity:0,x:24}}
+              animate={{width:'var(--opening-panel-width)',opacity:1,x:0}}
+              exit={{width:0,opacity:0,x:24}}
+              transition={{duration:reducedMotion?0:0.24,ease:[0.16,1,0.3,1]}}>
+              <div className="takeoff-spec-panel-inner h-full overflow-y-auto p-4">
               <OpeningWorkspace jobId={jobId} takeoff={takeoff} pdf={pdf} initialItemId={openingEditor.itemId}
                 embeddedInPlan onFocusOpening={focusOpeningOnPlan}
                 onClose={()=>{setOpeningEditor(null);setPlanFocus(null);}}
                 onJump={(page,itemId)=>{setPageNumber(page);if(itemId)focusOpeningOnPlan({takeoffItemId:itemId,takeoffPage:page});}}
                 onPlace={lineId=>{setOpeningEditor(null);setPlanFocus(null);setPlacementLineId(lineId);setMode('window');toast('Choose the correct plan page, then draw the width for this existing opening.');}} />
-            </aside>
-          ) : [...pageItems,...pageMeasurements,...pageMarkers].some(mark=>selectedIds.has(mark.id)) ? (
+              </div>
+            </motion.aside>}
+            </AnimatePresence>
+          {!openingEditor && [...pageItems,...pageMeasurements,...pageMarkers].some(mark=>selectedIds.has(mark.id)) && (
           <ItemPanel
             pageNumber={pageNumber}
             items={pageItems}
@@ -2322,7 +2334,8 @@ export default function JobTakeoff() {
             collapsed={panelCollapsed}
             onToggleCollapsed={togglePanel}
           />
-          ) : null}
+          )}
+          </>}
         </div>
       )}
 

@@ -1743,3 +1743,26 @@ button:not(:disabled):active {
 @media print {
   [data-noprint="true"] { display: none !important; }
 }
+
+/* Takeoff uses the same short dolly easing as the app's cards and dialogs.
+   The inner panel keeps a stable width while its outer shell slides, so fields
+   do not reflow throughout the transition. Stage resize keeps plan + marks aligned. */
+.takeoff-spec-panel { --opening-panel-width: 100%; }
+.takeoff-spec-panel-inner { width: 100%; }
+@media (min-width: 1024px) {
+  .takeoff-spec-panel { --opening-panel-width: 430px; }
+  .takeoff-spec-panel-inner { width: var(--opening-panel-width); }
+}
+@media (min-width: 1280px) {
+  .takeoff-spec-panel { --opening-panel-width: 480px; }
+}
+@keyframes lusso-opening-content {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.opening-content-enter {
+  animation: lusso-opening-content 0.2s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .opening-content-enter { animation: none; }
+}
