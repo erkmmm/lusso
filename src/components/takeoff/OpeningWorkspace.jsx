@@ -77,7 +77,7 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
     const values={[key]:value};
     if(key==='widthMm' || key==='dropMm') {
       const current=lines.find(l=>l.id===id);
-      values[key==='widthMm'?'widthBasis':'dropBasis']=key==='widthMm'?'Finished track width':'Finished make drop';
+      if(current?.measureSource==='site' || (current?.source!=='takeoff' && current?.measureSource!=='plan'))values[key==='widthMm'?'widthBasis':'dropBasis']=key==='widthMm'?'Finished track width':'Finished make drop';
       if(current?.makeSizeCalculation) values.makeSizeCalculation={...current.makeSizeCalculation,reviewedAt:null,reviewed:false};
     }
     patch(id,values);
@@ -186,7 +186,11 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
           {line.planRevisionReview && <div className="rounded-lg border border-amber-200 p-3 text-sm"><p>Plan revision changed from r{line.planRevisionReview.from} to r{line.planRevisionReview.to}. Confirm this opening still matches the drawing. Existing specifications and site sizes are retained.</p><button className={secondary} onClick={()=>patch(line.id,{planRevisionReview:null,reviewedRevision:line.planRevisionReview.to})}>I compared this opening with the revised plan</button></div>}
           {line.takeoffRemoved && <div className="rounded-lg bg-amber-50 p-3 text-sm">This opening was removed from the current plan markup. Its sheet details are retained. Reposition it or confirm the scope before pricing.</div>}
           {Object.entries(line.pendingPlanChanges || {}).map(([key,value])=><div key={key} className="rounded-lg border border-amber-200 p-3 text-sm"><p>Plan proposes {key==='widthMm'?'width':key==='dropMm'?'drop':key}: <strong>{value.value}</strong>; current answer: <strong>{line[key] || '—'}</strong>.</p><p className="text-xs text-slate-500">{value.fileName} · p{value.page} · r{value.revision} · {value.reason}</p><div className="mt-2 flex gap-2"><button className={secondary} onClick={()=>acceptPlanChange(key,value)}>Use plan value (provisional)</button><button className={secondary} onClick={()=>{const next={...line.pendingPlanChanges};delete next[key];patch(line.id,{pendingPlanChanges:next,reviewedPlanValues:{...line.reviewedPlanValues,[key]:value.value}});}}>Keep my answer</button></div></div>)}
-          <MakeSizeCalculator key={line.id} line={line} onApply={values=>patch(line.id,values)} onInputsChange={inputs=>patch(line.id,{makeSizeCalculation:{inputs,reviewed:false}})}/>
+          <details className="rounded-xl border border-slate-200 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-slate-500">Optional size adjustments</summary>
+            <p className="my-3 text-xs text-slate-500">Plan dimensions are estimates for quoting. Final manufacturing sizes and allowances can be confirmed at the site check measure.</p>
+            <MakeSizeCalculator key={line.id} line={line} onApply={values=>patch(line.id,values)} onInputsChange={inputs=>patch(line.id,{makeSizeCalculation:{inputs,reviewed:false}})}/>
+          </details>
           <button className={secondary} onClick={()=>{setQuery(line.location || '');setTab('Plan evidence');}}>Find heights / schedules in plans</button>
           {!!line.planSources?.length && <div className="space-y-2"><h3 className="text-sm font-semibold">Plan references</h3>{line.planSources.map((s,i)=><div key={i} className="rounded-lg bg-slate-50 p-3 text-xs"><p>{s.fileName} · revision {s.revision} · page {s.page}</p><p className="whitespace-pre-wrap mt-1">{s.excerpt}</p>{onJump && <button className="mt-1 underline" onClick={()=>{if(dirty && !embeddedInPlan){setError('Save your answers before opening this drawing.');return;}onJump(s.page);}}>Open source drawing</button>}</div>)}</div>}
           {!!line.briefEvidence?.length && <details><summary className="cursor-pointer text-xs text-slate-500">Customer brief evidence</summary>{line.briefEvidence.map((e,i)=><p key={i} className="mt-2 text-xs">{e.excerpt}</p>)}</details>}

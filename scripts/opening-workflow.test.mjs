@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calculateMakeSize,planUpdate,previewBulk,parseOpeningSuggestions,readiness,editOpening} from '../src/lib/openingWorkflow.js';
+import {calculateMakeSize,planUpdate,previewBulk,parseOpeningSuggestions,readiness,editOpening,openingGaps} from '../src/lib/openingWorkflow.js';
 test('finished sizes require explicit deductions, separate ceiling and window height',()=>{
  assert.equal(calculateMakeSize({widthBasis:'Opening width',rawWidthMm:2000,dropBasis:'Ceiling / bracket to floor',rawDropMm:3000}).valid,false);
  const result=calculateMakeSize({widthBasis:'Opening width',rawWidthMm:2000,leftAllowanceMm:100,rightAllowanceMm:100,dropBasis:'Ceiling / bracket to floor',rawDropMm:3000,trackDeductionMm:35,floorClearanceMm:10});
@@ -46,4 +46,12 @@ test('manual and automated choices remain mutually exclusive snapshots of one op
  assert.equal(choices.length,2);assert.equal(choices[0].id,choices[1].id);assert.equal(choices[0].choiceGroupId,choices[1].choiceGroupId);assert.equal(choices[0].quantity,2);assert.equal(choices[0].trackType,'KAW');assert.equal(choices[1].trackType,'Oslo 84 (240v)');
  assert.equal(expandOperationAlternatives({...line,manualTrackType:''})[0].trackType,'');
  assert.deepEqual(openingQuoteSnapshot(line).planSources,[{page:3}]);
+});
+
+test('plan dimensions can be quoted without manufacturing calculations, with site check still required',()=>{
+ const line={id:'plan',source:'takeoff',measureSource:'plan',widthMm:2200,dropMm:2700,productNameSnapshot:'Curtain',fabricColour:'Selected sheer',operationRequest:'Manual',curtainLayers:'Sheer only',heading:'Wave Fold',trackType:'KAW',fixing:'Ceiling',trackRecess:'Recessed / built into ceiling',control:'C/O'};
+ assert.deepEqual(openingGaps(line).pricing,[]);
+ assert.ok(openingGaps(line).ordering.includes('Check measure'));
+ assert.ok(openingGaps({...line,dropMm:''}).pricing.includes('Measurements'));
+ assert.equal(line.makeSizeCalculation,undefined);
 });

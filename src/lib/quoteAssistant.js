@@ -10,7 +10,7 @@ export const QUOTING_RULES = [
   'Include remotes and chargers in BUZ. Lusso adds them automatically: exclude their component costs from covering costs to avoid double counting.',
   'A motorised room uses one remote: 15-channel for multiple blinds, 1-channel for one. Battery chargers: one per four blinds rounded up; none for 240V.',
   'Use existing curtain making and fitting rates. Never reuse a previous job’s labour, discount, dimensions or fabric choices as defaults.',
-  'Confirm heading, lining, fixing, opening direction, bracket arrangement and measurement allowances. Do not infer them from another job.',
+  'Confirm heading, lining, fixing, opening direction and bracket arrangement. Use recorded plan dimensions as provisional quoting estimates; finished-size calculations and manufacturing allowances are not required for a plan quote. Keep a site check-measure hold before ordering. Do not infer specifications from another job.',
   'Only attach customer-approved warranty/care documents for the actual selected product. Do not invent warranty eligibility.',
 ];
 export function supplierForLine(line) {

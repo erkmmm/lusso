@@ -61,7 +61,6 @@ export function openingGaps(line = {}) {
   const pricing = [], ordering = [];
   if (isScopePlaceholder(line)) pricing.push('Opening count / mapping');
   if (!positive(line.widthMm) || !positive(line.dropMm)) pricing.push('Measurements');
-  if ((line.source==='takeoff' || line.measureSource==='plan') && !line.makeSizeCalculation?.reviewedAt && (line.widthBasis!=='Finished track width' || line.dropBasis!=='Finished make drop')) pricing.push('Measurement basis / allowances');
   if (!hasValue(line.productNameSnapshot || line.productTypeId)) pricing.push('Product');
   if (!hasValue(line.fabricColour)) pricing.push('Fabric');
   if (!hasValue(line.operationRequest)) pricing.push('Operation');
