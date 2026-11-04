@@ -25,6 +25,7 @@ import JobTakeoff from './pages/JobTakeoff';
 import ContentQueue from './pages/ContentQueue';
 import Content from './pages/Content';
 import Campaigns from './pages/Campaigns';
+import GrowthPlan from './pages/GrowthPlan';
 import InstallView from './pages/InstallView';
 import Customers from './pages/Customers';
 import MissingContactDetails from './pages/MissingContactDetails';
@@ -448,6 +449,7 @@ function AppRoutes() {
               <Route path="/users"                      element={<Navigate to="/employees" replace />} />
               <Route path="/inbox"                      element={<Inbox />} />
               <Route path="/reviews"                    element={<Reviews />} />
+              <Route path="/growth"                     element={<GrowthPlan />} />
               <Route path="*"                           element={<Dashboard />} />
         </Route>
       </Routes>

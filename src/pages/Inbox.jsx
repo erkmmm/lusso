@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import OptionsMenu from '../components/OptionsMenu';
 import DeliveryStatus from '../components/DeliveryStatus';
 import { deleteCustomer, restoreCustomer, saveCustomer, getCustomers, findCustomerByIdentity, searchMatchAnywhere } from '../store/data';
+import { leadSourceFromWebEnquiry } from '../lib/leadSources';
 import { useProfile } from '../contexts/UserProfileContext';
 import { toast } from '../components/ToastContainer';
 import { format, parseISO, isToday, isYesterday, isThisWeek } from 'date-fns';
@@ -1773,6 +1774,9 @@ export default function Inbox() {
         address: lead.suburb || '',
         billingAddress: '',
         preferredContact: lead.phone ? 'Phone' : 'Email',
+        // Carry the attribution across. A web lead is the one case where we
+        // already know how they found us, so it must not arrive as "not asked".
+        leadSource: leadSourceFromWebEnquiry(lead),
         notes,
         assignedTo: displayName,
         createdAt: now,

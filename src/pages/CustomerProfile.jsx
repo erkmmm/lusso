@@ -10,6 +10,7 @@ import OptionsMenu from '../components/OptionsMenu';
 import { format, parseISO } from 'date-fns';
 import { getCustomer, getJobsByCustomer, saveCustomer, updateCustomerXeroContact, deleteCustomer, restoreCustomer, isJobOpen } from '../store/data';
 import StatusBadge from '../components/StatusBadge';
+import { LEAD_SOURCES, leadSourceLabel } from '../lib/leadSources';
 import Card from '../components/Card';
 import CollapsibleSection from '../components/CollapsibleSection';
 import useCollapsedSections from '../hooks/useCollapsedSections';
@@ -175,6 +176,16 @@ export default function CustomerProfile() {
                       {['Email', 'Phone', 'SMS', 'Any'].map(o => <option key={o}>{o}</option>)}
                     </select>
                   </div>
+                  {/* Attribution. Editable after the fact because the answer
+                      often turns up later in the conversation than the form. */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">How they found us</label>
+                    <select value={field('leadSource') || ''} onChange={set('leadSource')}
+                      className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
+                      <option value="">Not asked</option>
+                      {LEAD_SOURCES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
                 </div>
                 {/* A second decision-maker. Plenty of jobs are decided by two
                     people, and before this the quote went to whichever of them
@@ -299,6 +310,7 @@ export default function CustomerProfile() {
               <Row label="Site Address"     value={customer.address} />
               <Row label="Billing Address"  value={customer.billingAddress} />
               <Row label="Preferred Contact" value={customer.preferredContact} />
+              <Row label="How they found us"  value={leadSourceLabel(customer.leadSource)} />
               {customer.secondaryName && (
                 <Row
                   label={customer.secondaryRole ? `Second contact (${customer.secondaryRole})` : 'Second contact'}

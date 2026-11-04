@@ -10,6 +10,7 @@ import { getCustomers, getCustomersFiltered, getJobs, getJobsByCustomer, saveCus
 import { useProfile } from '../contexts/UserProfileContext';
 import EmptyState from '../components/EmptyState';
 import Card from '../components/Card';
+import { LEAD_SOURCES } from '../lib/leadSources';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import StatusBadge from '../components/StatusBadge';
 import OptionsMenu from '../components/OptionsMenu';
@@ -61,7 +62,7 @@ function DeleteModal({ count, hasJobs, onConfirm, onCancel }) {
 
 const EMPTY_CUSTOMER = () => ({
   name: '', businessName: '', phone: '', email: '', address: '',
-  billingAddress: '', preferredContact: 'Phone', notes: '',
+  billingAddress: '', preferredContact: 'Phone', notes: '', leadSource: '',
 });
 
 export default function Customers() {
@@ -441,6 +442,33 @@ export default function Customers() {
                     placeholder="e.g. Acme Pty Ltd"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />
+                </div>
+                {/* How did you hear about us — asked once, at the only moment
+                    anyone will ever know the answer. Paid search cannot be
+                    measured without it. */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                    How did they find us?
+                    <span className="text-slate-400 font-normal"> — ask on the call</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {LEAD_SOURCES.map(src => {
+                      const on = newCustomer.leadSource === src.value;
+                      return (
+                        <button
+                          key={src.value}
+                          type="button"
+                          title={src.hint}
+                          onClick={() => setNewCustomer(p => ({ ...p, leadSource: on ? '' : src.value }))}
+                          className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors ${
+                            on ? 'bg-amber-500 border-amber-500 text-white font-medium'
+                               : 'bg-white border-slate-200 text-slate-600 hover:border-amber-300'}`}
+                        >
+                          {src.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 {/* Phone */}
                 <div>
