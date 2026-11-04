@@ -32,12 +32,12 @@ test('actual takeoff reconciliation protects sheet answers, removals, heights an
   const fetchBefore=globalThis.fetch;
   try {
     const sources=[{id:'p1',page:1,fileName:'Fixture.pdf',revision:1,text:'OFFICE CH 3000'}];
-    globalThis.fetch=async()=>new Response(JSON.stringify({reply:JSON.stringify({heightReferences:[{sourceId:'p1',heightMm:3000,basis:'Ceiling / bracket to floor',evidence:'OFFICE CH 3000',mapping:'Confirm Office North mapping'}]})}),{status:200});
+    globalThis.fetch=async()=>new Response(JSON.stringify({result:{heightReferences:[{sourceId:'p1',heightMm:3000,basis:'Ceiling / bracket to floor',evidence:'OFFICE CH 3000',mapping:'Confirm Office North mapping'}]} }),{status:200});
     const heights=await ai.suggestHeightReferences(job,{id:'a',location:'Office'},sources);
     assert.equal(heights[0].heightMm,3000);assert.equal(heights[0].source.page,1);
-    globalThis.fetch=async()=>new Response(JSON.stringify({reply:JSON.stringify({heightReferences:[{sourceId:'p1',heightMm:2900,basis:'Ceiling / bracket to floor',evidence:'OFFICE CH 3000'}]})}),{status:200});
+    globalThis.fetch=async()=>new Response(JSON.stringify({result:{heightReferences:[{sourceId:'p1',heightMm:2900,basis:'Ceiling / bracket to floor',evidence:'OFFICE CH 3000'}]} }),{status:200});
     await assert.rejects(()=>ai.suggestHeightReferences(job,{id:'a'},sources),/not printed/);
-    globalThis.fetch=async()=>new Response(JSON.stringify({reply:JSON.stringify({suggestions:[{lineId:'a',sourceId:'customer-brief',evidence:'Office sheer only, manual.',patch:{curtainLayers:'Sheer only',operationRequest:'Manual',dropMm:9999}}]})}),{status:200});
+    globalThis.fetch=async()=>new Response(JSON.stringify({result:{suggestions:[{lineId:'a',sourceId:'customer-brief',evidence:'Office sheer only, manual.',patch:{curtainLayers:'Sheer only',operationRequest:'Manual',dropMm:9999}}]} }),{status:200});
     const specs=await ai.suggestOpeningSpecs(job,[{id:'a',location:'Office'}],[{id:'customer-brief',text:'Office sheer only, manual.'}]);
     assert.equal(specs[0].patch.operationRequest,'Manual');assert.equal('dropMm' in specs[0].patch,false);
   } finally {globalThis.fetch=fetchBefore;}

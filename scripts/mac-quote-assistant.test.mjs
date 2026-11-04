@@ -21,7 +21,7 @@ test('browser prompt keeps work on the exact job and asks before uncertain speci
 test('Mac service authenticates staff, refuses unrelated origins and verifies actual draft results',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'lusso-assistant-test-'));
  const fake=join(dir,'fake-claude');
- await writeFile(fake,`#!/usr/bin/env node\nif(process.argv.includes('auth')){console.log(JSON.stringify({loggedIn:true}));process.exit();}\nprocess.stdin.resume();process.stdin.on('end',()=>{console.log(JSON.stringify({type:'result',session_id:'test-session',structured_output:${JSON.stringify(valid)}}));});\n`,{mode:0o700});
+ await writeFile(fake,`#!/usr/bin/env node\nif(process.argv.includes('auth')){console.log(JSON.stringify({loggedIn:true}));process.exit();}\nprocess.stdin.resume();process.stdin.on('end',()=>{console.log(JSON.stringify({type:'result',session_id:'test-session',structured_output:(process.argv[process.argv.indexOf('--json-schema')+1]||'').includes('suggestions')?{suggestions:[]}:(process.argv[process.argv.indexOf('--json-schema')+1]||'').includes('heightReferences')?{heightReferences:[]}:${JSON.stringify(valid)}}));});\n`,{mode:0o700});
  let actualJob='job1';
  let sheetVersion='2026-11-04T07:00:00Z';
  const sb=http.createServer((req,res)=>{
@@ -42,6 +42,8 @@ test('Mac service authenticates staff, refuses unrelated origins and verifies ac
   assert.equal((await fetch(base+'/status',{headers:{Origin:'https://app.lusso.com.au'}})).status,401);
   const headers={Origin:'https://app.lusso.com.au',Authorization:'Bearer test','Content-Type':'application/json'};
   assert.equal((await fetch(base+'/status',{headers}).then(r=>r.json())).signedIn,true);
+  const reviewed=await fetch(base+'/reviews',{method:'POST',headers,body:JSON.stringify({jobId:'job1',mode:'specifications',prompt:'Fixture brief only'})});assert.equal(reviewed.status,200);assert.deepEqual((await reviewed.json()).result,{suggestions:[]});
+  assert.equal((await fetch(base+'/reviews',{method:'POST',headers,body:JSON.stringify({jobId:'other',mode:'specifications',prompt:'Wrong job'})})).status,400);
   const started=await fetch(base+'/runs',{method:'POST',headers,body:JSON.stringify({jobId:'job1',sheetId:'sheet1'})});assert.equal(started.status,202);
   let run;for(let i=0;i<30;i++){run=(await fetch(base+'/runs',{headers}).then(r=>r.json())).runs[0];if(run.status==='completed')break;await new Promise(r=>setTimeout(r,30));}
   assert.equal(run.status,'completed');assert.equal(run.totalIncGst,100);assert.equal(run.draftQuoteUrl,valid.draftQuoteUrl);

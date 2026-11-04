@@ -16,7 +16,7 @@ For manual and automated alternatives, select separate hardware models. New draf
 
 Bulk edit previews field changes before applying them. Existing answers are protected by default; replacing them requires choosing that option. Only selected openings are affected. Bulk changes remain unsaved until Save answers.
 
-Customer brief review uses the existing signed-in job assistant. Every proposal must quote an exact source excerpt, target a current opening ID or name a proposed missing opening, and use approved specification fields. Dimensions cannot be changed by brief proposals. Select only the proposals reviewed; conflicting answers for the same field cannot be applied together. New scope starts unmeasured with its count and mapping unconfirmed.
+Customer brief review uses the existing signed-in Mac helper and Claude Code subscription, with a dedicated structured-output review and no browser, shell or file tools. Keep Start Lusso Quote Assistant running. Every proposal must quote an exact source excerpt, target a current opening ID or name a proposed missing opening, and use approved specification fields. Dimensions cannot be changed by brief proposals. Select only the proposals reviewed; conflicting answers for the same field cannot be applied together. New scope starts unmeasured with its count and mapping unconfirmed.
 
 ## Find heights and source drawings
 

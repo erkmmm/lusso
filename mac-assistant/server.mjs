@@ -1,3 +1,4 @@
+import { runStructuredReview, stopStructuredReviews } from './review.mjs';
 import http from 'node:http';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -22,13 +23,14 @@ if (!sbUrl || !sbKey) throw new Error('Lusso connection settings are missing. St
 const claude = process.env.LUSSO_CLAUDE_BIN || resolve(homedir(), 'homebrew/bin/claude');
 const runs = new Map();
 let active = null;
+let reviewing = false;
 const guides = await Promise.all(['buz-roller-blinds.md','fha-curtains.md'].map(n=>readFile(resolve(homedir(),'.codex/skills/lusso-quote-from-measure-sheet/references',n),'utf8').catch(()=>'')));
 async function persist(run) { run.updatedAt=new Date().toISOString(); await writeFile(resolve(stateDir,`${run.id}.json`),JSON.stringify({...run,process:undefined}),{mode:0o600}); }
 for (const name of await readdir(stateDir)) if (/^[\w-]+\.json$/.test(name)) { try { const r=JSON.parse(await readFile(resolve(stateDir,name),'utf8')); if(['running','starting'].includes(r.status)){r.status='needs_input';r.summary='The Mac assistant restarted. Check existing supplier and CRM drafts before continuing.';} runs.set(r.id,r); } catch {} }
 async function sb(path,token) { const res=await fetch(`${sbUrl}${path}`,{headers:{apikey:sbKey,Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)}); if(!res.ok){const detail=await res.json().catch(()=>({}));throw new Error(res.status===401||res.status===403?'Lusso could not confirm access. Refresh the app and sign in again.':`Lusso could not load the quote data: ${detail.message||res.status}`);}return res.json(); }
 async function authorize(req) { const token=(req.headers.authorization||'').replace(/^Bearer /,''); if(!token)throw Object.assign(new Error('Sign in to Lusso first.'),{status:401});const user=await sb('/auth/v1/user',token);const profiles=await sb(`/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=status`,token); if(profiles[0]?.status!=='active')throw Object.assign(new Error('An active Lusso staff account is required.'),{status:403});return {token,user}; }
 async function authStatus(){try{const {stdout}=await exec(claude,['auth','status','--json'],{timeout:15000});return Boolean(JSON.parse(stdout).loggedIn);}catch{return false;}}
-async function body(req){let text='';for await(const chunk of req){text+=chunk;if(text.length>48000)throw Object.assign(new Error('This request is too large.'),{status:413});}return text?JSON.parse(text):{};}
+async function body(req,limit=48000){let text='';for await(const chunk of req){text+=chunk;if(text.length>limit)throw Object.assign(new Error('This request is too large.'),{status:413});}return text?JSON.parse(text):{};}
 function addEvent(run,text){run.events=[...(run.events||[]),{at:new Date().toISOString(),text:String(text).slice(0,1200)}].slice(-40);}
 async function start(run, token, answer='', approvedSheetUpdatedAt=null) {
   if(active)throw Object.assign(new Error('Another quote is using Chrome. Finish or stop it first.'),{status:409});
@@ -108,6 +110,19 @@ const server=http.createServer(async(req,res)=>{
       const run={id:randomUUID(),userId:user.id,jobId:data.jobId,sheetId:data.sheetId,instructions:String(data.instructions||'').slice(0,12000),status:'starting',startedAt:new Date().toISOString(),events:[],questions:[],warnings:[]};
       runs.set(run.id,run);try{await start(run,token);}catch(e){runs.delete(run.id);throw e;}send(202,publicRun(run));return;
     }
+    if(req.method==='POST' && path==='/reviews') {
+      if(reviewing) throw Object.assign(new Error('Another opening review is running. Wait for it to finish.'),{status:409});
+      reviewing=true;
+      try {
+        const data=await body(req,180000);
+        if(!validId(data.jobId) || !['specifications','heights'].includes(data.mode) || typeof data.prompt!=='string' || !data.prompt.trim() || data.prompt.length>170000) throw new Error('A current project and a bounded review source are required.');
+        const jobs=await sb(`/rest/v1/jobs?id=eq.${data.jobId}&select=id,deleted_at`,token);
+        if(!jobs[0] || jobs[0].id!==data.jobId || jobs[0].deleted_at) throw new Error('This project is unavailable.');
+        if(!await authStatus()) throw new Error('Sign in to Claude Code on this Mac before reviewing opening specifications.');
+        send(200,{result:await runStructuredReview({claude,cwd:workDir,mode:data.mode,prompt:data.prompt})});
+      } finally {reviewing=false;}
+      return;
+    }
     const match=path.match(/^\/runs\/([\w-]+)\/(continue|stop)$/);
     if(req.method==='POST'&&match){const run=runs.get(match[1]);if(!run||run.userId!==user.id)throw Object.assign(new Error('Quote request not found.'),{status:404});
       if(match[2]==='stop'){run.status='cancelled';run.summary='Stopped. Any supplier or CRM draft already saved remains available; nothing has been ordered or sent by this action.';run.process?.kill('SIGTERM');await persist(run);send(200,publicRun(run));return;}
@@ -120,4 +135,4 @@ const server=http.createServer(async(req,res)=>{
 });
 server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'The quote assistant is already running on this Mac.':error.message);process.exit(1);});
 server.listen(Number(process.env.LUSSO_ASSISTANT_PORT||53146),'127.0.0.1',()=>console.log('Lusso Quote Assistant is running on this Mac. Open a job in Lusso and choose Quote with AI.'));
-process.on('SIGTERM',()=>{for(const r of runs.values())r.process?.kill('SIGTERM');server.close(()=>process.exit());});
+process.on('SIGTERM',()=>{stopStructuredReviews();for(const r of runs.values())r.process?.kill('SIGTERM');server.close(()=>process.exit());});
