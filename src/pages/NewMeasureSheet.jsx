@@ -787,8 +787,11 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
     toast('Saved — your version is the one on file now.');
   }, [flushSave]);
 
-  // Debounced on change.
+  // Reading an existing sheet does not constitute an edit.
+  const observedSheetRef=useRef(sheet);
   useEffect(() => {
+    if(observedSheetRef.current===sheet)return;
+    observedSheetRef.current=sheet;
     if (submitted) return;
     setDirty(true);
     const t = setTimeout(() => flushSave('debounce'), 2000);
@@ -1313,6 +1316,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
     );
   }
 
+  const MeasureDetails=embedded?'details':Card;
   const hasErrors   = Object.keys(errors).length > 0;
   const highDuplicate = duplicates.some(d => d.confidence === 'high');
   const lastLine    = sheet.lineItems[sheet.lineItems.length - 1];
@@ -1399,7 +1403,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       )}
 
       {/* Consult recorder — only when this sheet is linked to a job */}
-      {(prelinkedJobId || sheet?.jobId) && (
+      {!embedded && (prelinkedJobId || sheet?.jobId) && (
         <ConsultRecorder jobId={prelinkedJobId || sheet.jobId} />
       )}
 
@@ -1417,7 +1421,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       )}
 
       {/* ── SECTION 1: Customer ─────────────────────────────────────────────── */}
-      {lockedCustomer ? (
+      {embedded?null:lockedCustomer ? (
         /* Locked banner — edit mode OR launched from a customer/job page */
         <Card className="px-5 py-4">
           <div className="flex items-start justify-between gap-4">
@@ -1625,7 +1629,8 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       {/* ── SECTION 2: Job Details ──────────────────────────────────────────── */}
       {prelinkedJob ? (
         /* Coming from a Job Workspace — show locked job summary + only measure-specific fields */
-        <Card className="overflow-hidden">
+        <MeasureDetails open={embedded && errors.measurer?true:undefined} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {embedded && <summary className="cursor-pointer px-5 py-3 text-sm font-medium">Measure visit details</summary>}
           {/* Locked job info banner */}
           <div className="px-5 py-3 bg-teal-900/30 border-b border-teal-700/30 flex items-center gap-2">
             <Briefcase size={14} className="text-teal-400 flex-shrink-0" />
@@ -1655,7 +1660,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                 rows={2} placeholder="Notes for this measure visit…" className={inputCls() + ' resize-none'} />
             </FormField>
           </div>
-        </Card>
+        </MeasureDetails>
       ) : (
         /* Standalone / global create — show full job details form */
         <Section title="Job Details" icon={<Briefcase size={15} />} open={openSections.job} onToggle={() => toggleSection('job')}>
@@ -1741,7 +1746,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                   <Maximize2 size={13} /> Fullscreen
                 </button>
               )}
-              <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+              <div hidden={embedded} className="inline-flex rounded-lg bg-slate-100 p-0.5">
                 {[['cards', 'Cards'], ['table', 'Table']].map(([val, label]) => (
                   <button key={val} type="button" onClick={() => chooseLayout(val)}
                     className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
