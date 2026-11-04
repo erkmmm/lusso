@@ -1,4 +1,4 @@
-import {OPERATION_REQUESTS} from '../lib/openingWorkflow';
+import {OPERATION_REQUESTS,CURTAIN_SETUPS,CURTAIN_SETUP_LABELS,curtainSetupForLine} from '../lib/openingWorkflow';
 import {useState} from 'react';
 import {Plus,Trash2,ChevronDown,ChevronUp,Copy,Tag,GitBranch,Check} from 'lucide-react';
 import {getMsOptions,MS_SPEC_FIELDS,getVisibleSpecKeys,makeProductSelectHandlers,isPlanEstimate} from '../store/data';
@@ -9,7 +9,7 @@ import PricedItemPicker from './PricedItemPicker';
 import LinePhotos from './LinePhotos';
 import LineLimitWarnings from './LineLimitWarnings';
 const inp = () => 'w-full border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400';
-function SpecSelect({ label, value, onChange, options }) {
+function SpecSelect({ label, value, onChange, options,optionLabels={},hint }) {
   value = value ?? '';
   options = [...new Set([...options,...(value && !options.includes(value) && !options.includes('Other') ? [value] : [])])];
   const hasOther  = options.includes('Other');
@@ -23,8 +23,9 @@ function SpecSelect({ label, value, onChange, options }) {
       <select aria-label={label} value={selectVal} onChange={e => onChange(e.target.value === 'Other' ? 'Other' : e.target.value)}
         className="w-full border border-slate-200 rounded-lg text-sm px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
         <option value="">—</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {options.map(o => <option key={o} value={o}>{optionLabels[o] || o}</option>)}
       </select>
+      {hint && <p className="mt-1 text-[11px] leading-4 text-slate-500">{hint}</p>}
       {showInput && (
         <input autoFocus value={inputVal} onChange={e => onChange(e.target.value)}
           placeholder="Type custom value…"
@@ -591,7 +592,7 @@ return (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         <SpecSelect label="Operation requested" value={item.operationRequest} options={OPERATION_REQUESTS} onChange={v=>setLineItem(idx,'operationRequest',v)} />
                         {/curtain/i.test(item.productNameSnapshot || productType?.name || '') && <>
-                          <SpecSelect label="Curtain layers" value={item.curtainLayers} options={['Sheer only','Blockout only','Separate sheer and blockout','Curtain with attached lining']} onChange={v=>setLineItem(idx,'curtainLayers',v)} />
+                          <SpecSelect label="Curtain setup" hint="Choose sheer only, blockout only, or both. Separate blockout means a second curtain, not lining sewn onto the sheer." value={curtainSetupForLine(item)} options={CURTAIN_SETUPS} optionLabels={CURTAIN_SETUP_LABELS} onChange={v=>setLineItem(idx,'curtainLayers',v)} />
                           <SpecSelect label="Track arrangement" value={item.trackArrangement} options={['Single track','Double tracks with dual brackets','Two separate tracks','Existing track — fabric only']} onChange={v=>setLineItem(idx,'trackArrangement',v)} />
                           <SpecSelect label="Track installation" value={item.trackRecess} options={['Recessed / built into ceiling','Surface mounted','Existing — confirm']} onChange={v=>setLineItem(idx,'trackRecess',v)} />
                         </>}

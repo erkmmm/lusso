@@ -57,6 +57,19 @@ export function planUpdate(line, row, context = {}) {
 export function isScopePlaceholder(line = {}) {
   return line.scopePlaceholder || line.quantityConfirmed===false || (line.quantityConfirmed!==true && /UNMEASURED scope placeholder|SCOPE PLACEHOLDER ONLY/i.test(line.notes || ''));
 }
+export const CURTAIN_SETUPS=['Sheer only','Blockout only','Separate sheer and blockout','Curtain with attached lining'];
+export const CURTAIN_SETUP_LABELS={'Separate sheer and blockout':'Sheer + separate blockout (two curtains)','Curtain with attached lining':'Curtain with sewn-in lining (one curtain)'};
+// Explicit legacy lining settings and product descriptions can answer this
+// question. Two tracks alone do not tell us which fabrics hang on them.
+export function curtainSetupForLine(line={}) {
+  if(hasValue(line.curtainLayers))return line.curtainLayers;
+  if(line.liningMode==='separate')return 'Separate sheer and blockout';
+  if(line.liningMode==='attached' || (line.attachedLining && line.liningMode!==''))return 'Curtain with attached lining';
+  const product=line.productNameSnapshot || '';
+  if(/curtain/i.test(product) && /sheer/i.test(product) && !/blockout|blackout|double|dual/i.test(product))return 'Sheer only';
+  if(/curtain/i.test(product) && /blockout|blackout/i.test(product) && !/sheer|double|dual/i.test(product))return 'Blockout only';
+  return '';
+}
 export function openingGaps(line = {}) {
   const pricing = [], ordering = [];
   if (isScopePlaceholder(line)) pricing.push('Opening count / mapping');
@@ -65,9 +78,10 @@ export function openingGaps(line = {}) {
   if (!hasValue(line.fabricColour)) pricing.push('Fabric');
   if (!hasValue(line.operationRequest)) pricing.push('Operation');
   const curtain = /curtain/i.test(line.productNameSnapshot || '');
-  if (curtain && !hasValue(line.curtainLayers)) pricing.push('Curtain layers');
+  const curtainSetup=curtainSetupForLine(line);
+  if (curtain && !hasValue(curtainSetup)) pricing.push('Curtain setup');
   if (curtain && !hasValue(line.heading)) pricing.push('Heading');
-  if (curtain && /separate|attached/i.test(line.curtainLayers || '') && !hasValue(line.liningFabricColour)) pricing.push('Blockout / lining fabric');
+  if (curtain && /separate|attached/i.test(curtainSetup) && !hasValue(line.liningFabricColour)) pricing.push('Blockout / lining fabric');
   if (!hasValue(line.fixing)) ordering.push('Fixing');
   if (line.operationRequest==='Manual and automated alternatives' && (!hasValue(line.manualTrackType) || !hasValue(line.automatedTrackType))) pricing.push(curtain?'Track models for both options':'Hardware for both options');
   else if (curtain && line.operationRequest!=='Manual and automated alternatives' && !hasValue(line.trackType)) pricing.push('Track model');
@@ -116,5 +130,7 @@ export function expandOperationAlternatives(line) {
   return ['Manual','Automated'].map(operation=>({...line,operationRequest:operation,choiceGroupId:line.choiceGroupId || `operation:${line.id}`,trackType:operation==='Manual'?line.manualTrackType || '':line.automatedTrackType || '',operationAlternative:operation}));
 }
 export function openingQuoteSnapshot(line) {
+  const setup=curtainSetupForLine(line);
+  if(setup)line={...line,curtainLayers:setup};
   return Object.fromEntries(['operationRequest','operationAlternative','curtainLayers','trackArrangement','trackRecess','motorPower','manualTrackType','automatedTrackType','liningFabricColour','planSources','makeSizeCalculation','source','measureSource','scopePlaceholder','quantityConfirmed','takeoffRemoved','pendingPlanChanges','planRevisionReview'].filter(k=>line[k]!==undefined).map(k=>[k,line[k]]));
 }

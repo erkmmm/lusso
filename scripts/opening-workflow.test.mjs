@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calculateMakeSize,planUpdate,previewBulk,parseOpeningSuggestions,readiness,editOpening,openingGaps} from '../src/lib/openingWorkflow.js';
+import {calculateMakeSize,planUpdate,previewBulk,parseOpeningSuggestions,readiness,editOpening,openingGaps,curtainSetupForLine} from '../src/lib/openingWorkflow.js';
 test('finished sizes require explicit deductions, separate ceiling and window height',()=>{
  assert.equal(calculateMakeSize({widthBasis:'Opening width',rawWidthMm:2000,dropBasis:'Ceiling / bracket to floor',rawDropMm:3000}).valid,false);
  const result=calculateMakeSize({widthBasis:'Opening width',rawWidthMm:2000,leftAllowanceMm:100,rightAllowanceMm:100,dropBasis:'Ceiling / bracket to floor',rawDropMm:3000,trackDeductionMm:35,floorClearanceMm:10});
@@ -54,4 +54,16 @@ test('plan dimensions can be quoted without manufacturing calculations, with sit
  assert.ok(openingGaps(line).ordering.includes('Check measure'));
  assert.ok(openingGaps({...line,dropMm:''}).pricing.includes('Measurements'));
  assert.equal(line.makeSizeCalculation,undefined);
+});
+
+test('curtain setup uses explicit legacy specs without guessing from double tracks',()=>{
+ const base={productNameSnapshot:'Curtain',fabricColour:'Selected',widthMm:2000,dropMm:2400};
+ assert.equal(curtainSetupForLine({...base,liningMode:'separate'}),'Separate sheer and blockout');
+ assert.equal(curtainSetupForLine({...base,attachedLining:true}),'Curtain with attached lining');
+ assert.equal(curtainSetupForLine({...base,productNameSnapshot:'Manual Reverse Pleat Sheer Curtain'}),'Sheer only');
+ assert.equal(curtainSetupForLine({...base,productNameSnapshot:'Double Curtain Track'}),'');
+ assert.equal(curtainSetupForLine({...base,curtainLayers:'Blockout only',liningMode:'separate'}),'Blockout only');
+ assert.ok(openingGaps({...base,liningMode:'separate'}).pricing.includes('Blockout / lining fabric'));
+ assert.ok(!openingGaps({...base,liningMode:'separate'}).pricing.includes('Curtain setup'));
+ assert.ok(openingGaps({...base,productNameSnapshot:'Double Curtain Track'}).pricing.includes('Curtain setup'));
 });

@@ -1,8 +1,8 @@
 import { getMsOptions, getTypeSpecKeys, MS_SPEC_FIELDS } from '../../store/data';
-import { OPERATION_REQUESTS, isScopePlaceholder } from '../../lib/openingWorkflow';
+import { OPERATION_REQUESTS, isScopePlaceholder, CURTAIN_SETUPS, CURTAIN_SETUP_LABELS, curtainSetupForLine } from '../../lib/openingWorkflow';
 export const inputClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-500';
-export function Field({label,value,onChange,options,type='text',hint}) {
-  return <label className="block space-y-1"><span className="text-xs font-medium text-slate-600">{label}</span>{options ? <select aria-label={label} className={inputClass} value={value ?? ''} onChange={e=>onChange(e.target.value)}><option value="">Choose…</option>{[...new Set([...options,...(value && !options.includes(value)?[value]:[])])].map(o=><option key={o}>{o}</option>)}</select> : <input aria-label={label} className={inputClass} type={type} value={value ?? ''} onChange={e=>onChange(e.target.value)} />}{hint && <span className="block text-xs text-slate-400">{hint}</span>}</label>;
+export function Field({label,value,onChange,options,optionLabels={},type='text',hint}) {
+  return <label className="block space-y-1"><span className="text-xs font-medium text-slate-600">{label}</span>{options ? <select aria-label={label} className={inputClass} value={value ?? ''} onChange={e=>onChange(e.target.value)}><option value="">Choose…</option>{[...new Set([...options,...(value && !options.includes(value)?[value]:[])])].map(o=><option key={o} value={o}>{optionLabels[o] || o}</option>)}</select> : <input aria-label={label} className={inputClass} type={type} value={value ?? ''} onChange={e=>onChange(e.target.value)} />}{hint && <span className="block text-xs text-slate-400">{hint}</span>}</label>;
 }
 export default function OpeningFields({line,productTypes,onChange,bulk=false}) {
   const pt=productTypes.find(p=>p.id===line.productTypeId) || productTypes.find(p=>p.name.toLowerCase()===(line.productNameSnapshot || '').toLowerCase());
@@ -15,7 +15,7 @@ export default function OpeningFields({line,productTypes,onChange,bulk=false}) {
     <Field label="Fabric / range / colour" value={line.fabricColour} onChange={v=>onChange('fabricColour',v)} />
     <Field label="Operation requested" value={line.operationRequest} onChange={v=>onChange('operationRequest',v)} options={OPERATION_REQUESTS} hint="Both means two quote alternatives for this same opening." />
     {(curtain || bulk) && <>
-      <Field label="Curtain layers" value={line.curtainLayers} onChange={v=>onChange('curtainLayers',v)} options={['Sheer only','Blockout only','Separate sheer and blockout','Curtain with attached lining']} />
+      <Field label="Curtain setup" hint="Sheer only, blockout only, or both as separate curtains." value={curtainSetupForLine(line)} onChange={v=>onChange('curtainLayers',v)} options={CURTAIN_SETUPS} optionLabels={CURTAIN_SETUP_LABELS} />
       <Field label="Track arrangement" value={line.trackArrangement} onChange={v=>onChange('trackArrangement',v)} options={['Single track','Double tracks with dual brackets','Two separate tracks','Existing track — fabric only']} />
       <Field label="Track installation" value={line.trackRecess} onChange={v=>onChange('trackRecess',v)} options={['Recessed / built into ceiling','Surface mounted','Existing — confirm']} />
     </>}
