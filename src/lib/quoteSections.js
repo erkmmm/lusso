@@ -1,4 +1,4 @@
-import { groupByRoom } from './roomNaming';
+import { groupByRoom } from './roomNaming.js';
 
 /**
  * The shape a quote's line items take on screen: rooms → windows → blocks.
@@ -75,6 +75,21 @@ export function quoteSections(lineItems = []) {
 export const unansweredChoices = (sections, selectedIds = []) => sections
   .flatMap(r => r.entries).flatMap(e => e.blocks)
   .filter(b => b.kind === 'choice' && b.required && !b.items.some(li => selectedIds.includes(li.id)));
+
+/** Count decisions, not the mutually exclusive alternatives inside them. */
+export function quoteSelectionProgress(sections = [], selectedIds = []) {
+  const selected = new Set(selectedIds);
+  const blocks = sections.flatMap(r => r.entries).flatMap(e => e.blocks);
+  const choices = blocks.filter(b => b.kind === 'choice');
+  const extras = blocks.filter(b => b.kind === 'optional');
+  const answered = b => b.items.some(li => selected.has(li.id));
+  return {
+    choicesMade: choices.filter(answered).length,
+    choiceCount: choices.length,
+    extrasAdded: extras.filter(answered).length,
+    extraCount: extras.length,
+  };
+}
 
 /**
  * What one room still wants from the customer.

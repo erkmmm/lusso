@@ -8,7 +8,7 @@ import {
 import { optionDiff, benefitFor, descriptionTail } from '../lib/optionCompare';
 import { downloadQuotePdf } from '../lib/quoteDocument';
 import { supabase } from '../lib/supabase';
-import { quoteSections, unansweredChoices, roomDecisionStatus } from '../lib/quoteSections';
+import { quoteSections, unansweredChoices, roomDecisionStatus, quoteSelectionProgress } from '../lib/quoteSections';
 import { withMotorisationAccessories } from '../lib/motorisationAccessories';
 import { quoteDocUrl, docKind, formatBytes } from '../lib/quoteDocs';
 import { useQuoteTracking } from '../hooks/useQuoteTracking';
@@ -1159,7 +1159,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     gstSuffix:   figures.gstSuffix || '',
     // The same sentence the total bar shows, so the document and the screen
     // agree about how much of the quote was the customer's to decide.
-    selectionNote: hasOptions ? `${selectedLabel} options selected` : '',
+    selectionNote,
     depositNote: depoLabel ? `A ${depoLabel} deposit (${figures.deposit}) confirms your order.` : '',
     terms:       quote.termsAndConditions || '',
     footer:      [settings.businessName, settings.businessPhone, settings.businessEmail].filter(Boolean).join('  ·  '),
@@ -1234,7 +1234,15 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
 
   const selectableIds = [...optionalItems, ...choiceItems].map(li => li.id);
   const selectedCount = selectableIds.filter(sid => selectedOptionals.includes(sid)).length;
-  const selectedLabel = `${selectedCount} of ${selectableIds.length}`;
+  const progress = quoteSelectionProgress(rooms, selectedOptionals);
+  const selectionRows = [
+    ...(progress.choiceCount ? [{ label: 'Choices made', value: `${progress.choicesMade} of ${progress.choiceCount}` }] : []),
+    ...(progress.extraCount ? [{ label: 'Optional extras added', value: `${progress.extrasAdded} of ${progress.extraCount}` }] : []),
+  ];
+  const selectionNote = selectionRows.map(r => `${r.value} ${r.label.toLowerCase()}`).join(' · ');
+  const selectedLabel = progress.choiceCount
+    ? `${progress.choicesMade} of ${progress.choiceCount} choices made${progress.extrasAdded ? ` · ${progress.extrasAdded} extra${progress.extrasAdded === 1 ? '' : 's'} added` : ''}`
+    : selectionNote;
   // A quote with nothing to add and nothing to choose between should not talk
   // about options at all — "0 of 0" and an invitation to toggle things read as
   // though something is missing from the page.
@@ -1872,12 +1880,12 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         <div style={{ ...container, padding: '40px 22px 0' }} ref={tailRef}>
           <section style={{ ...card, padding: 22 }}>
             <Eyebrow>Summary</Eyebrow>
-            {hasOptions && (
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, marginTop: 16 }}>
-                <span style={{ fontSize: 14 }}>Options selected</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: T.ink }}>{selectedLabel}</span>
+            {selectionRows.map(r => (
+              <div key={r.label} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, marginTop: 16 }}>
+                <span style={{ fontSize: 14 }}>{r.label}</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: T.ink }}>{r.value}</span>
               </div>
-            )}
+            ))}
             <hr style={hairline} />
             <div style={{ display: 'grid', gap: 12 }}>
               {summaryRows.map((r, i) => (
@@ -2104,7 +2112,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginTop: 22, paddingTop: 20, borderTop: `0.5px solid ${T.borderInverse}` }}>
                   <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Accepted total{figures.gstSuffix}</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{figures.total}</p></div>
-                  {hasOptions && <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Options</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{selectedLabel}</p></div>}
+                  {selectionRows.map(r => <div key={r.label}><div style={{ ...fieldLabel, color: T.onInverseMuted }}>{r.label}</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{r.value}</p></div>)}
                   <div><div style={{ ...fieldLabel, color: T.onInverseMuted }}>Accepted</div><p style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 300, color: T.paper }}>{fmtDate(new Date())}</p></div>
                 </div>
               </div>
@@ -2396,7 +2404,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                         color: openDecisionKeys.length ? T.bronze : T.stone,
                       }}
                     >
-                      {openDecisionKeys.length ? `${openDecisionKeys.length} to choose` : `${selectedLabel} options`}
+                      {openDecisionKeys.length ? `${openDecisionKeys.length} to choose` : selectedLabel}
                       <span aria-hidden="true">›</span>
                     </button>
                   ) : (
@@ -2404,7 +2412,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                       {openDecisionKeys.length
                         ? `${openDecisionKeys.length} still to choose`
                         : hasOptions
-                          ? `${selectedLabel} options${quote.includesGST ? ' · total inc GST' : ''}`
+                          ? `${selectedLabel}${quote.includesGST ? ' · total inc GST' : ''}`
                           : (quote.includesGST ? 'total inc GST' : `${items.length} item${items.length === 1 ? '' : 's'}`)}
                     </span>
                   )}
