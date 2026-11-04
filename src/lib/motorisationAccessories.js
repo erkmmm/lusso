@@ -34,8 +34,8 @@
  * `autoAccessoriesLive` for why the absent case still derives.
  */
 import { v4 as uuidv4 } from 'uuid';
-import { groupByRoom } from './roomNaming';
-import { OPERATION_WORDS, operationKey } from './describeLine';
+import { groupByRoom } from './roomNaming.js';
+import { OPERATION_WORDS, operationKey } from './describeLine.js';
 
 /** Marker on every line this module produces. Nothing else may set it. */
 export const AUTO_MOTORISATION = 'motorisation';
@@ -155,8 +155,8 @@ export const BLINDS_PER_CHARGER = 4;
 // are "Roller Blind" / "Curtain", and the priced items carry the operation
 // ("Lusso 40mm Battery-Operated Blockout Roller Blind", "MOT RB40 Block").
 
-/** Says the line is powered rather than chain- or cord-operated. */
-const POWERED_RE = /motoris|motorized|battery[-\s]?operat|wire[-\s]?free|wirefree|hard[-\s]?wired/i;
+/** 240V catalogue titles need the same remote rule as battery titles. */
+const POWERED_RE = /motoris|motorized|battery[-\s]?operat|wire[-\s]?free|wirefree|hard[-\s]?wired|\b240\s*v(?:ac)?\b/i;
 
 /** Says the line is a window covering, not a component or a visit. */
 const COVERING_RE = /blind|curtain|sheer|drape|shade|awning|screen|shutter|roman|venetian|vertical|roller|track|pelmet|ziptrak|zip\s?screen|glidescreen/i;
