@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { NavLink, Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, Users,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, Users2, Inbox, ArrowLeft,
-  Globe, Eye, MessageSquare, MailWarning, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, Send, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+  Globe, Eye, MessageSquare, MailWarning, Clock, ClipboardList, XCircle, Sun, Tags, Upload, ListChecks, FileStack, Send, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   getNotifications, markNotificationRead, markAllNotificationsRead, notificationLink,
   getCustomers, getJobs, getQuotes, getInstallRequests,
@@ -54,6 +54,11 @@ const NAV_SECTIONS = [
     items: [
       { to: '/content', label: 'Content', icon: FileStack },
       { to: '/campaigns', label: 'Campaigns', icon: Send },
+      // The capacity ceiling and the plan to grow into it. Lives under
+      // Marketing because every action on its checklist is a lead-flow or
+      // lead-quality decision, and because the campaign waves it schedules
+      // are run from the Campaigns page next door.
+      { to: '/growth', label: 'Growth Plan', icon: Gauge },
     ],
   },
   {
@@ -240,6 +245,127 @@ function NotificationBell({ open, setOpen, unread, notifications, onMarkAllRead,
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The sidebar footer's identity block, made clickable: Settings and the way
+ * out live behind it rather than beside it as a lone icon nobody reads.
+ *
+ * Holds its own `open` state rather than taking it from Layout. The rail and
+ * expanded copies are never mounted at once, but the sidebar is also a drawer
+ * below `lg`, so two instances can still exist; state that belongs to the
+ * instance cannot open the wrong one. NotificationBell needs per-instance refs
+ * for the same reason.
+ *
+ * The panel opens UPWARD — the trigger sits at the bottom of the screen, so
+ * there is nothing below it to open into.
+ */
+function UserMenu({ variant = 'full', user, signOut, displayName, profile, isAM }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey  = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const name    = displayName || user?.email || 'User';
+  const initial = (displayName || user?.email || 'A')[0].toUpperCase();
+  const role    = profile?.employeeRole;
+
+  const badge =
+    (isAM || role === 'account_manager') ? ['bg-amber-500/20 text-amber-300', 'Account Manager']
+    : role === 'installer'   ? ['bg-blue-500/20 text-blue-300',  'Installer']
+    : role === 'salesperson' ? ['bg-teal-500/20 text-teal-300',  'Salesperson']
+    : ['bg-slate-500/20 text-slate-300', 'Standard User'];
+
+  const panel = (
+    <div
+      role="menu"
+      className={`absolute w-52 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden ${
+        variant === 'rail' ? 'left-full bottom-0 ml-2' : 'left-0 bottom-full mb-2'
+      }`}
+    >
+      {variant === 'rail' && (
+        // Collapsed, the trigger is a single letter — the panel has to say who
+        // that letter is.
+        <div className="px-4 py-2.5 border-b border-slate-100">
+          <div className="text-sm font-medium text-slate-900 truncate">{name}</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">{badge[1]}</div>
+        </div>
+      )}
+
+      {/* A plain Link, not a NavLink: inside the sidebar, NavLink's `active`
+          class is styled as a selected nav pill, so on /settings this row
+          rendered as a dark highlight inside a light popover. */}
+      <Link
+        to="/settings"
+        role="menuitem"
+        onClick={() => setOpen(false)}
+        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+      >
+        <Settings2 size={15} className="text-slate-400" />
+        Settings
+      </Link>
+
+      <button
+        role="menuitem"
+        onClick={() => { setOpen(false); signOut(); }}
+        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
+      >
+        <LogOut size={15} className="text-slate-400" />
+        Sign out
+      </button>
+    </div>
+  );
+
+  if (variant === 'rail') {
+    return (
+      <div className="relative" ref={ref}>
+        <button
+          onClick={() => setOpen(!open)}
+          aria-label="Account menu" aria-expanded={open} aria-haspopup="menu"
+          title={name}
+          className="w-9 h-9 rounded-full bg-amber-500 hover:bg-amber-400 flex items-center justify-center text-white text-xs font-bold transition-colors"
+        >
+          {initial}
+        </button>
+        {open && panel}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex-1 min-w-0" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        aria-label="Account menu" aria-expanded={open} aria-haspopup="menu"
+        className="w-full flex items-center gap-3 text-left rounded-lg px-1 py-1 -mx-1 hover:bg-sidebar-hover transition-colors"
+      >
+        <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+          {initial}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-white text-sm font-medium leading-tight truncate">{name}</div>
+          <span className={`inline-flex items-center text-[10px] font-medium rounded-full px-1.5 py-0.5 mt-0.5 ${badge[0]}`}>
+            {badge[1]}
+          </span>
+        </div>
+        <ChevronDown
+          size={14}
+          className={`text-sidebar-text flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && panel}
     </div>
   );
 }
@@ -587,69 +713,34 @@ export default function Layout() {
             <div className="flex flex-col items-center gap-2">
               <div className="hidden lg:block">
                 <NotificationBell
-            open={notifOpen} setOpen={setNotifOpen}
+                  open={notifOpen} setOpen={setNotifOpen}
                   unread={unread} notifications={notifications}
                   onMarkAllRead={handleMarkAllRead} onNotifClick={handleNotifClick}
                   placement="side"
                 />
               </div>
-              <div
-                className="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-bold"
-                title={displayName || user?.email || 'User'}
-              >
-                {(displayName || user?.email || 'A')[0].toUpperCase()}
-              </div>
-              <button onClick={signOut} aria-label="Sign out" title="Sign out"
-                className="text-sidebar-text hover:text-white p-1.5 rounded transition-colors">
-                <LogOut size={15} />
-              </button>
+              <UserMenu
+                variant="rail"
+                user={user} signOut={signOut}
+                displayName={displayName} profile={profile} isAM={isAM}
+              />
             </div>
           ) : (
             <>
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                  {(displayName || user?.email || 'A')[0].toUpperCase()}
-                </div>
-                <div className="hidden lg:block -ml-1">
+                <UserMenu
+                  variant="full"
+                  user={user} signOut={signOut}
+                  displayName={displayName} profile={profile} isAM={isAM}
+                />
+                <div className="hidden lg:block -ml-1 flex-shrink-0">
                   <NotificationBell
-            open={notifOpen} setOpen={setNotifOpen}
+                    open={notifOpen} setOpen={setNotifOpen}
                     unread={unread} notifications={notifications}
                     onMarkAllRead={handleMarkAllRead} onNotifClick={handleNotifClick}
                     placement="side"
                   />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-white text-sm font-medium leading-tight truncate">
-                    {displayName || user?.email || 'User'}
-                  </div>
-                  {(() => {
-                    const role = profile?.employeeRole;
-                    if (isAM || role === 'account_manager') return (
-                      <span className="inline-flex items-center text-[10px] font-medium bg-amber-500/20 text-amber-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                        Account Manager
-                      </span>
-                    );
-                    if (role === 'installer') return (
-                      <span className="inline-flex items-center text-[10px] font-medium bg-blue-500/20 text-blue-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                        Installer
-                      </span>
-                    );
-                    if (role === 'salesperson') return (
-                      <span className="inline-flex items-center text-[10px] font-medium bg-teal-500/20 text-teal-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                        Salesperson
-                      </span>
-                    );
-                    return (
-                      <span className="inline-flex items-center text-[10px] font-medium bg-slate-500/20 text-slate-300 rounded-full px-1.5 py-0.5 mt-0.5">
-                        Standard User
-                      </span>
-                    );
-                  })()}
-                </div>
-                <button onClick={signOut} aria-label="Sign out"
-                  className="text-sidebar-text hover:text-white p-1 rounded transition-colors flex-shrink-0">
-                  <LogOut size={15} />
-                </button>
               </div>
 
               <BuildMarker />

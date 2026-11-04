@@ -1026,6 +1026,7 @@ textarea:focus:not(:focus-visible) {
 .theme-lusso:not(.dark) .bg-slate-50   { background-color: var(--lusso-paper); }
 .theme-lusso:not(.dark) .bg-slate-100  { background-color: #ECECEA; }
 .theme-lusso:not(.dark) .bg-slate-50\/80 { background-color: rgb(247 247 246 / 0.8); }
+.theme-lusso:not(.dark) .bg-slate-50\/70 { background-color: rgb(247 247 246 / 0.7); }
 .theme-lusso:not(.dark) .bg-slate-50\/60 { background-color: rgb(247 247 246 / 0.6); }
 .theme-lusso:not(.dark) .bg-slate-50\/50 { background-color: rgb(247 247 246 / 0.5); }
 
@@ -1307,7 +1308,17 @@ html.dark { color-scheme: dark; }
 .dark .bg-slate-50      { background-color: var(--surf-page); }
 .dark .bg-slate-100     { background-color: var(--surf-muted); }
 .dark .bg-white\/60     { background-color: var(--surf-muted); }
+/* Same gap one ladder over: the curtain calculator's breakdown box and the
+   takeoff's saving overlay both paint on bg-white/70, which was unmapped and
+   so stayed literal white — a solid white card in the middle of a dark quote
+   line, with the remapped light text on it unreadable. */
+.dark .bg-white\/70     { background-color: var(--surf-muted); }
 .dark .bg-slate-50\/80  { background-color: rgb(var(--surf-page-rgb) / 0.8); }
+/* /70 was the one gap in this ladder, and an unmapped opacity does not fall
+   back to something sensible — it stays literal Tailwind slate-50, i.e. a
+   near-white panel on a dark theme. Three components were already glaring
+   because of it (QuoteGaps, takeoff/ItemPanel, QuoteBuilder). */
+.dark .bg-slate-50\/70  { background-color: rgb(var(--surf-page-rgb) / 0.7); }
 .dark .bg-slate-50\/60  { background-color: rgb(var(--surf-page-rgb) / 0.6); }
 .dark .bg-slate-50\/50  { background-color: rgb(var(--surf-page-rgb) / 0.5); }
 .dark .bg-slate-50\/40  { background-color: rgb(var(--surf-page-rgb) / 0.4); }
@@ -1360,6 +1371,7 @@ html.dark { color-scheme: dark; }
 .dark .text-teal-500    { color: var(--brand-bright); }
 .dark .text-teal-300    { color: var(--brand-bright); }
 .dark .bg-teal-50       { background-color: rgb(var(--brand-bright-rgb) / 0.12); }
+.dark .bg-teal-50\/60   { background-color: rgb(var(--brand-bright-rgb) / 0.10); }
 .dark .bg-teal-100      { background-color: rgb(var(--brand-bright-rgb) / 0.18); }
 .dark .bg-teal-500\/20  { background-color: rgb(var(--brand-bright-rgb) / 0.18); }
 .dark .border-teal-200  { border-color:     rgb(var(--brand-bright-rgb) / 0.30); }
