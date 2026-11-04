@@ -15,7 +15,7 @@ const secondary='rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate
 export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemId,onClose,onJump,onPlace,onSaved=()=>{},onEditing=()=>{}}) {
   useDataRefresh();
   const sheets=getMeasureSheetsByJob(jobId).filter(s=>!s.deletedAt);
-  const [chosenSheetId,setChosenSheetId]=useState(()=>sheetId || sheets.find(s=>s.lineItems?.some(l=>l.takeoffItemId===initialItemId))?.id || getMeasureSheetByJob(jobId)?.id);
+  const [chosenSheetId,setChosenSheetId]=useState(()=>sheetId || (initialItemId?sheets.find(s=>s.lineItems?.some(l=>l.takeoffItemId===initialItemId))?.id:null) || getMeasureSheetByJob(jobId)?.id);
   const candidate=getMeasureSheet(sheetId || chosenSheetId);
   const sheet=candidate?.jobId===jobId?candidate:null;
   const {displayName}=useProfile() || {};
@@ -24,7 +24,7 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
   const [tab,setTab]=useState('Openings');
   const [fills,setFills]=useState({});
   const [additions,setAdditions]=useState([]);
-  const [activeId,setActiveId]=useState(()=>sheet?.lineItems?.find(l=>l.takeoffItemId===initialItemId)?.id || '');
+  const [activeId,setActiveId]=useState(()=>initialItemId?(sheet?.lineItems?.find(l=>l.takeoffItemId===initialItemId)?.id || ''):'');
   const [selected,setSelected]=useState(new Set());
   const [filter,setFilter]=useState('');
   const [bulk,setBulk]=useState({});
