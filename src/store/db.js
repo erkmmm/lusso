@@ -1170,7 +1170,7 @@ export const db = {
 
   // Shared business/quote settings (see getBusinessSettings below)
   getBusinessSettings:  ()  => getBusinessSettings(),
-  saveBusinessSettings: (s) => saveBusinessSettings(s),
+  saveBusinessSettings: (s, options) => saveBusinessSettings(s, options),
 
   // Review requests (Google review asks)
   saveReviewRequest:  (r) => upsert('review_requests', r),
@@ -1485,7 +1485,7 @@ const REQUIRED_SETTINGS_KEYS = [
  * Exported because the whole failure was that this decision happened invisibly.
  * Returns { ok, reasons, payload }.
  */
-export function vetBusinessSettings(incoming, existing) {
+export function vetBusinessSettings(incoming, existing, { partial = false } = {}) {
   const reasons = [];
 
   for (const [key, retired] of Object.entries(RETIRED_SETTINGS_VALUES)) {
@@ -1495,7 +1495,7 @@ export function vetBusinessSettings(incoming, existing) {
   }
 
   for (const key of REQUIRED_SETTINGS_KEYS) {
-    if (existing?.[key] !== undefined && incoming?.[key] === undefined)
+    if (!partial && existing?.[key] !== undefined && incoming?.[key] === undefined)
       reasons.push(`${key} is missing, and the row already has it`);
   }
 
@@ -1524,7 +1524,7 @@ export function vetBusinessSettings(incoming, existing) {
  * without landing, and a save that silently did nothing is precisely the
  * failure this row has already suffered, so it has to be loud.
  */
-export async function saveBusinessSettings(settings) {
+export async function saveBusinessSettings(settings, options) {
   if (!supabase || !settings) return { ok: false, reasons: ['no client or no settings'] };
 
   const { read, settings: existing } = await readBusinessSettingsRow();
@@ -1536,7 +1536,7 @@ export async function saveBusinessSettings(settings) {
     return { ok: false, reasons: ['could not read the current row'] };
   }
 
-  const { ok, reasons, payload } = vetBusinessSettings(settings, existing);
+  const { ok, reasons, payload } = vetBusinessSettings(settings, existing, options);
   if (!ok) {
     console.error(
       '[db] saveBusinessSettings REFUSED. This browser is holding stale quote ' +

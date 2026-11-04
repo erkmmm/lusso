@@ -17,15 +17,11 @@
 // THAT lives in db.vetBusinessSettings() — it refuses retired placeholder values
 // and merges over the existing row rather than replacing it.
 //
-// Note that the mirror still sends the full merged blob, and deliberately so:
-// the guard refuses any write that omits a REQUIRED_SETTINGS_KEYS field the row
-// already holds, so a patch-only mirror would be rejected outright rather than
-// being safer. Narrowing the write happens here, in what the editor contributes
-// to the merge — not on the wire. Do not "optimise" saveQuoteSettings into
-// sending partials without reading that guard first.
+// Card saves send only explicit edits, merge them over the fresh shared row,
+// and wait for the verified write before displaying Saved.
 import { useState } from 'react';
 import { Building2, Save, Check, Plus, Trash2, CalendarClock, ShieldCheck, CreditCard, Star } from 'lucide-react';
-import { getQuoteSettings, saveQuoteSettings } from '../../store/data';
+import { getQuoteSettings, saveSharedQuoteSettings } from '../../store/data';
 import { toast } from '../../components/ToastContainer';
 import SettingsCard from './SettingsCard';
 
@@ -69,6 +65,7 @@ export default function QuotePage() {
   // display flag — see the note at the top of the file.
   const [touched, setTouched] = useState(() => new Set());
   const [savedAt, setSavedAt] = useState({});
+  const [saving, setSaving] = useState(null);
 
   const touch = (k) => setTouched(prev => (prev.has(k) ? prev : new Set(prev).add(k)));
 
@@ -108,16 +105,24 @@ export default function QuotePage() {
    * Save one card: the intersection of "keys this card owns" and "keys you
    * edited". Everything else on the row is left exactly as it is.
    *
-   * saveQuoteSettings() merges the patch over a FRESH read of the saved
-   * settings, so a partial patch is the safe shape here — not a lossy one.
+   * saveSharedQuoteSettings() merges this patch over the fresh shared row
+   * and verifies persistence before the card reports success.
    */
-  const saveCard = (card, label) => {
+  const saveCard = async (card, label) => {
     const keys = CARD_KEYS[card].filter(k => touched.has(k));
     if (!keys.length) { toast('Nothing to save — no changes on this card.'); return; }
 
     const patch = {};
     for (const k of keys) patch[k] = NORMALISE[k] ? NORMALISE[k](s[k]) : s[k];
-    saveQuoteSettings(patch);
+    setSaving(card);
+    try {
+      await saveSharedQuoteSettings(patch);
+    } catch (error) {
+      toast(`Not saved to customer quotes: ${error.message}`);
+      return;
+    } finally {
+      setSaving(null);
+    }
 
     // Re-read so the editor reflects what actually landed (defaults filled in,
     // normalisation applied) rather than the draft that produced it.
@@ -140,11 +145,11 @@ export default function QuotePage() {
     const dirty = dirtyIn(card);
     const done = !dirty && Boolean(savedAt[card]);
     return (
-      <button onClick={() => saveCard(card, label)} disabled={!dirty}
+      <button onClick={() => saveCard(card, label)} disabled={!dirty || saving !== null}
         className={`flex items-center gap-1.5 text-xs font-semibold px-3 min-h-[36px] rounded-lg transition-colors ${
           dirty ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
         }`}>
-        {done ? <><Check size={13} /> Saved</> : <><Save size={13} /> Save</>}
+        {saving === card ? 'Saving…' : done ? <><Check size={13} /> Saved</> : <><Save size={13} /> Save</>}
       </button>
     );
   };

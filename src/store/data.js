@@ -4156,6 +4156,15 @@ export const getQuoteWording = () => ({
   fabricWords: getFabricWords(),
 });
 
+/** Save only the edited fields against the latest shared row, and confirm it landed. */
+export const saveSharedQuoteSettings = async (patch) => {
+  const result = await db.saveBusinessSettings(patch, { partial: true });
+  if (!result?.ok) throw new Error(result?.reasons?.join('; ') || 'Could not save shared quote settings');
+  const merged = { ...getQuoteSettings(), ...patch };
+  set('lusso_quote_settings', merged);
+  return merged;
+};
+
 export const saveQuoteSettings = (s) => {
   const merged = { ...getQuoteSettings(), ...s };
   set('lusso_quote_settings', merged);
