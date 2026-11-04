@@ -92,6 +92,7 @@ import ImportHub from './pages/ImportHub';
 import Employees from './pages/Employees';
 import EmployeeProfile from './pages/EmployeeProfile';
 import QuoteFromJob from './pages/QuoteFromJob';
+import QuoteAssistant from './pages/QuoteAssistant';
 import NewJob from './pages/NewJob';
 import PendingApproval from './pages/PendingApproval';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
@@ -441,6 +442,7 @@ function AppRoutes() {
               <Route path="/notes"                      element={<Navigate to="/today" replace />} />
               <Route path="/quotes/import"                     element={<ImportQuotes />} />
               <Route path="/quotes/new"                        element={<QuoteBuilder />} />
+              <Route path="/jobs/:jobId/quote-assistant" element={<QuoteAssistant />} />
               <Route path="/quotes/new-from-job/:jobId"        element={<QuoteFromJob />} />
               <Route path="/quotes/:id"                        element={<QuoteView />} />
               <Route path="/quotes/:id/edit"                   element={<QuoteBuilder />} />

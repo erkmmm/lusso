@@ -8,7 +8,7 @@ import {
   ChevronRight, Clock, CheckCircle2, TrendingUp, Briefcase,
   AlertTriangle, StickyNote, HardHat, Plus, Upload,
   CalendarPlus, Trash2, Wrench, MessageSquare, Ruler, Mic, MoreHorizontal, PackageCheck,
-  Copy, Printer, FileDown, ChevronDown,
+  Copy, Printer, FileDown, ChevronDown, Sparkles,
 } from 'lucide-react';
 import CommsTab from '../components/CommsTab';
 import ConsultRecordings from '../components/ConsultRecordings';
@@ -176,6 +176,10 @@ export default function JobProfile() {
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2 flex-shrink-0">
               {/* Primary create actions */}
+              <button onClick={() => navigate(`/jobs/${id}/quote-assistant`)}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition-colors">
+                <Sparkles size={14} /> Quote with AI
+              </button>
               <button onClick={() => navigate(`/quotes/new-from-job/${id}`)}
                 className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white transition-colors">
                 <Plus size={14} /> New Quote
