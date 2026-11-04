@@ -29,16 +29,16 @@ export default function QuoteAssistant() {
   const current = runs.find(r => r.jobId === jobId);
   const inProgress = current && ['running', 'starting', 'needs_input'].includes(current.status);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (background = false) => {
     try {
       const [status, list] = await Promise.all([macQuoteAssistant('/status'), macQuoteAssistant('/runs')]);
-      setConnection(status); setRuns(list.runs); setError('');
+      setConnection(status); setRuns(list.runs); if (!background) setError('');
     } catch (e) { setConnection(null); setError(e.message); }
   }, []);
   // Only connect after an explicit click: Chrome may ask for local-network access.
   useEffect(() => {
     if (!connection) return;
-    const id = setInterval(refresh, 8000);
+    const id = setInterval(() => refresh(true), 8000);
     return () => clearInterval(id);
   }, [Boolean(connection), refresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -58,7 +58,7 @@ export default function QuoteAssistant() {
     <p className="text-sm leading-6 text-slate-600">The assistant reads your measure sheet, prepares the supplier quotation in BUZ or FHA, and saves a Lusso draft for you to review. You handle sending and ordering.</p>
 
     <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">This Mac’s browser</h2><p className="mt-1 text-sm text-slate-500">{connection ? connection.signedIn ? connection.busy ? 'Connected · Chrome is working on a quote' : 'Claude Code signed in · ready to request a quote' : 'Assistant connected · Claude Code needs sign-in' : 'Connect the assistant before starting.'}</p></div><button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium" onClick={refresh}>Check connection</button></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">This Mac’s browser</h2><p className="mt-1 text-sm text-slate-500">{connection ? connection.signedIn ? connection.busy ? 'Connected · Chrome is working on a quote' : 'Claude Code signed in · ready to request a quote' : 'Assistant connected · Claude Code needs sign-in' : 'Connect the assistant before starting.'}</p></div><button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium" onClick={() => refresh()}>Check connection</button></div>
       <p className="text-xs leading-5 text-slate-500">Keep this Mac awake and Chrome signed in to Lusso and the supplier portals. The first run may need Chrome permission. One quote runs at a time.</p>
       <button onClick={() => setSetup(!setup)} className="text-sm font-medium text-amber-700">{setup ? 'Hide setup' : 'Set up this Mac'}</button>
       {setup && <ol className="list-decimal pl-5 space-y-2 text-sm leading-6 text-slate-600"><li>Open <strong>Start Lusso Quote Assistant.command</strong> on the Desktop. Keep its window open while quoting.</li><li>Open <strong>Connect Lusso AI Browser.command</strong> on the Desktop and sign in to your Claude account. Enter <code>/chrome</code> to connect the installed Chrome extension and allow the Lusso, BUZ and FHA sites.</li><li>Sign in to Lusso, BUZ and FHA in Chrome, then choose <strong>Check connection</strong> here.</li></ol>}

@@ -27,6 +27,7 @@ test('Mac service authenticates staff, refuses unrelated origins and verifies ac
   res.setHeader('Content-Type','application/json');
   if(req.headers.authorization!=='Bearer test'){res.writeHead(401);res.end('{}');return;}
   const u=new URL(req.url,'http://test');
+  if(u.pathname.endsWith('/quotes') && (u.searchParams.get('select')||'').includes('measure_sheet_id')){res.writeHead(400);res.end(JSON.stringify({message:'column quotes.measure_sheet_id does not exist'}));return;}
   const out=u.pathname==='/auth/v1/user'?{id:'user'}:u.pathname.endsWith('/profiles')?[{status:'active'}]:u.pathname.endsWith('/jobs')?[{id:'job1',job_number:'LUS-1',customer_id:'customer1'}]:u.pathname.endsWith('/measure_sheets')?[{id:'sheet1',updated_at:'1',line_items:[{id:'a'}]}]:u.pathname.endsWith('/customers')?[{name:'Client',address:'Address'}]:u.searchParams.has('id')?[{id:'quote1',job_id:actualJob,status:'Draft',grand_total:100}]:[];
   res.end(JSON.stringify(out));
  });

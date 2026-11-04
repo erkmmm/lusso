@@ -24,7 +24,7 @@ let active = null;
 const guides = await Promise.all(['buz-roller-blinds.md','fha-curtains.md'].map(n=>readFile(resolve(homedir(),'.codex/skills/lusso-quote-from-measure-sheet/references',n),'utf8').catch(()=>'')));
 async function persist(run) { run.updatedAt=new Date().toISOString(); await writeFile(resolve(stateDir,`${run.id}.json`),JSON.stringify({...run,process:undefined}),{mode:0o600}); }
 for (const name of await readdir(stateDir)) if (/^[\w-]+\.json$/.test(name)) { try { const r=JSON.parse(await readFile(resolve(stateDir,name),'utf8')); if(['running','starting'].includes(r.status)){r.status='needs_input';r.summary='The Mac assistant restarted. Check existing supplier and CRM drafts before continuing.';} runs.set(r.id,r); } catch {} }
-async function sb(path,token) { const res=await fetch(`${sbUrl}${path}`,{headers:{apikey:sbKey,Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)}); if(!res.ok)throw new Error(`Lusso could not confirm access (${res.status}). Refresh the app and sign in again.`);return res.json(); }
+async function sb(path,token) { const res=await fetch(`${sbUrl}${path}`,{headers:{apikey:sbKey,Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)}); if(!res.ok){const detail=await res.json().catch(()=>({}));throw new Error(res.status===401||res.status===403?'Lusso could not confirm access. Refresh the app and sign in again.':`Lusso could not load the quote data: ${detail.message||res.status}`);}return res.json(); }
 async function authorize(req) { const token=(req.headers.authorization||'').replace(/^Bearer /,''); if(!token)throw Object.assign(new Error('Sign in to Lusso first.'),{status:401});const user=await sb('/auth/v1/user',token);const profiles=await sb(`/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=status`,token); if(profiles[0]?.status!=='active')throw Object.assign(new Error('An active Lusso staff account is required.'),{status:403});return {token,user}; }
 async function authStatus(){try{const {stdout}=await exec(claude,['auth','status','--json'],{timeout:15000});return Boolean(JSON.parse(stdout).loggedIn);}catch{return false;}}
 async function body(req){let text='';for await(const chunk of req){text+=chunk;if(text.length>48000)throw Object.assign(new Error('This request is too large.'),{status:413});}return text?JSON.parse(text):{};}
@@ -37,7 +37,7 @@ async function start(run, token, answer='') {
     const [jobs,sheets,quotes]=await Promise.all([
       sb(`/rest/v1/jobs?id=eq.${run.jobId}&select=*`,token),
       sb(`/rest/v1/measure_sheets?id=eq.${run.sheetId}&job_id=eq.${run.jobId}&select=*`,token),
-      sb(`/rest/v1/quotes?job_id=eq.${run.jobId}&deleted_at=is.null&select=id,quote_number,status,measure_sheet_id,grand_total`,token),
+      sb(`/rest/v1/quotes?job_id=eq.${run.jobId}&deleted_at=is.null&select=id,quote_number,status,grand_total`,token),
     ]);
     const job=jobs[0],sheet=sheets[0];
     if(!job||job.deleted_at||!sheet||sheet.deleted_at||!(sheet.line_items||[]).length)throw new Error('This job or measure sheet is unavailable or empty. Reload the job.');
