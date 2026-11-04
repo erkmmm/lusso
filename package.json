@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "node scripts/check-env.js && node scripts/generate-icons.js && node scripts/stamp-version.js && vite build",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=lusso --commit-dirty=true",
+    "postdeploy": "sh scripts/deploy-status.sh",
+    "deploy:status": "sh scripts/deploy-status.sh",
+    "hooks:install": "git config core.hooksPath .githooks && echo 'pre-push guard active'",
     "lint": "eslint .",
     "preview": "vite preview"
   },
