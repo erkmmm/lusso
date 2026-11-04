@@ -71,10 +71,10 @@ export default function QuoteAssistant() {
 
     {current && <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-4" aria-live="polite">
       <div className="flex items-center gap-2">{current.status === 'running' ? <Loader size={18} className="animate-spin text-amber-600" /> : <CheckCircle2 size={18} className="text-amber-700" />}<h2 className="font-semibold text-slate-900">{labels[current.status] || current.status}</h2></div>
-      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{current.summary}</p>
       {current.status === 'needs_input' && activeSheet && <AssistantSheetGaps key={activeSheet.id} sheet={activeSheet} onSaved={setApprovedSheet} onEditing={editing => { setSheetEditing(editing); if (editing) setApprovedSheet(null); }} />}
-      {!!current.questions?.length && <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">{current.questions.map((q,i)=><li key={i}>{q}</li>)}</ul>}
-      {!!current.warnings?.length && <ul className="list-disc pl-5 space-y-2 text-sm text-amber-800">{current.warnings.map((q,i)=><li key={i}>{q}</li>)}</ul>}
+      {current.status === 'needs_input'
+        ? <details className="rounded-lg border border-slate-100 p-3"><summary className="cursor-pointer text-sm font-medium text-slate-600">Plan findings and other decisions</summary><RequestNotes current={current} /></details>
+        : <RequestNotes current={current} />}
       {current.supplierReference && <p className="text-sm text-slate-600">Supplier reference: <strong>{current.supplierReference}</strong></p>}
       {Number.isFinite(current.totalIncGst) && <p className="text-lg font-semibold">{new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(current.totalIncGst)} including GST</p>}
       {current.draftQuoteUrl && <a href={current.draftQuoteUrl} className={button}>Review draft quote <ExternalLink size={15} /></a>}
@@ -92,5 +92,13 @@ export default function QuoteAssistant() {
       <button className={button} disabled={busy || !connection?.signedIn || connection?.busy || !sheet?.lineItems?.length} onClick={()=>action('/runs',{jobId,sheetId:selectedId,instructions})}>{busy?<Loader size={16} className="animate-spin" />:<Sparkles size={16}/>}Start quote</button>
       {!sheets.length && <p className="text-sm text-amber-800">Create a measure sheet for this project first.</p>}
     </section>}
+  </div>;
+}
+
+function RequestNotes({ current }) {
+  return <div className="space-y-3 pt-3">
+    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{current.summary}</p>
+    {!!current.questions?.length && <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">{current.questions.map((q,i)=><li key={i}>{q}</li>)}</ul>}
+    {!!current.warnings?.length && <ul className="list-disc pl-5 space-y-2 text-sm text-amber-800">{current.warnings.map((q,i)=><li key={i}>{q}</li>)}</ul>}
   </div>;
 }
