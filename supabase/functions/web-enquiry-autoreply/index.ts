@@ -45,8 +45,8 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "POST required" }, 405)
 
   try {
-    const { token, enquiryId, force } = await req.json().catch(() => ({}))
-    if (!enquiryId) return json({ error: "enquiryId required" }, 400)
+    const { token, enquiryId, force, preview, template: draft } = await req.json().catch(() => ({}))
+    if (!enquiryId && !preview) return json({ error: "enquiryId required" }, 400)
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -63,6 +63,70 @@ Deno.serve(async (req: Request) => {
       const jwt = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? ""
       const { data: { user } } = await admin.auth.getUser(jwt)
       if (!user) return json({ error: "unauthorized" }, 401)
+    }
+
+    // ── Preview ─────────────────────────────────────────────────────────────
+    // Settings needs to show the actual words, not a description of them. The
+    // body is not flat prose — it assembles itself per enquiry — so a preview
+    // has to run the real renderer rather than echo the template box back.
+    //
+    // Nothing is claimed, sent or logged on this path, and it needs no
+    // enquiry: it renders one fixed sample lead so two people reading the
+    // screen see the same message. `now` is real, though, so the call promise
+    // shown is the one a lead would actually get at this moment.
+    //
+    // Both versions come back. The built-in is what the boxes show as their
+    // placeholder, which is the only way to read the shipped wording you are
+    // about to override; the effective one reflects the unsaved draft when the
+    // caller passes one, so the preview tracks typing instead of the last save.
+    if (preview) {
+      const officePhone = Deno.env.get("OFFICE_PHONE") ?? OFFICE_PHONE
+
+      const { data: cfg } = await admin
+        .from("internal_notify_config")
+        .select("autoreply_subject, autoreply_body, autoreply_sms")
+        .eq("id", 1)
+        .maybeSingle()
+
+      const saved = {
+        subject: cfg?.autoreply_subject ?? null,
+        body:    cfg?.autoreply_body    ?? null,
+        sms:     cfg?.autoreply_sms     ?? null,
+      }
+      // An explicit draft wins, including a cleared box — which must preview as
+      // the built-in, exactly as clearing and saving would behave.
+      const effectiveTemplate = draft ?? saved
+
+      const sample = {
+        name:     "Sarah Chen",
+        email:    "sarah@example.com",
+        phone:    "0412345678",
+        suburb:   "Mermaid Beach",
+        interest: "Curtains",
+      }
+
+      const now = new Date()
+      const builtIn   = renderAutoReply(sample, now, officePhone, {})
+      const effective = renderAutoReply(sample, now, officePhone, effectiveTemplate)
+
+      return json({
+        preview: true,
+        sample,
+        builtIn: { subject: builtIn.subject, body: builtIn.body, sms: builtIn.sms },
+        effective: {
+          subject:  effective.subject,
+          greeting: effective.greeting,
+          body:     effective.body,
+          outro:    effective.outro,
+          sms:      effective.sms,
+        },
+        // What an editor may put in a box. Listed by the server so the help
+        // text in Settings cannot drift from what fillTokens actually fills.
+        tokens: [
+          "first_name", "suburb", "interest", "phone",
+          "call_window", "office_phone", "opening", "call_line",
+        ],
+      })
     }
 
     const { data: enquiry, error: readErr } = await admin
@@ -153,7 +217,7 @@ Deno.serve(async (req: Request) => {
       // quietly rejects every real suburb would otherwise look like success.
       console.log(`autoreply ${enquiry.id} → ${to} | used ${JSON.stringify(r.used)}`)
 
-      // An enquiry-scoped reply token means "hit reply" is true: the reply
+      // An enquiry-scoped reply token means the "please reply" ask is true: the reply
       // lands on this lead's conversation in the Inbox, not in a shared
       // mailbox. Without REPLY_DOMAIN there is no such address, so the line
       // promising it is withheld rather than being a lie.
@@ -168,19 +232,19 @@ Deno.serve(async (req: Request) => {
       const content = {
         preheader: r.preheader,
         eyebrow: "Enquiry received",
-        heading: "We've got your enquiry",
+        heading: "Thank you for your enquiry",
         greeting: r.greeting,
         body: threaded
           ? r.body
-          // "Hit reply and tell us" is the body's one call to action. With no
+          // "Please reply with" is the body's one call to action. With no
           // threading address it would send their answers somewhere nobody is
           // watching, so the ask becomes a phone call instead.
-          : r.body.replace("hit reply and tell us:", "have these handy:"),
+          : r.body.replace("please reply with:", "it would help to have the following to hand:"),
         cta: null,
         outro: r.outro,
         signOff: "The Lusso Team",
         replyNote: threaded
-          ? "Just hit Reply to this email — your reply comes straight back to us."
+          ? "Simply reply to this email — your reply comes straight back to us."
           : "",
         footerNote: "You're receiving this because you sent an enquiry through lusso.com.au.",
       }

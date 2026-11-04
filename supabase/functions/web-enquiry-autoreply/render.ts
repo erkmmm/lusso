@@ -16,7 +16,7 @@
  *
  * Interpolated raw — the way quote-notify does `custName.split(" ")[0]` for
  * customers, where the name came off an invoice — that is "Hi 214," and "your
- * place in GOLD COAST MC". So nothing here trusts a column. Each field goes
+ * home in GOLD COAST MC". So nothing here trusts a column. Each field goes
  * through a normaliser that returns a *usable* value or null, and the copy is
  * assembled from whichever fields survived. The worst case is a correct,
  * well-written, slightly less specific email — never a wrong one.
@@ -95,7 +95,7 @@ export function firstNameFrom(raw: string | null | undefined): string | null {
 const SUBURB_JUNK = /^(n\/?a|na|none|nil|test|testing|asdf+|qwerty|dog|cat|new|old|home|house|here|there|idk|unknown|anywhere|xx+|aa+)$/i
 
 /**
- * A suburb fit to appear in "your place in ___", or null to drop the clause.
+ * A suburb fit to appear in "your home in ___", or null to drop the clause.
  *
  * The clause is optional in the copy, which is what makes aggressive rejection
  * safe: 6 of the first 42 rows left the field blank (it isn't required on the
@@ -180,7 +180,7 @@ const BRANDS = new Set([
 ])
 
 // The one option that isn't a product. It gets its own opening sentence, since
-// "Thanks for getting in touch about your not sure yet — I'd like advice" is
+// "Thank you for your enquiry about your not sure yet — I'd like advice" is
 // how a template betrays itself.
 const ADVICE_SLUG = 'not sure yet i d like advice'
 
@@ -193,7 +193,7 @@ export interface InterestRead {
   noun: string
   /** The customer asked for advice rather than naming a product. */
   advice: boolean
-  /** A commercial job: "your place in X" is the wrong frame for it. */
+  /** A commercial job: "your home in X" is the wrong frame for it. */
   commercial: boolean
   /** No usable value: the copy falls back to generic wording. */
   generic: boolean
@@ -346,27 +346,27 @@ export function renderAutoReply(
   const when = callWindow(now)
 
   // The suburb clause is a whole clause, present or absent — never a dangling
-  // "your place in" with nothing after it. A commercial enquiry takes "in X"
-  // rather than "for your place in X", which would read as a home.
+  // "your home in" with nothing after it. A commercial enquiry takes "in X"
+  // rather than "for your home in X", which would read as a house.
   const opening = interest.advice
-    ? `Thanks for getting in touch — you mentioned you'd like some advice on what would suit${suburb ? ` your place in ${suburb}` : ' your windows'}. That's the part we enjoy most.`
+    ? `Thank you for your enquiry — you mentioned you'd like some guidance on what would suit${suburb ? ` your home in ${suburb}` : ' your windows'}. That is exactly the part we can help with.`
     : interest.commercial
-      ? `Thanks for getting in touch about your commercial project${suburb ? ` in ${suburb}` : ''}.`
+      ? `Thank you for your enquiry regarding your commercial project${suburb ? ` in ${suburb}` : ''}.`
       : suburb
-        ? `Thanks for getting in touch about ${interest.noun} for your place in ${suburb}.`
-        : `Thanks for getting in touch about your ${interest.noun}.`
+        ? `Thank you for your enquiry about ${interest.noun} for your home in ${suburb}.`
+        : `Thank you for your enquiry about your ${interest.noun}.`
 
   const callLine = phone
     ? `one of our consultants will call you on ${phone} ${when}`
     : `one of our consultants will call you ${when}`
 
   const body =
-    `${opening} Your enquiry is with our team now, not sitting in a queue.\n\n`
-    + `Here's what happens next: ${callLine}. We'll talk through your windows, then book a free in-home consultation — we bring the fabric and colour samples to you, measure up properly, and you get a fixed written quote. No obligation either way.\n\n`
-    + `To save time on that call, hit reply and tell us:\n\n`
-    + `• Roughly how many windows are involved\n`
-    + `• New build or renovation, or replacing what's there\n`
-    + `• Any timeframe you're working to\n`
+    `${opening} It has been received and is with our consultants now.\n\n`
+    + `Here's what happens next: ${callLine}. We'll discuss your requirements, then arrange an in-home consultation at a time that suits you — we bring the fabric and colour samples to you, measure every window properly, and you receive a fixed written quote. There is no obligation to proceed.\n\n`
+    + `So that we can make the most of that call, please reply with:\n\n`
+    + `• Approximately how many windows are involved\n`
+    + `• Whether this is a new build, a renovation, or replacing existing furnishings\n`
+    + `• Any timeframe you are working towards\n`
     // Asked in writing rather than on the call on purpose: there is no social
     // pressure in an email, so people answer honestly or skip it, and either
     // is useful. The reason clause is load-bearing — "if you have one in mind"
@@ -374,12 +374,12 @@ export function renderAutoReply(
     // as qualifying them and gets ignored.
     + `• A budget range, if you have one in mind — it helps us bring the right samples\n\n`
     // The second path, for the landlord, the builder, and anyone who does not
-    // want a stranger in their lounge room. "Rough is fine to start" is doing
-    // real work: a customer who thinks they need exact numbers sends nothing
-    // at all. The sentence after it is doing more — a quote built on someone
-    // else's tape measure must never read as a fixed price, or a 40mm error
-    // becomes a remake at our cost.
-    + `Not nearby, or would rather skip the home visit? Send us your own rough measurements instead — width and drop for each window, in centimetres — and we'll quote from those. Rough is fine to start; we'd confirm exact sizes before anything goes into production.`
+    // want a stranger in their lounge room. "Approximate figures are fine at
+    // this stage" is doing real work: a customer who thinks they need exact
+    // numbers sends nothing at all. The sentence after it is doing more — a
+    // quote built on someone else's tape measure must never read as a fixed
+    // price, or a 40mm error becomes a remake at our cost.
+    + `If you are outside our area, or would prefer not to arrange a home visit, you are welcome to send us your own measurements instead — width and drop for each window, in centimetres — and we will prepare a quote from those. Approximate figures are fine at this stage; we would confirm exact sizes before anything goes into production.`
 
   const outro = `Prefer to talk now? Call us on ${officePhone}.`
 
@@ -393,7 +393,7 @@ export function renderAutoReply(
   // "Hi it's Lusso" without the comma is the giveaway when there is no usable
   // name, so the greeting is punctuated either way.
   const smsHello = first ? `Hi ${first},` : 'Hi,'
-  const sms = `${smsHello} it's Lusso Window Furnishings - we have your enquiry and will call you ${when}. Need us sooner? ${officePhone.replace(/[()\s]/g, '')}`
+  const sms = `${smsHello} Lusso Window Furnishings here. We have received your enquiry and will call you ${when}. If you need us sooner, call ${officePhone.replace(/[()\s]/g, '')}.`
 
   // The edited versions are filled from the same values the built-in copy was
   // composed from, so {{opening}} and {{call_line}} carry the per-enquiry
@@ -415,7 +415,7 @@ export function renderAutoReply(
 
   return {
     subject: pick(template.subject, subject),
-    preheader: `We have your enquiry — ${callLine.replace(/^one of our consultants /, 'a consultant ')}.`,
+    preheader: `We have received your enquiry — ${callLine.replace(/^one of our consultants /, 'a consultant ')}.`,
     greeting: first ? `Hi ${first},` : 'Hi there,',
     body: pick(template.body, body),
     outro,

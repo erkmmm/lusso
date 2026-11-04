@@ -122,6 +122,38 @@ function AutoReplyCopy({ cfg, canEdit, onSaved }) {
   const [sms, setSms]         = useState(cfg.sms ?? '');
   const [saving, setSaving]   = useState(false);
 
+  // The rendered message, from the edge function that actually sends it.
+  //
+  // Describing the copy in prose beside an empty box is not the same as being
+  // able to read it, and the body cannot be read off the template anyway: it
+  // assembles itself per enquiry, so the only honest preview is the real
+  // renderer run over a sample lead. `builtIn` backfills the placeholders, so
+  // the shipped wording is legible in the box it would override.
+  const [preview, setPreview] = useState(null);
+  const [builtIn, setBuiltIn] = useState(null);
+  const [previewErr, setPreviewErr] = useState('');
+
+  // Re-rendered as someone types, debounced, so the panel tracks the draft
+  // rather than the last save — otherwise you cannot see what a token does
+  // until you have already committed it to every new lead.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase.functions.invoke('web-enquiry-autoreply', {
+        body: { preview: true, template: { subject, body, sms } },
+      });
+      if (cancelled) return;
+      if (error || !data?.effective) {
+        setPreviewErr(error?.message || 'Could not render the preview.');
+        return;
+      }
+      setPreviewErr('');
+      setPreview(data.effective);
+      setBuiltIn(data.builtIn ?? null);
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [subject, body, sms]);
+
   const dirty = subject !== (cfg.subject ?? '')
     || body !== (cfg.body ?? '')
     || sms !== (cfg.sms ?? '');
@@ -157,20 +189,61 @@ function AutoReplyCopy({ cfg, canEdit, onSaved }) {
       </div>
 
       <p className="text-[11px] text-slate-400">
-        Leave a box empty to use the built-in wording described above. Clearing one puts the
-        default back rather than sending a blank message.
+        Leave a box empty to use the built-in wording. Clearing one puts the default back rather
+        than sending a blank message.
       </p>
+
+      {/* What the customer actually receives. Rendered by the same function
+          that sends it, over one fixed sample lead, at the current time of day
+          — so the call promise shown is the one a lead would get right now. */}
+      {/* Opacities on bg-slate-50 are remapped per theme in index.css, and an
+          unmapped one stays literal near-white — a glaring box on any dark
+          theme. /70 was missing and is now added there; this stays on /60,
+          which was mapped all along. Check index.css before inventing one. */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/60 overflow-hidden">
+        <div className="px-3 py-2 border-b border-slate-200 flex items-baseline justify-between gap-2">
+          <p className="text-[11px] font-semibold text-slate-600">What the customer receives</p>
+          <p className="text-[10px] text-slate-400">
+            sample lead · Sarah Chen, Mermaid Beach, curtains
+          </p>
+        </div>
+
+        {previewErr ? (
+          <p className="px-3 py-3 text-[11px] text-red-600">{previewErr}</p>
+        ) : !preview ? (
+          <p className="px-3 py-3 text-[11px] text-slate-400 flex items-center gap-2">
+            <Loader size={11} className="animate-spin" /> Rendering…
+          </p>
+        ) : (
+          <div className="px-3 py-3 space-y-2">
+            <p className="text-[11px] text-slate-400">
+              Subject: <span className="text-slate-700 font-medium">{preview.subject}</span>
+            </p>
+            <div className="rounded-lg bg-white border border-slate-200 px-3 py-2.5">
+              <p className="text-xs text-slate-700">{preview.greeting}</p>
+              {/* pre-line, because the bullet list is newlines in a string and
+                  collapsing them is exactly how this stops being readable. */}
+              <p className="text-xs text-slate-700 whitespace-pre-line mt-2">{preview.body}</p>
+              <p className="text-xs text-slate-500 mt-2">{preview.outro}</p>
+              <p className="text-xs text-slate-400 mt-2">Kind regards,<br />The Lusso Team</p>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              After-hours SMS: <span className="text-slate-600">{preview.sms}</span>
+            </p>
+          </div>
+        )}
+      </div>
 
       <div className="space-y-1">
         <label className="block text-[11px] font-medium text-slate-500">Subject</label>
         <input value={subject} onChange={e => setSubject(e.target.value)} disabled={!canEdit}
-          placeholder="Your Lusso enquiry — and a quick question" className={field} />
+          placeholder={builtIn?.subject ?? 'Using the built-in subject.'} className={field} />
       </div>
 
       <div className="space-y-1">
         <label className="block text-[11px] font-medium text-slate-500">Message</label>
         <textarea value={body} onChange={e => setBody(e.target.value)} disabled={!canEdit}
-          rows={8} placeholder="Using the built-in message." className={field} />
+          rows={8} placeholder={builtIn?.body ?? 'Using the built-in message.'} className={field} />
         <p className="text-[11px] text-slate-400">
           Tokens: <code>{'{{opening}}'}</code> the first sentence, already tailored to what they asked
           about and where they are · <code>{'{{call_line}}'}</code> who will call, on what number, and
@@ -188,7 +261,7 @@ function AutoReplyCopy({ cfg, canEdit, onSaved }) {
           </span>
         </div>
         <textarea value={sms} onChange={e => setSms(e.target.value)} disabled={!canEdit}
-          rows={2} placeholder="Using the built-in SMS." className={field} />
+          rows={2} placeholder={builtIn?.sms ?? 'Using the built-in SMS.'} className={field} />
         <p className="text-[11px] text-slate-400">
           Plain characters only — one curly apostrophe or an en dash doubles what every message costs.
           {smsOver && <span className="text-red-600 font-medium"> Too long: over 160 bills as two messages per lead.</span>}
@@ -326,7 +399,7 @@ function WebAutoReplySection() {
             <p className="text-xs text-slate-400">
               Thanks them by name for the product they asked about, tells them a consultant will call
               — today, tomorrow morning or Monday, worked out from the actual time of day — explains the
-              free in-home consultation, and asks them to reply with their window count, whether it is new
+              in-home consultation, and asks them to reply with their window count, whether it is new
               or a replacement, and their timeframe. Their reply threads back onto the lead in the Inbox.
             </p>
             <p className="text-xs text-slate-400">
