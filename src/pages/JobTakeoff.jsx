@@ -1,3 +1,4 @@
+import {openingFocusView} from '../lib/planSpecFocus';
 import OpeningWorkspace from '../components/takeoff/OpeningWorkspace';
 import { OPENING_FIELDS, linkedSheetLine, WIDTH_BASES } from '../lib/openingWorkflow';
 import { useDataRefresh } from '../hooks/useDataRefresh';
@@ -108,6 +109,9 @@ export default function JobTakeoff() {
   // interaction
   const dataTick = useDataRefresh();
   const [openingEditor, setOpeningEditor] = useState(null);
+  const specsOpen=Boolean(openingEditor);
+  const [planFocus,setPlanFocus] = useState(null);
+  const pageBaseNumber = useRef(null);
   const [placementLineId, setPlacementLineId] = useState(requestedPlacement);
   const [newWidthBasis, setNewWidthBasis] = useState('Opening width');
   const [mode, setMode] = useState(requestedPlacement?'window':'pan');                // pan|window|measure|chain|arc|calibrate|count|verify
@@ -302,6 +306,7 @@ export default function JobTakeoff() {
     let alive = true;
     getPageBaseSize(pdf, pageNumber).then(size => {
       if (!alive) return;
+      pageBaseNumber.current=pageNumber;
       setPageBaseSize(size);   // the fit happens below, once the rotation is known
     });
     return () => { alive = false; };
@@ -392,6 +397,29 @@ export default function JobTakeoff() {
     viewRef.current = next;
     setView(next);
   }, []);
+
+  // Selecting a spec card changes the view only; stored drawing coordinates stay untouched.
+  const focusOpeningOnPlan=useCallback(line=>{
+    if(!line.takeoffItemId || line.takeoffRemoved){setSelectedIds(new Set());setPlanFocus(null);return;}
+    const t=takeoffRef.current;
+    const item=t?.items?.find(i=>i.id===line.takeoffItemId);
+    const mark=t?.measurements?.find(m=>m.itemId===line.takeoffItemId || m.id===line.takeoffItemId);
+    const page=item?.pageNumber || mark?.pageNumber || line.takeoffPage;
+    if(!page){setSelectedIds(new Set());setPlanFocus(null);return;}
+    setSelectedIds(new Set([line.takeoffItemId]));
+    setPageNumber(page);
+    setPlanFocus({itemId:line.takeoffItemId,page});
+  },[]);
+  useEffect(()=>{
+    if(!planFocus || !specsOpen || pageNumber!==planFocus.page || pageBaseNumber.current!==pageNumber || !pageBaseSize)return;
+    const stage=stageRef.current;
+    if(!stage)return;
+    const rect=stage.getBoundingClientRect();
+    const marks=(takeoffRef.current?.measurements || []).filter(m=>m.pageNumber===pageNumber && (m.itemId===planFocus.itemId || m.id===planFocus.itemId));
+    const points=marks.flatMap(m=>pointsOf(m));
+    const next=openingFocusView(points,pageBaseSize,rotation,rect);
+    if(next){setViewNow(next);scheduleRaster(next.scale);}
+  },[planFocus,specsOpen,pageNumber,pageBaseSize,rotation,setViewNow,scheduleRaster]);
 
   // ── Persistence ─────────────────────────────────────────────────────────
   // Structural edits (add/delete/scale) write straight through. Typing —
@@ -1770,6 +1798,7 @@ export default function JobTakeoff() {
   }, []);
 
   const selectOne = (id, additive = false) => {
+    if(!additive && openingEditor && takeoffRef.current?.items?.some(i=>i.id===id))setOpeningEditor(prev=>prev?{...prev,itemId:id}:prev);
     setSelectedIds(prev => {
       if (!additive) return new Set([id]);
       const n = new Set(prev);
@@ -1920,9 +1949,9 @@ export default function JobTakeoff() {
       )}
 
       {status === 'ready' && (
-        <div className="flex-1 flex min-h-0">
+        <div className={`flex-1 flex min-h-0 ${openingEditor && !clientView?'flex-col lg:flex-row':''}`}>
           {/* Plan stage */}
-          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <div className={`flex flex-col min-w-0 min-h-0 ${openingEditor && !clientView?'h-[42vh] shrink-0 lg:h-auto lg:flex-1':'flex-1'}`}>
             {/* View bar — everything about LOOKING at the plan. Kept apart
                 from the tools so the row you reach for while drawing never
                 moves as the page or zoom changes. */}
@@ -2188,7 +2217,7 @@ export default function JobTakeoff() {
                 onSelect={setClientPick}
                 showSizes={clientShowSizes}
               />
-            ) : (
+            ) : !openingEditor ? (
             <ItemPanel
               layout="sheet"
               open={sheetOpen}
@@ -2224,7 +2253,7 @@ export default function JobTakeoff() {
               onLabelFocused={clearLabelFocus}
               photoBusyId={photoBusyId}
             />
-            )}
+            ) : null}
           </div>
 
           {/* Side panel — wide screens only */}
@@ -2245,7 +2274,15 @@ export default function JobTakeoff() {
               collapsed={panelCollapsed}
               onToggleCollapsed={togglePanel}
             />
-          ) : (
+          ) : openingEditor ? (
+            <aside aria-label="Opening specifications beside plan" className="min-h-0 flex-1 overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-200 bg-white p-4 lg:w-[430px] xl:w-[480px] lg:flex-none">
+              <OpeningWorkspace jobId={jobId} takeoff={takeoff} pdf={pdf} initialItemId={openingEditor.itemId}
+                embeddedInPlan onFocusOpening={focusOpeningOnPlan}
+                onClose={()=>{setOpeningEditor(null);setPlanFocus(null);}}
+                onJump={(page,itemId)=>{setPageNumber(page);if(itemId)focusOpeningOnPlan({takeoffItemId:itemId,takeoffPage:page});}}
+                onPlace={lineId=>{setOpeningEditor(null);setPlanFocus(null);setPlacementLineId(lineId);setMode('window');toast('Choose the correct plan page, then draw the width for this existing opening.');}} />
+            </aside>
+          ) : [...pageItems,...pageMeasurements,...pageMarkers].some(mark=>selectedIds.has(mark.id)) ? (
           <ItemPanel
             pageNumber={pageNumber}
             items={pageItems}
@@ -2280,7 +2317,7 @@ export default function JobTakeoff() {
             collapsed={panelCollapsed}
             onToggleCollapsed={togglePanel}
           />
-          )}
+          ) : null}
         </div>
       )}
 
@@ -2324,7 +2361,7 @@ export default function JobTakeoff() {
           onConfirm={confirmReplacement}
         />
       )}
-      {openingEditor && <div className="fixed inset-0 z-[90] bg-slate-900/40 p-2 sm:p-6"><div role="dialog" aria-modal="true" aria-label="Opening specifications" className="mx-auto h-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-4 sm:p-6"><OpeningWorkspace jobId={jobId} takeoff={takeoff} pdf={pdf} initialItemId={openingEditor.itemId} onClose={()=>setOpeningEditor(null)} onJump={(page,itemId)=>{setOpeningEditor(null);setPageNumber(page);if(itemId)selectOne(itemId);}} onPlace={lineId=>{setOpeningEditor(null);setPlacementLineId(lineId);setMode('window');toast('Choose the correct plan page, then draw the width for this existing opening.');}}/></div></div>}
+
       {revisionsOpen && takeoff && (
         <RevisionsDialog takeoff={takeoff} onCancel={() => setRevisionsOpen(false)} onRestore={restoreRevision} />
       )}

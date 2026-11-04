@@ -15,8 +15,9 @@ import OpeningFields,{Field,inputClass} from './OpeningFields';
 import MakeSizeCalculator from './MakeSizeCalculator';
 const action='rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40';
 const secondary='rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 disabled:opacity-40';
-export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemId,onClose,onJump,onPlace,onSaved=()=>{},onEditing=()=>{}}) {
+export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemId,onClose,onJump,onPlace,onFocusOpening,embeddedInPlan=false,onSaved=()=>{},onEditing=()=>{}}) {
   useDataRefresh();
+  const editorRoot=useRef(null);
   const sheets=getMeasureSheetsByJob(jobId).filter(s=>!s.deletedAt);
   const [chosenSheetId,setChosenSheetId]=useState(()=>sheetId || (initialItemId?sheets.find(s=>s.lineItems?.some(l=>l.takeoffItemId===initialItemId))?.id:null) || getMeasureSheetByJob(jobId)?.id);
   const candidate=getMeasureSheet(sheetId || chosenSheetId);
@@ -52,6 +53,19 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
   const stored=[...(sheet?.lineItems || []),...additions];
   const lines=stored.map(l=>({...l,...fills[l.id]}));
   const active=lines.find(l=>l.id===activeId);
+  const [previousItemId,setPreviousItemId]=useState(initialItemId);
+  if(previousItemId!==initialItemId){
+    setPreviousItemId(initialItemId);
+    const linked=sheet?.lineItems?.find(l=>l.takeoffItemId===initialItemId);
+    if(linked)setActiveId(linked.id);
+  }
+  const focusLineId=active?.id,focusItemId=active?.takeoffItemId,focusPage=active?.takeoffPage,focusRemoved=active?.takeoffRemoved;
+  useEffect(()=>{
+    if(focusLineId)onFocusOpening?.({id:focusLineId,takeoffItemId:focusItemId,takeoffPage:focusPage,takeoffRemoved:focusRemoved});
+  },[focusLineId,focusItemId,focusPage,focusRemoved,onFocusOpening]);
+  useEffect(()=>{
+    if(embeddedInPlan && activeId)editorRoot.current?.querySelector(`[data-line-card="${CSS.escape(activeId)}"]`)?.scrollIntoView({block:'nearest'});
+  },[activeId,embeddedInPlan]);
   const groups=readiness(lines);
   const dirty=Object.keys(fills).length>0 || additions.length>0 || Boolean(briefNote);
   useEffect(()=>{if(!dirty)return;const warn=event=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
@@ -142,7 +156,7 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
   const bulkType=selectedTypes.length===1?lines.find(l=>selected.has(l.id)):null;
   const bulkEditor={...(bulkType?{productTypeId:bulkType.productTypeId,productNameSnapshot:bulkType.productNameSnapshot}:{}),...bulk};
   const filtered=lines.filter(l=>!filter || `${l.location} ${openingGaps(l).pricing.join(' ')} ${openingGaps(l).ordering.join(' ')}`.toLowerCase().includes(filter.toLowerCase()));
-  return <fieldset disabled={busy} className="space-y-4 text-slate-800">
+  return <fieldset ref={editorRoot} disabled={busy} className="space-y-4 text-slate-800">
     <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">Openings & specifications</h2><p className="mt-1 text-xs text-slate-500">One shared sheet for plan takeoff and quote preparation. Changes are saved only when you choose Save answers.</p></div>{onClose && <button aria-label="Close opening editor" onClick={close}><X size={20}/></button>}</div>
     {!sheetId && sheets.length>1 && <label className="block text-xs font-medium">Measure sheet<select className={`${inputClass} mt-1`} value={chosenSheetId || ''} onChange={e=>{if(dirty){setError('Save your answers before switching sheets.');return;}const target=sheets.find(s=>s.id===e.target.value);setChosenSheetId(target.id);baseline.current=target.updatedAt;setSelected(new Set());setActiveId('');setSuggestions([]);setMessage('');}}>{sheets.map(s=><option key={s.id} value={s.id}>{s.title || s.name || s.measureDate || s.id} · {(s.lineItems || []).length} entries</option>)}</select></label>}
     <div className="flex flex-wrap gap-2">{['Openings','Bulk edit','Customer brief','Plan evidence'].map(t=><button key={t} onClick={()=>setTab(t)} className={`${secondary} ${tab===t?'bg-amber-50 border-amber-300 text-amber-800':''}`}>{t}</button>)}</div>
@@ -163,14 +177,15 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
           confirmLineMeasured={()=>patch(line.id,markLineCheckMeasured(line,{by:displayName}))}
           revertLineToPlan={()=>patch(line.id,markLinePlanEstimate(line))}
           setLinePhotos={(_id,paths)=>patch(line.id,{photoPaths:paths})}>
+          {embeddedInPlan && (!line.takeoffItemId || line.takeoffRemoved) && <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">This opening is not placed on the current plan. Place it to link these specifications to a window.</p>}
           <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={!isScopePlaceholder(line)} onChange={e=>patch(line.id,{quantityConfirmed:e.target.checked,scopePlaceholder:!e.target.checked,...(isScopePlaceholder(line) && !line.measureSource?{measureSource:'plan'}:{})})}/>Opening count and mapping confirmed</label>
-          <div className="flex flex-wrap gap-2">{onJump && line.takeoffPage && <button className={secondary} onClick={()=>{if(dirty){setError('Save or discard your answers before returning to the plan.');return;}onJump(line.takeoffPage,line.takeoffItemId);}}>Show on plan · page {line.takeoffPage}</button>}{onPlace && !line.takeoffItemId && <button className={secondary} onClick={()=>{if(dirty){setError('Save your answers before placing this opening.');return;}onPlace(line.id);}}>Place this opening on the plan</button>}</div>
+          <div className="flex flex-wrap gap-2">{onJump && line.takeoffPage && <button className={secondary} onClick={()=>{if(dirty && !embeddedInPlan){setError('Save or discard your answers before returning to the plan.');return;}onJump(line.takeoffPage,line.takeoffItemId);}}>Show on plan · page {line.takeoffPage}</button>}{onPlace && !line.takeoffItemId && <button className={secondary} onClick={()=>{if(dirty){setError('Save your answers before placing this opening.');return;}onPlace(line.id);}}>Place this opening on the plan</button>}</div>
           {line.planRevisionReview && <div className="rounded-lg border border-amber-200 p-3 text-sm"><p>Plan revision changed from r{line.planRevisionReview.from} to r{line.planRevisionReview.to}. Confirm this opening still matches the drawing. Existing specifications and site sizes are retained.</p><button className={secondary} onClick={()=>patch(line.id,{planRevisionReview:null,reviewedRevision:line.planRevisionReview.to})}>I compared this opening with the revised plan</button></div>}
           {line.takeoffRemoved && <div className="rounded-lg bg-amber-50 p-3 text-sm">This opening was removed from the current plan markup. Its sheet details are retained. Reposition it or confirm the scope before pricing.</div>}
           {Object.entries(line.pendingPlanChanges || {}).map(([key,value])=><div key={key} className="rounded-lg border border-amber-200 p-3 text-sm"><p>Plan proposes {key==='widthMm'?'width':key==='dropMm'?'drop':key}: <strong>{value.value}</strong>; current answer: <strong>{line[key] || '—'}</strong>.</p><p className="text-xs text-slate-500">{value.fileName} · p{value.page} · r{value.revision} · {value.reason}</p><div className="mt-2 flex gap-2"><button className={secondary} onClick={()=>acceptPlanChange(key,value)}>Use plan value (provisional)</button><button className={secondary} onClick={()=>{const next={...line.pendingPlanChanges};delete next[key];patch(line.id,{pendingPlanChanges:next,reviewedPlanValues:{...line.reviewedPlanValues,[key]:value.value}});}}>Keep my answer</button></div></div>)}
           <MakeSizeCalculator key={line.id} line={line} onApply={values=>patch(line.id,values)} onInputsChange={inputs=>patch(line.id,{makeSizeCalculation:{inputs,reviewed:false}})}/>
           <button className={secondary} onClick={()=>{setQuery(line.location || '');setTab('Plan evidence');}}>Find heights / schedules in plans</button>
-          {!!line.planSources?.length && <div className="space-y-2"><h3 className="text-sm font-semibold">Plan references</h3>{line.planSources.map((s,i)=><div key={i} className="rounded-lg bg-slate-50 p-3 text-xs"><p>{s.fileName} · revision {s.revision} · page {s.page}</p><p className="whitespace-pre-wrap mt-1">{s.excerpt}</p>{onJump && <button className="mt-1 underline" onClick={()=>{if(dirty){setError('Save your answers before opening this drawing.');return;}onJump(s.page);}}>Open source drawing</button>}</div>)}</div>}
+          {!!line.planSources?.length && <div className="space-y-2"><h3 className="text-sm font-semibold">Plan references</h3>{line.planSources.map((s,i)=><div key={i} className="rounded-lg bg-slate-50 p-3 text-xs"><p>{s.fileName} · revision {s.revision} · page {s.page}</p><p className="whitespace-pre-wrap mt-1">{s.excerpt}</p>{onJump && <button className="mt-1 underline" onClick={()=>{if(dirty && !embeddedInPlan){setError('Save your answers before opening this drawing.');return;}onJump(s.page);}}>Open source drawing</button>}</div>)}</div>}
           {!!line.briefEvidence?.length && <details><summary className="cursor-pointer text-xs text-slate-500">Customer brief evidence</summary>{line.briefEvidence.map((e,i)=><p key={i} className="mt-2 text-xs">{e.excerpt}</p>)}</details>}
           {!!line.specHistory?.length && <details><summary className="cursor-pointer text-xs text-slate-500">Change history ({line.specHistory.length})</summary>{[...line.specHistory].reverse().map((h,i)=><div key={i} className="mt-2 rounded-lg bg-slate-50 p-3 text-xs"><p>{h.at} · {h.by} · {h.source}</p>{h.changes.map(c=><p key={c.field}>{c.field}: {JSON.stringify(c.from)} → {JSON.stringify(c.to)}</p>)}<button className="mt-1 underline" onClick={()=>patch(line.id,Object.fromEntries(h.changes.map(c=>[c.field,c.from])))}>Restore these previous values to my unsaved answers</button></div>)}</details>}
         </MeasureSheetOpeningCard>

@@ -234,10 +234,7 @@ export default function ItemPanel({
       ) : (
         <div className="px-4 py-3 border-b border-slate-100 flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <h2 className="font-semibold text-slate-800 text-sm">Takeoff</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {onPage} {noun}{onPage === 1 ? '' : 's'} on this page · {total} total
-            </p>
+            <h2 className="font-semibold text-slate-800 text-sm">Plan tools</h2>
           </div>
           <button
             onClick={onToggleCollapsed}
