@@ -339,10 +339,9 @@ export default function JobTakeoff() {
     return Math.max(1, Math.min(byEdge, byArea));
   }, [pageBaseSize]);
 
-  // Fit once per page AND per rotation — a sheet turned 90° no longer fits the
-  // stage the way it did, and leaving it half off screen would make the button
-  // feel broken. Fitting again on every render would instead throw away the
-  // zoom someone just set, so the key below makes it exactly once each.
+  // Fit when the page, rotation or available plan area changes. Opening the
+  // specs panel narrows the stage; its former centre is then behind the panel.
+  // Keep normal renders out of the key so typing never resets manual zoom.
   //
   // Driven by a ResizeObserver rather than by the render, because the stage is
   // a flex child that has no useful size on the first pass: fitting against a
@@ -351,10 +350,10 @@ export default function JobTakeoff() {
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage || !viewSize) return;
-    const key = `${pageNumber}:${rotation}:${Math.round(viewSize.width)}x${Math.round(viewSize.height)}`;
     const tryFit = () => {
       const r = stage.getBoundingClientRect();
       if (r.width < 80 || r.height < 80) return;   // not laid out yet
+      const key = `${pageNumber}:${rotation}:${Math.round(viewSize.width)}x${Math.round(viewSize.height)}:${Math.round(r.width)}x${Math.round(r.height)}`;
       if (fittedKey.current === key) return;
       fittedKey.current = key;
       fitPage(viewSize);
@@ -414,11 +413,17 @@ export default function JobTakeoff() {
     if(!planFocus || !specsOpen || pageNumber!==planFocus.page || pageBaseNumber.current!==pageNumber || !pageBaseSize)return;
     const stage=stageRef.current;
     if(!stage)return;
-    const rect=stage.getBoundingClientRect();
-    const marks=(takeoffRef.current?.measurements || []).filter(m=>m.pageNumber===pageNumber && (m.itemId===planFocus.itemId || m.id===planFocus.itemId));
-    const points=marks.flatMap(m=>pointsOf(m));
-    const next=openingFocusView(points,pageBaseSize,rotation,rect);
-    if(next){setViewNow(next);scheduleRaster(next.scale);}
+    const centreOpening=()=>{
+      const rect=stage.getBoundingClientRect();
+      const marks=(takeoffRef.current?.measurements || []).filter(m=>m.pageNumber===pageNumber && (m.itemId===planFocus.itemId || m.id===planFocus.itemId));
+      const points=marks.flatMap(m=>pointsOf(m));
+      const next=openingFocusView(points,pageBaseSize,rotation,rect);
+      if(next){setViewNow(next);scheduleRaster(next.scale);}
+    };
+    centreOpening();
+    const observer=new ResizeObserver(centreOpening);
+    observer.observe(stage);
+    return ()=>observer.disconnect();
   },[planFocus,specsOpen,pageNumber,pageBaseSize,rotation,setViewNow,scheduleRaster]);
 
   // ── Persistence ─────────────────────────────────────────────────────────
