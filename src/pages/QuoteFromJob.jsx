@@ -46,7 +46,14 @@ function msLineToQuoteLine(msLi, idx, rates, pricedItems) {
         curtainFabricPricePerM: costed.curtainFabricPricePerM,
         curtainFabricPriceSource: costed.fabricPriceSource,   // see resolveLineFabricPrice
       }
-    : { unitCostPrice: '', labourCost: '', curtainFabricPricePerM: '' };
+    // Materials couldn't be priced, but making and fitting don't depend on the
+    // fabric's price — so they come across and only the material cost is left
+    // to type.
+    : {
+        unitCostPrice: '',
+        labourCost: costed?.labourPriced ? costed.labourCost : '',
+        curtainFabricPricePerM: '',
+      };
 
   return {
     id: uuidv4(),

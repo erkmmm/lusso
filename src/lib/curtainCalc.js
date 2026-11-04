@@ -690,6 +690,25 @@ export function resolveLineFabricWidth(li = {}, rates = DEFAULT_CURTAIN_RATES, f
 }
 
 /**
+ * Warning codes that spoil the MATERIAL cost and leave the labour intact.
+ *
+ * Fabric $/m and roll width feed the metreage; a track price feeds the
+ * hardware. None of them reach making, lining making or fitting, which come
+ * off the width, the drop and the heading. Everything else — a missing size,
+ * a heading with no making rate — is deliberately absent, so a code added
+ * later blocks labour too until it has been thought about.
+ */
+export const MATERIAL_ONLY_WARNINGS = new Set([
+  'no-fabric-price',
+  'fabric-not-found',
+  'fabric-ambiguous',
+  'fabric-width-assumed',
+  'no-track-type',
+  'unknown-track-type',
+  'track-over-max',
+]);
+
+/**
  * Auto-cost a line that came from (or is linked to) a measure sheet.
  *
  * Shared by every measure-sheet → quote path so they can't drift apart:
@@ -703,6 +722,15 @@ export function resolveLineFabricWidth(li = {}, rates = DEFAULT_CURTAIN_RATES, f
  *
  * A line it can't fully price is reported as blocked rather than part-costed,
  * so a missing cost stays visible instead of quietly under-quoting.
+ *
+ * The one exception is labour. Making, lining making and fitting are worked out
+ * from the width, the drop and the heading — the fabric's $/m and roll width
+ * never enter them, and neither does the track's price. So a blocked line whose
+ * only problems are MATERIAL_ONLY_WARNINGS still carries a labour figure
+ * (`labourPriced`), and callers apply it: the material cost someone then types
+ * by hand is the only number they should have to work out. Anything that moves
+ * the labour itself — a missing size, an unrated heading — blocks both, and so
+ * does a code this list has never heard of.
  */
 export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pricedItems = []) {
   if (!isCurtainProduct(li.productNameSnapshot || li.productType || li.productName || '')) return null;
@@ -771,7 +799,16 @@ export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pric
 
   const warnings = [...result.warnings, ...fabricWarnings];
   if (!result.priced || warnings.length > 0) {
-    return { blocked: true, warnings, result, fabricPriceSource: fabricPrice.source, fabricPrice };
+    // Labour survives a materials-only problem — see the note above.
+    const labourPriced = result.priced
+      && warnings.every(w => MATERIAL_ONLY_WARNINGS.has(typeof w === 'string' ? null : w?.code))
+      && result.labourCost > 0;
+    return {
+      blocked: true,
+      labourPriced,
+      labourCost: labourPriced ? Math.round(result.labourCost * 100) / 100 : null,
+      warnings, result, fabricPriceSource: fabricPrice.source, fabricPrice,
+    };
   }
 
   return {

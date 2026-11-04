@@ -195,7 +195,12 @@ function msItemToQuoteLine(msLi, sortOrder, rates, pricedItems) {
         // hand-typed — crediting the user with a number the app chose.
         curtainFabricPriceSource: costed.fabricPriceSource,
       }
-    : {};
+    // Materials couldn't be priced, but the making and fitting don't depend on
+    // the fabric's price — so they come across and only the material cost is
+    // left to type.
+    : costed?.labourPriced
+      ? { labourCost: costed.labourCost }
+      : {};
 
   return {
     ...EMPTY_LINE_ITEM(),
@@ -972,11 +977,16 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
               be costed is exactly the line you would otherwise scroll past. */}
           {blockers.length > 0 && (
             <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {/* "Materials" when the labour did cost: the making and the
+                  fitting are on the line, and calling the whole line unpriced
+                  would send someone looking for a number that is already
+                  there. */}
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                <AlertCircle size={11} /> Can&rsquo;t be priced
+                <AlertCircle size={11} /> {costed?.labourPriced ? <>Materials can&rsquo;t be priced</> : <>Can&rsquo;t be priced</>}
               </span>
               <span className="text-[11px] text-slate-500">
                 {blockers.map(b => b.what + (b.detail ? ` ${b.detail}` : '')).join(' · ')}
+                {costed?.labourPriced && ` · labour costed at $${costed.labourCost.toFixed(2)}`}
               </span>
               {blockers.filter(b => b.href).map(b => (
                 <button key={b.code} type="button"
@@ -1570,6 +1580,7 @@ export default function QuoteBuilder() {
     const rates = getCurtainRates();
     const pricedItemsForFabric = getPricedItems();
     let costed = 0;
+    let labourOnly = 0;
     const blocked = [];
 
     // Computed OUTSIDE the setForm updater: a functional updater can be invoked
@@ -1580,6 +1591,13 @@ export default function QuoteBuilder() {
       if (!result) return li;                       // not a curtain
       if (result.blocked) {
         blocked.push(li.location || li.description || 'Unnamed line');
+        // Still blocked — the material cost is the one that can't be worked
+        // out. The making and fitting can, off the width, drop and heading, so
+        // they go on rather than being lost with the half that couldn't.
+        if (result.labourPriced) {
+          labourOnly++;
+          return { ...li, labourCost: result.labourCost };
+        }
         return li;
       }
       costed++;
@@ -1601,7 +1619,10 @@ export default function QuoteBuilder() {
     if (costed === 0 && blocked.length === 0) {
       showToast('info', 'No curtain lines with a width and drop to cost.');
     } else if (blocked.length) {
-      showToast('info', `Costed ${costed} curtain${costed === 1 ? '' : 's'}. ${blocked.length} need${blocked.length === 1 ? 's' : ''} a heading or track first: ${blocked.slice(0, 3).join(', ')}${blocked.length > 3 ? '…' : ''}`);
+      const labourNote = labourOnly
+        ? `. ${labourOnly === blocked.length ? (labourOnly === 1 ? 'It has' : 'They have') : `${labourOnly} of them have`} their labour costed — only the material cost is left to type.`
+        : '';
+      showToast('info', `Costed ${costed} curtain${costed === 1 ? '' : 's'}. ${blocked.length} need${blocked.length === 1 ? 's' : ''} a heading or track first: ${blocked.slice(0, 3).join(', ')}${blocked.length > 3 ? '…' : ''}${labourNote}`);
     } else {
       showToast('success', `Costed ${costed} curtain line${costed === 1 ? '' : 's'} from their measurements.`);
     }
@@ -2478,7 +2499,10 @@ export default function QuoteBuilder() {
                     <AlertCircle size={15} className="mt-0.5 shrink-0 text-amber-600" />
                     <div className="text-xs text-amber-900">
                       <p className="font-semibold">
-                        {stuck.length} curtain{stuck.length === 1 ? '' : 's'} can&rsquo;t be priced yet.
+                        {stuck.length} curtain{stuck.length === 1 ? '' : 's'}{' '}
+                        {stuck.every(x => x.costed.labourPriced)
+                          ? <>need{stuck.length === 1 ? 's' : ''} a material cost.</>
+                          : <>can&rsquo;t be priced yet.</>}
                       </p>
                       <p className="mt-0.5 text-amber-800">
                         {stuck.map(x => x.li.location || x.li.productNameSnapshot || 'Unnamed line').join(', ')}

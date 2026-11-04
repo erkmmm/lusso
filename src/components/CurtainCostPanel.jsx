@@ -158,22 +158,41 @@ export default function CurtainCostPanel({ item, set }) {
     Math.abs((Number(item.unitCostPrice) || 0) - materialsCost) < 0.005 &&
     Math.abs((Number(item.labourCost)    || 0) - labourCost)    < 0.005 &&
     totalCost > 0;
+  const labourApplied =
+    Math.abs((Number(item.labourCost) || 0) - labourCost) < 0.005 && labourCost > 0;
+
+  /**
+   * Snapshot of how the figure was reached, so the quote still explains itself
+   * after the rate card moves. `appliedTo` says which halves were taken: a
+   * labour-only apply leaves the material cost hand-typed, and recording the
+   * calculator's materialsCost as though it were used would misreport the line.
+   */
+  const breakdown = (appliedTo) => ({
+    calculatedAt: new Date().toISOString(),
+    appliedTo,
+    fabric: { mode: fabric.mode, fullness: fabric.fullness, meterage: fabric.meterage, pricePerM: fabric.pricePerM, cost: fabric.cost },
+    making: { drops: making.drops, cost: making.cost },
+    lining: lining.enabled ? { meterage: lining.meterage, cost: lining.cost } : null,
+    track:  { type: track.type, method: track.method, cost: track.cost },
+    fitting:{ cost: fitting.cost },
+    extras: result.extras,
+    materialsCost, labourCost, totalCost,
+  });
 
   const apply = () => {
     set('unitCostPrice', Math.round(materialsCost * 100) / 100);
     set('labourCost',    Math.round(labourCost    * 100) / 100);
-    // Snapshot so the quote records how this price was reached, even if rates
-    // change later.
-    set('curtainCostBreakdown', {
-      calculatedAt: new Date().toISOString(),
-      fabric: { mode: fabric.mode, fullness: fabric.fullness, meterage: fabric.meterage, pricePerM: fabric.pricePerM, cost: fabric.cost },
-      making: { drops: making.drops, cost: making.cost },
-      lining: lining.enabled ? { meterage: lining.meterage, cost: lining.cost } : null,
-      track:  { type: track.type, method: track.method, cost: track.cost },
-      fitting:{ cost: fitting.cost },
-      extras: result.extras,
-      materialsCost, labourCost, totalCost,
-    });
+    set('curtainCostBreakdown', breakdown('both'));
+  };
+
+  // Making + fitting on their own. The labour is worked out from the width, the
+  // drop and the heading — the fabric's $/m never enters it — so someone
+  // pricing the materials their own way (a fabric that isn't in the library, a
+  // supplier quote, a number they've negotiated) should not also have to work
+  // out the making and the fitting by hand.
+  const applyLabour = () => {
+    set('labourCost', Math.round(labourCost * 100) / 100);
+    set('curtainCostBreakdown', breakdown('labour'));
   };
 
   return (
@@ -322,6 +341,23 @@ export default function CurtainCostPanel({ item, set }) {
           {applied ? <span className="flex items-center gap-1"><Check size={12} /> Applied to line</span>
                    : 'Apply to Material + Labour cost'}
         </button>
+        {/* The labour on its own. Offered only once the full apply isn't the
+            answer — materials priced some other way, or a fabric this panel is
+            costing off the rate-card default — because the making and the
+            fitting are right either way and are nobody's idea of fun to work
+            out by hand. */}
+        {!applied && labourCost > 0 && (
+          <button
+            type="button" onClick={applyLabour}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              labourApplied ? 'bg-teal-100 text-teal-700'
+                            : 'border border-teal-300 bg-white text-teal-700 hover:bg-teal-50'
+            }`}
+          >
+            {labourApplied ? <span className="flex items-center gap-1"><Check size={12} /> Labour applied</span>
+                           : `Labour only (${money(labourCost)})`}
+          </button>
+        )}
         <span className="text-[11px] text-slate-400">
           Sell price still comes from the line's margin.
         </span>
