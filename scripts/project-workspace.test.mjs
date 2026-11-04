@@ -33,3 +33,9 @@ test('next actions target the real quote and ignore supplier test drafts',()=>{
  const draft={...sent,id:'draft',status:'Draft',grandTotal:0};assert.equal(projectNextAction(job,[],[draft]).ai,true);
  draft.grandTotal=500;assert.equal(projectNextAction(job,[],[draft]).label,'Review draft quote');
 });
+
+test('delivery and closed stages take precedence over old draft quotes',()=>{
+ const draft={...sent,status:'Draft',grandTotal:500};
+ for(const status of ['Ordered','Received','Installed','Rework'])assert.equal(projectNextAction({...job,status},[],[draft]).section,'delivery');
+ for(const status of ['Cancelled','Lost'])assert.equal(projectNextAction({...job,status},[],[draft]).section,'overview');
+});

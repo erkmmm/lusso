@@ -22,6 +22,8 @@ export function quoteGroups(quotes){
 export function projectNextAction(job,sheets,quotes){
  const real=quotes.filter(q=>!q.deletedAt && !isTestQuote(q));
  if(job.status==='Completed')return {label:'Review completed project',section:'delivery',reason:'Installation and project history'};
+ if(['Cancelled','Lost'].includes(job.status))return {label:'Review project',section:'overview',reason:job.status};
+ if(['Approved','Ordered','Received','Installation Booked','Installed','Rework'].includes(job.status))return {label:'Manage orders & installation',section:'delivery',reason:job.status};
  if(real.some(q=>q.status==='Accepted'))return {label:'Manage orders & installation',section:'delivery',reason:'Quote accepted'};
  const drafts=real.filter(isDraftQuote);
  if(drafts.length){const draft=drafts.sort((a,b)=>Date.parse(b.updatedAt || b.createdAt)-Date.parse(a.updatedAt || a.createdAt))[0];return Number(draft.grandTotal)>0?{label:'Review draft quote',section:'quote',reason:'Draft ready for review',quoteId:draft.id}:{label:'Get supplier prices',section:'quote',reason:'Draft needs pricing',quoteId:draft.id,ai:true};}
@@ -30,7 +32,7 @@ export function projectNextAction(job,sheets,quotes){
  if(!sheets.length)return {label:'Add measurements',section:'measurements',reason:'No measure sheet yet'};
  const current=[...sheets].sort((a,b)=>Date.parse(b.updatedAt || b.createdAt)-Date.parse(a.updatedAt || a.createdAt))[0];
  const missing=(current.lineItems || []).filter(l=>openingGaps(l).pricing.length);
- if(!current.lineItems?.length || missing.length)return {label:'Finish missing details',section:'measurements',reason:`${missing.length || 1} opening${missing.length===1?'':'s'} need details`,sheetId:current.id};
+ if(!current.lineItems?.length || missing.length)return {label:'Finish missing details',section:'measurements',reason:`${missing.length || 1} opening${missing.length===1?' needs':'s need'} details`,sheetId:current.id};
  return {label:'Prepare quote',section:'quote',quoteId:'new',reason:'Measurements recorded'};
 }
 export function projectWorkspaceUrl(jobId,patch={}){const p=new URLSearchParams();for(const [k,v] of Object.entries(patch))if(v!==undefined && v!==null && v!=='')p.set(k,String(v));return `/jobs/${jobId}${p.size?'?'+p:''}`;}
