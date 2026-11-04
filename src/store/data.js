@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { customerQuoteAddressUpdates } from '../lib/customerQuoteAddress';
 import { withMotorisationAccessories, resolveAccessoryPresets } from '../lib/motorisationAccessories';
 import { effectiveSelectedIds } from '../lib/quoteSelection';
 import { lsGet, lsSet, lsVersion } from './storage';
@@ -629,6 +630,9 @@ export const findOrCreateCustomer = (data) => {
 export const saveCustomer = (customer) => {
   const customers = getCustomers();
   const idx = customers.findIndex(c => c.id === customer.id);
+  const addressUpdates = customerQuoteAddressUpdates(
+    get('lusso_quotes') || [], customers[idx], customer, new Date().toISOString(),
+  );
   if (idx >= 0) {
     customers[idx] = { ...customer, updatedAt: new Date().toISOString() };
   } else {
@@ -636,6 +640,14 @@ export const saveCustomer = (customer) => {
   }
   set('lusso_customers', customers);
   db.saveCustomer(customers[customers.findIndex(c => c.id === customer.id)]);
+  if (addressUpdates.length) {
+    const byId = new Map(addressUpdates.map(quote => [quote.id, quote]));
+    set('lusso_quotes', (get('lusso_quotes') || []).map(quote => byId.get(quote.id) || quote));
+    // Use the existing write-ahead/outbox path, including retries when offline.
+    // Do not run saveQuote: an address correction must not recost curtains,
+    // change accepted selections or advance project status.
+    for (const quote of addressUpdates) db.saveQuote(quote);
+  }
 };
 
 // ─── Jobs ─────────────────────────────────────────────────────────────────────
