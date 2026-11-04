@@ -1,5 +1,8 @@
+import OpeningWorkspace from '../components/takeoff/OpeningWorkspace';
+import { OPENING_FIELDS, linkedSheetLine, WIDTH_BASES } from '../lib/openingWorkflow';
+import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import {
   Upload, Ruler, Crosshair, Hand, ZoomIn, ZoomOut, Maximize2, RotateCw, RotateCcw,
@@ -10,7 +13,7 @@ import {
 } from 'lucide-react';
 import {
   getJob, getCustomer, getTakeoffByJob, saveTakeoff, deleteTakeoff,
-  applyTakeoffToMeasureSheet, takeoffRows, getProductTypes, addActivity,
+  applyTakeoffToMeasureSheet, takeoffRows, getProductTypes, addActivity, getMeasureSheetByJob, getMeasureSheetsByJob, saveOpeningChanges,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import { useSidebar } from '../contexts/SidebarContext';
@@ -64,6 +67,10 @@ const snapshotOf = (t) => ({
 export default function JobTakeoff() {
   const { id: jobId } = useParams();
   const navigate = useNavigate();
+  const [searchParams]=useSearchParams();
+  const requestedPage=Number(searchParams.get('page')) || 1;
+  const requestedOpening=searchParams.get('opening') || '';
+  const requestedPlacement=searchParams.get('place') || null;
   const { displayName = '' } = useProfile() || {};
 
   // This page is a canvas with a panel either side of it — ask for the nav rail
@@ -79,7 +86,7 @@ export default function JobTakeoff() {
   // ── Core state ──────────────────────────────────────────────────────────
   const [takeoff, setTakeoff] = useState(() => getTakeoffByJob(jobId) || null);
   const [pdf, setPdf] = useState(null);
-  const [pageNumber, setPageNumber] = useState(1);
+  const [pageNumber, setPageNumber] = useState(requestedPage);
   const [pageBaseSize, setPageBaseSize] = useState(null); // {width,height} @ scale 1
   const [status, setStatus] = useState('init');           // init|empty|loading|ready|error
   const [errorMsg, setErrorMsg] = useState('');
@@ -99,7 +106,11 @@ export default function JobTakeoff() {
   const viewRef = useRef({ scale: 1, tx: 0, ty: 0 });
 
   // interaction
-  const [mode, setMode] = useState('pan');                // pan|window|measure|chain|arc|calibrate|count|verify
+  const dataTick = useDataRefresh();
+  const [openingEditor, setOpeningEditor] = useState(null);
+  const [placementLineId, setPlacementLineId] = useState(requestedPlacement);
+  const [newWidthBasis, setNewWidthBasis] = useState('Opening width');
+  const [mode, setMode] = useState(requestedPlacement?'window':'pan');                // pan|window|measure|chain|arc|calibrate|count|verify
   // Points placed so far in the measurement being drawn. A straight line commits
   // at two; a bay run keeps going until you finish it; an arc takes three.
   const [draftPoints, setDraftPoints] = useState([]);
@@ -107,7 +118,7 @@ export default function JobTakeoff() {
   const cancelDraft = useCallback(() => { setDraftPoints([]); setHover(null); }, []);
   const [snapOn, setSnapOn] = useState(true);
   const [orthoOn, setOrthoOn] = useState(false);          // sticky ortho (Shift also forces it)
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [selectedIds, setSelectedIds] = useState(() => new Set(requestedOpening?[requestedOpening]:[]));
   const [activeHandle, setActiveHandle] = useState(1);
   const [sheetOpen, setSheetOpen] = useState(false);      // panel tray on small screens
   // Client view: the same takeoff presented for the person paying for it.
@@ -215,7 +226,7 @@ export default function JobTakeoff() {
         if (!alive) return;
         setTakeoff(t);
         setPdf(doc);
-        setPageNumber(1);
+        setPageNumber(Math.min(Math.max(1,requestedPage),doc.numPages));
         setStatus('ready');
         firstPageSize.current = await getPageBaseSize(doc, 1);
         isPlanCached(t.filePath).then(v => alive && setOfflineReady(v));
@@ -225,7 +236,7 @@ export default function JobTakeoff() {
       }
     })();
     return () => { alive = false; };
-  }, [jobId, reloadKey]);
+  }, [jobId, reloadKey, requestedPage]);
 
   /**
    * Adopt the stored takeoff when it changes underneath us.
@@ -484,12 +495,24 @@ export default function JobTakeoff() {
   }, [view, rotation, pageBaseSize]);
 
   const pageMeasurements = useMemo(
-    () => (takeoff?.measurements || []).filter(m => m.pageNumber === pageNumber),
-    [takeoff, pageNumber]
+    () => {
+      const lines=getMeasureSheetsByJob(jobId).flatMap(s=>s.lineItems || []);
+      return (takeoff?.measurements || []).filter(m => m.pageNumber === pageNumber).map(m=>{const line=linkedSheetLine(lines,m.itemId);return line?{...m,label:line.location}:m;});
+    },
+    // Store changes refresh the canonical room labels without rewriting plan geometry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [takeoff, pageNumber, jobId, dataTick]
   );
   const pageItems = useMemo(
-    () => (takeoff?.items || []).filter(i => i.pageNumber === pageNumber),
-    [takeoff, pageNumber]
+    () => {
+      const lines=getMeasureSheetsByJob(jobId).flatMap(s=>s.lineItems || []);
+      return (takeoff?.items || []).filter(i => i.pageNumber === pageNumber).map(i=>{
+        const line=linkedSheetLine(lines,i.id,i.sheetLineId);
+        return line ? {...i,...Object.fromEntries(OPENING_FIELDS.filter(k=>line[k]!==undefined).map(k=>[k,line[k]])),label:line.location,dropMm:line.dropMm,finishedWidthMm:line.widthMm,sheetLineId:line.id} : i;
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [takeoff, pageNumber, jobId, dataTick]
   );
   const pageMarkers = useMemo(
     () => (takeoff?.markers || []).filter(k => k.pageNumber === pageNumber),
@@ -793,10 +816,10 @@ export default function JobTakeoff() {
 
     if (mode === 'verify') { setDoorCheck({ measuredMm: measured.lengthMm }); setMode('window'); return; }
     if (dropTarget) {
-      addMeasurement(points, kind, measured, { tag: 'Drop', itemId: dropTarget });
-      // A measured drop supersedes anything typed, or the typed value would
-      // keep shadowing it on the sheet.
-      updateItem(dropTarget, { dropMm: '' });
+      addMeasurement(points, kind, measured, { tag: 'Height', itemId: dropTarget });
+      // This is a height reference, not an approved finished drop.
+      // Clear only the takeoff's old typed shortcut; retain the canonical sheet size.
+      updateItem(dropTarget, { dropMm: '' }, { planOnly:true });
       setDropTarget(null);
       setMode('window');
       return;
@@ -985,6 +1008,8 @@ export default function JobTakeoff() {
       pageNumber,
       label,
       quantity: 1,
+      sheetLineId: placementLineId || null,
+      widthBasis: newWidthBasis,
       productTypeId: '',
       productNameSnapshot: '',
       fixing: '',
@@ -994,10 +1019,11 @@ export default function JobTakeoff() {
       status: 'plan',
       // A bay is usually one blind per facet. Default that on when the shape
       // says so — it's the common case, and it's one toggle to undo.
-      splitSegments: kind === 'chain' && (measured.segments?.length || 0) > 1,
+      splitSegments: !placementLineId && kind === 'chain' && (measured.segments?.length || 0) > 1,
       createdAt: new Date().toISOString(),
     };
-    const m = newMeasurement(points, kind, measured, { tag: 'Width', itemId: item.id });
+    const m = newMeasurement(points, kind, measured, { tag: 'Width', itemId: item.id, basis:newWidthBasis });
+    setPlacementLineId(null);
     persist({
       ...t,
       items: [...(t.items || []), item],
@@ -1144,8 +1170,15 @@ export default function JobTakeoff() {
     setSelectedIds(prev => { const n = new Set(prev); n.delete(mid); return n; });
   }
 
-  function updateItem(itemId, patch) {
+  function updateItem(itemId, patch, { planOnly=false } = {}) {
     const t = takeoffRef.current;
+    const item=(t.items || []).find(i=>i.id===itemId);
+    const sheet=getMeasureSheetsByJob(jobId).find(s=>linkedSheetLine(s.lineItems || [],itemId,item?.sheetLineId)) || getMeasureSheetByJob(jobId);
+    const line=linkedSheetLine(sheet?.lineItems || [],itemId,item?.sheetLineId);
+    if(line && !planOnly) {
+      const changes=Object.fromEntries(Object.entries(patch).filter(([key])=>OPENING_FIELDS.includes(key) || ['label','dropMm'].includes(key)).map(([key,value])=>[key==='label'?'location':key,value]));
+      if(Object.keys(changes).length) saveOpeningChanges(jobId,{[line.id]:changes},{sheetId:sheet.id,baseUpdatedAt:sheet.updatedAt,by:displayName,source:'Takeoff opening panel'});
+    }
     persist({ ...t, items: t.items.map(i => i.id === itemId ? { ...i, ...patch } : i) }, { debounce: true });
   }
 
@@ -1389,6 +1422,7 @@ export default function JobTakeoff() {
         uploadedAt: t.revisionUploadedAt || t.createdAt,
         supersededAt: new Date().toISOString(),
         uploadedBy: displayName,
+        snapshot:snapshotOf(t),
         note,
       };
       const keep = carry && prompt.compatible;
@@ -1444,6 +1478,7 @@ export default function JobTakeoff() {
         supersededAt: new Date().toISOString(),
         uploadedBy: displayName,
         note: 'rolled back',
+        snapshot:snapshotOf(t),
       };
       persist({
         ...t,
@@ -1451,6 +1486,7 @@ export default function JobTakeoff() {
         fileName: rev.fileName,
         pageCount: rev.pageCount,
         revision: rev.revision,
+        ...(rev.snapshot || {}),
         revisionUploadedAt: new Date().toISOString(),
         revisions: [...(t.revisions || []).filter(r => r.id !== rev.id), current],
       }, { record: false });
@@ -1791,6 +1827,10 @@ export default function JobTakeoff() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {takeoff && !clientView && <button onClick={()=>{flushSave();setOpeningEditor({});}} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white">Openings & specs</button>}
+
+          {!clientView && ['window','chain','arc'].includes(mode) && <label className="hidden sm:block text-xs text-slate-500">Measuring<select aria-label="New width measurement basis" value={newWidthBasis} onChange={e=>setNewWidthBasis(e.target.value)} className="ml-1 rounded border border-slate-200 bg-white p-1">{WIDTH_BASES.map(b=><option key={b}>{b}</option>)}</select></label>}
+          {placementLineId && <button className="text-xs text-amber-700" onClick={()=>setPlacementLineId(null)}>Cancel opening placement</button>}
           {!online && (
             <span className="text-[11px] text-amber-600 flex items-center gap-1" title="Working offline — changes sync when you're back">
               <WifiOff size={12} /> <span className="hidden sm:inline">Offline</span>
@@ -2165,7 +2205,8 @@ export default function JobTakeoff() {
               productTypes={productTypes}
               roomSuggestions={roomSuggestions}
               estimate={estimate}
-              onUpdateItem={updateItem}
+              onReviewItem={id=>{flushSave();setOpeningEditor({itemId:id});}}
+            onUpdateItem={updateItem}
               onRemoveItem={removeItem}
               onUpdateMeasurement={updateMeasurement}
               onRemoveMeasurement={removeMeasurement}
@@ -2179,7 +2220,6 @@ export default function JobTakeoff() {
               onSetArcRadius={setArcRadius}
               onFlipArc={flipArc}
               focusLabelId={focusLabel}
-            focusSelectsAll={focusSelects}
               focusSelectsAll={focusSelects}
               onLabelFocused={clearLabelFocus}
               photoBusyId={photoBusyId}
@@ -2219,6 +2259,7 @@ export default function JobTakeoff() {
             productTypes={productTypes}
             roomSuggestions={roomSuggestions}
             estimate={estimate}
+            onReviewItem={id=>{flushSave();setOpeningEditor({itemId:id});}}
             onUpdateItem={updateItem}
             onRemoveItem={removeItem}
             onUpdateMeasurement={updateMeasurement}
@@ -2283,6 +2324,7 @@ export default function JobTakeoff() {
           onConfirm={confirmReplacement}
         />
       )}
+      {openingEditor && <div className="fixed inset-0 z-[90] bg-slate-900/40 p-2 sm:p-6"><div role="dialog" aria-modal="true" aria-label="Opening specifications" className="mx-auto h-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-4 sm:p-6"><OpeningWorkspace jobId={jobId} takeoff={takeoff} pdf={pdf} initialItemId={openingEditor.itemId} onClose={()=>setOpeningEditor(null)} onJump={(page,itemId)=>{setOpeningEditor(null);setPageNumber(page);if(itemId)selectOne(itemId);}} onPlace={lineId=>{setOpeningEditor(null);setPlacementLineId(lineId);setMode('window');toast('Choose the correct plan page, then draw the width for this existing opening.');}}/></div></div>}
       {revisionsOpen && takeoff && (
         <RevisionsDialog takeoff={takeoff} onCancel={() => setRevisionsOpen(false)} onRestore={restoreRevision} />
       )}

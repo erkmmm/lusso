@@ -28,6 +28,13 @@ function PrintView({ sheet, customer, job }) {
   };
 
   const ALL_SPECS = [
+    ['Operation requested', v=>v.operationRequest],
+    ['Layers', v=>v.curtainLayers],
+    ['Track arrangement', v=>v.trackArrangement],
+    ['Track installation', v=>v.trackRecess],
+    ['Manual track', v=>v.manualTrackType],
+    ['Automated track', v=>v.automatedTrackType],
+    ['Motor power', v=>v.motorPower],
     ['Control',        v => v.control],
     ['Return',         v => v.returnSide],
     ['Motor Side',     v => v.motorSide],
@@ -416,6 +423,7 @@ export default function MeasureSheetView() {
                 <Briefcase size={13} /> View Job
               </button>
             )}
+            {sheet.jobId && <button onClick={()=>navigate(`/measure-sheets/${id}/openings`)} className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white">Openings & specs</button>}
             <button onClick={() => navigate(`/measure-sheets/${id}/edit`)}
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
               <Edit3 size={13} /> Edit

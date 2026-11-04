@@ -171,7 +171,7 @@ export default function ItemPanel({
   pageNumber, items, measurements, markers, allCounts,
   selectedIds, onSelect, hasScale, onCalibrate,
   productTypes, roomSuggestions, estimate,
-  onUpdateItem, onRemoveItem, onUpdateMeasurement, onRemoveMeasurement,
+  onReviewItem, onUpdateItem, onRemoveItem, onUpdateMeasurement, onRemoveMeasurement,
   onUpdateMarker, onRemoveMarker, onMeasureDrop, onNameFromPlan, roomCount = 0,
   onAddPhoto, onRemovePhoto,
   onSetArcRadius, onFlipArc, focusLabelId, focusSelectsAll, onLabelFocused, photoBusyId,
@@ -272,6 +272,7 @@ export default function ItemPanel({
             selected={selectedIds.has(item.id) || measurements.some(m => m.itemId === item.id && selectedIds.has(m.id))}
             productTypes={productTypes}
             roomSuggestions={roomSuggestions}
+            onReview={()=>onReviewItem?.(item.id)}
             onSelect={() => onSelect(item.id)}
             onUpdate={patch => onUpdateItem(item.id, patch)}
             onRemove={() => onRemoveItem(item.id)}
@@ -365,13 +366,13 @@ function PanelHandle({ onPage, total, noun, open, onToggle }) {
 /** One window: its label, size, product and photos. */
 function ItemRow({
   item, measurements, selected, productTypes, roomSuggestions,
-  onSelect, onUpdate, onRemove, onMeasureDrop, onNameFromPlan, onAddPhoto, onRemovePhoto,
+  onSelect, onReview, onUpdate, onRemove, onMeasureDrop, onNameFromPlan, onAddPhoto, onRemovePhoto,
   onSetArcRadius, onFlipArc, focusLabel, focusSelectsAll, onLabelFocused, photoBusy,
 }) {
   const [expanded, setExpanded] = useState(false);
   const labelRef = useLabelFocus(focusLabel, onLabelFocused, focusSelectsAll);
   const width = [...measurements].reverse().find(m => m.tag === 'Width');
-  const drop  = [...measurements].reverse().find(m => m.tag === 'Drop' || m.tag === 'Height');
+  const drop  = [...measurements].reverse().find(m => m.tag === 'Drop');
   const dropMm = item.dropMm ?? (drop ? Math.round(drop.lengthMm) : '');
   const widthFlag = width ? plausibility('Width', width.lengthMm) : 'ok';
   const dropFlag = dropMm ? plausibility('Drop', dropMm) : 'ok';
@@ -446,6 +447,9 @@ function ItemRow({
 
       {open && (
         <div className="px-3 pb-3 space-y-2.5" onClick={e => e.stopPropagation()}>
+          {onReview && <button onClick={onReview} className="w-full rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-800">All specifications, sizes & references</button>}
+          {item.operationRequest && <p className="text-xs text-slate-500">{item.curtainLayers} · {item.operationRequest} · {item.trackRecess}</p>}
+          {item.finishedWidthMm && <p className="text-xs text-slate-500">Sheet width: {fmtMm(item.finishedWidthMm)} · plan line: {fmtMm(width?.lengthMm)}</p>}
           {roomSuggestions?.length > 0 && !item.label && (
             <div className="flex flex-wrap gap-1">
               <span className="text-[11px] text-slate-400 flex items-center gap-1"><MapPin size={10} /> nearby:</span>
@@ -471,7 +475,7 @@ function ItemRow({
                 />
                 <button
                   onClick={onMeasureDrop}
-                  title="Measure the drop on an elevation sheet"
+                  title="Measure a height reference on an elevation sheet"
                   className="px-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 flex-shrink-0"
                 >
                   <Ruler size={14} />

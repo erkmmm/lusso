@@ -1,3 +1,4 @@
+import { expandOperationAlternatives, openingQuoteSnapshot } from '../lib/openingWorkflow';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -31,6 +32,7 @@ function msLineToQuoteLine(msLi, idx, rates, pricedItems) {
   let desc = parts.join(' ');
   if (suffs.length) desc = desc ? `${desc} with ${suffs.join(', ')}` : suffs.join(', ');
   if (desc) desc = desc.charAt(0).toUpperCase() + desc.slice(1);
+  if (msLi.operationAlternative) desc = `${msLi.operationAlternative} — ${desc}`;
 
   // Curtains are costed from their measurements by the calculator that replaced
   // the Excel workbook; everything else comes across with cost blank to price by
@@ -57,6 +59,8 @@ function msLineToQuoteLine(msLi, idx, rates, pricedItems) {
 
   return {
     id: uuidv4(),
+    openingId: msLi.id,
+    ...openingQuoteSnapshot(msLi),
     sourceMeasureSheetItemId: msLi.id,        // snapshot link back to source
     // What the line is on the quote, decided in the room rather than
     // reconstructed from memory later. A line with alternatives is a "choose
@@ -441,6 +445,7 @@ export default function QuoteFromJob() {
       const selectedLines = lineItems
         .filter(li => checkedIds.has(li.id))
         .map(patched)
+        .flatMap(expandOperationAlternatives)
         .map((li, i) => msLineToQuoteLine(li, i, curtainRates, fabricLib));
 
       const quote = createQuote({
@@ -618,6 +623,7 @@ export default function QuoteFromJob() {
         </Card>
       )}
 
+      {selectedSheet && <button type="button" onClick={()=>navigate(`/measure-sheets/${selectedSheet.id}/openings`)} className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">Review grouped missing information & opening specifications</button>}
       <QuoteGaps
         lines={gapLines}
         totals={totals}

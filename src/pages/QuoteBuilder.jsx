@@ -1,3 +1,4 @@
+import { expandOperationAlternatives, openingQuoteSnapshot } from '../lib/openingWorkflow';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
@@ -208,6 +209,8 @@ function msItemToQuoteLine(msLi, sortOrder, rates, pricedItems) {
 
   return {
     ...EMPTY_LINE_ITEM(),
+    openingId:msLi.id,
+    ...openingQuoteSnapshot(msLi),
     measureSheetLineItemId: msLi.id,
     // What the line is on the quote, decided in the room rather than
     // reconstructed from memory later. A line with alternatives is a "choose
@@ -221,7 +224,7 @@ function msItemToQuoteLine(msLi, sortOrder, rates, pricedItems) {
     location: msLi.location || '',
     productTypeId: msLi.productTypeId || '',
     productNameSnapshot: msLi.productNameSnapshot || msLi.productType || '',
-    description: genClientDesc(msLi),
+    description: `${msLi.operationAlternative?msLi.operationAlternative+' — ':''}${genClientDesc(msLi)}`,
     quantity: msLi.quantity || 1,
     widthMm: msLi.widthMm || msLi.width || '',
     dropMm: msLi.dropMm || msLi.drop || '',
@@ -1551,7 +1554,7 @@ export default function QuoteBuilder() {
     if (ms?.lineItems?.length) {
       const curtainRates = getCurtainRates();
       const fabricLib   = getPricedItems();
-      lineItems = ms.lineItems.map((li, i) => msItemToQuoteLine(li, i, curtainRates, fabricLib));
+      lineItems = ms.lineItems.flatMap(expandOperationAlternatives).map((li, i) => msItemToQuoteLine(li, i, curtainRates, fabricLib));
     }
 
     const expiry = new Date();
@@ -1830,6 +1833,7 @@ export default function QuoteBuilder() {
       // link would have two quote lines claiming the same measure-sheet item.
       copy.measureSheetLineItemId = null;
       copy.sourceMeasureSheetItemId = null;
+      copy.openingId = null;
 
       // Only re-letter where the room already uses letters. Lettering a room
       // that does not would rename every line in it — including the "choose

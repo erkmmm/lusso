@@ -4,7 +4,7 @@ import { Sparkles, Loader, CheckCircle2, AlertCircle, ArrowLeft, ExternalLink } 
 import { getJob, getCustomer, getMeasureSheetsByJob } from '../store/data';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { macQuoteAssistant } from '../lib/macQuoteAssistant';
-import AssistantSheetGaps from '../components/AssistantSheetGaps';
+import OpeningWorkspace from '../components/takeoff/OpeningWorkspace';
 import { supplierForLine } from '../lib/quoteAssistant';
 
 const field = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400';
@@ -71,7 +71,7 @@ export default function QuoteAssistant() {
 
     {current && <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-4" aria-live="polite">
       <div className="flex items-center gap-2">{current.status === 'running' ? <Loader size={18} className="animate-spin text-amber-600" /> : <CheckCircle2 size={18} className="text-amber-700" />}<h2 className="font-semibold text-slate-900">{labels[current.status] || current.status}</h2></div>
-      {current.status === 'needs_input' && activeSheet && <AssistantSheetGaps key={activeSheet.id} sheet={activeSheet} onSaved={setApprovedSheet} onEditing={editing => { setSheetEditing(editing); if (editing) setApprovedSheet(null); }} />}
+      {current.status === 'needs_input' && activeSheet && <OpeningWorkspace key={activeSheet.id} jobId={jobId} sheetId={activeSheet.id} onSaved={setApprovedSheet} onEditing={editing => { setSheetEditing(editing); if (editing) setApprovedSheet(null); }} />}
       {current.status === 'needs_input'
         ? <details className="rounded-lg border border-slate-100 p-3"><summary className="cursor-pointer text-sm font-medium text-slate-600">Plan findings and other decisions</summary><RequestNotes current={current} /></details>
         : <RequestNotes current={current} />}

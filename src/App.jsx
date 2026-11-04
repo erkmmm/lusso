@@ -93,6 +93,7 @@ import Employees from './pages/Employees';
 import EmployeeProfile from './pages/EmployeeProfile';
 import QuoteFromJob from './pages/QuoteFromJob';
 import QuoteAssistant from './pages/QuoteAssistant';
+import OpeningReview from './pages/OpeningReview';
 import NewJob from './pages/NewJob';
 import PendingApproval from './pages/PendingApproval';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
@@ -421,6 +422,7 @@ function AppRoutes() {
               <Route path="/measure-sheets/:id/purchase-order" element={<PurchaseOrder />} />
               <Route path="/purchase-orders"            element={<PurchaseOrders />} />
               <Route path="/purchase-orders/:id"        element={<PurchaseOrderView />} />
+              <Route path="/measure-sheets/:id/openings" element={<OpeningReview />} />
               <Route path="/measure-sheets/:id/edit"    element={<EditMeasureSheetRoute />} />
               <Route path="/measure-sheets/recover"     element={<SheetRecovery />} />
               <Route path="/installers"                 element={<Installers />} />

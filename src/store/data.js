@@ -1,3 +1,4 @@
+import { planUpdate, editOpening, isScopePlaceholder, OPENING_FIELDS } from '../lib/openingWorkflow';
 import { v4 as uuidv4 } from 'uuid';
 import { customerQuoteAddressUpdates } from '../lib/customerQuoteAddress';
 import { withMotorisationAccessories, resolveAccessoryPresets } from '../lib/motorisationAccessories';
@@ -1232,7 +1233,7 @@ export const deleteTakeoff = (id) => {
 
 // Tags that map onto a measure-sheet dimension column.
 // Drop and Height are the same physical dimension for window furnishings.
-const TAKEOFF_TAG_COLUMN = { Width: 'widthMm', Drop: 'dropMm', Height: 'dropMm' };
+const TAKEOFF_TAG_COLUMN = { Width: 'widthMm', Drop: 'dropMm', Height: 'heightMm' };
 
 /**
  * What a non-straight measurement has to tell the workroom.
@@ -1279,7 +1280,7 @@ export const takeoffRows = (takeoff) => {
     // Last one placed wins — re-measuring a window should replace, not stack.
     const pickM = (...tags) => [...mine].reverse().find(m => tags.includes(m.tag) && m.lengthMm != null) || null;
     const widthM = pickM('Width');
-    const dropM  = pickM('Drop', 'Height');
+    const dropM  = pickM('Drop');
     const dropMm = item.dropMm !== '' && item.dropMm != null
       ? Math.round(Number(item.dropMm))
       : (dropM ? Math.round(dropM.lengthMm) : '');
@@ -1288,6 +1289,9 @@ export const takeoffRows = (takeoff) => {
     const notes = [item.notes, shape].filter(Boolean).join(' · ');
     const common = {
       itemId: item.id,
+      sheetLineId: item.sheetLineId || null,
+      widthBasis:item.widthBasis || '',
+      heightMm:pickM('Height')?.lengthMm || '',
       quantity: Math.max(1, Number(item.quantity) || 1),
       productTypeId: item.productTypeId || '',
       productNameSnapshot: item.productNameSnapshot || '',
@@ -1303,6 +1307,8 @@ export const takeoffRows = (takeoff) => {
       widthM.segments.forEach((seg, i) => {
         rows.push({
           ...common,
+          sheetLineId:i===0?common.sheetLineId:null,
+          inheritSheetLineId:common.sheetLineId,
           key: `item:${item.id}#${i}`,
           label: `${label} — ${i + 1} of ${widthM.segments.length}`,
           widthMm: Math.round(seg),
@@ -1327,7 +1333,7 @@ export const takeoffRows = (takeoff) => {
     const base = (m.label || '').trim() || `Unlabelled ${++unlabelled}`;
     let key = base, n = 1;
     while (groups.has(key) && groups.get(key)[col] !== '') { n += 1; key = `${base} (${n})`; }
-    if (!groups.has(key)) groups.set(key, { widthMm: '', dropMm: '', pageNumber: m.pageNumber, notes: '' });
+    if (!groups.has(key)) groups.set(key, { widthMm: '', dropMm: '', heightMm:'', pageNumber: m.pageNumber, notes: '' });
     groups.get(key)[col] = Math.round(m.lengthMm);
     const shape = describeShape(m);
     if (shape) groups.get(key).notes = [groups.get(key).notes, shape].filter(Boolean).join(' · ');
@@ -1341,6 +1347,7 @@ export const takeoffRows = (takeoff) => {
       label,
       widthMm: vals.widthMm,
       dropMm: vals.dropMm,
+      heightMm: vals.heightMm || '',
       quantity: 1,
       productTypeId: '',
       productNameSnapshot: '',
@@ -1368,11 +1375,15 @@ export const takeoffRows = (takeoff) => {
  */
 export const applyTakeoffToMeasureSheet = (takeoff) => {
   if (!takeoff?.jobId) return;
-
-  const rows = takeoffRows(takeoff);
+  const rows=takeoffRows(takeoff);
+  const sheets=getMeasureSheetsByJob(takeoff.jobId).filter(s=>!s.deletedAt);
+  if(!sheets.length) { reconcileTakeoffSheet(takeoff,rows,null);return; }
+  const owner=row=>sheets.find(s=>(s.lineItems || []).some(l=>(row.sheetLineId && l.id===row.sheetLineId) || (row.inheritSheetLineId && l.id===row.inheritSheetLineId) || (l.source==='takeoff' && l.takeoffGroup===row.key))) || sheets[0];
+  for(const sheet of sheets) reconcileTakeoffSheet(takeoff,rows.filter(row=>owner(row).id===sheet.id),sheet);
+};
+function reconcileTakeoffSheet(takeoff,rows,suppliedSheet) {
   const byKey = new Map(rows.map(r => [r.key, r]));
-
-  let sheet = getMeasureSheetByJob(takeoff.jobId);
+  let sheet = suppliedSheet;
   const hadTakeoffRows = !!sheet?.lineItems?.some(li => li.source === 'takeoff');
 
   // Nothing to map and no prior takeoff rows to clean up → leave the sheet alone
@@ -1407,8 +1418,9 @@ export const applyTakeoffToMeasureSheet = (takeoff) => {
   }
 
   const items = [...(sheet.lineItems || [])];
-  // Drop takeoff rows whose group no longer exists.
-  const kept = items.filter(li => li.source !== 'takeoff' || byKey.has(li.takeoffGroup));
+  // Retain removed openings and their specifications for explicit scope review.
+  const kept = items.map(li => li.source === 'takeoff' && !byKey.has(li.takeoffGroup)
+    ? { ...li, takeoffRemoved: true } : { ...li });
   let order = kept.reduce((max, li) => Math.max(max, li.sortOrder ?? 0), -1);
 
   // Only fill a field the takeoff actually knows about.
@@ -1418,50 +1430,59 @@ export const applyTakeoffToMeasureSheet = (takeoff) => {
   };
 
   for (const row of rows) {
-    const existing = kept.find(li => li.source === 'takeoff' && li.takeoffGroup === row.key);
+    const existing = kept.find(li => (row.sheetLineId && li.id === row.sheetLineId) || (li.source === 'takeoff' && li.takeoffGroup === row.key));
     if (existing) {
-      existing.location = row.label;
-      existing.takeoffItemId = row.itemId;
-      existing.takeoffPage = row.pageNumber;
-      // Plan figures are always recorded, even when the site measure owns the
-      // live dimensions — that pair is what the variance check compares.
-      existing.planWidthMm = row.widthMm;
-      existing.planDropMm  = row.dropMm;
-      if (existing.measureSource !== 'site') {
-        existing.widthMm = row.widthMm;
-        existing.dropMm  = row.dropMm;
-        existing.measureSource = 'plan';
+      const reviewed = planUpdate(existing, row, { fileName:takeoff.fileName, page:row.pageNumber, revision:takeoff.revision || 1 });
+      const previousRevision=existing.planRevision || 1;
+      const currentRevision=takeoff.revision || 1;
+      if(previousRevision!==currentRevision) reviewed.planRevisionReview={from:previousRevision,to:currentRevision,fileName:takeoff.fileName,page:row.pageNumber};
+      reviewed.planRevision=currentRevision;
+      Object.assign(existing, reviewed, { source:'takeoff', takeoffGroup:row.key, planHeightMm:row.heightMm || existing.planHeightMm || '' });
+      if(!existing.widthBasis && row.widthBasis) existing.widthBasis=row.widthBasis;
+      // The sheet owns specifications. Plan fields can fill blanks, never replace an answer.
+      for (const field of ['productTypeId','productNameSnapshot','fixing','control']) {
+        if (!existing[field]) fill(existing, field, row[field]);
       }
-      fill(existing, 'quantity', row.quantity > 1 ? row.quantity : undefined);
-      fill(existing, 'productTypeId', row.productTypeId);
-      fill(existing, 'productNameSnapshot', row.productNameSnapshot);
-      fill(existing, 'fixing', row.fixing);
-      fill(existing, 'control', row.control);
     } else {
+      const parent=row.inheritSheetLineId?items.find(l=>l.id===row.inheritSheetLineId):null;
+      const inherited=parent?Object.fromEntries(OPENING_FIELDS.filter(f=>!['quantity','notes'].includes(f)).map(f=>[f,parent[f]])):{};
       kept.push({
+        ...inherited,
         id: uuidv4(),
-        location: row.label,
+        location: row.label, lastPlanLabel:row.label,
         productTypeId: row.productTypeId, productNameSnapshot: row.productNameSnapshot,
         quantity: row.quantity, widthMm: row.widthMm, dropMm: row.dropMm,
         fabricColour: '', control: row.control, returnSide: '', motorSide: '', fixing: row.fixing,
         heading: '', attachedLining: false, liningFabricColour: '', hem: '',
         trackColour: '', baseBarColour: '', baseBarType: '', chainColour: '',
         notes: row.notes || 'From plan takeoff',
-        source: 'takeoff', takeoffGroup: row.key,
+        ...inherited,
+        source: 'takeoff', planRevision:takeoff.revision || 1, takeoffGroup: row.key,
         takeoffItemId: row.itemId, takeoffPage: row.pageNumber,
         // Scaled off a drawing until someone stands in the room and says
         // otherwise. `orderGate` below is what enforces that.
         measureSource: 'plan',
-        planWidthMm: row.widthMm, planDropMm: row.dropMm,
+        planWidthMm: row.widthMm, planDropMm: row.dropMm, planHeightMm:row.heightMm || '', widthBasis:row.widthBasis || '',
         sortOrder: ++order,
       });
     }
   }
 
-  // allowShrink: this deliberately drops takeoff rows whose group no longer
-  // exists on the plan, which can legitimately be most of the sheet. Without it
-  // the content guard would refuse a re-sync after a big plan change.
-  saveMeasureSheet({ ...sheet, lineItems: kept }, { allowShrink: true });
+  // Never shrink the sheet merely because a plan or markup was replaced.
+  saveMeasureSheet({ ...sheet, lineItems: kept }, { baseUpdatedAt:sheet.updatedAt });
+};
+
+/** Explicit reviewed edits, shared by takeoff and quote preparation. */
+export const saveOpeningChanges = (jobId, changes, { baseUpdatedAt = null, by, source = 'Opening review', newLines = [], internalNote = '', sheetId = null } = {}) => {
+  const sheet = sheetId ? getMeasureSheet(sheetId) : getMeasureSheetByJob(jobId);
+  if (sheet?.deletedAt) throw new Error('This measure sheet has been deleted.');
+  if (sheet && sheet.jobId!==jobId) throw new Error('This sheet belongs to another project.');
+  if (!sheet) throw new Error('Create a measure sheet before editing opening specifications.');
+  if (baseUpdatedAt && Date.parse(sheet.updatedAt) > Date.parse(baseUpdatedAt)) return { ...sheet, __conflict:true };
+  const lineItems = (sheet.lineItems || []).map(line => changes[line.id] ? editOpening(line, changes[line.id], {by,source}) : line);
+  const known = new Set(lineItems.map(l => l.id));
+  for (const line of newLines) if (!known.has(line.id)) { lineItems.push(line); known.add(line.id); }
+  return saveMeasureSheet({ ...sheet, lineItems, internalNotes:[sheet.internalNotes,internalNote].filter(Boolean).join('\n\n') }, { baseUpdatedAt:baseUpdatedAt || sheet.updatedAt });
 };
 
 // ─── Check measure ──────────────────────────────────────────────────────────
@@ -1472,7 +1493,7 @@ export const applyTakeoffToMeasureSheet = (takeoff) => {
 
 /** Is this line still carrying plan-scaled dimensions? */
 export const isPlanEstimate = (li) =>
-  li?.source === 'takeoff' && li?.measureSource !== 'site';
+  Boolean(isScopePlaceholder(li) || li?.planRevisionReview || li?.takeoffRemoved || Object.keys(li?.pendingPlanChanges || {}).length || ((li?.source === 'takeoff' || li?.measureSource === 'plan') && li?.measureSource !== 'site'));
 
 /**
  * Difference between the plan figures and the confirmed site measure.
