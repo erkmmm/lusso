@@ -5,11 +5,11 @@ export const SUPPLIER_PORTALS = {
   FHA: 'https://online.fhawholesale.com.au/Order/PurchaseOrderHeaderDetails',
 };
 export const QUOTING_RULES = [
-  'Use BUZ for roller blinds and FHA for curtains; keep supplier work as quotations or drafts.',
+  'Use BUZ for roller blinds and FHA for curtains; keep supplier work as quotations or drafts. For FHA curtains, obtain complete configured supplier line prices in FHA, not standalone fabric prices or in-house fabric/making estimates.',
   'CRM material and labour costs are ex GST. Preserve existing margins and manual selling-price overrides.',
   'Include remotes and chargers in BUZ. Lusso adds them automatically: exclude their component costs from covering costs to avoid double counting.',
   'A motorised room uses one remote: 15-channel for multiple blinds, 1-channel for one. Battery chargers: one per four blinds rounded up; none for 240V.',
-  'Use existing curtain making and fitting rates. Never reuse a previous job’s labour, discount, dimensions or fabric choices as defaults.',
+  'For FHA-supplied curtains, add existing local fitting rates only for work not included by FHA. Do not add in-house fabric, making, lining or track costs already supplied and charged by FHA. Never reuse another job’s labour, discount, dimensions or fabrics as defaults.',
   'Confirm heading, lining, fixing, opening direction and bracket arrangement. Use recorded plan dimensions as provisional quoting estimates; finished-size calculations and manufacturing allowances are not required for a plan quote. Keep a site check-measure hold before ordering. Do not infer specifications from another job.',
   'Only attach customer-approved warranty/care documents for the actual selected product. Do not invent warranty eligibility.',
 ];
