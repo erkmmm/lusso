@@ -1,6 +1,9 @@
+import {useProjectWorkspace} from '../contexts/ProjectWorkspaceContext';
+import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import { expandOperationAlternatives, openingQuoteSnapshot } from '../lib/openingWorkflow';
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+
 import { v4 as uuidv4 } from 'uuid';
 import {
   FileText, CheckSquare, Square,
@@ -180,15 +183,16 @@ function ItemRow({ item, checked, onToggle, idx, gapCount = 0 }) {
 }
 
 export default function QuoteFromJob() {
-  const { jobId } = useParams();
-  const navigate  = useNavigate();
+  const { jobId } = useProjectParams();
+  const navigate  = useProjectNavigate();
   const { profile, displayName } = useProfile() || {};
 
-  const job      = useMemo(() => getJob(jobId), [jobId]);
-  const customer = useMemo(() => getCustomer(job?.customerId), [job]);
-  const sheets   = useMemo(() => getMeasureSheetsByJob(jobId), [jobId]);
+  const workspace=useProjectWorkspace();
+  const job=getJob(jobId);
+  const customer=getCustomer(job?.customerId);
+  const sheets=getMeasureSheetsByJob(jobId).filter(s=>!s.deletedAt);
 
-  const [selectedSheetId, setSelectedSheetId] = useState(() => sheets[0]?.id || null);
+  const [selectedSheetId, setSelectedSheetId] = useState(() => sheets.find(s=>s.id===workspace?.state?.sheet)?.id || sheets[0]?.id || null);
   const [checkedIds, setCheckedIds] = useState(new Set());
   const [creating, setCreating]     = useState(false);
   const [error, setError]           = useState('');
@@ -454,7 +458,7 @@ export default function QuoteFromJob() {
         measureSheetId:  selectedSheet?.id || null,
         title:           `${customer?.name || 'Quote'} — ${job.title || 'Quote'}`,
         salesperson:     displayName || '',
-        siteAddress:     customer?.address || '',
+        siteAddress:     job.siteAddress || customer?.address || '',
         lineItems:       selectedLines,
         status:          'Draft',
       });
@@ -462,7 +466,7 @@ export default function QuoteFromJob() {
       // Await Supabase confirmation, then go straight to the edit page.
       await syncNow([{ table: 'quotes', record: quote }]);
 
-      addActivity({ jobId: job.id, type: 'quote_sent', message: `Quote ${quote.quoteNumber} created`, user: displayName || 'System' });
+      addActivity({ jobId: job.id, type: 'quote_created', message: `Quote ${quote.quoteNumber} created`, user: displayName || 'System' });
 
       navigate(`/quotes/${quote.id}/edit`);
     } catch (err) {

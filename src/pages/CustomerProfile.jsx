@@ -1,6 +1,9 @@
+import {useProjectSearchParams} from '../contexts/ProjectWorkspaceContext';
+import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+
 import {
   Phone, Mail, MapPin, Edit3, Save, X, Briefcase,
   MessageSquare, Plus, ChevronRight, Link2, Link2Off,
@@ -22,8 +25,8 @@ import NotesFeed from '../components/NotesFeed';
 
 export default function CustomerProfile() {
   const collapse = useCollapsedSections('customer');
-  const { id } = useParams();
-  const navigate = useNavigate();
+  const { id } = useProjectParams();
+  const navigate = useProjectNavigate();
   // Read directly so re-renders always get fresh data
   const customer = getCustomer(id);
   const [editing, setEditing] = useState(false);
@@ -32,7 +35,7 @@ export default function CustomerProfile() {
   // ?edit=phone|email — the comms tab links here when the customer is missing
   // the detail it needs. The form opens on that field whether the page is being
   // mounted fresh or is already on screen, so it's derived, not stored.
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useProjectSearchParams();
   const editParam  = searchParams.get('edit');
   const focusField = ['phone', 'email'].includes(editParam) ? editParam : null;
   const formOpen   = editing || !!focusField;

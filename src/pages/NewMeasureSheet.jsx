@@ -1,9 +1,12 @@
+import {useProjectSearchParams} from '../contexts/ProjectWorkspaceContext';
+import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import MeasureSheetOpeningCard from '../components/MeasureSheetOpeningCard';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 import useFullscreenPane from '../hooks/useFullscreenPane';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+
 import { v4 as uuidv4 } from 'uuid';
 import {
   Plus, Save, Send, CheckCircle2,
@@ -469,17 +472,17 @@ const clearDraftPin = (customerId, jobId) => {
 
 /**
  * `routeSheetId` / `routeSearch` come from useLocation() in App.jsx and are the
- * authoritative answer to "which sheet is this page for". useParams and
- * useSearchParams are kept only as a fallback: React Router was verifiably
+ * authoritative answer to "which sheet is this page for". useProjectParams and
+ * useProjectSearchParams are kept only as a fallback: React Router was verifiably
  * handing this component a STALE match when navigating between the new and edit
  * routes, which made an existing sheet render as one blank line.
  */
-export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch = undefined }) {
-  const { id: paramId }  = useParams();
-  const [searchParamsHook] = useSearchParams();
+export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch = undefined,embedded=false,layout:workspaceLayout,onSubmitted }) {
+  const { id: paramId }  = useProjectParams();
+  const [searchParamsHook] = useProjectSearchParams();
   const id = routeSheetId !== undefined ? routeSheetId : paramId;
   const searchParams = routeSearch !== undefined ? new URLSearchParams(routeSearch) : searchParamsHook;
-  const navigate         = useNavigate();
+  const navigate         = useProjectNavigate();
   const isEdit           = Boolean(id && id !== 'new');
   // Active salespeople from Supabase — pending/suspended never appear here
   const { salespeople: staff } = useActiveSalespeople();
@@ -585,7 +588,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   const [submittedJobId, setSubmittedJobId] = useState(null);
   const [submitting,     setSubmitting]     = useState(false);
   const [errors,         setErrors]         = useState({});
-  const [openSections,   setOpenSections]   = useState({ customer: true, job: true, items: true, notes: true });
+  const [openSections,   setOpenSections]   = useState({ customer: !embedded, job: !embedded, items: true, notes: true });
   // Specs start CLOSED. Eleven dropdowns stood open on every card, which is
   // most of why one opening ran to 1300px on a phone — and a new line already
   // inherits its specs from the one before, so on a normal house they never
@@ -602,12 +605,13 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   // brand-new sheet opens its one line, because there's nothing to review.
   const [openCards, setOpenCards] = useState(
     () => new Set(sheet.lineItems.length === 1 ? sheet.lineItems.map(li => li.id) : []));
-  const [itemLayout,     setItemLayout]     = useState(readLayout);
+  const [itemLayout,     setItemLayout]     = useState(()=>workspaceLayout || readLayout());
   const [tableFull, setTableFull] = useState(false);
   // 100dvh + safe-area insets + a locked page behind it. A bare `fixed inset-0`
   // is not fullscreen on a phone — see the hook.
   useFullscreenPane(tableFull);
   // Only an explicit switch is remembered — see LAYOUT_KEY.
+  useEffect(()=>{if(workspaceLayout)setItemLayout(workspaceLayout);},[workspaceLayout]);
   const chooseLayout = (l) => {
     setItemLayout(l);
     try { localStorage.setItem(LAYOUT_KEY, l); } catch { /* private mode */ }
@@ -1220,7 +1224,8 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
           ...relinked.map(record => ({ table: 'tasks', record })),
         ]);
         // Navigate back to wherever this sheet lives
-        navigate(updatedSheet.jobId ? `/jobs/${updatedSheet.jobId}` : `/measure-sheets/${updatedSheet.id}`);
+        if(embedded)onSubmitted?.(updatedSheet);
+        else navigate(updatedSheet.jobId ? `/jobs/${updatedSheet.jobId}` : `/measure-sheets/${updatedSheet.id}`);
         return;
       }
 
@@ -1262,6 +1267,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       }
 
       setSheet(finalSheet);
+      if(embedded)onSubmitted?.(finalSheetWithJob);
       clearDraftPin(prelinkedCustomerId, prelinkedJobId); // this piece of work is done
       setSubmittedJobId(prelinkedJobId || job?.id || null);
       setSubmitted(true);
@@ -1313,13 +1319,13 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   const lastLineHasSpecs = !!lastLine?.productTypeId || !!lastLine?.productNameSnapshot;
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-40 lg:pb-24">
+    <div className={embedded?'space-y-5 pb-28':'p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-40 lg:pb-24'}>
 
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
           <h1 className="text-xl font-bold text-slate-900">
-            {isEdit ? 'Edit Measure Sheet' : prelinkedCustomer ? `New Measure Sheet — ${prelinkedCustomer.name}` : 'New Measure Sheet'}
+            {embedded?'Openings & measurements':isEdit ? 'Edit Measure Sheet' : prelinkedCustomer ? `New Measure Sheet — ${prelinkedCustomer.name}` : 'New Measure Sheet'}
           </h1>
           <div className="flex items-center gap-3 mt-0.5">
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${sheet.status === 'Submitted' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>

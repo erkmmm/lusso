@@ -1,3 +1,4 @@
+import {isTestQuote} from './projectWorkspace';
 /**
  * The one way a quote goes to a customer.
  *
@@ -38,6 +39,7 @@ import { sendQuoteEmail } from './email';
 export async function deliverQuote(quoteOrId, { user = 'Admin', logActivity = false } = {}) {
   const quote = typeof quoteOrId === 'string' ? getQuote(quoteOrId) : quoteOrId;
   if (!quote) throw new Error('Quote not found.');
+  if(isTestQuote(quote))throw new Error('This is a TEST draft. Test quotes cannot be sent to a customer.');
 
   const customer = getCustomer(quote.customerId);
   if (!customer?.email) {
@@ -88,6 +90,7 @@ export async function deliverQuote(quoteOrId, { user = 'Admin', logActivity = fa
 export async function deliverQuoteFollowUp(quoteOrId, { user = 'Admin' } = {}) {
   const quote = typeof quoteOrId === 'string' ? getQuote(quoteOrId) : quoteOrId;
   if (!quote) throw new Error('Quote not found.');
+  if(isTestQuote(quote))throw new Error('This is a TEST draft. Test quotes cannot be sent to a customer.');
 
   // Only a quote that actually went out can be followed up — chasing a draft
   // would send the customer their first sight of it under a "following up"
@@ -154,6 +157,7 @@ export async function deliverQuoteFollowUp(quoteOrId, { user = 'Admin' } = {}) {
 export async function resendQuote(quoteOrId, { user = 'Admin' } = {}) {
   const quote = typeof quoteOrId === 'string' ? getQuote(quoteOrId) : quoteOrId;
   if (!quote) throw new Error('Quote not found.');
+  if(isTestQuote(quote))throw new Error('This is a TEST draft. Test quotes cannot be sent to a customer.');
 
   if (!quote.sentAt) {
     throw new Error(

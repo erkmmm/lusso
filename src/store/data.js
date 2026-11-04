@@ -1,6 +1,7 @@
+import {isTestQuote} from '../lib/projectWorkspace';
 import { planUpdate, editOpening, isScopePlaceholder, OPENING_FIELDS } from '../lib/openingWorkflow';
 import { v4 as uuidv4 } from 'uuid';
-import { customerQuoteAddressUpdates } from '../lib/customerQuoteAddress';
+import { customerQuoteAddressUpdates,projectQuoteAddressUpdates } from '../lib/customerQuoteAddress';
 import { withMotorisationAccessories, resolveAccessoryPresets } from '../lib/motorisationAccessories';
 import { effectiveSelectedIds } from '../lib/quoteSelection';
 import { lsGet, lsSet, lsVersion } from './storage';
@@ -632,7 +633,7 @@ export const saveCustomer = (customer) => {
   const customers = getCustomers();
   const idx = customers.findIndex(c => c.id === customer.id);
   const addressUpdates = customerQuoteAddressUpdates(
-    get('lusso_quotes') || [], customers[idx], customer, new Date().toISOString(),
+    get('lusso_quotes') || [], customers[idx], customer, new Date().toISOString(),getJobs(),
   );
   if (idx >= 0) {
     customers[idx] = { ...customer, updatedAt: new Date().toISOString() };
@@ -770,6 +771,7 @@ export const saveJob = (job) => {
   const jobs = getJobs();
   const idx = jobs.findIndex(j => j.id === job.id);
   const now = new Date().toISOString();
+  const addresses=projectQuoteAddressUpdates(get('lusso_quotes') || [],jobs[idx],job,getCustomer(job.customerId),now);
   if (idx >= 0) {
     jobs[idx] = { ...job, updatedAt: now };
   } else {
@@ -777,6 +779,7 @@ export const saveJob = (job) => {
   }
   set('lusso_jobs', jobs);
   db.saveJob(jobs[jobs.findIndex(j => j.id === job.id)]);
+  if(addresses.length){const byId=new Map(addresses.map(q=>[q.id,q]));set('lusso_quotes',(get('lusso_quotes') || []).map(q=>byId.get(q.id) || q));for(const q of addresses)db.saveQuote(q);}
 };
 
 // Hide one or more jobs from the "needing installation scheduling" reminder
@@ -3746,6 +3749,7 @@ export const sendQuote = (quoteId, user = 'System') => {
   const idx  = list.findIndex(q => q.id === quoteId);
   if (idx < 0) return;
   const q = list[idx];
+  if(isTestQuote(q))throw new Error('TEST quotes cannot be published or sent.');
   const now = new Date().toISOString();
   const firstSend = !q.sentAt;
   // Anchor the expiry countdown to the send date (not the draft's created date),
@@ -3905,6 +3909,7 @@ export const reactivateQuote = (quoteId, days = null, user = 'System') => {
   const idx  = list.findIndex(q => q.id === quoteId);
   if (idx < 0) return null;
   const q = list[idx];
+  if(isTestQuote(q))throw new Error('TEST quotes cannot be published or sent.');
   const now = new Date().toISOString();
   const validityDays = days || getQuoteSettings().defaultExpiryDays || 30;
   const exp = new Date(now);

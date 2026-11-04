@@ -1,6 +1,8 @@
+import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+
 import { format, parseISO } from 'date-fns';
 import {
   Edit3, Save, X, User, MapPin, Phone, Mail,
@@ -64,9 +66,9 @@ const TABS = [
   { id: 'comms',     label: 'Comms',            icon: MessageSquare },
 ];
 
-export default function JobProfile() {
-  const { id }   = useParams();
-  const navigate = useNavigate();
+export default function JobProfile({embedded=false,tab:controlledTab,onTabChange}) {
+  const { id }   = useProjectParams();
+  const navigate = useProjectNavigate();
   const { salespeople } = useActiveSalespeople();
 
   const job          = getJob(id);
@@ -86,7 +88,9 @@ export default function JobProfile() {
   const quotes       = getQuotesByJob(id).filter(q => !q.deletedAt);
   const openNotes    = getNotes({ jobId: id }).filter(isTaskOpen).length;
 
-  const [activeTab,   setActiveTab]   = useState('overview');
+  const [localTab,setLocalTab]=useState('overview');
+  const activeTab=controlledTab || localTab;
+  const setActiveTab=tab=>{if(onTabChange)onTabChange(tab);else setLocalTab(tab);};
   const [editingNotes,  setEditingNotes]  = useState(false);
   const [notesValue,    setNotesValue]    = useState(job?.internalNotes || '');
   const [editingJob,    setEditingJob]    = useState(false);
@@ -129,10 +133,10 @@ export default function JobProfile() {
   const acceptedQuote = quotes.find(q => q.status === 'Accepted');
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-4">
+    <div className={embedded?'space-y-4':'p-4 sm:p-6 max-w-6xl mx-auto space-y-4'}>
 
       {/* ── Compact header ─────────────────────────────────────────────── */}
-      <Card className="overflow-hidden">
+      {!embedded && <Card className="overflow-hidden">
         <div className="p-5">
           <div className="flex flex-col lg:flex-row lg:items-start gap-4">
             {/* Avatar + name — both open the customer, since the sidebar's
@@ -283,7 +287,7 @@ export default function JobProfile() {
             );
           })}
         </div>
-      </Card>
+      </Card>}
 
       {/* ── Tab: Overview ─────────────────────────────────────────────── */}
       {activeTab === 'overview' && (

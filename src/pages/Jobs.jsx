@@ -1,3 +1,4 @@
+import {projectNextAction,projectWorkspaceUrl,isTestQuote} from '../lib/projectWorkspace';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -6,7 +7,7 @@ import {
   Search, Filter, Plus, Briefcase, SlidersHorizontal, X,
   Trash2, CheckSquare, Square, AlertTriangle, ChevronDown, Check,
 } from 'lucide-react';
-import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, STATUS_COLORS, updateJobStatus, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob, getQuotes, computeQuoteTotals, searchMatch } from '../store/data';
+import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, STATUS_COLORS, updateJobStatus, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob, getQuotes, getMeasureSheets, computeQuoteTotals, searchMatch } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -192,7 +193,10 @@ export default function Jobs() {
   // Recompute when quotes actually change, not just their count: a price edit
   // bumps the quote's updatedAt, so a signature of (count + newest updatedAt)
   // catches edits while staying cheap enough to skip on every keystroke.
-  const quotes = getQuotes();
+  const quotes = getQuotes().filter(q=>!q.deletedAt && !isTestQuote(q));
+  const workspaceSheets=new Map(),workspaceQuotes=new Map();
+  for(const sheet of getMeasureSheets()){if(sheet.deletedAt)continue;if(!workspaceSheets.has(sheet.jobId))workspaceSheets.set(sheet.jobId,[]);workspaceSheets.get(sheet.jobId).push(sheet);}
+  for(const quote of quotes){if(!workspaceQuotes.has(quote.jobId))workspaceQuotes.set(quote.jobId,[]);workspaceQuotes.get(quote.jobId).push(quote);}
   const quotesSig = quotes.length + '|' + quotes.reduce((m, q) => ((q.updatedAt || '') > m ? q.updatedAt : m), '');
   // Jobs whose quote has already lapsed — the Lapsed card links here.
   const lapsedJobIds = useMemo(() => {
@@ -520,6 +524,7 @@ export default function Jobs() {
           {visible.map(job => {
             const customer  = customers.find(c => c.id === job.customerId);
             const isSelected = selected.has(job.id);
+            const next=projectNextAction(job,workspaceSheets.get(job.id) || [],workspaceQuotes.get(job.id) || []);
             return (
               <div key={job.id}
                 className={`group bg-white rounded-xl border shadow-sm flex items-stretch hover:shadow-md transition-all ${
@@ -558,8 +563,10 @@ export default function Jobs() {
                       {(job.urgency === 'High' || job.urgency === 'Urgent') && <UrgencyBadge urgency={job.urgency} />}
                     </div>
                     <p className="text-xs text-slate-500 truncate mt-0.5">
-                      {customer?.address || 'No details yet'}
+                      {job.siteAddress || customer?.address || 'No installation address yet'}
                     </p>
+                    <p className="mt-1 text-xs font-medium text-amber-700">{next.reason}</p>
+                    <button type="button" className="mt-1 text-xs text-slate-600 underline" onClick={e=>{e.stopPropagation();navigate(projectWorkspaceUrl(job.id,{section:next.section,...(next.quoteId?{quote:next.quoteId}:{}),...(next.sheetId?{sheet:next.sheetId}:{}),...(next.ai?{ai:'1'}:{})}));}}>{next.label} →</button>
                     <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-400 min-w-0">
                       <span className="font-medium text-slate-400 flex-shrink-0">{job.jobNumber}</span>
                       {job.assignedStaff && <><span className="text-slate-300">·</span><span className="truncate">{job.assignedStaff}</span></>}

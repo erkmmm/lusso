@@ -1,10 +1,13 @@
+import {useProjectSearchParams} from '../contexts/ProjectWorkspaceContext';
+import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import {AnimatePresence,animate,motion,useReducedMotion} from 'motion/react';
 import {openingFocusView} from '../lib/planSpecFocus';
 import OpeningWorkspace from '../components/takeoff/OpeningWorkspace';
 import { OPENING_FIELDS, linkedSheetLine, WIDTH_BASES } from '../lib/openingWorkflow';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+
 import { v4 as uuidv4 } from 'uuid';
 import {
   Upload, Ruler, Crosshair, Hand, ZoomIn, ZoomOut, Maximize2, RotateCw, RotateCcw,
@@ -67,9 +70,9 @@ const snapshotOf = (t) => ({
 });
 
 export default function JobTakeoff() {
-  const { id: jobId } = useParams();
-  const navigate = useNavigate();
-  const [searchParams]=useSearchParams();
+  const { id: jobId } = useProjectParams();
+  const navigate = useProjectNavigate();
+  const [searchParams]=useProjectSearchParams();
   const requestedPage=Number(searchParams.get('page')) || 1;
   const requestedOpening=searchParams.get('opening') || '';
   const requestedPlacement=searchParams.get('place') || null;

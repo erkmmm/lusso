@@ -1773,3 +1773,9 @@ html .quote-question-fields select[aria-required="true"] {
   border-color: #f59e0b !important;
   box-shadow: 0 0 0 2px rgb(245 158 11 / 25%) !important;
 }
+
+.project-workspace [hidden] { display: none !important; }
+.project-workspace .project-embedded > div { max-width: none; padding-left: 0; padding-right: 0; }
+.project-tool-drawer { animation: project-drawer-in .22s cubic-bezier(.16,1,.3,1) backwards; }
+@keyframes project-drawer-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .project-tool-drawer { animation: none; } }

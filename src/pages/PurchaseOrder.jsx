@@ -1,5 +1,7 @@
+import {useProjectSearchParams} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams, useSearchParams, Link } from 'react-router-dom';
+import {Link} from 'react-router-dom';
 import { format, addDays } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronDown, Ruler, AlertTriangle, History } from 'lucide-react';
@@ -70,8 +72,8 @@ const SIDE_WORD = { L: 'left', R: 'right' };
 
 export default function PurchaseOrder() {
   const collapse = useCollapsedSections('purchaseorder');
-  const { id } = useParams();
-  const [searchParams] = useSearchParams();
+  const { id } = useProjectParams();
+  const [searchParams] = useProjectSearchParams();
   const { displayName = '' } = useProfile() || {};
 
   // ── The measure sheet, editable from here ─────────────────────────────────

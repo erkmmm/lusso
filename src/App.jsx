@@ -1,3 +1,5 @@
+import ProjectWorkspace from './pages/ProjectWorkspace';
+import ProjectRouteRedirect from './components/project/ProjectRouteRedirect';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import { initStore } from './store/data';
@@ -20,7 +22,6 @@ import ThemeBackground from './components/ThemeBackground';
 import Dashboard from './pages/Dashboard';
 import Today from './pages/Today';
 import Jobs from './pages/Jobs';
-import JobProfile from './pages/JobProfile';
 import JobTakeoff from './pages/JobTakeoff';
 import ContentQueue from './pages/ContentQueue';
 import Content from './pages/Content';
@@ -402,9 +403,9 @@ function AppRoutes() {
               <Route path="/today"                      element={<Today />} />
               <Route path="/jobs"                       element={<Jobs />} />
               <Route path="/jobs/new"                   element={<NewJob />} />
-              <Route path="/jobs/:id"                   element={<JobProfile />} />
-              <Route path="/jobs/:id/takeoff"           element={<JobTakeoff />} />
-              <Route path="/jobs/:id/install"           element={<InstallView />} />
+              <Route path="/jobs/:id"                   element={<ProjectWorkspace />} />
+              <Route path="/jobs/:id/takeoff"           element={<ProjectRouteRedirect kind="job"><JobTakeoff /></ProjectRouteRedirect>} />
+              <Route path="/jobs/:id/install"           element={<ProjectRouteRedirect kind="job"><InstallView /></ProjectRouteRedirect>} />
               <Route path="/content"                    element={<Content />} />
               <Route path="/campaigns"                  element={<Campaigns />} />
               {/* The page was "Email" before it could also send SMS. Kept so
@@ -416,14 +417,14 @@ function AppRoutes() {
               <Route path="/customers/duplicates"      element={<DuplicateCustomers />} />
               <Route path="/customers/:id"              element={<CustomerProfile />} />
               <Route path="/measure-sheets"             element={<MeasureSheets />} />
-              <Route path="/measure-sheets/new"         element={<NewMeasureSheetRoute />} />
-              <Route path="/measure-sheets/import"      element={<ImportMeasureSheet />} />
-              <Route path="/measure-sheets/:id"         element={<MeasureSheetView />} />
-              <Route path="/measure-sheets/:id/purchase-order" element={<PurchaseOrder />} />
+              <Route path="/measure-sheets/new"         element={<ProjectRouteRedirect kind="newSheet"><NewMeasureSheetRoute /></ProjectRouteRedirect>} />
+              <Route path="/measure-sheets/import"      element={<ProjectRouteRedirect kind="newSheet"><ImportMeasureSheet /></ProjectRouteRedirect>} />
+              <Route path="/measure-sheets/:id"         element={<ProjectRouteRedirect kind="sheet"><MeasureSheetView /></ProjectRouteRedirect>} />
+              <Route path="/measure-sheets/:id/purchase-order" element={<ProjectRouteRedirect kind="sheet"><PurchaseOrder /></ProjectRouteRedirect>} />
               <Route path="/purchase-orders"            element={<PurchaseOrders />} />
-              <Route path="/purchase-orders/:id"        element={<PurchaseOrderView />} />
-              <Route path="/measure-sheets/:id/openings" element={<OpeningReview />} />
-              <Route path="/measure-sheets/:id/edit"    element={<EditMeasureSheetRoute />} />
+              <Route path="/purchase-orders/:id"        element={<ProjectRouteRedirect kind="order"><PurchaseOrderView /></ProjectRouteRedirect>} />
+              <Route path="/measure-sheets/:id/openings" element={<ProjectRouteRedirect kind="sheet"><OpeningReview /></ProjectRouteRedirect>} />
+              <Route path="/measure-sheets/:id/edit"    element={<ProjectRouteRedirect kind="sheet"><EditMeasureSheetRoute /></ProjectRouteRedirect>} />
               <Route path="/measure-sheets/recover"     element={<SheetRecovery />} />
               <Route path="/installers"                 element={<Installers />} />
               <Route path="/installers/:id"             element={<InstallerProfile />} />
@@ -443,11 +444,11 @@ function AppRoutes() {
                   written before the link fix land on Today, which lists what's due. */}
               <Route path="/notes"                      element={<Navigate to="/today" replace />} />
               <Route path="/quotes/import"                     element={<ImportQuotes />} />
-              <Route path="/quotes/new"                        element={<QuoteBuilder />} />
-              <Route path="/jobs/:jobId/quote-assistant" element={<QuoteAssistant />} />
-              <Route path="/quotes/new-from-job/:jobId"        element={<QuoteFromJob />} />
-              <Route path="/quotes/:id"                        element={<QuoteView />} />
-              <Route path="/quotes/:id/edit"                   element={<QuoteBuilder />} />
+              <Route path="/quotes/new"                        element={<ProjectRouteRedirect kind="quote"><QuoteBuilder /></ProjectRouteRedirect>} />
+              <Route path="/jobs/:jobId/quote-assistant" element={<ProjectRouteRedirect kind="newQuote"><QuoteAssistant /></ProjectRouteRedirect>} />
+              <Route path="/quotes/new-from-job/:jobId"        element={<ProjectRouteRedirect kind="newQuote"><QuoteFromJob /></ProjectRouteRedirect>} />
+              <Route path="/quotes/:id"                        element={<ProjectRouteRedirect kind="quote"><QuoteView /></ProjectRouteRedirect>} />
+              <Route path="/quotes/:id/edit"                   element={<ProjectRouteRedirect kind="quote"><QuoteBuilder /></ProjectRouteRedirect>} />
               <Route path="/employees"                  element={<Employees />} />
               <Route path="/employees/:id"              element={<EmployeeProfile />} />
               <Route path="/users"                      element={<Navigate to="/employees" replace />} />

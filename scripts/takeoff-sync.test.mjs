@@ -11,6 +11,12 @@ test('actual takeoff reconciliation protects sheet answers, removals, heights an
  try{
   const data=await vite.ssrLoadModule('/src/store/data.js');
   const job='fixture-job';
+  const trial={id:'test-quote',jobId:job,title:'TEST – supplier trial',status:'Draft',lineItems:[],grandTotal:0};
+  data.saveQuote(trial);
+  assert.throws(()=>data.sendQuote(trial.id),/TEST/);
+  assert.throws(()=>data.reactivateQuote(trial.id),/TEST/);
+  assert.equal(data.getQuote(trial.id).status,'Draft');
+
   const sheet={id:'s1',jobId:job,updatedAt:'2026-11-04T00:00:00Z',lineItems:[{id:'a',source:'takeoff',takeoffGroup:'item:i1',takeoffItemId:'i1',location:'Office',lastPlanLabel:'Office',widthMm:2200,planWidthMm:2000,dropMm:2955,measureSource:'plan',fabricColour:'Chosen sheer',fixing:'Ceiling',notes:'Keep this note',quantity:1}]};
   data.saveMeasureSheet(sheet);
   const takeoff={id:'t1',jobId:job,fileName:'Plan.pdf',revision:1,items:[{id:'i1',pageNumber:1,label:'Office',quantity:1,fixing:'Face'}],measurements:[{id:'w',itemId:'i1',tag:'Width',lengthMm:2000,pageNumber:1},{id:'h',itemId:'i1',tag:'Height',lengthMm:3000,pageNumber:2}]};

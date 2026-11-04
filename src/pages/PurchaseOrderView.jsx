@@ -1,3 +1,5 @@
+import {useProjectWorkspace,useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 /**
  * A purchase order as it went out.
  *
@@ -6,7 +8,7 @@
  * to "what was on the PO we sent?" must not change with it.
  */
 import { useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import {Link} from 'react-router-dom';
 import { useGoBack } from '../lib/navTrail';
 import { format, parseISO } from 'date-fns';
 import {
@@ -28,9 +30,11 @@ const when = (iso) => {
 };
 
 export default function PurchaseOrderView() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const goBack   = useGoBack('/purchase-orders');
+  const { id } = useProjectParams();
+  const navigate = useProjectNavigate();
+  const legacyGoBack=useGoBack('/purchase-orders');
+  const workspace=useProjectWorkspace();
+  const goBack=()=>workspace?navigate(`/jobs/${workspace.jobId}?section=delivery&order=`):legacyGoBack();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 

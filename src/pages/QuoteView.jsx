@@ -1,7 +1,10 @@
+import {isTestQuote} from '../lib/projectWorkspace';
+import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { toast } from '../components/ToastContainer';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+
 import { format, parseISO, formatDistanceToNow, isPast, differenceInSeconds } from 'date-fns';
 import {
   Edit3, Copy, Send, Eye, CheckCircle2, XCircle,
@@ -47,9 +50,9 @@ const ACTIVITY_META = {
 
 const TABS = ['Details', 'Activity', 'Comments'];
 
-export default function QuoteView() {
-  const { id }   = useParams();
-  const navigate = useNavigate();
+export default function QuoteView({embedded=false}) {
+  const { id }   = useProjectParams();
+  const navigate = useProjectNavigate();
 
   // ── MUST be before any conditional return — React hooks must always run ───────
   useDataRefresh();
@@ -255,6 +258,7 @@ export default function QuoteView() {
   };
 
   const handleMakeLive = () => {
+    if(isTestQuote(quote)){toast('TEST quotes cannot be published or sent.','error');return;}
     // Publish the quote (make the customer link work + start the expiry timer)
     // WITHOUT emailing the customer — for when the link is shared manually.
     // A quote that's already been sent and has run past its expiry needs a fresh
@@ -388,7 +392,7 @@ export default function QuoteView() {
             </div>
             <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
               {quote.status === 'Draft' && (
-                <button onClick={handleSend} disabled={sending}
+                <button onClick={handleSend} disabled={sending || isTestQuote(quote)}
                   className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors">
                   <Send size={13} /> {sending ? 'Sending…' : 'Send Quote'}
                 </button>
@@ -407,15 +411,15 @@ export default function QuoteView() {
                   <Send size={13} /> {sending ? 'Sending…' : 'Resend'}
                 </button>
               )}
-              <button onClick={() => navigate(`/quotes/${quote.id}/edit`)}
+              {(!embedded || quote.status==='Draft') && <button onClick={() => navigate(`/quotes/${quote.id}/edit`)}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                 <Edit3 size={13} /> Edit
-              </button>
+              </button>}
               <button onClick={() => window.open(publicQuoteUrl(quote, { preview: true }), '_blank')}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                 <Eye size={13} /> Preview
               </button>
-              {['Sent', 'Viewed', 'Waiting'].includes(quote.status) && (
+              {!embedded && ['Sent', 'Viewed', 'Waiting'].includes(quote.status) && (
                 <button onClick={handleTakeOffline}
                   className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
                   <WifiOff size={13} /> Take offline

@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import {useProjectNavigate as useNavigate,useProjectSearchParams as useSearchParams} from '../contexts/ProjectWorkspaceContext';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
 import {

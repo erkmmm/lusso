@@ -1,8 +1,13 @@
+import useWorkspaceQuoteForm from '../hooks/useWorkspaceQuoteForm';
+import {isTestQuote} from '../lib/projectWorkspace';
+import {useProjectSearchParams} from '../contexts/ProjectWorkspaceContext';
+import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
+import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import { expandOperationAlternatives, openingQuoteSnapshot } from '../lib/openingWorkflow';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+
 import { v4 as uuidv4 } from 'uuid';
 import { format } from 'date-fns';
 import {
@@ -24,7 +29,7 @@ import { nextRoomLabel, splitRoomLabel, capitaliseRoom } from '../lib/roomNaming
 import { describeLine } from '../lib/describeLine';
 import { curtainBlockers } from '../lib/curtainBlockers';
 import {
-  uploadQuoteDoc, removeQuoteDoc, quoteDocUrl, formatBytes, docKind,
+  uploadQuoteDoc, quoteDocUrl, formatBytes, docKind,
   ACCEPT_ATTR, titleFromFilename,
 } from '../lib/quoteDocs';
 import {
@@ -705,7 +710,7 @@ function QuoteDocumentsPanel({ quoteId, documents, onChange, onError }) {
 
   const remove = (doc) => {
     onChange((documents || []).filter(d => d.id !== doc.id));
-    removeQuoteDoc(doc);
+    // Revisions may share this file. Remove this reference without deleting another quote’s attachment.
   };
 
   return (
@@ -1507,11 +1512,11 @@ function SendPreviewOverlay({ quote, recipient, ccContact, isDraft, saving, onSe
 
 // ─── Main QuoteBuilder ────────────────────────────────────────────────────────
 
-export default function QuoteBuilder() {
+export default function QuoteBuilder({embedded=false}) {
   useDataRefresh();
-  const { id }      = useParams();
-  const navigate    = useNavigate();
-  const [params]    = useSearchParams();
+  const { id }      = useProjectParams();
+  const navigate    = useProjectNavigate();
+  const [params]    = useProjectSearchParams();
   const isEdit      = Boolean(id && id !== 'new');
 
   // Single front door: a quote is always created INSIDE a project (pre-filled
@@ -1601,12 +1606,15 @@ export default function QuoteBuilder() {
     };
   };
 
-  const [form, setForm]         = useState(initForm);
+  const [form,setForm,workspaceDraft]=useWorkspaceQuoteForm(initForm,isEdit?getQuote(id):null);
   const [saving, setSaving]     = useState(false);
   // Set by doSave when the mail service accepted the request but didn't confirm
   // the send — read by handleSaveAndSend so the toast doesn't over-promise.
   const sendUnconfirmedRef      = useRef(false);
   const [saved, setSaved]       = useState(false);
+  const projectSite=getJob(form?.jobId)?.siteAddress || getCustomer(form?.customerId)?.address || '';
+  const previousSite=useRef(projectSite);
+  useEffect(()=>{const old=previousSite.current;previousSite.current=projectSite;if(embedded && projectSite!==old)setForm(value=>value && (!value.siteAddress || value.siteAddress===old)?{...value,siteAddress:projectSite}:value);},[projectSite,embedded,setForm]);
   const [errors, setErrors]     = useState({});
   // The quote snapshot being previewed before sending. Null when the overlay
   // is closed — sending is only reachable from inside it.
@@ -2011,6 +2019,7 @@ export default function QuoteBuilder() {
     setSaving(true);
     try {
       let q;
+      if(isEdit)workspaceDraft.checkFresh(getQuote(id));
       // Stamp the customer-facing name onto every line before it is stored.
       // The public quote page has no product-type list to compose one from —
       // a customer's browser has no localStorage copy — so the name is
@@ -2026,6 +2035,7 @@ export default function QuoteBuilder() {
       } else {
         q = createQuote({ ...saveForm, status: 'Draft' });
       }
+      if(q)workspaceDraft.markSaved(q);
       if (andSend && q) {
         // Email first, mark Sent second — deliverQuote enforces that order, so
         // a quote is never left showing "Sent" (and counting down to expiry)
@@ -2108,6 +2118,7 @@ export default function QuoteBuilder() {
    * the way out.
    */
   const openSendPreview = () => {
+    if(isTestQuote(form)){showToast('error','TEST drafts cannot be sent to a customer.');return;}
     if (!validate()) {
       showToast('error', 'Fix the errors above before previewing.');
       return;
@@ -2218,11 +2229,12 @@ export default function QuoteBuilder() {
         </div>
       )}
 
+      {workspaceDraft.conflict && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 mb-4 text-sm"><p>A newer saved draft is loaded. An older unsaved copy is kept on this browser.</p><div className="mt-2 flex gap-3"><button onClick={workspaceDraft.download} className="underline">Download unsaved copy</button><button onClick={workspaceDraft.discard} className="underline">Discard older copy</button></div></div>}
       {/* Header — buttons show icon+label on sm+, icon-only on mobile */}
       <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-slate-900 truncate">{isEdit ? 'Edit Quote' : 'New Quote'}</h1>
+            <h1 className="text-xl font-bold text-slate-900 truncate">{embedded?'Draft quote':isEdit ? 'Edit Quote' : 'New Quote'}</h1>
             {form.quoteNumber && <p className="text-sm text-slate-400">{form.quoteNumber}</p>}
           </div>
         </div>
@@ -2307,7 +2319,7 @@ export default function QuoteBuilder() {
           </div>
 
           {/* Section 1: Customer & Site */}
-          <Section title="Customer & Site" icon={User} defaultOpen>
+          <Section title="Customer & Site" icon={User} defaultOpen={!embedded}>
             <div className="pt-4 space-y-4">
               {/* Customer search */}
               <div>
@@ -2318,8 +2330,8 @@ export default function QuoteBuilder() {
                       <p className="font-semibold text-slate-800 text-sm">{selectedCustomer.name}</p>
                       <p className="text-xs text-slate-400">{selectedCustomer.phone} · {selectedCustomer.email}</p>
                     </div>
-                    <button type="button" onClick={() => { set('customerId', ''); setCustomerSearch(''); }}
-                      className="text-xs text-slate-400 hover:text-red-500">Change</button>
+                    {!embedded && <button type="button" onClick={() => { set('customerId', ''); setCustomerSearch(''); }}
+                      className="text-xs text-slate-400 hover:text-red-500">Change</button>}
                   </div>
                 ) : (
                   <div className="space-y-2">
