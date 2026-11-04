@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { ORIGINS, RUN_SCHEMA, validId, validateResult, publicRun } from './protocol.mjs';
 import { makeQuotingPrompt, QUOTE_SYSTEM } from './prompt.mjs';
+import { loadProjectPlans } from './plans.mjs';
 const exec = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const stateDir = process.env.LUSSO_QUOTE_STATE_DIR || resolve(homedir(), 'Library/Application Support/Lusso Quote Assistant');
@@ -34,10 +35,11 @@ async function start(run, token, answer='') {
   if(!await authStatus())throw Object.assign(new Error('Sign in to Claude Code on this Mac, then connect Chrome with /chrome. The app has not started supplier work.'),{status:428});
   active=run.id;
   try {
-    const [jobs,sheets,quotes]=await Promise.all([
+    const [jobs,sheets,quotes,takeoffs]=await Promise.all([
       sb(`/rest/v1/jobs?id=eq.${run.jobId}&select=*`,token),
       sb(`/rest/v1/measure_sheets?id=eq.${run.sheetId}&job_id=eq.${run.jobId}&select=*`,token),
       sb(`/rest/v1/quotes?job_id=eq.${run.jobId}&deleted_at=is.null&select=id,quote_number,status,grand_total`,token),
+      sb(`/rest/v1/takeoffs?job_id=eq.${run.jobId}&select=*`,token),
     ]);
     const job=jobs[0],sheet=sheets[0];
     if(!job||job.deleted_at||!sheet||sheet.deleted_at||!(sheet.line_items||[]).length)throw new Error('This job or measure sheet is unavailable or empty. Reload the job.');
@@ -47,6 +49,13 @@ async function start(run, token, answer='') {
     run.sheetUpdatedAt=sheet.updated_at;run.status='running';run.summary='Working through the measure sheet and supplier draft.';
     run.questions=[];run.warnings=[];
     addEvent(run,answer?'Continuing with your answers.':'Reading the current job and measure sheet.');
+    await persist(run);
+    addEvent(run,'Reading uploaded project plans for heights, sections and window schedules.');
+    const plans=await loadProjectPlans(takeoffs,{jobId:run.jobId,download:async(path)=>{
+      const response=await fetch(`${sbUrl}/storage/v1/object/authenticated/takeoff-plans/${path.split('/').map(encodeURIComponent).join('/')}`,{headers:{apikey:sbKey,Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(30000)});
+      if(!response.ok)throw new Error('The plan could not be downloaded. Inspect it through the project plan viewer.');
+      return response.arrayBuffer();
+    }});
     await persist(run);
     const args=['--append-system-prompt',QUOTE_SYSTEM,'--chrome','--print','--verbose','--output-format','stream-json','--json-schema',JSON.stringify(RUN_SCHEMA),'--tools','','--allowedTools','mcp__claude-in-chrome__*','--permission-mode','dontAsk','--setting-sources',''];
     if(run.sessionId)args.push('--resume',run.sessionId);
@@ -78,7 +87,7 @@ async function start(run, token, answer='') {
     let finished=false;const once=(code,error)=>{if(finished)return;finished=true;void finish(code,error);};
     child.on('error',e=>once(null,e));child.on('close',code=>once(code));
     child.stdin.on('error',()=>{});
-    child.stdin.end(makeQuotingPrompt({job,customer:customers[0],sheet,quotes,instructions:run.instructions,supplierGuides:guides.join('\n\n'),answer}));
+    child.stdin.end(makeQuotingPrompt({job,customer:customers[0],sheet,quotes,instructions:run.instructions,supplierGuides:guides.join('\n\n'),plans,answer}));
     return run;
   }catch(e){if(active===run.id)active=null;throw e;}
 }
