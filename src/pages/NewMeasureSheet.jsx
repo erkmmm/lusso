@@ -578,7 +578,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
 
 
   // ── UI state ───────────────────────────────────────────────────────────────
-  const [savedAt,        setSavedAt]        = useState(null);
+  const [savedAt,setSavedAt]=useState(()=>{const stored=getMeasureSheet(sheet.id);const time=Date.parse(stored?.updatedAt || stored?.createdAt || '');return Number.isFinite(time)?new Date(time):null;});
   const [notesOpen,      setNotesOpen]      = useState(false);
   const [notesVersion,   setNotesVersion]   = useState(0); // bumped when a note is written
   const [limitDocId,     setLimitDocId]     = useState(null); // spec sheet opened from a warning
@@ -773,6 +773,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
     if (!fresh) return;
     baseUpdatedAtRef.current = fresh.updatedAt || null;
     setSheet(fresh);
+    if(fresh.updatedAt)setSavedAt(new Date(fresh.updatedAt));
     setConflict(null);
     setDirty(false);
     toast('Loaded the newer copy.');
