@@ -102,7 +102,7 @@ const server=http.createServer(async(req,res)=>{
   try{
     const {token,user}=await authorize(req);const path=new URL(req.url,'http://127.0.0.1').pathname;
     if(req.method==='GET'&&path==='/status'){send(200,{connected:true,signedIn:await authStatus(),busy:Boolean(active)});return;}
-    if(req.method==='GET'&&path==='/runs'){send(200,{runs:[...runs.values()].filter(r=>r.userId===user.id).map(publicRun).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)).slice(0,30)});return;}
+    if(req.method==='GET'&&path==='/runs'){const jobId=new URL(req.url,'http://127.0.0.1').searchParams.get('jobId');if(jobId && !validId(jobId))throw new Error('Select a valid project.');send(200,{runs:[...runs.values()].filter(r=>r.userId===user.id && (!jobId || r.jobId===jobId)).map(publicRun).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)).slice(0,30)});return;}
     if(req.method==='POST'&&path==='/runs'){
       const data=await body(req);if(!validId(data.jobId)||!validId(data.sheetId))throw new Error('Select a job and measure sheet.');
       const existing=[...runs.values()].find(r=>r.jobId===data.jobId&&['running','starting','needs_input'].includes(r.status));

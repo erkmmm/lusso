@@ -47,6 +47,8 @@ test('Mac service authenticates staff, refuses unrelated origins and verifies ac
   const started=await fetch(base+'/runs',{method:'POST',headers,body:JSON.stringify({jobId:'job1',sheetId:'sheet1'})});assert.equal(started.status,202);
   let run;for(let i=0;i<30;i++){run=(await fetch(base+'/runs',{headers}).then(r=>r.json())).runs[0];if(run.status==='completed')break;await new Promise(r=>setTimeout(r,30));}
   assert.equal(run.status,'completed');assert.equal(run.totalIncGst,100);assert.equal(run.draftQuoteUrl,valid.draftQuoteUrl);
+  assert.equal((await fetch(base+'/runs?jobId=other',{headers}).then(r=>r.json())).runs.length,0);
+  assert.equal((await fetch(base+'/runs?jobId=job1',{headers}).then(r=>r.json())).runs[0].id,run.id);
   assert.equal('sessionId' in run,false);assert.equal('instructions' in run,false);
   actualJob='different-job';
   const second=await fetch(base+'/runs',{method:'POST',headers,body:JSON.stringify({jobId:'job1',sheetId:'sheet1'})});assert.equal(second.status,202);

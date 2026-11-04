@@ -15,7 +15,7 @@ import OpeningFields,{Field,inputClass} from './OpeningFields';
 import MakeSizeCalculator from './MakeSizeCalculator';
 const action='rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40';
 const secondary='rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 disabled:opacity-40';
-export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemId,onClose,onJump,onPlace,onFocusOpening,embeddedInPlan=false,closeRef,onSaved=()=>{},onEditing=()=>{}}) {
+export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemId,onClose,onJump,onPlace,onFocusOpening,embeddedInPlan=false,closeRef,savedDraft,onDraftChange,onSaved=()=>{},onEditing=()=>{}}) {
   useDataRefresh();
   const editorRoot=useRef(null);
   const sheets=getMeasureSheetsByJob(jobId).filter(s=>!s.deletedAt);
@@ -23,20 +23,21 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
   const candidate=getMeasureSheet(sheetId || chosenSheetId);
   const sheet=candidate?.jobId===jobId?candidate:null;
   const {displayName}=useProfile() || {};
-  const baseline=useRef(sheet?.updatedAt);
+  const restoredDraft=savedDraft?.sheetId===sheet?.id?savedDraft:null;
+  const baseline=useRef(restoredDraft?.baseUpdatedAt || sheet?.updatedAt);
   useEffect(()=>{if(!baseline.current && sheet?.updatedAt) baseline.current=sheet.updatedAt;},[sheet?.updatedAt]);
-  const [tab,setTab]=useState('Openings');
+  const [tab,setTab]=useState(restoredDraft?.tab || 'Openings');
   const [expandedSpecs,setExpandedSpecs]=useState(new Set());
   const [otherSpecs,setOtherSpecs]=useState(new Set());
-  const [fills,setFills]=useState({});
-  const [additions,setAdditions]=useState([]);
-  const [activeId,setActiveId]=useState(()=>initialItemId?(sheet?.lineItems?.find(l=>l.takeoffItemId===initialItemId)?.id || ''):'');
+  const [fills,setFills]=useState(restoredDraft?.fills || {});
+  const [additions,setAdditions]=useState(restoredDraft?.additions || []);
+  const [activeId,setActiveId]=useState(()=>initialItemId?(sheet?.lineItems?.find(l=>l.takeoffItemId===initialItemId)?.id || ''):(restoredDraft?.activeId || ''));
   const [selected,setSelected]=useState(new Set());
   const [filter,setFilter]=useState('');
   const [bulk,setBulk]=useState({});
   const [overwrite,setOverwrite]=useState(false);
   const [bulkPreview,setBulkPreview]=useState(null);
-  const [brief,setBrief]=useState('');
+  const [brief,setBrief]=useState(restoredDraft?.brief || '');
   const [suggestions,setSuggestions]=useState([]);
   const [chosen,setChosen]=useState(new Set());
   const [sources,setSources]=useState([]);
@@ -45,7 +46,7 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
-  const [briefNote,setBriefNote]=useState('');
+  const [briefNote,setBriefNote]=useState(restoredDraft?.briefNote || '');
   const [heightSuggestions,setHeightSuggestions]=useState([]);
   const [referenceHeight,setReferenceHeight]=useState('');
   const [referenceBasis,setReferenceBasis]=useState('');
@@ -68,6 +69,11 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
   },[activeId,embeddedInPlan]);
   const groups=readiness(lines);
   const dirty=Object.keys(fills).length>0 || additions.length>0 || Boolean(briefNote);
+  useEffect(()=>{
+    if(!onDraftChange || !sheet?.id)return;
+    onDraftChange({sheetId:sheet.id,baseUpdatedAt:baseline.current,fills,additions,briefNote,brief,activeId,tab});
+  },[sheet?.id,fills,additions,briefNote,brief,activeId,tab,onDraftChange]);
+  useEffect(()=>{if(onDraftChange)onEditing(dirty);},[dirty,onDraftChange,onEditing]);
   useEffect(()=>{if(!dirty)return;const warn=event=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
   function chooseActive(id){setActiveId(id);setReferenceHeight('');setReferenceBasis('');setHeightSuggestions([]);}
   function patch(id,values) {
@@ -162,6 +168,7 @@ export default function OpeningWorkspace({jobId,sheetId,takeoff,pdf,initialItemI
     <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">Openings & specifications</h2><p className="mt-1 text-xs text-slate-500">One shared sheet for plan takeoff and quote preparation. Changes are saved only when you choose Save answers.</p></div>{onClose && <button aria-label="Close opening editor" onClick={close}><X size={20}/></button>}</div>
     {!sheetId && sheets.length>1 && <label className="block text-xs font-medium">Measure sheet<select className={`${inputClass} mt-1`} value={chosenSheetId || ''} onChange={e=>{if(dirty){setError('Save your answers before switching sheets.');return;}const target=sheets.find(s=>s.id===e.target.value);setChosenSheetId(target.id);baseline.current=target.updatedAt;setSelected(new Set());setActiveId('');setSuggestions([]);setMessage('');}}>{sheets.map(s=><option key={s.id} value={s.id}>{s.title || s.name || s.measureDate || s.id} · {(s.lineItems || []).length} entries</option>)}</select></label>}
     <div className="flex flex-wrap gap-2">{['Openings','Bulk edit','Customer brief','Plan evidence'].map(t=><button key={t} onClick={()=>setTab(t)} className={`${secondary} ${tab===t?'bg-amber-50 border-amber-300 text-amber-800':''}`}>{t}</button>)}</div>
+    {onDraftChange && dirty && <button type="button" className="text-xs text-slate-500 underline" onClick={()=>{if(!window.confirm('Discard your unsaved opening answers? Saved measure-sheet details are kept.'))return;setFills({});setAdditions([]);setBriefNote('');baseline.current=sheet.updatedAt;setError('');setMessage('Unsaved opening answers discarded.');}}>Discard unsaved opening answers</button>}
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
     <div key={tab} className="opening-content-enter">
