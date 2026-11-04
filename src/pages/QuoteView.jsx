@@ -182,7 +182,7 @@ export default function QuoteView() {
 
   const customer   = getCustomer(quote.customerId);
   const job        = quote.jobId ? getJob(quote.jobId) : null;
-  const totals     = computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, effectiveSelectedIds(quote.lineItems, quote.selectedLineItemIds), quote.discountType, quote.discountValue, quote.motorisationPresets);
+  const totals     = computeQuoteTotals(quote.lineItems, quote.depositType, quote.depositValue, quote.gstRate, quote.includesGST, effectiveSelectedIds(quote.lineItems, quote.selectedLineItemIds), quote.discountType, quote.discountValue, quote.motorisationPresets, quote.motorisationApproval);
   const colorClass = QUOTE_STATUS_COLORS[quote.status] || QUOTE_STATUS_COLORS.Draft;
   const isOverdue  = isQuoteOverdue(quote);
 

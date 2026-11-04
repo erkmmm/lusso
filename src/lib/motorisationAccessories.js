@@ -21,12 +21,60 @@
  * Idempotent by construction: every derived line carries `autoAddedBy`, and
  * resolving strips the previous pass before computing the next, so a quote can
  * be resolved, saved, reloaded and resolved again without accumulating.
+ *
+ * Deriving them silently was the third mistake, and it was the one staff felt.
+ * A rule that puts $500 of handsets on a quote without being asked is a rule
+ * that gets discovered by the customer, and a handset nobody can edit or take
+ * off is worse again — the 15-Channel is right for most rooms and wrong for
+ * some, and there was no way to say so. So the derive is now a SUGGESTION
+ * (`motorisationAccessories` / `maxMotorisationAccessories`) that a person
+ * accepts, and accepting MATERIALISES it: the lines stop being derived and
+ * become ordinary Part lines on the quote, editable and removable like every
+ * other line. `quote.motorisationApproval` records which it is — see
+ * `autoAccessoriesLive` for why the absent case still derives.
  */
+import { v4 as uuidv4 } from 'uuid';
 import { groupByRoom } from './roomNaming';
 import { OPERATION_WORDS, operationKey } from './describeLine';
 
 /** Marker on every line this module produces. Nothing else may set it. */
 export const AUTO_MOTORISATION = 'motorisation';
+
+// ─── The ask-first gate ──────────────────────────────────────────────────────
+
+/**
+ * What a person has decided about this quote's remotes and chargers, stored on
+ * the quote as `motorisationApproval`.
+ *
+ *   • 'pending'  — suggested, nobody has answered yet. Nothing is added: not
+ *                  to the staff total, not to the customer's quote, not at
+ *                  acceptance. The editor warns before sending.
+ *   • 'added'    — accepted. The accessories are now REAL lines on the quote
+ *                  (see materialiseMotorisationAccessories), so the rule has
+ *                  nothing left to do and stands aside for good. Editing one,
+ *                  repricing it or deleting it therefore sticks.
+ *   • 'declined' — deliberately left off. Same silence as 'pending', without
+ *                  the warning.
+ */
+export const MOTORISATION_PENDING  = 'pending';
+export const MOTORISATION_ADDED    = 'added';
+export const MOTORISATION_DECLINED = 'declined';
+
+/**
+ * Does the rule still add accessories to this quote by itself?
+ *
+ * Absent approval means a quote saved before the gate existed, and those keep
+ * deriving exactly as they did: thousands of quotes are already out with
+ * handsets in their totals, and retiring the rule under them would move money
+ * on quotes that have been sent, accepted and invoiced. So the gate is opt-in
+ * per quote, and QuoteBuilder opts every NEW quote in at 'pending'.
+ *
+ * Which also means a call site that forgets to pass the approval silently
+ * auto-adds. That is the safe direction for the legacy quotes above, and the
+ * reason the staff-facing suggestion has its own name
+ * (`suggestMotorisationAccessories`) rather than sharing this one.
+ */
+export const autoAccessoriesLive = (approval) => !approval;
 
 /** Where the whole-job accessories sit, since they belong to no one room. */
 export const JOB_WIDE_LOCATION = 'Whole job';
@@ -250,9 +298,13 @@ export function existingAccessories(lineItems = []) {
  *   A quote carries its own snapshot so the price the customer was shown
  *   cannot move under them, and so pricing a quote never costs a read of the
  *   779-row price library. Absent ⇒ the fallbacks.
+ * @param {string} approval    quote.motorisationApproval. Anything truthy means
+ *   a person has already answered — 'added' put them on as real lines,
+ *   'declined'/'pending' left them off — so the rule adds nothing.
  * @returns {Array} new line items — empty when nothing motorised is live
  */
-export function motorisationAccessories(lineItems = [], selectedIds = [], presets = null) {
+export function motorisationAccessories(lineItems = [], selectedIds = [], presets = null, approval = undefined) {
+  if (!autoAccessoriesLive(approval)) return [];
   const parts = withFallbackPresets(presets);
   const base = withoutAutoAccessories(lineItems);
   const selected = Array.isArray(selectedIds) ? selectedIds : [];
@@ -326,11 +378,25 @@ export function motorisationAccessories(lineItems = [], selectedIds = [], preset
  * end. Idempotent — call it as often as you like, including on a quote whose
  * accessories were already materialised at acceptance.
  */
-export function withMotorisationAccessories(lineItems = [], selectedIds = [], presets = null) {
+export function withMotorisationAccessories(lineItems = [], selectedIds = [], presets = null, approval = undefined) {
   const base = withoutAutoAccessories(lineItems);
-  const extra = motorisationAccessories(base, selectedIds, presets);
+  const extra = motorisationAccessories(base, selectedIds, presets, approval);
   return extra.length ? [...base, ...extra] : base;
 }
+
+// ─── The suggestion, and accepting it ────────────────────────────────────────
+
+/**
+ * What the rule WOULD add, for the person being asked.
+ *
+ * Deliberately not gated on the approval: this is the quote editor's "here is
+ * what I can put on for you" view, and it has to keep answering that question
+ * on a quote whose accessories are switched off. Named apart from
+ * `motorisationAccessories` so no call site can show a suggestion where it
+ * meant to charge for one, or the reverse.
+ */
+export const suggestMotorisationAccessories = (lineItems = [], selectedIds = [], presets = null) =>
+  motorisationAccessories(lineItems, selectedIds, presets);
 
 /**
  * What the accessories would be if the customer took every motorised option
@@ -339,3 +405,52 @@ export function withMotorisationAccessories(lineItems = [], selectedIds = [], pr
  */
 export const maxMotorisationAccessories = (lineItems = [], presets = null) =>
   motorisationAccessories(lineItems, (lineItems || []).map(li => li.id), presets);
+
+/**
+ * Turn accepted suggestions into real quote lines.
+ *
+ * This is the whole point of the gate. A derived line cannot be edited —
+ * there is nowhere to put the edit, since the next render recomputes it from
+ * the motors — so the moment a person says yes, the suggestion stops being
+ * derived and becomes an ordinary Part line: a fresh uuid instead of the
+ * deterministic `auto-motorisation-…` id, the `autoAddedBy` marker dropped so
+ * no later pass strips it back out, and a real sortOrder at the end of the
+ * list. From then on the editor treats it like any other line, which is to say
+ * the 15-Channel can be swapped for a 1-Channel, the price can be moved, and
+ * it can be deleted and stay deleted.
+ *
+ * `fromMotorisation` survives only so the editor can say where the line came
+ * from. Nothing reads it to price, strip or re-derive anything.
+ *
+ * @param {Array}  lines           suggestion lines from motorisationAccessories()
+ * @param {number} firstSortOrder  where to start them in the list
+ */
+export function materialiseMotorisationAccessories(lines = [], firstSortOrder = 0) {
+  return (lines || []).map((li, i) => {
+    const { autoAddedBy, autoKind, autoServes, ...rest } = li;
+    return {
+      ...rest,
+      id: uuidv4(),
+      fromMotorisation: true,
+      motorisationKind: autoKind || null,
+      // Which blinds brought it in, kept for the editor's badge. Not pricing.
+      motorisationServes: autoServes || [],
+      sortOrder: firstSortOrder + i,
+    };
+  });
+}
+
+/** Lines that came from an accepted suggestion. Ordinary lines otherwise. */
+export const isMaterialisedAccessory = (li) => !!li?.fromMotorisation;
+
+/**
+ * Drop the accepted accessories again, for "suggest these from scratch".
+ *
+ * Re-suggesting rather than patching is deliberate: once a remote is on the
+ * quote the rule stands aside for the whole quote (see existingAccessories),
+ * so it cannot tell which room gained a motor since. Clearing them and
+ * re-running on the current motors gives an answer that is right, instead of
+ * an increment that is nearly right.
+ */
+export const withoutMaterialisedAccessories = (lineItems = []) =>
+  (lineItems || []).filter(li => !isMaterialisedAccessory(li));

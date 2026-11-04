@@ -3157,7 +3157,7 @@ export const linePricing = (li = {}) => {
   };
 };
 
-export const computeQuoteTotals = (lineItems = [], depositType = 'None', depositValue = 0, gstRate = 10, includesGST = true, selectedIds = [], discountType = 'None', discountValue = 0, motorisationPresets = null) => {
+export const computeQuoteTotals = (lineItems = [], depositType = 'None', depositValue = 0, gstRate = 10, includesGST = true, selectedIds = [], discountType = 'None', discountValue = 0, motorisationPresets = null, motorisationApproval = undefined) => {
   // Remotes and chargers are derived from whichever motors are live, not
   // stored, so they are resolved here rather than at each of the dozen call
   // sites that price a quote. Idempotent, so passing already-resolved items
@@ -3167,7 +3167,14 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
   // (see saveQuote). Passed in rather than looked up because this function
   // runs on every render of several pages and once per row on the quotes
   // list, and getPricedItems() decompresses and parses 779 rows each call.
-  const active = withMotorisationAccessories(lineItems, selectedIds, motorisationPresets).filter(li =>
+  //
+  // `motorisationApproval` is the ask-first gate. Once a person has answered,
+  // nothing is derived here: accepting puts the accessories on as real lines,
+  // and declining means they are genuinely off this quote. Absent (every quote
+  // saved before the gate) still derives, so totals already sent don't move.
+  // Every caller that has the quote in hand passes it — a missing one would
+  // show a total the saved grand_total disagrees with.
+  const active = withMotorisationAccessories(lineItems, selectedIds, motorisationPresets, motorisationApproval).filter(li =>
     li.type === 'Required' ||
     li.type === 'Part' ||
     (li.type === 'Optional' && selectedIds.includes(li.id)) ||
@@ -3594,7 +3601,8 @@ export const saveQuote = (quote) => {
     quote.lineItems || [], quote.depositType, quote.depositValue,
     quote.gstRate, quote.includesGST,
     effectiveSelectedIds(quote.lineItems, quote.selectedLineItemIds),
-    quote.discountType, quote.discountValue, motorisationPresets
+    quote.discountType, quote.discountValue, motorisationPresets,
+    quote.motorisationApproval
   );
   const costTotal = (quote.lineItems || []).reduce((s, li) => {
     if (li.unitCostPrice !== undefined) {
@@ -3765,12 +3773,21 @@ export const acceptQuote = (quoteId, acceptanceInfo = {}, selectedLineItemIds = 
     // chargers that set implies have to be ON the quote — the purchase order,
     // the Xero invoice and the installer's paperwork all read line_items and
     // know nothing about the rule.
+    //
+    // Only while the rule is still live, though. On a quote where someone was
+    // asked and said no — or was never asked and the suggestion is still
+    // sitting there — materialising here would add the handsets at the one
+    // moment nobody is looking, which is exactly what the gate exists to stop.
+    // The gate makes this a no-op in those cases anyway; it is spelled out
+    // because acceptance is the last chance to get it wrong.
     updated.lineItems = withMotorisationAccessories(
-      updated.lineItems || [], selectedLineItemIds, updated.motorisationPresets);
+      updated.lineItems || [], selectedLineItemIds, updated.motorisationPresets,
+      updated.motorisationApproval);
     const { subtotal, gst, total } = computeQuoteTotals(
       updated.lineItems, updated.depositType, updated.depositValue,
       updated.gstRate, updated.includesGST, selectedLineItemIds,
-      updated.discountType, updated.discountValue, updated.motorisationPresets
+      updated.discountType, updated.discountValue, updated.motorisationPresets,
+      updated.motorisationApproval
     );
     updated.totalSell  = Math.round(subtotal * 100) / 100;
     updated.gstAmount  = Math.round(gst      * 100) / 100;

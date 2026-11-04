@@ -27,8 +27,12 @@ import {
   ACCEPT_ATTR, titleFromFilename,
 } from '../lib/quoteDocs';
 import {
-  resolveAccessoryPresets, maxMotorisationAccessories, motorisationAccessories,
+  resolveAccessoryPresets, maxMotorisationAccessories, suggestMotorisationAccessories,
   BLINDS_PER_CHARGER, existingAccessories, isMotorisedCovering,
+  materialiseMotorisationAccessories, withoutMaterialisedAccessories,
+  isMaterialisedAccessory,
+  MOTORISATION_PENDING, MOTORISATION_ADDED, MOTORISATION_DECLINED,
+  autoAccessoriesLive,
 } from '../lib/motorisationAccessories';
 
 import CustomerQuotePage from './CustomerQuotePage';
@@ -822,30 +826,103 @@ function CustomerReadsPanel({ items }) {
 // ─── MotorisationPanel ────────────────────────────────────────────────────────
 
 /**
- * The remotes and chargers this quote will carry, and why.
+ * The remotes and chargers this quote could carry, offered rather than taken.
  *
- * They are not editable rows because they are not stored: they are computed
- * from whichever motors are live, so the customer picking two battery blinds
- * instead of twelve changes the handsets and the charger count on its own.
- * Staff still have to be able to SEE them before sending — a quote whose total
- * includes $500 of accessories that appear nowhere in the editor is a quote
- * nobody trusts.
+ * The rule can work out the handsets a job needs better than a person does at
+ * 9pm, which is why it exists — but it was adding them on its own, and two
+ * things were wrong with that. A quote whose total includes $500 of
+ * accessories nobody agreed to is a quote that gets corrected by the customer.
+ * And a derived line cannot be edited: the 15-Channel is right for most rooms
+ * and wrong for some, and there was no way to say so, because the next render
+ * recomputed it.
  *
- * Where the customer has not chosen yet (every draft), the panel shows the
- * maximum case — every motorised option taken — and says so.
+ * So the panel asks. Accepting MATERIALISES the lines — they become ordinary
+ * Part lines in the list above, with the same price field, quantity, notes and
+ * remove button as every other line, and they stay however they are left. The
+ * rule then stands aside for this quote, so nothing reappears or is quietly
+ * repriced underneath an edit.
+ *
+ * Four states, and the quote remembers which:
+ *   • pending  — asked, unanswered. Nothing is on the quote. Totals, the
+ *                customer's page and acceptance all read it as absent.
+ *   • added    — accepted. Real lines; this panel is just the receipt and the
+ *                way back to a fresh suggestion.
+ *   • declined — left off on purpose.
+ *   • absent   — a quote from before the gate. It still derives, exactly as it
+ *                did, so no quote already sent moves; the offer here is to
+ *                convert those derived lines into editable ones, which changes
+ *                nothing about the total.
  */
-function MotorisationPanel({ lineItems, selectedIds, pricedItems }) {
+function MotorisationPanel({ lineItems, selectedIds, pricedItems, approval, onAdd, onDecline, onReset }) {
   // Today's prices out of the item library, not the quote's saved snapshot:
-  // this is the staff view of what saving will write, so it has to show the
+  // this is the staff view of what accepting will write, so it has to show the
   // Settings price as it stands right now.
   const presets = resolveAccessoryPresets(pricedItems);
-  const chosen = motorisationAccessories(lineItems, selectedIds, presets);
+  const chosen = suggestMotorisationAccessories(lineItems, selectedIds, presets);
   const max    = maxMotorisationAccessories(lineItems, presets);
   const anyMotor = (lineItems || []).some(isMotorisedCovering);
+  const onQuote  = (lineItems || []).filter(isMaterialisedAccessory);
+  const isAdded    = approval === MOTORISATION_ADDED;
+  const isDeclined = approval === MOTORISATION_DECLINED;
+  const isLegacy   = autoAccessoriesLive(approval);
+
+  // Already accepted: the lines are in the list above, so this is a receipt and
+  // an escape hatch, not a price list. Shown even with no motors left on the
+  // quote — somebody has to be able to see the handsets they are still being
+  // charged for after deleting the blinds.
+  if (isAdded && onQuote.length) {
+    const total = onQuote.reduce((sum, li) => sum + Number(li.manualSellPrice || 0) * (Number(li.quantity) || 1), 0);
+    return (
+      <div className="pt-2 border-t border-slate-100">
+        <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-1.5">
+          <Check size={12} className="text-emerald-600" /> Motorisation accessories — on the quote
+        </p>
+        <p className="text-[11px] leading-relaxed text-slate-500">
+          {onQuote.length === 1 ? '1 line' : `${onQuote.length} lines`} ({fmt(total)}) added from the
+          motorisation rule. They are ordinary lines now — edit the price, swap a 15-channel for a
+          1-channel, or remove one, in the list above. Nothing re-adds them.
+        </p>
+        {anyMotor && (
+          <button
+            type="button"
+            onClick={onReset}
+            className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-amber-600"
+          >
+            <RefreshCw size={11} /> Clear them and suggest again from the motors as they stand
+          </button>
+        )}
+      </div>
+    );
+  }
+
   // Nothing motorised anywhere on the quote: the rule has nothing to say.
   if (!anyMotor) return null;
 
-  // Motors on the quote but nothing derived. Silence here reads as a bug, so
+  // Declined, and still nothing motorised changed about that decision. Said
+  // plainly rather than silently, so the next person to open the quote knows
+  // the handsets are missing on purpose.
+  if (isDeclined) {
+    return (
+      <div className="pt-2 border-t border-slate-100">
+        <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-1.5">
+          <Sparkles size={12} /> Motorisation accessories
+        </p>
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          Left off this quote on purpose — no remotes and no chargers, for{' '}
+          {max.length ? `the ${max.length} the rule would otherwise suggest` : 'these motors'}.
+        </p>
+        <button
+          type="button"
+          onClick={onReset}
+          className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-amber-600"
+        >
+          <RefreshCw size={11} /> Look at the suggestion again
+        </button>
+      </div>
+    );
+  }
+
+  // Motors on the quote but nothing to suggest. Silence here reads as a bug, so
   // say which of the two reasons it is — both are the rule deliberately
   // standing aside, and both are things the person looking can act on.
   if (!max.length) {
@@ -853,19 +930,22 @@ function MotorisationPanel({ lineItems, selectedIds, pricedItems }) {
     const unlocated = !(lineItems || []).some(li => isMotorisedCovering(li) && String(li.location || '').trim());
     const why = unlocated
       ? 'the motorised lines have no room on them, and the rule counts one remote per room. Give them a location and it will.'
-      : `this quote already lists ${[hasRemote && 'a remote', hasCharger && 'a charger'].filter(Boolean).join(' and ')} as a line of its own, so nothing is added on top.`;
+      : `this quote already lists ${[hasRemote && 'a remote', hasCharger && 'a charger'].filter(Boolean).join(' and ')} as a line of its own, so nothing is suggested on top.`;
     return (
       <div className="pt-2 border-t border-slate-100">
         <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-1.5">
           <Sparkles size={12} /> Motorisation accessories
         </p>
         <p className="text-[11px] leading-relaxed text-slate-400">
-          Not adding remotes or chargers automatically: {why}
+          Not suggesting remotes or chargers: {why}
         </p>
       </div>
     );
   }
 
+  // The offer. Against the customer's current selections where they have made
+  // any, otherwise the maximum case — and it says which it is, because the two
+  // numbers are different and the person deciding is about to quote one of them.
   const showing = chosen.length ? chosen : max;
   const isMaxCase = !chosen.length;
   const total = showing.reduce((sum, li) => sum + Number(li.manualSellPrice || 0) * (Number(li.quantity) || 1), 0);
@@ -873,7 +953,8 @@ function MotorisationPanel({ lineItems, selectedIds, pricedItems }) {
   return (
     <div className="pt-2 border-t border-slate-100">
       <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-2">
-        <Sparkles size={12} /> Motorisation accessories — added automatically
+        <Sparkles size={12} /> Motorisation accessories —{' '}
+        {isLegacy ? 'added automatically' : 'suggested, not added yet'}
       </p>
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 space-y-1.5">
         {showing.map(li => (
@@ -900,11 +981,37 @@ function MotorisationPanel({ lineItems, selectedIds, pricedItems }) {
           <span className="font-semibold text-slate-700">{fmt(total)}</span>
         </div>
       </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onAdd(isMaxCase ? max : chosen)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition-colors"
+        >
+          <Plus size={13} /> Add {showing.length === 1 ? 'this line' : `these ${showing.length} lines`} to the quote
+        </button>
+        {!isLegacy && (
+          <button
+            type="button"
+            onClick={onDecline}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-xs font-medium hover:border-slate-300 hover:text-slate-700 transition-colors"
+          >
+            <X size={13} /> Don&rsquo;t add them
+          </button>
+        )}
+      </div>
+
       <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
         One remote per room with a motor in it (15-channel unless the room has a single blind),
-        and one charger per {BLINDS_PER_CHARGER} battery blinds for the whole job. These follow the
-        customer&rsquo;s choices on their quote &mdash; pick fewer motorised blinds and fewer appear,
-        pick none and they disappear &mdash; so there is nothing to add or remove here.
+        and one charger per {BLINDS_PER_CHARGER} battery blinds for the whole job.{' '}
+        {isLegacy
+          ? <>This quote predates the ask &mdash; the accessories above are already in its total and on the
+              customer&rsquo;s page, following their choices as they tick. Adding them makes them real lines you
+              can edit and remove, which does not change the total.</>
+          : <>Nothing is on the quote until you add it: the total, the customer&rsquo;s page and acceptance all
+              read this quote as having no accessories. Added, they become ordinary lines you can edit,
+              reprice or remove &mdash; and they stop following the customer&rsquo;s choices, so add them once
+              the motors are settled.</>}
       </p>
     </div>
   );
@@ -972,6 +1079,18 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
           {meta && <span className="text-xs text-slate-400 block mt-0.5">{meta}</span>}
           {!item.location && (
             <span className="text-[11px] text-amber-600 block mt-1">No room set — shows under “General”</span>
+          )}
+          {/* Where the line came from, for the next person to open the quote.
+              A badge and nothing more: an accepted motorisation suggestion is
+              an ordinary line (see MotorisationPanel), so this does not lock
+              the price, the quantity or the remove button. */}
+          {isMaterialisedAccessory(item) && (
+            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-600">
+              <Sparkles size={10} />
+              {item.motorisationKind === 'charger'
+                ? `From motorisation — one per ${BLINDS_PER_CHARGER} battery blinds`
+                : 'From motorisation'}
+            </span>
           )}
           {/* Said on the row, not behind "Show pricing": a curtain that cannot
               be costed is exactly the line you would otherwise scroll past. */}
@@ -1325,9 +1444,14 @@ function SendPreviewOverlay({ quote, recipient, ccContact, isDraft, saving, onSe
           <span className="flex-1 min-w-0 truncate">
             This is what {recipient || 'the customer'} will see — scroll to the bottom to send it.
           </span>
-          <button type="button" onClick={onClose}
-            className="flex-shrink-0 rounded-full p-1 hover:bg-white/10 transition-colors" title="Close preview (Esc)">
-            <X size={14} />
+          {/* A phone has no Esc key, and the send control is a whole quote's
+              scroll away, so this is the only way out above the fold. Sized as
+              a touch target rather than an icon hit box. */}
+          <button type="button" onClick={onClose} aria-label="Close preview"
+            className="flex-shrink-0 flex items-center gap-1.5 rounded-full border border-white/25 px-3 min-h-[32px] font-semibold hover:bg-white/10 transition-colors"
+            title="Close preview (Esc)">
+            <X size={13} />
+            Close
           </button>
         </div>
 
@@ -1456,6 +1580,11 @@ export default function QuoteBuilder() {
       sentAt: null, viewedAt: null, acceptedAt: null, declinedAt: null,
       acceptedBy: null,
       lineItems,
+      // The remotes and chargers the motors imply are suggested, not added:
+      // see MotorisationPanel. Only new quotes start here — an existing one
+      // has no such field and keeps deriving them, so nothing already sent or
+      // accepted changes value underneath it.
+      motorisationApproval: MOTORISATION_PENDING,
       // Attached on purpose from the Quote Details section — never inherited,
       // because a snapshot belongs to the quote that was priced against it.
       planSnapshot: null,
@@ -1632,6 +1761,47 @@ export default function QuoteBuilder() {
     const newItem = EMPTY_PART_ITEM(preset);
     newItem.sortOrder = form.lineItems.length;
     setForm(f => ({ ...f, lineItems: [...f.lineItems, newItem] }));
+  };
+
+  // ─── Motorisation accessories: answering the ask ───────────────────────────
+  //
+  // All three handlers clear any previously added accessories first. Without
+  // that, accepting a second time (after the motors changed, say) would leave
+  // the first set's handsets sitting on the quote underneath the new ones —
+  // billing the same customer twice for the same remote, which is the exact
+  // failure the whole rule exists to prevent.
+
+  /** Yes: put them on as real, editable lines and retire the rule here. */
+  const addMotorisationAccessories = (lines = []) => {
+    if (!lines.length) return;
+    setForm(f => {
+      const base = withoutMaterialisedAccessories(f.lineItems || []);
+      return {
+        ...f,
+        lineItems: [...base, ...materialiseMotorisationAccessories(lines, base.length)],
+        motorisationApproval: MOTORISATION_ADDED,
+      };
+    });
+    showToast('success', `${lines.length} accessory line${lines.length === 1 ? '' : 's'} added — edit or remove them like any other line.`);
+  };
+
+  /** No: nothing on the quote, and recorded so it reads as a decision. */
+  const declineMotorisationAccessories = () => {
+    setForm(f => ({
+      ...f,
+      lineItems: withoutMaterialisedAccessories(f.lineItems || []),
+      motorisationApproval: MOTORISATION_DECLINED,
+    }));
+    showToast('info', 'Left off — no remotes or chargers on this quote.');
+  };
+
+  /** Ask again, against the motors as they stand now. */
+  const resetMotorisationAccessories = () => {
+    setForm(f => ({
+      ...f,
+      lineItems: withoutMaterialisedAccessories(f.lineItems || []),
+      motorisationApproval: MOTORISATION_PENDING,
+    }));
   };
 
   const addLineItem = () => {
@@ -1946,6 +2116,16 @@ export default function QuoteBuilder() {
     // preview has to show the prices the send is about to use. Taken from the
     // saved copy instead, a preview opened after a price change in Settings
     // would quote the old figure and the customer would get the new one.
+    // An unanswered suggestion is a quote going out with no handsets on it.
+    // That is a legitimate choice — plenty of jobs are quoted without them —
+    // but it should not be made by not noticing, so it is said out loud here,
+    // where the preview underneath is about to show their absence.
+    if (form.motorisationApproval === MOTORISATION_PENDING) {
+      const pending = maxMotorisationAccessories(form.lineItems, resolveAccessoryPresets(pricedItems));
+      if (pending.length) {
+        showToast('info', `Sending without ${pending.length} suggested accessory line${pending.length === 1 ? '' : 's'} — add them below the line items if they belong on this quote.`);
+      }
+    }
     setSendPreview({
       ...form,
       motorisationPresets: resolveAccessoryPresets(pricedItems),
@@ -1989,7 +2169,10 @@ export default function QuoteBuilder() {
     form.discountType, form.discountValue,
     // Live library prices, matching MotorisationPanel — saving snapshots
     // these onto the quote, so what is shown here is what gets stored.
-    resolveAccessoryPresets(pricedItems)
+    resolveAccessoryPresets(pricedItems),
+    // And the ask: a suggestion nobody has accepted is worth $0 here, exactly
+    // as it is worth $0 on the customer's quote.
+    form.motorisationApproval
   );
 
   const filteredCustomers = customers.filter(c =>
@@ -2624,8 +2807,16 @@ export default function QuoteBuilder() {
                 </button>
               )}
 
-              {/* Motorisation accessories — derived, not stored */}
-              <MotorisationPanel lineItems={form.lineItems} selectedIds={form.selectedLineItemIds || []} pricedItems={pricedItems} />
+              {/* Motorisation accessories — suggested, added only when asked */}
+              <MotorisationPanel
+                lineItems={form.lineItems}
+                selectedIds={form.selectedLineItemIds || []}
+                pricedItems={pricedItems}
+                approval={form.motorisationApproval}
+                onAdd={addMotorisationAccessories}
+                onDecline={declineMotorisationAccessories}
+                onReset={resetMotorisationAccessories}
+              />
 
               {/* Parts & Accessories quick-add */}
               <div className="pt-2 border-t border-slate-100">

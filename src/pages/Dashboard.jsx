@@ -157,7 +157,7 @@ function quoteTotal(q) {
   const { total } = computeQuoteTotals(
     q.lineItems || [], q.depositType, q.depositValue,
     q.gstRate, q.includesGST, effectiveSelectedIds(q.lineItems, q.selectedLineItemIds),
-    q.discountType, q.discountValue, q.motorisationPresets
+    q.discountType, q.discountValue, q.motorisationPresets, q.motorisationApproval
   );
   return total;
 }
@@ -167,7 +167,7 @@ function quoteTotal(q) {
 // job's motors with none of the handsets that were sold alongside them.
 function activeLineItems(q) {
   const selected = effectiveSelectedIds(q.lineItems, q.selectedLineItemIds);
-  return withMotorisationAccessories(q.lineItems || [], selected, q.motorisationPresets).filter(li =>
+  return withMotorisationAccessories(q.lineItems || [], selected, q.motorisationPresets, q.motorisationApproval).filter(li =>
     li.type === 'Required' || li.type === 'Part' ||
     ((li.type === 'Optional' || li.type === 'Multiple Choice') && selected.includes(li.id))
   );

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { format, parseISO, isPast, differenceInCalendarDays } from 'date-fns';
 import {
   getQuote, getCustomer, getQuoteSettings, fetchPublicQuoteSettings, googleReviewsLink,
@@ -59,6 +59,11 @@ const T = {
   // reads as a pane of something rather than a dark rectangle.
   cardShadow: 'var(--lq-card-shadow)',
 };
+
+// Height of the staff-preview strip. Fixed rather than intrinsic because the
+// sticky room headings offset themselves by it, and a strip that grows with its
+// contents silently puts those headings behind it.
+const STAFF_STRIP_H = 44;
 
 /**
  * Money, as a customer reads it.
@@ -665,6 +670,30 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // The capability token that makes this link a link rather than a guess. Quote
   // ids are sequential, so without it the id space could simply be walked.
   const token          = searchParams.get('t') || '';
+  const navigate       = useNavigate();
+
+  // Leaving the standalone staff preview. It opens with `window.open`, so on a
+  // desktop you close the tab — but inside the installed PWA there is no tab
+  // bar and no browser back, and the preview route renders outside the app
+  // shell, so a phone had no way back out of it at all. Close the window when
+  // this view was script-opened and can be closed; otherwise walk back to the
+  // quote the preview is of.
+  const exitStaffPreview = () => {
+    const opened = !!window.opener;
+    if (opened) {
+      window.close();
+      // window.close() is a no-op for a view the script cannot close (iOS
+      // standalone among them), so fall through rather than leaving the
+      // button dead.
+      if (!window.closed) {
+        if (id) navigate(`/quotes/${id}`);
+        else if (window.history.length > 1) navigate(-1);
+      }
+      return;
+    }
+    if (id) navigate(`/quotes/${id}`);
+    else if (window.history.length > 1) navigate(-1);
+  };
 
   // Business/payment details come from the shared Supabase row, not just
   // localStorage: a customer opens this page on their own device, where the
@@ -899,6 +928,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const totals = computeQuoteTotals(
     quote.lineItems, quote.depositType, quote.depositValue, gstRate, quote.includesGST,
     selectedOptionals, quote.discountType, quote.discountValue, quote.motorisationPresets,
+    quote.motorisationApproval,
   );
 
   // ── How GST is presented ─────────────────────────────────────────────────
@@ -925,12 +955,18 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // sheet and onto the purchase order — so the letter the customer reads is the
   // same one the installer is standing in front of. groupByRoom takes the
   // room and the letter back apart for display and never renumbers them.
-  // Remotes and chargers aren't stored on the quote — they're derived from
-  // whichever motors the customer has live right now, so a quote offering
-  // chain-or-battery at every window prices its handsets as they decide
-  // instead of charging for motorisation nobody chose. Resolved once, here,
-  // and everything below (rooms, summary, plan join, totals) reads `items`.
-  const items = withMotorisationAccessories(quote.lineItems || [], selectedOptionals, quote.motorisationPresets);
+  // Remotes and chargers are resolved once, here, and everything below (rooms,
+  // summary, plan join, totals) reads `items`.
+  //
+  // On a quote where staff accepted the suggestion they are already real lines
+  // and this is a no-op. Where nobody was asked yet, or they said no, the gate
+  // (quote.motorisationApproval) keeps them off the customer's quote entirely —
+  // the total shown here is then the total the server computed and the one that
+  // gets invoiced. And on a quote from before the ask the old behaviour stands:
+  // derived from whichever motors the customer has live right now, so a quote
+  // offering chain-or-battery at every window prices its handsets as they
+  // decide instead of charging for motorisation nobody chose.
+  const items = withMotorisationAccessories(quote.lineItems || [], selectedOptionals, quote.motorisationPresets, quote.motorisationApproval);
   // Only documents with bytes behind them. A record whose upload half-failed
   // would render as a link to nowhere on a customer's quote.
   const quoteDocuments = (quote.documents || []).filter(d => d?.path);
@@ -1394,7 +1430,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   // The staff-preview strip is sticky at the very top, so room headings have to
   // start below it or they stick underneath and are never seen. Zero for a
   // customer, who never gets that strip.
-  const roomStickyTop = (isStaffPreview && !previewQuote) ? 30 : 0;
+  const roomStickyTop = (isStaffPreview && !previewQuote) ? STAFF_STRIP_H : 0;
 
   // ── Option card ────────────────────────────────────────────────────────
   const OptionCard = ({ item, kind, compare = false, titleOverride = '', benefit = '' }) => {
@@ -1548,8 +1584,27 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   return (
     <div style={{ minHeight: '100vh', background: T.page, position: 'relative' }}>
       {isStaffPreview && !previewQuote && (
-        <div style={{ position: 'sticky', top: 0, zIndex: 50, background: T.raised, color: T.onRaised, fontSize: 11, fontWeight: 500, letterSpacing: '0.06em', textAlign: 'center', padding: '8px 16px' }}>
-          Staff preview — this is how the customer sees the quote. No tracking or status changes are recorded.
+        <div style={{ position: 'sticky', top: 0, zIndex: 50, background: T.raised, color: T.onRaised, height: STAFF_STRIP_H, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px 0 16px', fontSize: 11, fontWeight: 500, letterSpacing: '0.06em' }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            Staff preview — this is the customer&rsquo;s view. No tracking or status changes are recorded.
+          </span>
+          {/* The way out. Sized as a real touch target because on a phone this
+              is the only one there is. */}
+          <button
+            type="button" onClick={exitStaffPreview} aria-label="Close preview"
+            style={{
+              flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontFamily: 'inherit', fontSize: 11.5, fontWeight: 600, letterSpacing: '0.04em',
+              color: T.onRaised, background: 'transparent',
+              border: `1px solid ${T.borderInverse}`, borderRadius: 999,
+              minHeight: 32, padding: '0 12px', cursor: 'pointer',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+            Close
+          </button>
         </div>
       )}
 
