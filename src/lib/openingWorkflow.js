@@ -58,7 +58,7 @@ export function isScopePlaceholder(line = {}) {
   return line.scopePlaceholder || line.quantityConfirmed===false || (line.quantityConfirmed!==true && /UNMEASURED scope placeholder|SCOPE PLACEHOLDER ONLY/i.test(line.notes || ''));
 }
 export const CURTAIN_SETUPS=['Sheer only','Blockout only','Separate sheer and blockout','Curtain with attached lining'];
-export const CURTAIN_SETUP_LABELS={'Separate sheer and blockout':'Sheer + separate blockout (two curtains)','Curtain with attached lining':'Curtain with sewn-in lining (one curtain)'};
+export const CURTAIN_SETUP_LABELS={'Separate sheer and blockout':'Sheer + blockout','Curtain with attached lining':'Curtain + sewn-in lining'};
 // Explicit legacy lining settings and product descriptions can answer this
 // question. Two tracks alone do not tell us which fabrics hang on them.
 export function curtainSetupForLine(line={}) {
