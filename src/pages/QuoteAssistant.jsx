@@ -34,6 +34,7 @@ function QuoteAssistantForJob({jobId,userId}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sheetEditing, setSheetEditing] = useState(false);
+  const [addInstruction,setAddInstruction]=useState(false);
   const approvedSheet=session.approvedSheet;
   const setApprovedSheet=useCallback(value=>remember({approvedSheet:value}),[remember]);
   const [setup, setSetup] = useState(false);
@@ -102,14 +103,16 @@ function QuoteAssistantForJob({jobId,userId}) {
     {current && <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-4" aria-live="polite">
       <div className="flex items-center gap-2">{current.status === 'running' && confirmed ? <Loader size={18} className="animate-spin text-amber-600" /> : <CheckCircle2 size={18} className="text-amber-700" />}<h2 className="font-semibold text-slate-900">{confirmed?(labels[current.status] || current.status):'Saved quote progress'}</h2></div>
       {current.status==='needs_input' && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 className="text-sm font-semibold text-amber-900">Continue where you left off</h3>{current.questions?.length?<ul className="mt-2 list-disc pl-5 space-y-2 text-sm text-slate-700">{current.questions.map((q,i)=><li key={i}>{q}</li>)}</ul>:<p className="mt-2 text-sm">{current.summary}</p>}<p className="mt-3 text-xs text-slate-500">Your question and typed answers are saved when you leave this page.</p></div>}
-      {current.status === 'needs_input' && activeSheet && <OpeningWorkspace key={`${current.id}:${activeSheet.id}`} jobId={jobId} sheetId={activeSheet.id} savedDraft={session.openingDraft?.runId===current.id?session.openingDraft:null} onDraftChange={saveOpeningDraft} onSaved={setApprovedSheet} onEditing={onSheetEditing} />}
+
+      {current.status === 'needs_input' && activeSheet && <OpeningWorkspace key={`${current.id}:${activeSheet.id}`} jobId={jobId} sheetId={activeSheet.id} answersOnly savedDraft={session.openingDraft?.runId===current.id?session.openingDraft:null} onDraftChange={saveOpeningDraft} onSaved={setApprovedSheet} onEditing={onSheetEditing} />}
       {current.status === 'needs_input'
         ? <details className="rounded-lg border border-slate-100 p-3"><summary className="cursor-pointer text-sm font-medium text-slate-600">Plan findings and other decisions</summary><RequestNotes current={current} showQuestions={false} /></details>
         : <RequestNotes current={current} />}
       {current.supplierReference && <p className="text-sm text-slate-600">Supplier reference: <strong>{current.supplierReference}</strong></p>}
       {Number.isFinite(current.totalIncGst) && <p className="text-lg font-semibold">{new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(current.totalIncGst)} including GST</p>}
       {current.draftQuoteUrl && <a href={current.draftQuoteUrl} className={button}>Review draft quote <ExternalLink size={15} /></a>}
-      {current.status === 'needs_input' && <div className="space-y-3"><label className="block text-sm font-medium" htmlFor="quote-answer">Additional answers or instructions</label><textarea id="quote-answer" rows={4} value={answer} onChange={e=>setAnswer(e.target.value)} className={field} placeholder="Any decisions not covered by the fields above…" /><button className={button} disabled={busy||!confirmed||!connection?.signedIn||sheetEditing||(!answer.trim()&&!approval)} onClick={()=>action(`/runs/${current.id}/continue`,{answer:answer.trim() || 'Use the specifications I saved to the measure sheet. Recheck any remaining gaps before supplier entry.', approvedSheetUpdatedAt:approval?.updatedAt})}>Continue quoting</button></div>}
+
+      {current.status === 'needs_input' && <div className="space-y-3">{!current.questions?.length && !answer.trim() && !addInstruction && <button type="button" onClick={()=>setAddInstruction(true)} className="block text-xs text-slate-500 underline">Add a note for the assistant</button>}{(current.questions?.length>0 || answer.trim() || addInstruction) && <><label className="block text-sm font-medium" htmlFor="quote-answer">Your answer</label><textarea id="quote-answer" rows={4} value={answer} onChange={e=>setAnswer(e.target.value)} className={field} placeholder="Type your answer here…" /></>}<button className={button} disabled={busy||!confirmed||!connection?.signedIn||sheetEditing||(!answer.trim()&&!approval)} onClick={()=>action(`/runs/${current.id}/continue`,{answer:answer.trim() || 'Use the specifications I saved to the measure sheet. Recheck any remaining gaps before supplier entry.', approvedSheetUpdatedAt:approval?.updatedAt})}>Continue quoting</button></div>}
       {inProgress && <button disabled={busy||!confirmed||!connection} onClick={()=>action(`/runs/${current.id}/stop`,{})} className="ml-3 text-sm text-slate-500 underline">Stop this request</button>}
       {!!current.events?.length && <details className="border-t border-slate-100 pt-3"><summary className="cursor-pointer text-sm text-slate-500">Activity</summary><div className="mt-3 max-h-64 overflow-auto space-y-2">{current.events.map((event,i)=><p key={i} className="whitespace-pre-wrap text-xs leading-5 text-slate-600">{event.text}</p>)}</div></details>}
     </section>}
