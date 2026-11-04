@@ -69,7 +69,7 @@ const snapshotOf = (t) => ({
   markers: t?.markers || [],
 });
 
-export default function JobTakeoff() {
+export default function JobTakeoff({active=true,onExit}) {
   const { id: jobId } = useProjectParams();
   const navigate = useProjectNavigate();
   const [searchParams]=useProjectSearchParams();
@@ -82,7 +82,7 @@ export default function JobTakeoff() {
   // while it's open, and hand the sidebar back on the way out. Ignored entirely
   // once the user has set the sidebar themselves, so it suggests and never argues.
   const { requestRail } = useSidebar();
-  useEffect(() => requestRail(), [requestRail]);
+  useEffect(() => active && !onExit?requestRail():undefined, [requestRail,active,onExit]);
 
   const job = getJob(jobId);
   const customer = job ? getCustomer(job.customerId) : null;
@@ -1688,6 +1688,7 @@ export default function JobTakeoff() {
 
   // ── Keyboard ────────────────────────────────────────────────────────────
   useEffect(() => {
+    if(!active)return;
     const onKey = (e) => {
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return;
@@ -1773,7 +1774,7 @@ export default function JobTakeoff() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [undo, redo, draftPoints, canFinishDraft, selectedIds, activeHandle]);
+  }, [undo, redo, draftPoints, canFinishDraft, selectedIds, activeHandle,active]);
 
   // ── Derived for render ──────────────────────────────────────────────────
   const pageCount = pdf?.numPages || takeoff?.pageCount || 1;
@@ -1878,6 +1879,7 @@ export default function JobTakeoff() {
           same corner is one arrow too many. The job is still reachable by name
           below. */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white">
+        {onExit && <button type="button" onClick={()=>{flushSave();onExit();}} className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600"><ChevronLeft size={15}/> Back to measurements</button>}
         <div className="min-w-0">
           <h1 className="font-semibold text-slate-900 text-sm truncate flex items-center gap-2">
             <Ruler size={15} className="text-amber-500" /> Plan Takeoff
