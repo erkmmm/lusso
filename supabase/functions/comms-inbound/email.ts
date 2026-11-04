@@ -60,20 +60,48 @@ export async function parseInboundEmail(
 
   // 2. Fall back to the sender's address — covers mail sent to a token that
   // has been purged, and customers who compose fresh rather than replying.
-  if (!customerId) {
+  //
+  // Guarded on matchedBy, NOT on customerId. An enquiry-scoped token resolves
+  // the conversation completely while leaving customer_id null, because a web
+  // lead has no customer record yet — so `if (!customerId)` let this fallback
+  // run on every single reply to a website auto-reply, bolting on a customer
+  // the token had deliberately not named, and then (step 3) that customer's
+  // latest job. One real reply to a lead enquiry landed on an unrelated
+  // customer and their open job that way.
+  if (matchedBy !== "token") {
     // ilike gives case-insensitive matching, but _ and % are wildcards to it
     // and both are legal in an address — jane_smith@ would otherwise also
     // match jane-smith@. Escape them so this stays an exact comparison.
     const pattern = from.replace(/[\\%_]/g, m => `\\${m}`)
+    // Two rows fetched to detect ambiguity, not to choose between them.
     const { data: customers } = await admin
       .from("customers")
       .select("id")
       .ilike("email", pattern)
       .is("deleted_at", null)
-      .limit(1)
+      .limit(2)
 
-    customerId = customers?.[0]?.id ?? null
-    if (customerId) matchedBy = "sender_email"
+    if (customers?.length === 1) {
+      customerId = customers[0].id
+      matchedBy = "sender_email"
+    } else if ((customers?.length ?? 0) > 1) {
+      // One address legitimately spans many customer records here: builders,
+      // architects and property managers refer clients off a single mailbox
+      // (deb@lusso.com.au is on 13 records, bayden@bgdarchitects.com on 3).
+      // The old query took .limit(1) with no .order(), so which client the
+      // message landed on was whatever Postgres returned first — and it did
+      // change between messages from the same sender.
+      //
+      // So: attach to nobody and let it sit unassigned in the Inbox. A reply
+      // filed confidently against the wrong customer's job is worse than one
+      // visibly waiting to be filed, because nothing ever prompts a human to
+      // go and correct it.
+      matchedBy = "ambiguous_sender_email"
+      console.warn(
+        `inbound email from ${from} matches ${customers!.length}+ customer records — ` +
+        `left unassigned rather than guessing. File it from the Inbox.`
+      )
+    }
   }
 
   // 3. With a customer but no job, attach to their most recent active job —
