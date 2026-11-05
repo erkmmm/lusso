@@ -36,9 +36,9 @@ test('duplicate names include inactive library records and ignore case/outer spa
   assert.equal(duplicateLibraryName([{itemName:' Pelmet ',isActive:false}],'PELMET'),true);
   assert.equal(duplicateLibraryName([{itemName:'Pelmet'}],'Bay pelmet'),false);
 });
-test('text block movement respects before/after positions and boundaries',()=>{
+test('text blocks move in their displayed order, including legacy placement fields',()=>{
   const items=[{id:'a',placement:'before'},{id:'b',placement:'after'},{id:'c',placement:'before'}];
-  assert.deepEqual(moveQuoteText(items,'c',-1).map(i=>i.id),['c','b','a']);
+  assert.deepEqual(moveQuoteText(items,'c',-1).map(i=>i.id),['a','c','b']);
   assert.deepEqual(moveQuoteText(items,'a',-1),items);
   assert.deepEqual(moveQuoteText(items,'unknown',1),items);
   assert.deepEqual(items.map(i=>i.id),['a','b','c']);

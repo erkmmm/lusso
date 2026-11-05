@@ -1584,9 +1584,9 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     );
   };
 
-  const textItemsAt = placement => (quote.textItems || [])
-    .filter(item => (item.placement || 'after') === placement && (item.heading?.trim() || item.body?.trim()))
-    .map(item => <section key={item.id} style={{ ...container, padding: '24px 22px 0' }}>
+  const textItemsBelowOptions = () => (quote.textItems || [])
+    .filter(item => item.heading?.trim() || item.body?.trim())
+    .map(item => <section key={item.id} style={{ marginTop: 24 }}>
       {item.heading && <h3 style={{ ...h3, margin: '0 0 10px' }}>{item.heading}</h3>}
       {item.body && <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.8 }}>{item.body}</p>}
     </section>);
@@ -1685,7 +1685,6 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             )}
           </div>
         </header>
-        {textItemsAt('before')}
 
         {/* ── Body: the quote, with who it is between alongside it ──────── */}
         {/* The From/For pair used to sit between the header and the first
@@ -1721,6 +1720,8 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
               Everything below is quoted for your rooms.{hasOptions ? ' Toggle the pieces you want, or choose between treatments where we have offered alternatives, and your total updates as you go.' : ''}{quote.includesGST ? ' Prices are shown excluding GST; GST is added once in the summary at the end.' : ''}
             </p>
           </div>
+
+          {textItemsBelowOptions()}
 
           {rooms.map(({ room, entries }, roomIdx) => {
             // "Optional — add if you want it" on three optionals in a row said
@@ -1885,8 +1886,6 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             )}
           </div>
         )}
-
-        {textItemsAt('after')}
 
         {/* ── Summary + terms + payment + reviews + CTA ──────────────────── */}
         <div style={{ ...container, padding: '40px 22px 0' }} ref={tailRef}>

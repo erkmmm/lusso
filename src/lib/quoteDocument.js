@@ -68,8 +68,8 @@ export async function buildQuotePdf(snap) {
   /** Start a new page unless `need` points still fit above the footer. */
   const ensure = (need) => { if (y + need > BOTTOM) { doc.addPage(); y = M; } };
 
-  const textItemsAt = (placement) => {
-    (snap.textItems || []).filter(item => (item.placement || 'after') === placement).forEach(item => {
+  const renderTextItems = () => {
+    (snap.textItems || []).forEach(item => {
       if (!item.heading?.trim() && !item.body?.trim()) return;
       ensure(42);
       if (item.heading?.trim()) {
@@ -85,7 +85,7 @@ export async function buildQuotePdf(snap) {
       y += 16;
     });
   };
-  textItemsAt('before');
+  renderTextItems();
 
   // ── A table per room, so the paper reads in the same order as the page ────
   const money = (n) => snap.formatMoney(n);
@@ -186,8 +186,6 @@ export async function buildQuotePdf(snap) {
   }
 
   // ── Terms ─────────────────────────────────────────────────────────────────
-  textItemsAt('after');
-
   if ((snap.terms || '').trim()) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
     const termLines = doc.splitTextToSize(snap.terms.trim(), pageW - M * 2);

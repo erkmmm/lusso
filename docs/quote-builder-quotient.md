@@ -7,9 +7,10 @@ Implemented on `feat/quotient-style-builder`, based on `cb17ec8`, in an isolated
 - Familiar Quotient-style editing flow, using Lusso shared theme colours, surfaces, rounded panels and controls. Customer/from panel, overview/activity/settings and continuous editable quote document.
 - Inline custom item names, descriptions, quantities and unit prices. A quote-specific name does not rename its source library product or change its measured product type.
 - Explicit Save to Price Library dialog creates a new reusable item. Duplicate names are blocked, including inactive records. Base costs, labour, margin, pricing method and supplier carry across; measurements, discounts, quantities and private notes do not.
-- Customer-facing text blocks before/after prices, with move/delete controls. Rooms and openings can be reordered without separating choice groups or changing window references.
+- Customer-facing text blocks appear directly below the options explanation, before room prices, with move/delete controls in the editor. Legacy placement fields remain readable. Rooms and openings can be reordered without separating choice groups or changing window references.
 - Price visibility settings apply to customer preview and PDF: all prices/quantities, item totals, or quote total only.
-- Save Now stays in the editor. Preview uses the same name stamping and conflict check as saving.
+- Save Now stays in the editor. Ctrl+S and Cmd+S use the same save action, committing deferred fields first. Hidden editors, dialogs and disabled editors do not trigger background saves. Preview uses the same name stamping and conflict check as saving.
+- In the quote section the project information scrolls away; only the compact quote toolbar stays pinned. Other project sections retain their existing header behaviour.
 - Preview & Send is portalled to the body with its own opaque quote background. Translucent quote panels no longer reveal the editor behind them. Email sending behaviour is unchanged.
 - The original customer-facing heading and visual layout are preserved. Custom item names and optional text content are retained in the customer quote and exported PDF.
 

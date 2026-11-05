@@ -32,9 +32,7 @@ export function moveQuoteText(items, id, direction) {
   const result = [...items];
   const index = result.findIndex(item => item.id === id);
   if (index < 0) return result;
-  const placement = result[index].placement || 'after';
-  let target = index + direction;
-  while (target >= 0 && target < result.length && (result[target].placement || 'after') !== placement) target += direction;
+  const target = index + direction;
   if (target >= 0 && target < result.length) [result[index], result[target]] = [result[target], result[index]];
   return result;
 }

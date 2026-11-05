@@ -1,4 +1,3 @@
-import {useProjectHeaderOffset} from '../hooks/useProjectHeaderOffset';
 import {useCallback,useEffect,useMemo,useState} from 'react';
 import {useNavigate,useParams,useSearchParams,Link} from 'react-router-dom';
 import {X,User,StickyNote,MessageSquare,Files,Mic,Briefcase,ClipboardList,FileText,PackageCheck,ChevronRight} from 'lucide-react';
@@ -26,7 +25,6 @@ export default function ProjectWorkspace(){const {id}=useParams();return <Projec
 function ProjectWorkspaceForJob({jobId}){
  useDataRefresh();const {user}=useAuth();const navigate=useNavigate();const [params]=useSearchParams();
  const job=getJob(jobId),customer=getCustomer(job?.customerId);
- const workspaceRef=useProjectHeaderOffset(Boolean(job && !job.deletedAt));
  const sheets=getMeasureSheetsByJob(jobId).filter(s=>!s.deletedAt),quotes=getQuotesByJob(jobId).filter(q=>!q.deletedAt);
  const cacheKey=`ui.project-workspace.v1:${user?.id}:${jobId}`;
  const [initial]=useState(()=>{const saved=readState(cacheKey);const request=readQuoteSession(localStorage,user?.id,jobId).currentRun;return {...saved,...(!Object.hasOwn(saved,'ai') && ['running','starting','needs_input'].includes(request?.status)?{ai:'1'}:{})};});
@@ -42,8 +40,8 @@ function ProjectWorkspaceForJob({jobId}){
  const next=projectNextAction(job,sheets,quotes),notes=getNotes({jobId}).filter(isTaskOpen).length;
  const plan=getTakeoffByJob(jobId),orders=getPurchaseOrdersByJob(jobId);
  const openNext=()=>go({section:next.section,...(next.section==='measurements'?{view:'cards'}:{}),...(next.sheetId?{sheet:next.sheetId}:{}),...(next.quoteId?{quote:next.quoteId}:{}),...(next.ai?{ai:'1'}:{})});
- return <ProjectWorkspaceContext.Provider value={context}><div ref={workspaceRef} className="project-workspace mx-auto max-w-[1600px] p-3 sm:p-5 space-y-4">
-  <header className="project-workspace-header sm:sticky top-0 z-30 rounded-xl border border-slate-200 bg-white shadow-sm">
+ return <ProjectWorkspaceContext.Provider value={context}><div className="project-workspace mx-auto max-w-[1600px] p-3 sm:p-5 space-y-4">
+  <header className={`project-workspace-header ${state.section==='quote'?'relative':'sm:sticky'} top-0 z-30 rounded-xl border border-slate-200 bg-white shadow-sm`}>
    <div className="px-4 pt-3"><Link to="/jobs" className="inline-flex items-center gap-1 text-xs text-slate-500">Projects <ChevronRight size={12}/></Link><span className="ml-2 text-xs font-medium text-slate-500">{job.jobNumber}</span></div>
    <div className="px-4 py-3 flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold text-slate-900">{customer?.name || 'Project'}</h1><StatusBadge status={job.status}/><details className="relative"><summary className="cursor-pointer text-xs text-slate-500">Actions</summary><div className="absolute z-40 top-full left-0 mt-2 w-64 rounded-xl border bg-white p-3 shadow-lg"><label className="block text-xs font-medium text-slate-500">Project status<select aria-label="Project status" className="mt-1 w-full rounded-lg border p-2 text-sm" value={job.status} onChange={e=>updateJobStatus(jobId,e.target.value,'Staff')}>{JOB_STATUSES.map(status=><option key={status}>{status}</option>)}</select></label></div></details></div><p className="mt-1 text-xs text-slate-500">Installation: {job.siteAddress || customer?.address || 'Address needed'}{job.assignedStaff?` · ${job.assignedStaff}`:''}</p></div><button onClick={openNext} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white">{next.label}</button></div>
    <nav aria-label="Project sections" className="grid grid-cols-4 border-t border-slate-100">{sections.map(([key,label,Icon])=><button key={key} aria-label={label} aria-current={state.section===key?'page':undefined} onClick={()=>go({section:key})} className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-2 py-3 text-xs sm:text-sm border-b-2 ${state.section===key?'border-amber-500 bg-amber-50 text-amber-800 font-semibold':'border-transparent text-slate-500'}`}><Icon size={15}/><span className="sm:hidden">{key==='measurements'?'Measure':key==='delivery'?'Orders':label}</span><span className="hidden sm:inline">{label}</span></button>)}</nav>

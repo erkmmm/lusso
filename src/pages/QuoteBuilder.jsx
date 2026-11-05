@@ -1,3 +1,4 @@
+import { useQuoteSaveShortcut } from '../hooks/useQuoteSaveShortcut';
 import { createPortal } from 'react-dom';
 import { swapQuoteGroups } from '../lib/quoteBuilderItems';
 import QuoteLibraryDialog from '../components/QuoteLibraryDialog';
@@ -1582,6 +1583,10 @@ export default function QuoteBuilder({embedded=false}) {
   });
   const expandItem  = (itemId) => setExpandedItems(prev => new Set([...prev, itemId]));
 
+  const editorRef = useRef(null);
+  const saveButtonRef = useRef(null);
+  useQuoteSaveShortcut(editorRef, saveButtonRef, Boolean(form) && !nakedNewQuote && !sendPreview && !libraryLine);
+
   // Redirecting a bare /quotes/new to the project flow — render nothing.
   if (nakedNewQuote) return null;
 
@@ -2114,7 +2119,7 @@ export default function QuoteBuilder({embedded=false}) {
   const selectedCustomer = customers.find(c => c.id === form.customerId);
 
   return (
-    <div className="quote-builder p-3 sm:p-6 max-w-6xl mx-auto">
+    <div ref={editorRef} className="quote-builder p-3 sm:p-6 max-w-6xl mx-auto">
 
       {/* Preview & send — the customer's view with the send control past its end */}
       {sendPreview && (
@@ -2151,7 +2156,7 @@ export default function QuoteBuilder({embedded=false}) {
       {libraryLine && <QuoteLibraryDialog line={libraryLine} productTypes={productTypes} wording={wording} onClose={() => setLibraryLine(null)} onSaved={item => { setLibraryLine(null); showToast('success', `${item.itemName} added to the Price Library.`); }}/>}
       <div className="quote-toolbar">
         <button type="button" className="quote-primary" disabled={saving} onClick={openSendPreview}>{saving ? <Loader2 size={14} className="animate-spin"/> : <Eye size={14}/>} {isDraft ? 'Preview & Send' : 'Preview & Re-send'}</button>
-        <button type="button" className="quote-secondary" disabled={saving} onClick={handleSaveDraft}><Save size={14}/> Save Now</button>
+        <button ref={saveButtonRef} type="button" className="quote-secondary" disabled={saving} onClick={handleSaveDraft} aria-keyshortcuts="Control+S Meta+S" title="Save quote (Ctrl+S / ⌘S)"><Save size={14}/> Save Now</button>
         <span role="status" className="text-xs text-slate-500">{saving ? 'Saving…' : JSON.stringify(form) === savedForm ? 'Saved' : 'Unsaved changes'}</span>
         <span className="flex-1"/>
         <details className="relative"><summary className="quote-secondary cursor-pointer">Actions <ChevronDown size={13}/></summary><div className="absolute right-0 top-full mt-2 bg-white border border-slate-200 rounded p-3 w-72 shadow-lg z-40 space-y-3"><button type="button" onClick={handlePreview} className="quote-secondary w-full"><Eye size={13}/> Customer Preview</button>          {/* Template bar */}
@@ -2410,8 +2415,8 @@ export default function QuoteBuilder({embedded=false}) {
                 onToggleSizes={(v) => set('planSnapshot', { ...form.planSnapshot, showSizes: v })}
               />
 </div>
-        <QuoteTextItems items={form.textItems || []} placement="before" onChange={items => set('textItems', items)}/>
-        <div className="flex justify-end mb-4"><AddQuoteText items={form.textItems || []} placement="before" onChange={items => set('textItems', items)}/></div>
+        <QuoteTextItems items={form.textItems || []} onChange={items => set('textItems', items)}/>
+        <div className="flex justify-end mb-4"><AddQuoteText items={form.textItems || []} onChange={items => set('textItems', items)}/></div>
         <div className="quote-content space-y-5">
           {/* Measure Sheet Import Card */}
           <Card>
@@ -2914,8 +2919,6 @@ export default function QuoteBuilder({embedded=false}) {
             </div>
 
           </Card>
-          <QuoteTextItems items={form.textItems || []} placement="after" onChange={items => set('textItems', items)}/>
-          <AddQuoteText items={form.textItems || []} onChange={items => set('textItems', items)}/>
           <Section title="To place your order & payment" icon={DollarSign} defaultOpen>
             <div className="space-y-4 text-sm text-slate-600 whitespace-pre-wrap">
               {settings.orderTerms && <p>{settings.orderTerms}</p>}

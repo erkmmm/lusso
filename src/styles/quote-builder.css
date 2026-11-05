@@ -11,7 +11,7 @@
   --quote-ring: var(--ring, var(--lusso-bronze));
   color: var(--quote-ink);
 }
-.quote-toolbar { position:sticky; top:var(--project-header-offset, 0px); z-index:20; display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:14px 20px; margin-bottom:18px; background:var(--quote-surface); border:1px solid var(--quote-border); border-radius:14px; box-shadow:0 3px 16px rgb(0 0 0 / .035); }
+.quote-toolbar { position:sticky; top:0; z-index:20; display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:14px 20px; margin-bottom:18px; background:var(--quote-surface); border:1px solid var(--quote-border); border-radius:14px; box-shadow:0 3px 16px rgb(0 0 0 / .035); }
 .quote-primary, .quote-secondary { display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--quote-border); border-radius:9px; padding:9px 14px; font-size:13px; font-weight:600; background:var(--quote-surface); color:var(--quote-ink); cursor:pointer; transition:background-color 150ms, border-color 150ms; }
 .quote-primary { background:var(--quote-accent); color:var(--quote-on-accent); border-color:var(--quote-accent); }
 .quote-primary:hover { background:color-mix(in srgb, var(--quote-accent) 88%, var(--quote-ink)); }
