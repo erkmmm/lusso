@@ -1920,7 +1920,7 @@ export default function JobTakeoff({active=true,onExit}) {
                 <button
                 onClick={() => { setClientView(v => !v); cancelDraft(); setClientPick(null); }}
                 title={clientView ? 'Back to the working markup' : 'Show this as the customer sees it'}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                className={`flex min-w-11 min-h-11 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   clientView ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >

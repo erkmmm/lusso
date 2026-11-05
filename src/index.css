@@ -1801,7 +1801,7 @@ html .quote-question-fields select[aria-required="true"] {
 @media (max-width: 767px) {
   .takeoff-header h1 { font-size: 12px; gap: 4px; }
   .takeoff-header h1 svg { display: none; }
-  .takeoff-header-actions > span, .takeoff-header-actions > label { display: none; }
+  .takeoff-header-actions > label { display: none; }
   .takeoff-header p { max-width: 120px; font-size: 10px; }
   .takeoff-header-actions button { min-height: 44px; }
   .takeoff-open-specs { padding-left: 12px; padding-right: 12px; }
@@ -1834,4 +1834,10 @@ html .quote-question-fields select[aria-required="true"] {
 @media (max-width: 1279px) {
   .takeoff-screen button { min-height: 44px; }
   .takeoff-spec-panel input:not([type=checkbox]), .takeoff-spec-panel select, .takeoff-spec-panel textarea { font-size: 16px; min-height: 44px; }
+}
+
+.opening-workspace-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+.opening-workspace .opening-workspace-tabs > button { flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 1279px) {
+  .takeoff-phone-viewbar input { min-height: 44px; font-size: 16px; }
 }
