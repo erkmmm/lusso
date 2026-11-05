@@ -1066,7 +1066,7 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
           <textarea aria-label="Item description" className="quote-item-description" rows={2} placeholder="Description the customer sees…" value={item.description || ''} onChange={e => set('description', e.target.value)}/>
         </div>
         <label><span className="quote-item-label">Quantity</span><input aria-label="Item quantity" className="quote-field" type="number" min="1" step="1" value={item.quantity} onChange={e => set('quantity', e.target.value)}/></label>
-        <label><span className="quote-item-label">Price / each</span><input aria-label="Item unit price" className="quote-field" type="number" min="0" step="0.01" placeholder={pricing.preDiscountSell.toFixed(2)} value={item.manualSellPrice ?? ''} onChange={e => set('manualSellPrice', e.target.value)}/></label>
+        <label><span className="quote-item-label">Price / each</span><input aria-label="Item unit price" className="quote-field" type="number" step="0.01" placeholder={pricing.preDiscountSell.toFixed(2)} value={item.manualSellPrice ?? ''} onChange={e => set('manualSellPrice', e.target.value)}/></label>
         <div className="quote-line-total text-right"><span className="quote-item-label">Total excl. GST</span><strong className="block py-2">{fmt(lineTotal)}</strong>{discountTotal > 0 && <span className="text-xs text-slate-500">−{fmt(discountTotal)} discount</span>}</div>
       </div>
       <div className="quote-item-tools">
@@ -1860,7 +1860,7 @@ export default function QuoteBuilder({embedded=false}) {
     if (!form.title.trim()) e.title = 'Quote title is required';
     if (form.lineItems.some(item => !describeLine(item, productTypes, wording) || (item.customName != null && !item.customName.trim()))) e.items = 'Name every price item or select a product.';
     if (form.lineItems.some(item => !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) e.quantity = 'Each price item needs a quantity greater than zero.';
-    if (form.lineItems.some(item => item.manualSellPrice !== '' && item.manualSellPrice != null && (!Number.isFinite(Number(item.manualSellPrice)) || Number(item.manualSellPrice) < 0))) e.price = 'Item prices must be zero or greater.';
+    if (form.lineItems.some(item => item.manualSellPrice !== '' && item.manualSellPrice != null && !Number.isFinite(Number(item.manualSellPrice)))) e.price = 'Enter a valid number for each item price.';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
