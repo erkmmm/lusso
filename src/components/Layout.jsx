@@ -1,7 +1,8 @@
+import GlobalSearch from './GlobalSearch';
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
-  LayoutDashboard, Briefcase, Users,
+  Search, LayoutDashboard, Briefcase, Users,
   Menu, X, ChevronRight, Bell, Plus, HardHat, CalendarDays, Star,
   CheckCircle2, AlertTriangle, Info, Settings2, FileText,
   ChevronDown, Home, Users2, Inbox, ArrowLeft,
@@ -27,7 +28,7 @@ const NAV_SECTIONS = [
   {
     label: 'WORKFLOW',
     items: [
-      { to: '/',               label: 'Dashboard', icon: LayoutDashboard, exact: true },
+      { to: '/dashboard',      label: 'Dashboard', icon: LayoutDashboard, exact: true },
       { to: '/today',          label: 'Today',     icon: ListChecks },
       { to: '/customers', label: 'Customers', icon: Users,     countKey: 'customers' },
       { to: '/jobs',      label: 'Projects',  icon: Briefcase, countKey: 'jobs' },
@@ -371,6 +372,17 @@ function UserMenu({ variant = 'full', user, signOut, displayName, profile, isAM 
 }
 
 export default function Layout() {
+  const [searchOpen,setSearchOpen]=useState(false);
+  useEffect(()=>{
+    const onKey=e=>{
+      if(e.defaultPrevented || e.repeat || !(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase()!=='k')return;
+      const modalOpen=[...document.querySelectorAll('dialog[open], [role="dialog"][aria-modal="true"]')].some(dialog=>dialog.getClientRects().length);
+      if(modalOpen && !searchOpen)return;
+      e.preventDefault();setSearchOpen(v=>!v);
+    };
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  },[searchOpen]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { rail, toggle: toggleRail } = useSidebar();
   const [notifOpen, setNotifOpen]     = useState(false);
@@ -387,7 +399,7 @@ export default function Layout() {
   // Global back — shown on every page except the dashboard. Goes to the page
   // that was open last; the dashboard only when there genuinely isn't one.
   // See src/lib/navTrail.js for why window.history.length can't decide this.
-  const isDashboard = location.pathname === '/';
+  const isDashboard = ['/', '/dashboard'].includes(location.pathname);
   const goBack = useGoBack('/');
 
   // Content scrolls inside <main>, not the window, so React Router can't reset
@@ -599,6 +611,7 @@ export default function Layout() {
           </div>
         )}
 
+        <div className={rail?'px-2 pt-3':'px-4 pt-3'}><button aria-label="Search the app" title="Search (Ctrl/Cmd+K)" onClick={()=>{setSearchOpen(true);setSidebarOpen(false);}} className={`flex items-center rounded-lg text-sidebar-text hover:bg-sidebar-hover ${rail?'w-10 h-10 justify-center':'w-full gap-2 px-3 py-2 text-sm'}`}><Search size={17}/>{!rail && <><span className="flex-1 text-left">Search</span><span className="text-[10px] opacity-60">⌘ / Ctrl K</span></>}</button></div>
         {/* + New dropdown */}
         <div className={`${rail ? 'px-2 py-3' : 'px-4 py-4'} relative`} ref={sideNewRef}>
           <button
@@ -777,7 +790,7 @@ export default function Layout() {
             <ChevronRight size={14} />
           </div>
           <div className="flex-1" />
-
+          <button aria-label="Search the app" onClick={()=>setSearchOpen(true)} className="p-2 text-slate-500"><Search size={19}/></button>
           <NotificationBell
             open={notifOpen} setOpen={setNotifOpen}
             unread={unread} notifications={notifications}
@@ -801,6 +814,7 @@ export default function Layout() {
           <div className="glass-stage" key={location.pathname}>
             <RouteErrorBoundary>
               <Outlet />
+              {searchOpen && <GlobalSearch open onClose={()=>setSearchOpen(false)}/>}
             </RouteErrorBoundary>
           </div>
         </main>

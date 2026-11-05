@@ -1,13 +1,14 @@
+import {PROJECT_VIEWS,matchesProjectView} from '../lib/workflowOverview';
 import {projectNextAction,projectWorkspaceUrl,isTestQuote} from '../lib/projectWorkspace';
 import { useDataRefresh } from '../hooks/useDataRefresh';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Search, Filter, Plus, Briefcase, SlidersHorizontal, X,
+  Search, Plus, Briefcase, SlidersHorizontal, X,
   Trash2, CheckSquare, Square, AlertTriangle, ChevronDown, Check,
 } from 'lucide-react';
-import { getJobs, getJobsFiltered, getCustomers, JOB_STATUSES, STATUS_COLORS, updateJobStatus, getActiveEmployees, deleteJob, bulkDeleteJobs, isStalledJob, getQuotes, getMeasureSheets, computeQuoteTotals, searchMatch } from '../store/data';
+import { getInstallRequests, getCalendarEvents, getJobsFiltered, getCustomers, JOB_STATUSES, STATUS_COLORS, updateJobStatus, getActiveEmployees, bulkDeleteJobs, isStalledJob, getQuotes, getMeasureSheets, computeQuoteTotals, searchMatch } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
 import StatusBadge from '../components/StatusBadge';
 import UrgencyBadge from '../components/UrgencyBadge';
@@ -161,6 +162,7 @@ export default function Jobs() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const quickView=searchParams.get('view') || '';
   const [search, setSearch]         = useState('');
   const [status, setStatus]         = useState(searchParams.get('status') || '');
   const [urgency, setUrgency]       = useState(searchParams.get('urgency') === 'urgent' ? 'High' : '');
@@ -186,6 +188,7 @@ export default function Jobs() {
   const jobs      = getJobsFiltered(isAM, displayName);
   const customers = getCustomers();
   const staffList = getActiveEmployees();
+  const requests=getInstallRequests(),events=getCalendarEvents();
 
   // Project value = its accepted quote total (or the latest quote's total).
   // Precomputed once per data change so sort-by-value and the card don't cost
@@ -258,7 +261,7 @@ export default function Jobs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quotesSig, jobs.length, customers.length]);
 
-  const filtered = useMemo(() => {
+  const filtered = (() => {
     // Map lookup — customers.find per job is O(n²) with the imported history.
     const custById = new Map(customers.map(c => [c.id, c]));
     const nameOf = (j) => custById.get(j.customerId)?.name || '';
@@ -275,6 +278,7 @@ export default function Jobs() {
       salesperson: (a, b) => (a.assignedStaff || 'zzz').localeCompare(b.assignedStaff || 'zzz') || newest(a, b),
     };
     return jobs.filter(job => {
+      if(!matchesProjectView(job,quickView,workspaceQuotes.get(job.id) || [],requests,events))return false;
       const customer = custById.get(job.customerId);
       // Customer identity + the job number only. Salesperson deliberately isn't
       // searchable — it has its own filter, and matching on it buried the
@@ -309,12 +313,12 @@ export default function Jobs() {
       }
       return true;
     }).sort(SORTS[sortBy] || newest);
-  }, [jobs, customers, search, status, urgency, staff, stalled, quoteExpiry, openQuoteExpiryByJob, lapsedJobIds, sortBy, valueByJob]);
+  })();
 
   // Render in pages of 100 — reset when filters change.
   const PAGE = 100;
   const [visibleCount, setVisibleCount] = useState(PAGE);
-  const filterKey = `${search}|${status}|${urgency}|${staff}|${stalled}|${quoteExpiry}|${sortBy}`;
+  const filterKey = `${quickView}|${search}|${status}|${urgency}|${staff}|${stalled}|${quoteExpiry}|${sortBy}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (prevFilterKey !== filterKey) {
     setPrevFilterKey(filterKey);
@@ -322,8 +326,8 @@ export default function Jobs() {
   }
   const visible = filtered.slice(0, visibleCount);
 
-  const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); setStalled(false); setQuoteExpiry(''); setSortBy('newest'); };
-  const hasFilters = status || urgency || staff || search;
+  const clearFilters = () => { setStatus(''); setUrgency(''); setStaff(''); setSearch(''); setStalled(false); setQuoteExpiry(''); setSortBy('newest'); setSearchParams({}); };
+  const hasFilters = status || urgency || staff || search || quickView;
   // Count of active list controls shown as a badge on the Sort & Filter button
   // (search has its own field, so it's excluded from the in-panel count).
   const activeFilterCount = [status, urgency, staff, stalled, quoteExpiry, sortBy !== 'newest'].filter(Boolean).length;
@@ -391,6 +395,7 @@ export default function Jobs() {
         </div>
       </div>
 
+      <nav aria-label="Project quick views" className="flex gap-2 overflow-x-auto pb-1">{PROJECT_VIEWS.map(([value,label])=><button key={value} aria-pressed={quickView===value} onClick={()=>{const next=new URLSearchParams();if(value)next.set('view',value);setSearchParams(next);setStatus('');setUrgency('');setStalled(false);setQuoteExpiry('');setStaff('');}} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-medium ${quickView===value?'border-amber-400 bg-amber-50 text-amber-800':'border-slate-200 bg-white text-slate-600'}`}>{label}</button>)}</nav>
       {/* Search + filter bar */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">

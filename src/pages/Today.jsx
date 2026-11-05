@@ -1,3 +1,5 @@
+import {prioritiseToday,readStartPage} from '../lib/workflowOverview';
+import {useAuth} from '../contexts/AuthContext';
 /**
  * Today — the "what needs doing" list the morning brief points at.
  *
@@ -30,6 +32,9 @@ const phoneOf = (c) => c?.mobile || c?.phone || '';
 const dayLabel = (d) => (d ? format(typeof d === 'string' ? parseISO(d) : d, 'd MMM') : '');
 
 export default function Today() {
+  const {user}=useAuth();
+  const [listView,setListView]=useState('priority'),[visibleCount,setVisibleCount]=useState(20);
+  const [startPage,setStartPage]=useState(()=>readStartPage(user?.id));
   const tick = useDataRefresh();
   const navigate = useNavigate();
 
@@ -69,7 +74,7 @@ export default function Today() {
             title: e.title || (job ? nameFor(job) : 'Installation'),
             meta: [job?.jobNumber, e.startAt && format(parseISO(e.startAt), 'h:mma'), e.location]
               .filter(Boolean).join(' · '),
-            to: job ? `/jobs/${job.id}` : '/calendar',
+            to: job ? `/jobs/${job.id}?section=delivery&delivery=install` : '/calendar',
           };
         }),
       ...reqs
@@ -81,7 +86,7 @@ export default function Today() {
             title: job ? nameFor(job) : 'Installation',
             meta: [job?.jobNumber, installers.find(i => i.id === r.installerId)?.name, r.status]
               .filter(Boolean).join(' · '),
-            to: job ? `/jobs/${job.id}` : '/calendar',
+            to: job ? `/jobs/${job.id}?section=delivery&delivery=install` : '/calendar',
           };
         }),
     ];
@@ -101,7 +106,7 @@ export default function Today() {
         // Land on the record the note is about. There is no global notes
         // page to fall back to any more — and landing there was never much
         // use when the note was written against a specific measure sheet.
-        to: t.jobId ? `/jobs/${t.jobId}`
+        to: t.jobId ? `/jobs/${t.jobId}?section=overview&panel=notes`
           : t.measureSheetId ? `/measure-sheets/${t.measureSheetId}`
           : t.customerId ? `/customers/${t.customerId}`
           : '/today',
@@ -129,7 +134,7 @@ export default function Today() {
         title: nameFor(j),
         meta: [j.jobNumber, j.status, j.updatedAt && `since ${dayLabel(j.updatedAt)}`]
           .filter(Boolean).join(' · '),
-        to: `/jobs/${j.id}`,
+        to: `/jobs/${j.id}?section=delivery&delivery=install`,
       }));
 
     const quotesToChase = quotes
@@ -182,7 +187,7 @@ export default function Today() {
           // The project, not straight into a new quote: some of these already
           // have a draft on the go, and the job is where you can see the
           // measure sheet and whatever is already started before deciding.
-          to: `/jobs/${j.id}`,
+          to: `/jobs/${j.id}?section=quote`,
         };
       });
 
@@ -210,7 +215,7 @@ export default function Today() {
         meta: [j.jobNumber, j.updatedAt && `in rework since ${dayLabel(j.updatedAt)}`]
           .filter(Boolean).join(' · '),
         urgent: true,
-        to: `/jobs/${j.id}`,
+        to: `/jobs/${j.id}?section=delivery&delivery=install`,
       }));
 
     // Approved a week ago and still not Ordered — usually a forgotten supplier
@@ -223,7 +228,7 @@ export default function Today() {
         title: nameFor(j),
         meta: [j.jobNumber, `approved ${differenceInDays(now, parseISO(j.updatedAt))} days ago`, 'not ordered']
           .filter(Boolean).join(' · '),
-        to: `/jobs/${j.id}`,
+        to: `/jobs/${j.id}?section=delivery&delivery=orders`,
       }));
 
     // Work committed, money not yet asked for. Bounded to 30 days on purpose —
@@ -290,6 +295,7 @@ export default function Today() {
     { key: 'reviews',   label: 'Review asks ready',   hint: 'Finished jobs worth asking',              icon: Star,         tone: 'text-yellow-500', items: reviewReady },
   ].filter(s => s.items.length > 0);
 
+  const priorityItems=prioritiseToday(sections);
   const total = sections.reduce((n, s) => n + s.items.length, 0);
 
   // Section keys are already stable, so they double as the persistence ids.
@@ -316,7 +322,10 @@ export default function Today() {
         </p>
       </div>
 
-      <ContentQueueCard />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex rounded-lg border border-slate-200 bg-white p-1" aria-label="Today list view">{[['priority','Priority list'],['categories','By category']].map(([value,label])=><button key={value} aria-pressed={listView===value} onClick={()=>setListView(value)} className={`rounded-md px-3 py-2 text-xs font-medium ${listView===value?'bg-amber-50 text-amber-800':'text-slate-500'}`}>{label}</button>)}</div>
+        <label className="flex items-center gap-2 text-xs text-slate-500">Start the app on<select aria-label="App starting page" value={startPage} onChange={e=>{setStartPage(e.target.value);try{localStorage.setItem(`lusso.start-page:${user?.id}`,e.target.value);}catch{/* private mode */}}} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm"><option value="dashboard">Dashboard</option><option value="today">Today</option></select></label>
+      </div>
 
       {sections.length === 0 ? (
         <Card className="px-5 py-12 text-center">
@@ -328,6 +337,8 @@ export default function Today() {
         </Card>
       ) : (
         <>
+          {listView==='priority' && <Card className="overflow-hidden"><div className="px-5 py-4 border-b border-slate-100"><h2 className="font-semibold text-slate-900">What needs doing first</h2><p className="text-xs text-slate-500 mt-1">Today’s installations, customer fixes and due to-dos come first.</p></div>{priorityItems.slice(0,visibleCount).map(item=><button key={item.key} onClick={()=>navigate(item.to)} className="w-full flex items-center gap-3 px-5 py-4 text-left border-b border-slate-100 hover:bg-slate-50"><span className="min-w-0 flex-1"><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">{item.category}</span><span className="block text-sm font-medium text-slate-900 mt-1">{item.title}</span><span className={`block text-xs mt-1 ${item.urgent?'text-red-600':'text-slate-500'}`}>{item.meta}</span></span><span className="text-xs font-medium text-amber-700 text-right shrink-0 max-w-28">{item.action}</span><ChevronRight size={14} className="text-slate-400 shrink-0"/></button>)}{priorityItems.length>visibleCount && <button onClick={()=>setVisibleCount(n=>n+20)} className="w-full py-3 text-sm font-medium text-amber-700">Show more ({priorityItems.length-visibleCount} remaining)</button>}</Card>}
+          {listView==='categories' && <>
           {/* Jump strip — the same counts the 7am push quoted. */}
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
             {sections.map(s => (
@@ -370,9 +381,11 @@ export default function Today() {
               </>
             </CollapsibleSection>
           ))}
+          </>}
         </>
       )}
 
+      <ContentQueueCard />
       <p className="text-[11px] text-slate-400 text-center pb-2 flex items-center justify-center gap-1.5">
         <Sun size={11} className="text-amber-400" />
         This is what the 7am brief counts. Turn it off in Settings → Notifications.

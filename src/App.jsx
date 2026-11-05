@@ -1,3 +1,4 @@
+import {readStartPage} from './lib/workflowOverview';
 import ProjectWorkspace from './pages/ProjectWorkspace';
 import ProjectRouteRedirect from './components/project/ProjectRouteRedirect';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
@@ -399,7 +400,8 @@ function AppRoutes() {
             failed to re-match the root "/" route when navigating to it from
             another page (the previous page stayed mounted until a refresh). */}
         <Route element={<Layout />}>
-              <Route path="/"                           element={<Dashboard />} />
+              <Route path="/"                           element={<StartPage />} />
+              <Route path="/dashboard"                  element={<Dashboard />} />
               <Route path="/today"                      element={<Today />} />
               <Route path="/jobs"                       element={<Jobs />} />
               <Route path="/jobs/new"                   element={<NewJob />} />
@@ -553,3 +555,5 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
+function StartPage(){const {user}=useAuth();return readStartPage(user?.id)==='today'?<Navigate to="/today" replace/>:<Dashboard/>;}

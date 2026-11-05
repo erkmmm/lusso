@@ -356,7 +356,7 @@ return (
                    silently kills the stickiness. Corners are rounded on the
                    children instead. */
                 <div key={item.id} data-line-card={item.id}
-                  className={`border rounded-xl bg-white scroll-mt-2 ${
+                  className={`workflow-card measure-opening-card border rounded-xl bg-white scroll-mt-2 ${
                     cardOpen ? 'border-amber-300 shadow-sm' : 'border-slate-200'
                   }`}>
                   {/* Collapsed: the whole card is this one row. */}
@@ -369,7 +369,7 @@ return (
                   {/* Open: the summary becomes a sticky title bar, so however
                       far you scroll into this opening's fields you can still
                       see which room you're in — the thing that was missing. */}
-                  <div className="sticky top-0 z-20 bg-amber-50/95 backdrop-blur-sm border-b border-amber-200 rounded-t-xl">
+                  <div className="opening-card-heading sticky top-0 z-20 border-b border-slate-200 rounded-t-xl">
                     <LineSummary item={item} idx={idx} open
                       issues={limitIssues[item.id]} onToggle={() => toggleCard(item.id)} />
                   </div>

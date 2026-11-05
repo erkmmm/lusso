@@ -1844,3 +1844,17 @@ html .quote-question-fields select[aria-required="true"] {
 /* Expanded opening cards also have sticky headings; keep the editor actions above them. */
 .opening-workspace-heading { z-index: 40; }
 .takeoff-spec-panel-inner { scroll-padding-top: 88px; scroll-padding-bottom: 84px; }
+
+/* Staff workflow surfaces share the Lusso palette. */
+.workflow-card {
+  background:var(--card,var(--lusso-paper-pure,#fff));
+  color:var(--foreground,var(--lusso-ink,#18212f));
+  border:1px solid var(--border,var(--lusso-mist,#dce0e5));
+  border-radius:14px;
+  box-shadow:0 2px 8px rgb(0 0 0 / .04);
+}
+.measure-opening-card {margin-block:16px; transition:border-color .15s,box-shadow .15s;}
+.measure-opening-card:focus-within {border-color:var(--primary,var(--lusso-bronze,#9c7e58));box-shadow:0 0 0 1px var(--primary,var(--lusso-bronze,#9c7e58));}
+.opening-card-heading {background:var(--card,var(--lusso-paper-pure,#fff));}
+.order-editor > .card {border-radius:14px;}
+@media (prefers-reduced-motion:reduce){.measure-opening-card{transition:none;}}

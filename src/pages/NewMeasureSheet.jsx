@@ -1,3 +1,4 @@
+import {useEditorSaveShortcut} from '../hooks/useEditorSaveShortcut';
 import {useProjectSearchParams} from '../contexts/ProjectWorkspaceContext';
 import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
 import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
@@ -9,11 +10,11 @@ import useFullscreenPane from '../hooks/useFullscreenPane';
 
 import { v4 as uuidv4 } from 'uuid';
 import {
-  Plus, Save, Send, CheckCircle2,
+  Plus, Save, CheckCircle2,
   ChevronDown, ChevronUp, User, MapPin, Briefcase,
   ClipboardList, AlertCircle, Edit3, Search, X,
   UserCheck, UserPlus, AlertTriangle, Phone, Mail,
-  Printer, Maximize2, Minimize2, StickyNote, History, RotateCcw,
+  Maximize2, Minimize2, StickyNote, History, RotateCcw,
 } from 'lucide-react';
 import { saveMeasureSheet, getMeasureSheet, findOrCreateCustomer, getCustomer, getJob, getNotes, isTaskOpen, linkNotesToJob, getCustomers, getJobs, createJobFromMeasureSheet, getActiveProductTypes, URGENCY_LEVELS, MS_SPEC_FIELDS, isPlanEstimate, markLineCheckMeasured, markLinePlanEstimate, buildLimitsResolver, getProductDocument, sheetContentScore, getMeasureSheets, searchMatchAnywhere } from '../store/data';
 import { evaluateLine } from '../lib/productLimits';
@@ -36,7 +37,7 @@ import StickyActionBar from '../components/StickyActionBar';
 
 // ─── Customer search & duplicate helpers ──────────────────────────────────────
 
-function cleanPhone(p) { return (p || '').replace(/[\s\-\(\)\+]/g, ''); }
+function cleanPhone(p) { return (p || '').replace(/[\s()+-]/g, ''); }
 
 function extractSuburb(address) {
   if (!address) return '';
@@ -202,7 +203,7 @@ const CONFIDENCE_STYLE = {
   low:    { bar: 'bg-slate-400',  badge: 'bg-slate-50 text-slate-600 border-slate-200', label: 'Similar name' },
 };
 
-function DuplicateMatchCard({ match, onUse, onViewProfile, navigate }) {
+function DuplicateMatchCard({ match, onUse, navigate }) {
   const { customer, confidence, reason } = match;
   const style = CONFIDENCE_STYLE[confidence];
   return (
@@ -607,6 +608,8 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
     () => new Set(sheet.lineItems.length === 1 ? sheet.lineItems.map(li => li.id) : []));
   const [itemLayout,     setItemLayout]     = useState(()=>workspaceLayout || readLayout());
   const [tableFull, setTableFull] = useState(false);
+  const editorRef=useRef(null),saveButtonRef=useRef(null),fullEditorRef=useRef(null),fullSaveRef=useRef(null);
+  useEditorSaveShortcut(tableFull?fullEditorRef:editorRef,tableFull?fullSaveRef:saveButtonRef,!submitted);
   // 100dvh + safe-area insets + a locked page behind it. A bare `fixed inset-0`
   // is not fullscreen on a phone — see the hook.
   useFullscreenPane(tableFull);
@@ -728,12 +731,12 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   // explicitly ask for still has to survive the guard.
   const allowShrinkRef = useRef(false);
 
-  const flushSave = useCallback((reason = 'auto', { force = false } = {}) => {
+  const flushSave = useCallback((reason = 'auto', { force = false, always = false } = {}) => {
     const { sheet: s, submitted: done } = autosaveRef.current;
     if (done || !s?.id) return;
     // Nothing typed since the last write? Then there is nothing this save can
     // do except overwrite whoever else has touched the sheet since.
-    if (!dirtyRef.current && !force) return;
+    if (!dirtyRef.current && !force && !always) return;
     // Opening the page and backing out shouldn't leave an empty draft behind.
     // Only skip when there is nothing to lose: no content AND nothing stored.
     if (sheetContentScore(s) === 0 && !getMeasureSheet(s.id)) return;
@@ -744,13 +747,18 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
       );
       // Refused as a conflict: the store hands back the copy that won, and the
       // banner takes over. Stay dirty — this edit has NOT been filed.
-      if (saved?.__conflict) return;
+      if (saved?.__conflict) return false;
+      if(sheetContentScore(s)<sheetContentScore(saved || {})){
+        setSaveError(true);
+        return false;
+      }
       if (saved?.updatedAt) baseUpdatedAtRef.current = saved.updatedAt;
       allowShrinkRef.current = false;
       setSavedAt(new Date());
       setDirty(false);
       setSaveError(false);
       setConflict(null);
+      return true;
     } catch (e) {
       console.error(`[measure-sheet] save failed (${reason}):`, e);
       setSaveError(true);
@@ -1162,24 +1170,10 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   };
 
   const handleSaveDraft = () => {
-    const before = sheetContentScore(getMeasureSheet(sheet.id) || {});
-    saveMeasureSheet({ ...sheet, status: sheet.status || 'Draft' },
-      { allowShrink: allowShrinkRef.current });
-    allowShrinkRef.current = false;
-    const after = sheetContentScore(getMeasureSheet(sheet.id) || {});
-    const mine  = sheetContentScore(sheet);
-    // If the guard kept the stored copy, saying "saved" would be a lie — and a
-    // lie of exactly the kind that let a measured house look filed when it
-    // wasn't.
-    if (mine < after && after > 0 && before === after) {
-      setSaveError(true);
-      toast('Not saved — this sheet has less in it than the saved copy, so the saved one was kept.');
-      return;
-    }
-    setSavedAt(new Date());
-    setDirty(false);
-    setSaveError(false);
-    toast('Measure sheet saved');
+    const saved=flushSave('manual',{always:true});
+    if(saved)toast('Measurements saved');
+    else toast('Not saved — check the warning above before leaving.');
+    return saved;
   };
 
   const handleSubmit = async () => {
@@ -1324,7 +1318,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
   const lastLineHasSpecs = !!lastLine?.productTypeId || !!lastLine?.productNameSnapshot;
 
   return (
-    <div className={embedded?'space-y-5 pb-28':'p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-40 lg:pb-24'}>
+    <div ref={editorRef} className={embedded?'measure-editor space-y-5 pb-28':'measure-editor p-4 sm:p-6 max-w-4xl mx-auto space-y-5 pb-40 lg:pb-24'}>
 
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -1555,7 +1549,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                       </p>
                     </div>
 
-                    {duplicates.map((m, i) => (
+                    {duplicates.map(m => (
                       <DuplicateMatchCard
                         key={m.customer.id}
                         match={m}
@@ -1784,7 +1778,7 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                 Portalled to <body> so it clears the app header/sidebar, which
                 live in an overflow-hidden column that would otherwise trap it. */}
             {itemLayout === 'table' && tableFull && createPortal(
-              <div className="fullscreen-pane fixed inset-0 z-[60] bg-white flex flex-col">
+              <div ref={fullEditorRef} className="fullscreen-pane fixed inset-0 z-[60] bg-white flex flex-col">
                 {/* Header. On a phone the labels go and the icons stay — four
                     labelled buttons wrapped onto two rows and ate a third of
                     the grid. */}
@@ -1812,11 +1806,11 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
                         <span className="text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full px-1.5">{sheetNotes}</span>
                       )}
                     </button>
-                    <button type="button" onClick={handleSaveDraft} title="Save draft"
+                    <button ref={fullSaveRef} type="button" onClick={handleSaveDraft} title="Save measurements (Ctrl/Cmd+S)"
                       className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white">
                       <Save size={13} /> <span className="hidden sm:inline">Save</span>
                     </button>
-                    <button type="button" onClick={() => { handleSaveDraft(); setTableFull(false); }}
+                    <button type="button" onClick={() => { if(handleSaveDraft())setTableFull(false); }}
                       title="Save and leave fullscreen"
                       className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white">
                       <Minimize2 size={13} /> <span className="hidden sm:inline">Done</span>
@@ -1902,26 +1896,10 @@ export default function NewMeasureSheet({ routeSheetId = undefined, routeSearch 
           </p>
         )}
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          {/* Manual save (stays on the page, shows a confirmation toast). Works
-              in both new and edit mode so on-site users can save at any time. */}
-          <button onClick={handleSaveDraft} disabled={submitting}
-            className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50">
-            <Save size={15} /> {isEdit ? 'Save' : 'Save Draft'}
-          </button>
-
-          <div className="flex items-center gap-2 min-w-0 ml-auto">
-            <span className="hidden sm:block"><SaveState dirty={dirty} error={saveError} savedAt={savedAt} /></span>
-            <button onClick={handleSubmit} disabled={submitting}
-              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors whitespace-nowrap">
-              {submitting
-                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Saving…</>
-                : isEdit
-                  ? <><Save size={15} /> Save Changes</>
-                  : prelinkedJobId
-                    ? <><Send size={15} /> Submit</>
-                    : <><Send size={15} /><span className="hidden sm:inline">Submit &amp; Create Job</span><span className="sm:hidden">Submit</span></>
-              }
-            </button>
+          <div className="min-w-0"><SaveState dirty={dirty} error={saveError} savedAt={savedAt}/><p className="text-[10px] text-slate-400 mt-1">Saves automatically · Ctrl/Cmd+S to save now</p></div>
+          <div className="flex items-center gap-2 ml-auto">
+            {(!isEdit || sheet.status==='Draft') && <button onClick={handleSubmit} disabled={submitting || !!conflict} title="Mark this draft as measured after checking required fields" className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-600 disabled:opacity-50">{submitting?'Finishing…':prelinkedJobId || isEdit?'Finish measuring':'Finish & create project'}</button>}
+            <button ref={saveButtonRef} onClick={handleSaveDraft} disabled={submitting || !!conflict} title="Save measurements (Ctrl/Cmd+S)" className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Save size={15}/>Save now</button>
           </div>
         </div>
       </StickyActionBar>

@@ -1,3 +1,6 @@
+import StickyActionBar from '../components/StickyActionBar';
+import {approvedOrderSelection} from '../lib/workflowOverview';
+import {useEditorSaveShortcut} from '../hooks/useEditorSaveShortcut';
 import {useProjectSearchParams} from '../contexts/ProjectWorkspaceContext';
 import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -8,7 +11,7 @@ import { Download, Printer, FileText, Send, Loader, Save, Trash2, Plus, ChevronD
 import {
   getMeasureSheet, saveMeasureSheet, getActiveProductTypes, getCustomer, getJob,
   getPoPresets, getPoPresetForEmail, savePoPreset, deletePoPreset,
-  getPurchaseOrder, getPurchaseOrdersBySheet, savePurchaseOrder,
+  getPurchaseOrder, getPurchaseOrdersBySheet, savePurchaseOrder, getQuotesByJob, getMeasureSheetsByJob, getPurchaseOrdersByJob,
   addActivity, advanceJobStatus, orderGate,
 } from '../store/data';
 import { useProfile } from '../contexts/UserProfileContext';
@@ -71,6 +74,7 @@ function sideCode(value) {
 const SIDE_WORD = { L: 'left', R: 'right' };
 
 export default function PurchaseOrder() {
+  const editorRef=useRef(null),saveButtonRef=useRef(null),reviewRef=useRef(null);
   const collapse = useCollapsedSections('purchaseorder');
   const { id } = useProjectParams();
   const [searchParams] = useProjectSearchParams();
@@ -95,6 +99,9 @@ export default function PurchaseOrder() {
   // A saved draft is where you left off; `snapshot` is the last document that
   // actually went out. Prefer the draft — that's the whole point of saving one.
   const reopenedSnap = reopened?.draftSnapshot || reopened?.snapshot || null;
+  const [savedSignature,setSavedSignature]=useState(()=>reopenedSnap?JSON.stringify(reopenedSnap):null);
+  const [savedAt,setSavedAt]=useState(reopened?.updatedAt || null);
+  useEditorSaveShortcut(editorRef,saveButtonRef,Boolean(sheet));
 
   // A re-issue keeps the date the order was first placed — it is the same PO
   // under the same number, not a new one.
@@ -106,6 +113,7 @@ export default function PurchaseOrder() {
   // React Compiler memoizes these — a manual useMemo can't be preserved once
   // the derived objects flow into other hooks, so leave them as plain derivations.
   const allCurtains = (sheet?.lineItems || []).filter(isCurtainLine).map((it, i) => ({ ...it, _key: it.id || `idx-${i}` }));
+  const approvedSelection=job?approvedOrderSelection(job,getQuotesByJob(job.id),getMeasureSheetsByJob(job.id),getPurchaseOrdersByJob(job.id),sheet?.id):null;
 
   // Which line items go on THIS order — some curtains may go to a different
   // supplier, or the customer didn't proceed with all of them. Excluded by
@@ -116,6 +124,7 @@ export default function PurchaseOrder() {
       const on = new Set(reopenedSnap.lineKeys);
       return new Set(allCurtains.filter(c => !on.has(c._key)).map(c => c._key));
     }
+    if(approvedSelection)return new Set(allCurtains.filter(c=>!approvedSelection.lineIds.has(c._key)).map(c=>c._key));
     return new Set();
   });
   const curtains = allCurtains.filter(c => !excludedKeys.has(c._key));
@@ -459,6 +468,8 @@ export default function PurchaseOrder() {
       });
       setPoId(record.id);
       setHistory(getPurchaseOrdersBySheet(id));
+      setSavedSignature(JSON.stringify(snapshot));
+      setSavedAt(new Date().toISOString());
       return record;
     } catch (e) {
       // History is a record, not a gate — a PO must still go out if it fails.
@@ -563,9 +574,9 @@ export default function PurchaseOrder() {
   const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400';
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+    <div ref={editorRef} className="order-editor p-4 sm:p-6 max-w-7xl mx-auto space-y-6 pb-28">
 
-      {/* Header — actions live at the bottom (review the PO first) */}
+      {/* Header — review the PO before issuing it. */}
       <Card className="p-5">
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
           <FileText size={18} /> Curtain Purchase Order
@@ -576,7 +587,8 @@ export default function PurchaseOrder() {
             : `${curtains.length} of ${allCurtains.length} curtains selected`} from {customerName || 'this sheet'}
           {jobNumber ? ` · ${jobNumber}` : ''}
         </p>
-        <p className="text-xs text-slate-400 mt-1.5">Review the order below — send, print or download it at the bottom.</p>
+        <p className="text-xs text-slate-400 mt-1.5">Review the selected items and order details before sending. Save now keeps your work without issuing the order.</p>
+        {!reopened && approvedSelection && <p className="mt-3 text-xs text-amber-700">Preselected from accepted quote {approvedSelection.quoteNumber}: approved openings without an issued order. Review the selected curtains before sending.{approvedSelection.unmatched>0?` ${approvedSelection.unmatched} approved item(s) need matching or an external order check.`:''}</p>}
       </Card>
 
       {/* Picking a saved order back up. A draft has not gone anywhere, so it
@@ -1048,6 +1060,7 @@ export default function PurchaseOrder() {
           </Card>
 
           {/* ── Order details + send — at the bottom, after reviewing the PO ── */}
+          <div ref={reviewRef} className="scroll-mt-4" tabIndex={-1}>
           <Card>
             <div className="px-5 py-4 border-b border-slate-100">
               <h2 className="font-semibold text-slate-800 text-sm">Order details &amp; send</h2>
@@ -1150,12 +1163,6 @@ export default function PurchaseOrder() {
 
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-1">
-                {/* Not gated: saving is not issuing — see handleSaveDraft. */}
-                <button onClick={handleSaveDraft} disabled={!curtains.length}
-                  title="Keep this order without sending or downloading anything"
-                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-50">
-                  <Save size={14} /> {issued ? 'Save changes' : 'Save draft'}
-                </button>
                 <button onClick={withAccessoryCheck('Send', handleSend)} disabled={sending || !curtains.length || blocked}
                   title={blocked ? 'Check-measure the plan-estimate lines first' : undefined}
                   className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white">
@@ -1180,6 +1187,7 @@ export default function PurchaseOrder() {
               </div>{/* end send section */}
             </div>
           </Card>
+          </div>
         </>
       )}
 
@@ -1219,6 +1227,7 @@ export default function PurchaseOrder() {
           </div>
         </div>
       )}
+      <StickyActionBar><div className="flex flex-wrap items-center justify-between gap-2"><div className="text-xs text-slate-500" role="status">{savedSignature===JSON.stringify(snapshot)?`Saved${savedAt?' · '+new Date(savedAt).toLocaleTimeString():''}`:'Unsaved order changes'}<p className="text-[10px] mt-1">Ctrl/Cmd+S · saving does not send the order</p></div><div className="flex gap-2"><button onClick={()=>{reviewRef.current?.scrollIntoView({behavior:'smooth',block:'start'});reviewRef.current?.focus({preventScroll:true});}} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-600">Review &amp; send</button><button ref={saveButtonRef} onClick={handleSaveDraft} disabled={!curtains.length || sending} className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Save size={15}/>Save now</button></div></div></StickyActionBar>
     </div>
   );
 }
