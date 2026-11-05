@@ -1841,3 +1841,6 @@ html .quote-question-fields select[aria-required="true"] {
 @media (max-width: 1279px) {
   .takeoff-phone-viewbar input { min-height: 44px; font-size: 16px; }
 }
+/* Expanded opening cards also have sticky headings; keep the editor actions above them. */
+.opening-workspace-heading { z-index: 40; }
+.takeoff-spec-panel-inner { scroll-padding-top: 88px; scroll-padding-bottom: 84px; }
