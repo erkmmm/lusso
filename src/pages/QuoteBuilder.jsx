@@ -2651,7 +2651,7 @@ export default function QuoteBuilder({embedded=false}) {
               </div>
             </div>
 
-            <div className="quote-item-details space-y-4">
+            <div className="quote-items-list p-4 space-y-4">
               {/* Said once at the top as well as on each line: on a long quote
                   the unpriceable curtain is below the fold, and a quote that
                   goes out with a $0 curtain on it is the failure this exists
