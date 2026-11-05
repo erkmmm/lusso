@@ -4,14 +4,14 @@ Implemented on `feat/quotient-style-builder`, based on `cb17ec8`, in an isolated
 
 ## Behaviour
 
-- Quotient-style toolbar, customer/from panel, overview/activity/settings and continuous editable quote document.
+- Familiar Quotient-style editing flow, using Lusso shared theme colours, surfaces, rounded panels and controls. Customer/from panel, overview/activity/settings and continuous editable quote document.
 - Inline custom item names, descriptions, quantities and unit prices. A quote-specific name does not rename its source library product or change its measured product type.
 - Explicit Save to Price Library dialog creates a new reusable item. Duplicate names are blocked, including inactive records. Base costs, labour, margin, pricing method and supplier carry across; measurements, discounts, quantities and private notes do not.
 - Customer-facing text blocks before/after prices, with move/delete controls. Rooms and openings can be reordered without separating choice groups or changing window references.
 - Price visibility settings apply to customer preview and PDF: all prices/quantities, item totals, or quote total only.
 - Save Now stays in the editor. Preview uses the same name stamping and conflict check as saving.
 - Preview & Send is portalled to the body with its own opaque quote background. Translucent quote panels no longer reveal the editor behind them. Email sending behaviour is unchanged.
-- Customer title, custom names and text blocks are retained in the exported PDF.
+- The original customer-facing heading and visual layout are preserved. Custom item names and optional text content are retained in the customer quote and exported PDF.
 
 ## Release order
 

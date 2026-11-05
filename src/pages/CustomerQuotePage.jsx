@@ -1136,7 +1136,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const quoteSnapshot = () => ({
     quoteNumber:  quote.quoteNumber,
     customerName: customer?.name || '',
-    title:        quote.title || `${settings.businessName} quotation for ${customer?.name || 'you'}`,
+    title:        `${settings.businessName} quotation for ${customer?.name || 'you'}`,
     siteAddress:  quote.siteAddress || '',
     issued:       quote.createdAt ? fmtDate(quote.createdAt) : '',
     expiry:       quote.expiryDate ? fmtDate(new Date(quote.expiryDate)) : '',
@@ -1666,7 +1666,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             </div>
             <div style={{ marginTop: 26 }}><Eyebrow color={T.bronzeRaised} dash={T.bronzeRaised}>Quotation {quote.quoteNumber}</Eyebrow></div>
             <h1 style={{ margin: '10px 0 0', fontWeight: 300, fontSize: 29, lineHeight: 1.2, letterSpacing: '-0.5px', color: T.paper, textWrap: 'pretty', maxWidth: '26ch' }}>
-              {quote.title || `${settings.businessName} quotation for ${customer?.name || 'you'}`}
+              {settings.businessName} quotation for {customer?.name || 'you'}
             </h1>
             {quote.siteAddress && <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.7, color: T.onInverseMuted }}>{quote.siteAddress}</p>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 20 }}>
