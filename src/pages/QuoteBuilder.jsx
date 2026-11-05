@@ -1,3 +1,8 @@
+import { createPortal } from 'react-dom';
+import { swapQuoteGroups } from '../lib/quoteBuilderItems';
+import QuoteLibraryDialog from '../components/QuoteLibraryDialog';
+import { QuoteTextItems, AddQuoteText } from '../components/QuoteTextItems';
+import '../styles/quote-builder.css';
 import useWorkspaceQuoteForm from '../hooks/useWorkspaceQuoteForm';
 import {isTestQuote} from '../lib/projectWorkspace';
 import {useProjectSearchParams} from '../contexts/ProjectWorkspaceContext';
@@ -5,16 +10,15 @@ import {useProjectNavigate} from '../contexts/ProjectWorkspaceContext';
 import {useProjectParams} from '../contexts/ProjectWorkspaceContext';
 import { expandOperationAlternatives, openingQuoteSnapshot } from '../lib/openingWorkflow';
 import { useDataRefresh } from '../hooks/useDataRefresh';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useActiveSalespeople } from '../hooks/useActiveSalespeople';
 
 import { v4 as uuidv4 } from 'uuid';
-import { format } from 'date-fns';
 import {
   Plus, Trash2, ChevronDown, ChevronUp, Eye, Send, Save,
-  User, FileText, Settings, DollarSign, ChevronRight, GripVertical,
-  Package, ClipboardList, BookOpen, Sparkles, Info, Check, Copy,
-  AlertCircle, CheckCircle2, X, Loader2, ExternalLink, Map, RefreshCw, Ruler,
+  FileText, DollarSign,
+  Package, ClipboardList, BookOpen, Sparkles, Check, Copy,
+  AlertCircle, CheckCircle2, X, Loader2, Map, RefreshCw, Ruler,
   Calculator, Paperclip, Upload, FileDown, Mail,
 } from 'lucide-react';
 import { optionDiff, benefitFor, descriptionTail } from '../lib/optionCompare';
@@ -60,7 +64,7 @@ class SendFailed extends Error {
   }
 }
 
-const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-AU')}`;
+const fmt = (n) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(Number(n) || 0);
 
 /**
  * Does an item match what was typed, across the fields worth searching?
@@ -169,12 +173,7 @@ function buildSalesDescription(item) {
   if (!product && !fabric) return '';
 
   // Combine fabric colour + product name naturally
-  let desc = '';
-  if (fabric && product) {
-    desc = `${fabric} ${product}`;
-  } else {
-    desc = product || fabric;
-  }
+  const desc = fabric && product ? `${fabric} ${product}` : product || fabric;
 
   // Capitalise first letter
   return desc.charAt(0).toUpperCase() + desc.slice(1) + '.';
@@ -1027,7 +1026,7 @@ function MotorisationPanel({ lineItems, selectedIds, pricedItems, approval, onAd
 
 // ─── LineItemCard ─────────────────────────────────────────────────────────────
 
-function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock, measureSheetId, navigate }) {
+function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDuplicate, canRemove, isExpanded, onToggle, inBlock, measureSheetId, navigate, onSaveToLibrary }) {
   const [showSpecs, setShowSpecs] = useState(false);
   const [showPricing, setShowPricing] = useState(true);
 
@@ -1055,115 +1054,31 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
     Part:             'bg-cyan-100 text-cyan-700 border-cyan-200',
   };
 
-  // The collapsed row mirrors the customer's option card — product name, then
-  // the customer-facing description, then the size — so building a quote shows
-  // what the quote will read like without opening the preview. The internals a
-  // customer never sees (fabric code, control) stay in the expanded body.
-  const desc = [item.description, item.customerNotes].filter(Boolean).join(' · ');
-  const meta = [
-    item.widthMm ? `${item.widthMm} × ${item.dropMm || '—'} mm` : null,
-    Number(item.quantity) > 1 ? `${item.quantity} of them` : null,
-  ].filter(Boolean).join(' · ');
-
   return (
-    <div className={`border rounded-xl overflow-hidden bg-white transition-shadow ${isExpanded ? 'border-amber-300 shadow-sm' : 'border-slate-200'}`}>
-      {/* ── Header — always visible, click to expand/collapse ── */}
-      {/* A div, not a button: the remove control lives inside this row, and a
-          button nested in a button is invalid DOM that React rejects. */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={isExpanded}
-        onClick={onToggle}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
-        className={`w-full flex items-start gap-3 px-4 py-3 text-left cursor-pointer transition-colors ${isExpanded ? 'bg-amber-50 border-b border-amber-100' : 'bg-white hover:bg-slate-50'}`}
-      >
-        {/* Title + customer-facing description, as the customer will read it */}
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-slate-800 block">
-            {describeLine(item, productTypes, wording) || <span className="text-slate-400 font-normal">New item — no product yet</span>}
-          </span>
-          {desc && <span className="text-xs text-slate-500 leading-relaxed block mt-0.5">{desc}</span>}
-          {meta && <span className="text-xs text-slate-400 block mt-0.5">{meta}</span>}
-          {!item.location && (
-            <span className="text-[11px] text-amber-600 block mt-1">No room set — shows under “General”</span>
-          )}
-          {/* Where the line came from, for the next person to open the quote.
-              A badge and nothing more: an accepted motorisation suggestion is
-              an ordinary line (see MotorisationPanel), so this does not lock
-              the price, the quantity or the remove button. */}
-          {isMaterialisedAccessory(item) && (
-            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-600">
-              <Sparkles size={10} />
-              {item.motorisationKind === 'charger'
-                ? `From motorisation — one per ${BLINDS_PER_CHARGER} battery blinds`
-                : 'From motorisation'}
-            </span>
-          )}
-          {/* Said on the row, not behind "Show pricing": a curtain that cannot
-              be costed is exactly the line you would otherwise scroll past. */}
-          {blockers.length > 0 && (
-            <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-              {/* "Materials" when the labour did cost: the making and the
-                  fitting are on the line, and calling the whole line unpriced
-                  would send someone looking for a number that is already
-                  there. */}
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                <AlertCircle size={11} /> {costed?.labourPriced ? <>Materials can&rsquo;t be priced</> : <>Can&rsquo;t be priced</>}
-              </span>
-              <span className="text-[11px] text-slate-500">
-                {blockers.map(b => b.what + (b.detail ? ` ${b.detail}` : '')).join(' · ')}
-                {costed?.labourPriced && ` · labour costed at $${costed.labourCost.toFixed(2)}`}
-              </span>
-              {blockers.filter(b => b.href).map(b => (
-                <button key={b.code} type="button"
-                  onClick={e => { e.stopPropagation(); navigate(b.href); }}
-                  className="text-[11px] font-medium text-amber-700 underline underline-offset-2 hover:text-amber-800">
-                  {b.fixLabel}
-                </button>
-              ))}
-            </span>
-          )}
-        </div>
-        {/* Type badge — redundant inside a block that already says "choose one"
-            or "optional", so it only appears where it still tells you something. */}
-        {item.type !== 'Required' && !inBlock && (
-          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 ${TYPE_COLORS[item.type] || TYPE_COLORS.Required}`}>
-            {item.type}
-          </span>
-        )}
-        {/* Line total */}
-        <div className="flex-shrink-0 text-right">
-          <span className="text-sm font-bold text-slate-800 block">{fmt(lineTotal)}</span>
-          {discountTotal > 0 && <span className="text-[10px] text-amber-600 block">−{fmt(discountTotal)}</span>}
-        </div>
-        {/* Chevron */}
-        <span className="text-slate-400 flex-shrink-0">
-          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </span>
-        {/* Remove button — stop propagation so it doesn't toggle */}
-        <button
-          type="button"
-          onClick={e => { e.stopPropagation(); onDuplicate(item.id); }}
-          className="text-slate-300 hover:text-amber-500 transition-colors flex-shrink-0 p-1"
-          title="Duplicate this item"
-        >
-          <Copy size={14} />
-        </button>
-        {canRemove && (
-          <button
-            type="button"
-            onClick={e => { e.stopPropagation(); onRemove(item.id); }}
-            className="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0 p-1 -mr-1"
-          >
-            <Trash2 size={14} />
-          </button>
-          )}
+    <div className="quote-item">
+      <div className="flex justify-end gap-1 mb-2">
+        <button type="button" className="quote-icon" aria-label="Duplicate this item" onClick={() => onDuplicate(item.id)}><Copy size={14}/></button>
+        {canRemove && <button type="button" className="quote-icon" aria-label="Delete price item" onClick={() => onRemove(item.id)}><Trash2 size={14}/></button>}
       </div>
-
+      <div className="quote-item-main">
+        <div className="quote-item-copy">
+          <input aria-label="Item name" className="quote-item-title" placeholder="Name this item, or choose from the library…" value={item.customName ?? describeLine(item, productTypes, wording)} onChange={e => set('customName', e.target.value)}/>
+          <textarea aria-label="Item description" className="quote-item-description" rows={2} placeholder="Description the customer sees…" value={item.description || ''} onChange={e => set('description', e.target.value)}/>
+        </div>
+        <label><span className="quote-item-label">Quantity</span><input aria-label="Item quantity" className="quote-field" type="number" min="1" step="1" value={item.quantity} onChange={e => set('quantity', e.target.value)}/></label>
+        <label><span className="quote-item-label">Price / each</span><input aria-label="Item unit price" className="quote-field" type="number" min="0" step="0.01" placeholder={pricing.preDiscountSell.toFixed(2)} value={item.manualSellPrice ?? ''} onChange={e => set('manualSellPrice', e.target.value)}/></label>
+        <div className="quote-line-total text-right"><span className="quote-item-label">Total excl. GST</span><strong className="block py-2">{fmt(lineTotal)}</strong>{discountTotal > 0 && <span className="text-xs text-slate-500">−{fmt(discountTotal)} discount</span>}</div>
+      </div>
+      <div className="quote-item-tools">
+        <button type="button" aria-expanded={isExpanded} onClick={onToggle} className="inline-flex items-center gap-1">{isExpanded ? <ChevronUp size={13}/> : <ChevronDown size={13}/>} {isExpanded ? 'Hide item details' : 'Product, measurements & costing'}</button>
+        <button type="button" onClick={() => onSaveToLibrary(item)} className="inline-flex items-center gap-1"><BookOpen size={13}/> Save to Price Library</button>
+        {item.customName && (item.pricedItemId || item.productTypeId) && <button type="button" onClick={() => set('customName', null)} className="text-slate-400">Use product name</button>}
+        {item.type !== 'Required' && !inBlock && <span className="text-slate-500">{item.type}</span>}
+      </div>
+      {blockers.length > 0 && <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800"><span className="font-medium">{costed?.labourPriced ? 'Material pricing needs attention: ' : 'Pricing needs attention: '}</span>{blockers.map(b => b.what + (b.detail ? ` ${b.detail}` : '')).join(' · ')}{blockers.filter(b => b.href).map(b => <button key={b.code} type="button" onClick={() => navigate(b.href)} className="ml-2 underline">{b.fixLabel}</button>)}</div>}
       {/* Body — only shown when expanded */}
       {isExpanded && item.type === 'Part' && (
-        <div className="p-4 space-y-4">
+        <div className="quote-item-details space-y-4">
           {/* Type toggle strip */}
           <div className="flex flex-wrap gap-1.5">
             {QUOTE_ITEM_TYPES.map(t => (
@@ -1201,7 +1116,7 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
         </div>
       )}
 
-      {isExpanded && item.type !== 'Part' && <div className="p-4 space-y-4">
+      {isExpanded && item.type !== 'Part' && <div className="quote-item-details space-y-4">
         {/* Item type toggle */}
         <div className="flex flex-wrap gap-1.5">
           {QUOTE_ITEM_TYPES.map(t => (
@@ -1234,6 +1149,8 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
                   set('productTypeId', '');
                   return;
                 }
+                set('customName', null);
+                set('description', pricedItem.description || '');
                 // Match product type by category
                 const pt = productTypes.find(p =>
                   p.name.toLowerCase() === (pricedItem.category || '').toLowerCase()
@@ -1242,16 +1159,16 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
                 set('productNameSnapshot',  pricedItem.itemName);
                 set('productTypeId',        pt?.id || '');
                 // Pre-fill pricing from library item
-                if (pricedItem.costPrice)     set('unitCostPrice',  pricedItem.costPrice);
-                if (pricedItem.labourCost)    set('labourCost',     pricedItem.labourCost);
-                if (pricedItem.marginPercent) set('marginPercent',  pricedItem.marginPercent);
+                if (pricedItem.costPrice != null)     set('unitCostPrice',  pricedItem.costPrice);
+                if (pricedItem.labourCost != null)    set('labourCost',     pricedItem.labourCost);
+                if (pricedItem.marginPercent != null) set('marginPercent',  pricedItem.marginPercent);
                 if (pricedItem.supplier)      set('supplier',       pricedItem.supplier);
                 // For size-based pricing: store $/m² rate and clear fixed sell price
                 // so the quote builder can auto-calculate from width × drop
                 if (pricedItem.pricePerSqm) {
                   set('pricePerSqm',    pricedItem.pricePerSqm);
                   set('manualSellPrice', ''); // will be calculated from $/m² × area
-                } else if (pricedItem.sellPrice) {
+                } else if (pricedItem.sellPrice != null) {
                   set('pricePerSqm',    null);
                   set('manualSellPrice', pricedItem.sellPrice);
                 }
@@ -1263,6 +1180,7 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
                   set('pricedItemId', null);
                   return;
                 }
+                set('customName', null);
                 set('productTypeId',       pt.id);
                 set('productNameSnapshot', pt.name);
                 set('pricedItemId',        null);
@@ -1443,8 +1361,10 @@ function SendPreviewOverlay({ quote, recipient, ccContact, isDraft, saving, onSe
   }, [onClose]);
 
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Preview and send quote">
+  // The quote uses translucent panels. Give the preview its own opaque
+  // wallpaper, above the editor, rather than compositing over the draft.
+  return createPortal(
+    <div className="quote-send-preview fixed inset-0 z-[60]" style={{ backgroundColor: 'var(--lq-under, #f3f4f6)', backgroundImage: 'var(--lq-backdrop, none)' }} role="dialog" aria-modal="true" aria-label="Preview and send quote">
       <div className="absolute inset-0 overflow-y-auto overscroll-contain">
         {/* Staff bar — the only chrome over the customer's view */}
         <div className="sticky top-0 z-20 flex items-center gap-3 bg-slate-900 text-white px-4 py-2.5 text-xs">
@@ -1506,7 +1426,8 @@ function SendPreviewOverlay({ quote, recipient, ccContact, isDraft, saving, onSe
           }
         />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1611,7 +1532,9 @@ export default function QuoteBuilder({embedded=false}) {
   // Set by doSave when the mail service accepted the request but didn't confirm
   // the send — read by handleSaveAndSend so the toast doesn't over-promise.
   const sendUnconfirmedRef      = useRef(false);
-  const [saved, setSaved]       = useState(false);
+  const [savedForm, setSavedForm] = useState(() => JSON.stringify(isEdit ? getQuote(id) : null));
+  const [overviewTab, setOverviewTab] = useState('Overview');
+  const [libraryLine, setLibraryLine] = useState(null);
   const projectSite=getJob(form?.jobId)?.siteAddress || getCustomer(form?.customerId)?.address || '';
   const previousSite=useRef(projectSite);
   useEffect(()=>{const old=previousSite.current;previousSite.current=projectSite;if(embedded && projectSite!==old)setForm(value=>value && (!value.siteAddress || value.siteAddress===old)?{...value,siteAddress:projectSite}:value);},[projectSite,embedded,setForm]);
@@ -1708,7 +1631,7 @@ export default function QuoteBuilder({embedded=false}) {
   const setLineItem = (itemId, field, value) => {
     setForm(f => ({
       ...f,
-      lineItems: f.lineItems.map(li => li.id === itemId ? { ...li, [field]: value } : li),
+      lineItems: f.lineItems.map(li => li.id === itemId ? { ...li, [field]: value, ...(field === 'customName' && value != null && !li.pricedItemId && !li.productTypeId ? { productNameSnapshot: value || '' } : {}) } : li),
     }));
   };
 
@@ -1898,14 +1821,15 @@ export default function QuoteBuilder({embedded=false}) {
   };
 
   const addPricedItem = (pi) => {
-    const sell = pi.sellPrice > 0 ? pi.sellPrice : '';
+    const sell = pi.sellPrice ?? '';
     const newItem = {
       ...EMPTY_LINE_ITEM(),
       productNameSnapshot: pi.itemName || '',
       description:         pi.description || '',
       unitCostPrice:       pi.costPrice ?? '',
       labourCost:          pi.labourCost ?? '',
-      marginPercent:       pi.marginPercent || DEFAULT_MARGIN_PERCENT,
+      marginPercent:       pi.marginPercent ?? DEFAULT_MARGIN_PERCENT,
+      pricePerSqm:         pi.pricePerSqm || null,
       manualSellPrice:     sell,
       supplier:            pi.supplier || '',
       taxable:             pi.gstApplicable !== false,
@@ -1934,6 +1858,9 @@ export default function QuoteBuilder({embedded=false}) {
     const e = {};
     if (!form.customerId) e.customerId = 'Customer is required';
     if (!form.title.trim()) e.title = 'Quote title is required';
+    if (form.lineItems.some(item => !describeLine(item, productTypes, wording) || (item.customName != null && !item.customName.trim()))) e.items = 'Name every price item or select a product.';
+    if (form.lineItems.some(item => !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) e.quantity = 'Each price item needs a quantity greater than zero.';
+    if (form.lineItems.some(item => item.manualSellPrice !== '' && item.manualSellPrice != null && (!Number.isFinite(Number(item.manualSellPrice)) || Number(item.manualSellPrice) < 0))) e.price = 'Item prices must be zero or greater.';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -2035,7 +1962,7 @@ export default function QuoteBuilder({embedded=false}) {
       } else {
         q = createQuote({ ...saveForm, status: 'Draft' });
       }
-      if(q)workspaceDraft.markSaved(q);
+      if(q) { workspaceDraft.markSaved(q); setForm(q); setSavedForm(JSON.stringify(q)); }
       if (andSend && q) {
         // Email first, mark Sent second — deliverQuote enforces that order, so
         // a quote is never left showing "Sent" (and counting down to expiry)
@@ -2073,7 +2000,7 @@ export default function QuoteBuilder({embedded=false}) {
     const q = await doSave(false);
     if (q) {
       showToast('success', isDraft ? 'Draft saved successfully.' : 'Quote updated successfully.');
-      setTimeout(() => navigate(`/quotes/${q.id}`), 800);
+      if (!isEdit) navigate(`/quotes/${q.id}/edit`);
     } else {
       showToast('error', 'Could not save. Please fix errors and try again.');
     }
@@ -2151,29 +2078,10 @@ export default function QuoteBuilder({embedded=false}) {
   };
 
   const handlePreview = async () => {
-    if (isEdit) {
-      // Silent save current state before opening preview
-      try {
-        saveQuote({ ...form, updatedAt: new Date().toISOString() });
-      } catch (_) {}
-      window.open(`/quotes/${form.id}/preview?preview=1`, '_blank');
-      return;
-    }
-    // New quote: needs to be saved to get an ID before preview is possible
-    if (!form.title.trim()) {
-      showToast('error', 'Enter a quote title before previewing.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const q = createQuote({ ...form, status: 'Draft' });
-      setSaving(false);
-      window.open(`/quotes/${q.id}/preview?preview=1`, '_blank');
-      navigate(`/quotes/${q.id}/edit`);
-    } catch (err) {
-      setSaving(false);
-      showToast('error', 'Could not save before preview.');
-    }
+    const quote = await doSave(false);
+    if (!quote) return;
+    window.open(`/quotes/${quote.id}/preview?preview=1`, '_blank');
+    if (!isEdit) navigate(`/quotes/${quote.id}/edit`);
   };
 
   const totals = computeQuoteTotals(
@@ -2196,7 +2104,7 @@ export default function QuoteBuilder({embedded=false}) {
   const selectedCustomer = customers.find(c => c.id === form.customerId);
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto overflow-x-hidden">
+    <div className="quote-builder p-3 sm:p-6 max-w-6xl mx-auto">
 
       {/* Preview & send — the customer's view with the send control past its end */}
       {sendPreview && (
@@ -2230,71 +2138,14 @@ export default function QuoteBuilder({embedded=false}) {
       )}
 
       {workspaceDraft.conflict && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 mb-4 text-sm"><p>A newer saved draft is loaded. An older unsaved copy is kept on this browser.</p><div className="mt-2 flex gap-3"><button onClick={workspaceDraft.download} className="underline">Download unsaved copy</button><button onClick={workspaceDraft.discard} className="underline">Discard older copy</button></div></div>}
-      {/* Header — buttons show icon+label on sm+, icon-only on mobile */}
-      <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold text-slate-900 truncate">{embedded?'Draft quote':isEdit ? 'Edit Quote' : 'New Quote'}</h1>
-            {form.quoteNumber && <p className="text-sm text-slate-400">{form.quoteNumber}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {saved && (
-            <span className="hidden sm:flex items-center gap-1 text-green-600 text-sm font-medium mr-1">
-              <Check size={14} /> Saved
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={handlePreview}
-            className="flex items-center gap-1.5 text-sm font-medium px-2.5 sm:px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50"
-            title="Preview"
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
-            <span className="hidden sm:inline">Preview</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveDraft}
-            disabled={saving}
-            className="flex items-center gap-1.5 text-sm font-medium px-2.5 sm:px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
-            title={isDraft ? 'Save Draft' : 'Save Changes'}
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            <span className="hidden sm:inline">{isDraft ? 'Save Draft' : 'Save Changes'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={openSendPreview}
-            disabled={saving}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold px-3 sm:px-4 py-2 rounded-lg transition-colors"
-            title={isDraft ? 'Preview & Send' : 'Preview & Re-send'}
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
-            <span className="hidden sm:inline">{isDraft ? 'Preview & Send' : 'Preview & Re-send'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Validation error banner */}
-      {Object.keys(errors).length > 0 && (
-        <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <AlertCircle size={15} className="text-red-500 mt-0.5 flex-shrink-0" />
-          <div className="text-sm text-red-700">
-            <p className="font-medium">Please fix the following:</p>
-            <ul className="mt-1 list-disc list-inside space-y-0.5">
-              {Object.values(errors).map((e, i) => <li key={i}>{e}</li>)}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ── Main form (2/3) ─────────────────────────────────────────── */}
-        <div className="lg:col-span-2 space-y-5">
-
-          {/* Template bar */}
-          <div className="flex gap-2">
+      {libraryLine && <QuoteLibraryDialog line={libraryLine} productTypes={productTypes} wording={wording} onClose={() => setLibraryLine(null)} onSaved={item => { setLibraryLine(null); showToast('success', `${item.itemName} added to the Price Library.`); }}/>}
+      <div className="quote-toolbar">
+        <button type="button" className="quote-primary" disabled={saving} onClick={openSendPreview}>{saving ? <Loader2 size={14} className="animate-spin"/> : <Eye size={14}/>} {isDraft ? 'Preview & Send' : 'Preview & Re-send'}</button>
+        <button type="button" className="quote-secondary" disabled={saving} onClick={handleSaveDraft}><Save size={14}/> Save Now</button>
+        <span role="status" className="text-xs text-slate-500">{saving ? 'Saving…' : JSON.stringify(form) === savedForm ? 'Saved' : 'Unsaved changes'}</span>
+        <span className="flex-1"/>
+        <details className="relative"><summary className="quote-secondary cursor-pointer">Actions <ChevronDown size={13}/></summary><div className="absolute right-0 top-full mt-2 bg-white border border-slate-200 rounded p-3 w-72 shadow-lg z-40 space-y-3"><button type="button" onClick={handlePreview} className="quote-secondary w-full"><Eye size={13}/> Customer Preview</button>          {/* Template bar */}
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setShowTemplates(t => !t)}
@@ -2318,9 +2169,11 @@ export default function QuoteBuilder({embedded=false}) {
             )}
           </div>
 
-          {/* Section 1: Customer & Site */}
-          <Section title="Customer & Site" icon={User} defaultOpen={!embedded}>
-            <div className="pt-4 space-y-4">
+</div></details>
+      </div>
+      {Object.keys(errors).length > 0 && <div role="alert" className="bg-red-50 border border-red-200 p-4 text-sm text-red-700">{Object.values(errors).map((error, i) => <p key={i}>{error}</p>)}</div>}
+      <div className="quote-overview">
+        <div><p className="text-xs font-semibold mb-3">For</p><div className="quote-overview-card"><div className="space-y-4">
               {/* Customer search */}
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1.5">Customer *</label>
@@ -2394,20 +2247,13 @@ export default function QuoteBuilder({embedded=false}) {
                 />
               </div>
             </div>
-          </Section>
-
-          {/* Section 2: Quote Details */}
-          <Section title="Quote Details" icon={FileText} defaultOpen>
-            <div className="pt-4 space-y-4">
-              <FieldInput
-                label="Quote Title *"
-                value={form.title}
-                onChange={v => set('title', v)}
-                placeholder="e.g. Brighton Residence – Full Window Treatment"
-              />
-              {errors.title && <p className="text-xs text-red-500 -mt-2">{errors.title}</p>}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="mt-4"><label className="block text-xs text-slate-500 mb-1">From</label><select aria-label="From salesperson" className="quote-field" value={form.salesperson} onChange={e => set('salesperson', e.target.value)}><option value="">Select staff member…</option>{form.salesperson && !staff.some(person => person.fullName === form.salesperson) && <option value={form.salesperson}>{form.salesperson}</option>}{staff.map(person => <option key={person.id} value={person.fullName}>{person.fullName}</option>)}</select></div></div></div>
+        <div>
+          <div className="flex items-center justify-between"><div className="quote-tabs">{['Overview', 'All Activity', 'Settings'].map(tab => <button key={tab} type="button" aria-pressed={overviewTab === tab} onClick={() => setOverviewTab(tab)}>{tab}</button>)}</div><strong className="text-sm">{fmt(totals.total)}</strong></div>
+          <div className="quote-overview-card">
+            {overviewTab === 'Overview' && <><div className="flex justify-between gap-3 border-b-2 border-emerald-200 pb-4"><h1 className="text-xl font-semibold text-emerald-600">{form.status || 'Draft'}</h1><span className="text-sm text-slate-500">{form.quoteNumber || 'New quote'}</span></div><div className="flex flex-wrap gap-2 items-center mt-4 text-xs text-slate-500"><span>Settings applied:</span><button type="button" className="quote-secondary" onClick={() => setOverviewTab('Settings')}>{form.includesGST ? 'Tax Exclusive (Inclusive Total)' : 'GST Free'}</button><button type="button" className="quote-secondary" onClick={() => setOverviewTab('Settings')}>{form.priceDisplay === 'quote-total' ? 'Quote total only' : form.priceDisplay === 'item-totals' ? 'Item totals only' : 'Prices, quantities and totals'}</button></div></>}
+            {overviewTab === 'All Activity' && <div className="space-y-3">{form.activity?.length ? [...form.activity].reverse().map((entry, i) => <div key={entry.id || i} className="text-sm border-b border-slate-100 pb-2"><p>{entry.note || entry.type}</p><p className="text-xs text-slate-400 mt-1">{entry.user}{entry.createdAt ? ` · ${new Date(entry.createdAt).toLocaleString('en-AU')}` : ''}</p></div>) : <p className="text-sm text-slate-500">No recorded activity yet.</p>}</div>}
+            {overviewTab === 'Settings' && <div>              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">Salesperson</label>
                   <select value={form.salesperson} onChange={e => set('salesperson', e.target.value)}
@@ -2423,7 +2269,119 @@ export default function QuoteBuilder({embedded=false}) {
                 </div>
               </div>
 
-              <div>
+          {/* Section 5: Deposit & GST */}
+          <Section title="Deposit & Pricing Settings" icon={DollarSign} defaultOpen>
+            <div className="pt-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Deposit Type</label>
+                  <select value={form.depositType} onChange={e => set('depositType', e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
+                    {DEPOSIT_TYPES.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                {form.depositType !== 'None' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                      {form.depositType === 'Percentage' ? 'Deposit %' : 'Deposit Amount ($)'}
+                    </label>
+                    <input
+                      type="number"
+                      value={form.depositValue}
+                      onChange={e => set('depositValue', Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">GST Rate</label>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.includesGST}
+                        onChange={e => set('includesGST', e.target.checked)}
+                        className="accent-amber-500"
+                      />
+                      Include GST ({form.gstRate}%)
+                    </label>
+                  </div>
+                </div>
+              </div>
+              {/* Quote-level discount */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Overall Discount</label>
+                  <select value={form.discountType || 'None'} onChange={e => {
+                    set('discountType', e.target.value);
+                    // The label names a specific credit. Leaving it attached to
+                    // a discount that is no longer that credit would print the
+                    // wrong reason on the customer's quote.
+                    if (e.target.value === 'None') set('discountLabel', '');
+                  }}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
+                    {['None', 'Percentage', 'Fixed Amount'].map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                {form.discountType && form.discountType !== 'None' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                      {form.discountType === 'Percentage' ? 'Discount %' : 'Discount Amount ($)'}
+                    </label>
+                    <input
+                      type="number"
+                      value={form.discountValue || ''}
+                      onChange={e => set('discountValue', Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                )}
+                {form.discountType && form.discountType !== 'None' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1.5">Shown to customer as</label>
+                    <input
+                      type="text"
+                      value={form.discountLabel || ''}
+                      placeholder="Discount"
+                      onChange={e => set('discountLabel', e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                )}
+              </div>
+              <label className="block text-xs text-slate-500">How customers see prices
+                <select aria-label="How customers see prices" className="quote-field mt-1" value={form.priceDisplay || 'all'} onChange={e => set('priceDisplay', e.target.value)}>
+                  <option value="all">Prices, quantities and totals</option>
+                  <option value="item-totals">Item totals only</option>
+                  <option value="quote-total">Quote total only</option>
+                </select>
+              </label>
+              {/* Size visibility */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.showSizesToClient || false}
+                    onChange={e => set('showSizesToClient', e.target.checked)}
+                    className="mt-0.5 accent-amber-500"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Show dimensions to client</p>
+                    <p className="text-xs text-slate-400 mt-0.5">When enabled, width × drop measurements will be visible on the customer-facing quote. Off by default — keep sizes internal.</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </Section>
+
+</div>}
+          </div>
+          <label className="quote-overview-card block mt-4 text-xs text-slate-500">Private note<textarea aria-label="Private note" value={form.internalNotes || ''} onChange={e => set('internalNotes', e.target.value)} placeholder="Add a private note…" rows={2} className="quote-field mt-2"/></label>
+        </div>
+      </div>
+      <div className="quote-document">
+        <input aria-label="Quote title" className="quote-document-title" value={form.title} onChange={e => set('title', e.target.value)} placeholder="Title of quote"/>
+        <div className="space-y-4 mb-6">              <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1.5">Introduction Message (customer-facing)</label>
                 <textarea
                   value={form.introMessage ?? ''}
@@ -2441,9 +2399,10 @@ export default function QuoteBuilder({embedded=false}) {
                 onDetach={detachPlan}
                 onToggleSizes={(v) => set('planSnapshot', { ...form.planSnapshot, showSizes: v })}
               />
-            </div>
-          </Section>
-
+</div>
+        <QuoteTextItems items={form.textItems || []} placement="before" onChange={items => set('textItems', items)}/>
+        <div className="flex justify-end mb-4"><AddQuoteText items={form.textItems || []} placement="before" onChange={items => set('textItems', items)}/></div>
+        <div className="quote-content space-y-5">
           {/* Measure Sheet Import Card */}
           <Card>
             {/* Header row */}
@@ -2583,13 +2542,13 @@ export default function QuoteBuilder({embedded=false}) {
 
           {/* Section 3: Line Items */}
           <Card>
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap gap-3 items-center justify-between">
               <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
                 <Package size={15} className="text-slate-400" />
                 Line Items
                 <span className="text-xs font-normal text-slate-400">({form.lineItems.length} item{form.lineItems.length !== 1 ? 's' : ''})</span>
               </h2>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {/* Item library (saved items + priced items) */}
                 <div className="relative">
                   <button
@@ -2670,7 +2629,7 @@ export default function QuoteBuilder({embedded=false}) {
                   onClick={addLineItem}
                   className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-white transition-colors"
                 >
-                  <Plus size={12} /> Add Item
+                  <Plus size={12} /> Price Item
                 </button>
                 <button
                   type="button"
@@ -2682,7 +2641,7 @@ export default function QuoteBuilder({embedded=false}) {
               </div>
             </div>
 
-            <div className="p-4 space-y-4">
+            <div className="quote-item-details space-y-4">
               {/* Said once at the top as well as on each line: on a long quote
                   the unpriceable curtain is below the fold, and a quote that
                   goes out with a $0 curtain on it is the failure this exists
@@ -2717,7 +2676,7 @@ export default function QuoteBuilder({embedded=false}) {
                   <p className="text-sm text-slate-400">No items yet. Add a line item or import from a saved item.</p>
                 </div>
               ) : (
-                quoteSections(form.lineItems).map(({ room, entries }) => (
+                quoteSections(form.lineItems).map(({ room, entries }, roomIndex, rooms) => (
                   <section key={room} className="space-y-3">
                     {/* Room subheading — the same one the customer sees, and
                         it stays put while the room's items scroll under it.
@@ -2736,6 +2695,10 @@ export default function QuoteBuilder({embedded=false}) {
                       className="sticky top-1 z-10 flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-[var(--border)] shadow-sm"
                     >
                       <h4 className="text-base font-semibold text-slate-800">{room}</h4>
+                      <span className="flex gap-1 ml-auto">
+                        <button type="button" className="quote-icon" aria-label={`Move ${room} up`} disabled={roomIndex === 0} onClick={() => set('lineItems', swapQuoteGroups(form.lineItems, entries.flatMap(entry => entry.items.map(item => item.id)), rooms[roomIndex - 1]?.entries.flatMap(entry => entry.items.map(item => item.id))))}><ChevronUp size={14}/></button>
+                        <button type="button" className="quote-icon" aria-label={`Move ${room} down`} disabled={roomIndex === rooms.length - 1} onClick={() => set('lineItems', swapQuoteGroups(form.lineItems, entries.flatMap(entry => entry.items.map(item => item.id)), rooms[roomIndex + 1]?.entries.flatMap(entry => entry.items.map(item => item.id))))}><ChevronDown size={14}/></button>
+                      </span>
                       {/* Same sentence the customer's room heading shows, from
                           the same function — the editor saying "2 items" while
                           their copy said "1 to choose" was a quiet way to not
@@ -2758,7 +2721,7 @@ export default function QuoteBuilder({embedded=false}) {
                         );
                       })()}
                     </div>
-                    {entries.map(entry => (
+                    {entries.map((entry, entryIndex) => (
                       <div key={entry.key} className="flex items-start gap-2.5">
                         {/* A / B / C — the window reference, read straight out
                             of the location the same way the customer page and
@@ -2769,6 +2732,10 @@ export default function QuoteBuilder({embedded=false}) {
                           </span>
                         )}
                         <div className="flex-1 min-w-0 space-y-2.5">
+                          {entries.length > 1 && <div className="flex justify-end gap-1">
+                            <button type="button" className="quote-icon" aria-label="Move opening up" disabled={entryIndex === 0} onClick={() => set('lineItems', swapQuoteGroups(form.lineItems, entry.items.map(item => item.id), entries[entryIndex - 1]?.items.map(item => item.id)))}><ChevronUp size={14}/></button>
+                            <button type="button" className="quote-icon" aria-label="Move opening down" disabled={entryIndex === entries.length - 1} onClick={() => set('lineItems', swapQuoteGroups(form.lineItems, entry.items.map(item => item.id), entries[entryIndex + 1]?.items.map(item => item.id)))}><ChevronDown size={14}/></button>
+                          </div>}
                           {entry.blocks.map(block => (
                             <div key={block.key} className="space-y-1.5">
                               {block.eyebrow && (
@@ -2792,6 +2759,7 @@ export default function QuoteBuilder({embedded=false}) {
                                     onChange={setLineItem}
                                     onRemove={removeLineItem}
                                     onDuplicate={duplicateLineItem}
+                                    onSaveToLibrary={setLibraryLine}
                                     measureSheetId={sheetIdForLine(item)}
                                     navigate={navigate}
                                     canRemove={form.lineItems.length > 0}
@@ -2819,7 +2787,7 @@ export default function QuoteBuilder({embedded=false}) {
                   onClick={addLineItem}
                   className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm text-slate-400 hover:border-amber-400 hover:text-amber-600 transition-colors"
                 >
-                  <Plus size={15} /> Add Another Item
+                  <Plus size={15} /> Price Item
                 </button>
               )}
 
@@ -2862,145 +2830,7 @@ export default function QuoteBuilder({embedded=false}) {
             </div>
           </Card>
 
-          {/* Section 3b: Documents for the customer */}
-          <Section title="Documents for the customer" icon={Paperclip} defaultOpen={false}>
-            <QuoteDocumentsPanel
-              quoteId={form.id}
-              documents={form.documents || []}
-              onChange={docs => set('documents', docs)}
-              onError={msg => showToast('error', msg)}
-            />
-          </Section>
-
-          {/* Section 4: Terms & Conditions */}
-          <Section title="Terms & Conditions" icon={FileText} defaultOpen={false}>
-            <div className="pt-4">
-              <textarea
-                value={form.termsAndConditions ?? ''}
-                onChange={e => set('termsAndConditions', e.target.value)}
-                rows={5}
-                placeholder="Enter your terms and conditions…"
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
-              />
-            </div>
-          </Section>
-
-          {/* Section 5: Deposit & GST */}
-          <Section title="Deposit & Pricing Settings" icon={DollarSign} defaultOpen={false}>
-            <div className="pt-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Deposit Type</label>
-                  <select value={form.depositType} onChange={e => set('depositType', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
-                    {DEPOSIT_TYPES.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                {form.depositType !== 'None' && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                      {form.depositType === 'Percentage' ? 'Deposit %' : 'Deposit Amount ($)'}
-                    </label>
-                    <input
-                      type="number"
-                      value={form.depositValue}
-                      onChange={e => set('depositValue', Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">GST Rate</label>
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={form.includesGST}
-                        onChange={e => set('includesGST', e.target.checked)}
-                        className="accent-amber-500"
-                      />
-                      Include GST ({form.gstRate}%)
-                    </label>
-                  </div>
-                </div>
-              </div>
-              {/* Quote-level discount */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Overall Discount</label>
-                  <select value={form.discountType || 'None'} onChange={e => {
-                    set('discountType', e.target.value);
-                    // The label names a specific credit. Leaving it attached to
-                    // a discount that is no longer that credit would print the
-                    // wrong reason on the customer's quote.
-                    if (e.target.value === 'None') set('discountLabel', '');
-                  }}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
-                    {['None', 'Percentage', 'Fixed Amount'].map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                {form.discountType && form.discountType !== 'None' && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                      {form.discountType === 'Percentage' ? 'Discount %' : 'Discount Amount ($)'}
-                    </label>
-                    <input
-                      type="number"
-                      value={form.discountValue || ''}
-                      onChange={e => set('discountValue', Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
-                  </div>
-                )}
-                {form.discountType && form.discountType !== 'None' && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">Shown to customer as</label>
-                    <input
-                      type="text"
-                      value={form.discountLabel || ''}
-                      placeholder="Discount"
-                      onChange={e => set('discountLabel', e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
-                  </div>
-                )}
-              </div>
-              {/* Size visibility */}
-              <div className="pt-2 border-t border-slate-100">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.showSizesToClient || false}
-                    onChange={e => set('showSizesToClient', e.target.checked)}
-                    className="mt-0.5 accent-amber-500"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">Show dimensions to client</p>
-                    <p className="text-xs text-slate-400 mt-0.5">When enabled, width × drop measurements will be visible on the customer-facing quote. Off by default — keep sizes internal.</p>
-                  </div>
-                </label>
-              </div>
-            </div>
-          </Section>
-
-          {/* Section 6: Internal Notes */}
-          <Section title="Internal Notes" icon={Settings} defaultOpen={false}>
-            <div className="pt-4">
-              <textarea
-                value={form.internalNotes}
-                onChange={e => set('internalNotes', e.target.value)}
-                rows={3}
-                placeholder="Internal notes — not visible to customer…"
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none bg-yellow-50"
-              />
-            </div>
-          </Section>
-        </div>
-
-        {/* ── Sidebar (1/3) ────────────────────────────────────────────── */}
-        <div className="space-y-5">
-          {/* Quote Totals */}
-          <Card className="p-5 sticky top-6">
+          <Card className="p-5 mt-6 ml-auto max-w-md">
             <h2 className="font-semibold text-slate-800 text-sm mb-4">Quote Summary</h2>
 
             {/* Item type breakdown — only the types that count toward the total
@@ -3073,48 +2903,43 @@ export default function QuoteBuilder({embedded=false}) {
               )}
             </div>
 
-            {/* Actions */}
-            <div className="mt-5 space-y-2">
-              <button
-                type="button"
-                onClick={openSendPreview}
-                disabled={saving}
-                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
-              >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-                {isDraft ? 'Preview & Send' : 'Preview & Re-send'}
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveDraft}
-                disabled={saving}
-                className="w-full flex items-center justify-center gap-2 border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium py-2.5 rounded-xl transition-colors text-sm"
-              >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                {isDraft ? 'Save Draft' : 'Save Changes'}
-              </button>
-              <button
-                type="button"
-                onClick={handlePreview}
-                className="w-full flex items-center justify-center gap-2 border border-slate-200 hover:bg-slate-50 text-slate-600 font-medium py-2 rounded-xl transition-colors text-sm"
-              >
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />} Customer Preview
-              </button>
-            </div>
           </Card>
+          <QuoteTextItems items={form.textItems || []} placement="after" onChange={items => set('textItems', items)}/>
+          <AddQuoteText items={form.textItems || []} onChange={items => set('textItems', items)}/>
+          <Section title="To place your order & payment" icon={DollarSign} defaultOpen>
+            <div className="space-y-4 text-sm text-slate-600 whitespace-pre-wrap">
+              {settings.orderTerms && <p>{settings.orderTerms}</p>}
+              {settings.termsOfTrade && <p>{settings.termsOfTrade}</p>}
+              {(settings.paymentDetails?.bsb || settings.paymentDetails?.accountNumber) && <div><h3 className="font-semibold text-slate-800 mb-2">Direct deposit</h3><p>{settings.paymentDetails.accountName}</p><p>BSB: {settings.paymentDetails.bsb}</p><p>Account: {settings.paymentDetails.accountNumber}</p></div>}
+              {settings.paymentDetails?.creditCardNote && <div><h3 className="font-semibold text-slate-800 mb-2">Credit card payment</h3><p>{settings.paymentDetails.creditCardNote}</p>{Number(settings.paymentDetails.amexSurchargePercent) > 0 && <p>Amex attracts a {settings.paymentDetails.amexSurchargePercent}% surcharge.</p>}</div>}
+              {settings.termsAttachmentUrl && <a href={settings.termsAttachmentUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">{settings.termsAttachmentLabel || 'Full Terms & Conditions'}</a>}
+              <p className="text-xs text-slate-400">Shared wording and payment details come from Quote defaults in Settings.</p>
+            </div>
+          </Section>
 
-          {/* Linked job info */}
-          {form.jobId && (() => {
-            const job = getJob(form.jobId);
-            return job ? (
-              <Card className="p-5">
-                <h3 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5"><ClipboardList size={13} /> Linked Job</h3>
-                <p className="text-xs text-slate-400 mb-0.5">{job.jobNumber}</p>
-                <p className="text-sm font-medium text-slate-700 mb-2">{job.title}</p>
-                <button onClick={() => navigate(`/jobs/${job.id}`)} className="text-xs text-amber-600 hover:underline">View job →</button>
-              </Card>
-            ) : null;
-          })()}
+          {/* Section 3b: Documents for the customer */}
+          <Section title="Attachments" icon={Paperclip} defaultOpen>
+            <QuoteDocumentsPanel
+              quoteId={form.id}
+              documents={form.documents || []}
+              onChange={docs => set('documents', docs)}
+              onError={msg => showToast('error', msg)}
+            />
+          </Section>
+
+          {/* Section 4: Terms & Conditions */}
+          <Section title="Terms & Conditions" icon={FileText} defaultOpen>
+            <div className="pt-4">
+              <textarea
+                value={form.termsAndConditions ?? ''}
+                onChange={e => set('termsAndConditions', e.target.value)}
+                rows={5}
+                placeholder="Enter your terms and conditions…"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+              />
+            </div>
+          </Section>
+
         </div>
       </div>
     </div>

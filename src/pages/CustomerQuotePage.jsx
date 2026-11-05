@@ -1018,7 +1018,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         : active.length > 1
           ? `${active.length} items at this window`
           : matched.length ? 'Not added to your order' : (entry.product || 'Window treatment'),
-      priceText: active.length ? money(priced) : '',
+      priceText: quote.priceDisplay === 'quote-total' ? '' : active.length ? money(priced) : '',
       targetKey: target ? (groupKeyByItemId.get(target.id) || null) : null,
     };
   };
@@ -1136,7 +1136,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
   const quoteSnapshot = () => ({
     quoteNumber:  quote.quoteNumber,
     customerName: customer?.name || '',
-    title:        `${settings.businessName} quotation for ${customer?.name || 'you'}`,
+    title:        quote.title || `${settings.businessName} quotation for ${customer?.name || 'you'}`,
     siteAddress:  quote.siteAddress || '',
     issued:       quote.createdAt ? fmtDate(quote.createdAt) : '',
     expiry:       quote.expiryDate ? fmtDate(new Date(quote.expiryDate)) : '',
@@ -1162,6 +1162,8 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     selectionNote,
     depositNote: depoLabel ? `A ${depoLabel} deposit (${figures.deposit}) confirms your order.` : '',
     terms:       quote.termsAndConditions || '',
+    textItems:   quote.textItems || [],
+    priceDisplay: quote.priceDisplay || 'all',
     footer:      [settings.businessName, settings.businessPhone, settings.businessEmail].filter(Boolean).join('  ·  '),
     formatMoney: money,
   });
@@ -1462,7 +1464,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
     // measure in their own hallway and query the quote over a number that is
     // ours to get right, and that the check-measure exists to confirm. It also
     // reads as a specification when what this page is for is a decision.
-    const meta = qty > 1 ? `${qty} of them` : '';
+    const meta = (!quote.priceDisplay || quote.priceDisplay === 'all') && qty > 1 ? `${qty} of them` : '';
     // A GST-free line must say so. Labelling it like everything else is what
     // made the summary look as though it had the wrong GST on it.
     // "ex GST" under all 24 prices said once per card what the page already
@@ -1562,14 +1564,14 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
         {/* marginLeft:auto keeps the price hard right both inline on desktop and
             on its own wrapped line on a phone, where it used to float mid-card
             so no two prices lined up down the page. */}
-        <div style={compare
+        {quote.priceDisplay !== 'quote-total' && <div style={compare
           ? { textAlign: 'left', flex: '0 0 auto', marginTop: 'auto', paddingTop: 0 }
           : { textAlign: 'right', flex: '0 0 auto', marginLeft: 'auto' }}>
           {discountTotal > 0 && <div style={{ fontSize: 13, color: T.stone, textDecoration: 'line-through' }}>{money(ex(preDiscountSell * qty))}</div>}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, justifyContent: compare ? 'flex-start' : 'flex-end', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 18, fontWeight: on ? 500 : 400, letterSpacing: '-0.2px', whiteSpace: 'nowrap', color: on ? T.ink : T.stone }}>{money(shownTotal)}</span>
           </div>
-          {(gstNote || qty > 1) && (
+          {(!quote.priceDisplay || quote.priceDisplay === 'all') && (gstNote || qty > 1) && (
             <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.stone, marginTop: 4 }}>
               {gstNote}{qty > 1 ? `${gstNote ? ' · ' : ''}${money(shownUnit)} × ${qty}` : ''}
             </div>
@@ -1577,10 +1579,17 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
           {discountTotal > 0 && (
             <div style={{ marginTop: 8, fontSize: 10.5, fontWeight: 500, letterSpacing: '0.06em', color: T.bronze }}>Discount −{money(ex(discountTotal))}</div>
           )}
-        </div>
+        </div>}
       </div>
     );
   };
+
+  const textItemsAt = placement => (quote.textItems || [])
+    .filter(item => (item.placement || 'after') === placement && (item.heading?.trim() || item.body?.trim()))
+    .map(item => <section key={item.id} style={{ ...container, padding: '24px 22px 0' }}>
+      {item.heading && <h3 style={{ ...h3, margin: '0 0 10px' }}>{item.heading}</h3>}
+      {item.body && <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.8 }}>{item.body}</p>}
+    </section>);
 
   // "Valid until" describes the document; "Pricing held until" describes what
   // the customer actually gets out of the date, which is that the number in
@@ -1657,7 +1666,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             </div>
             <div style={{ marginTop: 26 }}><Eyebrow color={T.bronzeRaised} dash={T.bronzeRaised}>Quotation {quote.quoteNumber}</Eyebrow></div>
             <h1 style={{ margin: '10px 0 0', fontWeight: 300, fontSize: 29, lineHeight: 1.2, letterSpacing: '-0.5px', color: T.paper, textWrap: 'pretty', maxWidth: '26ch' }}>
-              {settings.businessName} quotation for {customer?.name || 'you'}
+              {quote.title || `${settings.businessName} quotation for ${customer?.name || 'you'}`}
             </h1>
             {quote.siteAddress && <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.7, color: T.onInverseMuted }}>{quote.siteAddress}</p>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 20 }}>
@@ -1676,6 +1685,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             )}
           </div>
         </header>
+        {textItemsAt('before')}
 
         {/* ── Body: the quote, with who it is between alongside it ──────── */}
         {/* The From/For pair used to sit between the header and the first
@@ -1875,6 +1885,8 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
             )}
           </div>
         )}
+
+        {textItemsAt('after')}
 
         {/* ── Summary + terms + payment + reviews + CTA ──────────────────── */}
         <div style={{ ...container, padding: '40px 22px 0' }} ref={tailRef}>
@@ -2282,7 +2294,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                                 ? <span style={{ color: T.stone }}> · {li.location}</span>
                                 : null}
                             </span>
-                            <span style={{ color: T.ink, whiteSpace: 'nowrap' }}>{money(ex(linePricing(li).lineTotal))}</span>
+                            {quote.priceDisplay !== 'quote-total' && <span style={{ color: T.ink, whiteSpace: 'nowrap' }}>{money(ex(linePricing(li).lineTotal))}</span>}
                           </div>
                         ))}
                       </div>

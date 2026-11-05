@@ -68,6 +68,25 @@ export async function buildQuotePdf(snap) {
   /** Start a new page unless `need` points still fit above the footer. */
   const ensure = (need) => { if (y + need > BOTTOM) { doc.addPage(); y = M; } };
 
+  const textItemsAt = (placement) => {
+    (snap.textItems || []).filter(item => (item.placement || 'after') === placement).forEach(item => {
+      if (!item.heading?.trim() && !item.body?.trim()) return;
+      ensure(42);
+      if (item.heading?.trim()) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...INK);
+        for (const line of doc.splitTextToSize(item.heading.trim(), pageW - M * 2)) {
+          ensure(15); doc.text(line, M, y); y += 15;
+        }
+      }
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+      for (const line of doc.splitTextToSize(item.body || '', pageW - M * 2)) {
+        ensure(14); doc.text(line, M, y); y += 14;
+      }
+      y += 16;
+    });
+  };
+  textItemsAt('before');
+
   // ── A table per room, so the paper reads in the same order as the page ────
   const money = (n) => snap.formatMoney(n);
   snap.rooms.forEach((room) => {
@@ -76,7 +95,7 @@ export async function buildQuotePdf(snap) {
     // at the foot of this one and the blinds overleaf.
     ensure(58);
     autoTable(doc, {
-      head: [[room.room, 'Qty', 'Price']],
+      head: [snap.priceDisplay === 'quote-total' ? [room.room] : snap.priceDisplay === 'item-totals' ? [room.room, 'Price'] : [room.room, 'Qty', 'Price']],
       // Second line carries where it goes and how it got here. A line the
       // customer chose between two alternatives, and one that was never in
       // question, were printing identically — so the document showed what was
@@ -89,11 +108,12 @@ export async function buildQuotePdf(snap) {
       // so the figures still read down to the total.
       body: room.lines.map((l) => {
         const where = l.location && l.location !== room.room ? l.location : '';
-        const sub = [where, l.taken ? l.note : `Not taken — ${money(l.total)}`]
+        const sub = [where, l.taken ? l.note : snap.priceDisplay === 'quote-total' ? 'Not taken' : `Not taken — ${money(l.total)}`]
           .filter(Boolean).join('  ·  ');
-        return l.taken
-          ? [sub ? `${l.name}\n${sub}` : l.name, String(l.quantity || 1), money(l.total)]
-          : [`${l.name}\n${sub}`, '', ''];
+        const name = sub ? `${l.name}\n${sub}` : l.name;
+        if (snap.priceDisplay === 'quote-total') return [name];
+        if (snap.priceDisplay === 'item-totals') return [name, l.taken ? money(l.total) : ''];
+        return l.taken ? [name, String(l.quantity || 1), money(l.total)] : [name, '', ''];
       }),
       // A declined option must never be mistaken for a charge, so it is set
       // in the muted grey the sub-lines use rather than the ink the order is.
@@ -107,11 +127,11 @@ export async function buildQuotePdf(snap) {
       theme: 'plain',
       styles: { fontSize: 10, cellPadding: { top: 6, bottom: 6, left: 0, right: 0 }, textColor: INK, overflow: 'linebreak' },
       headStyles: { fontStyle: 'bold', fontSize: 10, textColor: INK, lineWidth: { bottom: 0.7 }, lineColor: RULE },
-      columnStyles: {
-        0: { cellWidth: pageW - M * 2 - 140 },
-        1: { cellWidth: 50, halign: 'right', textColor: MUTED },
-        2: { cellWidth: 90, halign: 'right' },
-      },
+      columnStyles: snap.priceDisplay === 'quote-total'
+        ? { 0: { cellWidth: pageW - M * 2 } }
+        : snap.priceDisplay === 'item-totals'
+          ? { 0: { cellWidth: pageW - M * 2 - 90 }, 1: { cellWidth: 90, halign: 'right' } }
+          : { 0: { cellWidth: pageW - M * 2 - 140 }, 1: { cellWidth: 50, halign: 'right', textColor: MUTED }, 2: { cellWidth: 90, halign: 'right' } },
       // Repeating the room name on a page break stops a continued room from
       // reading as an untitled list of charges.
       showHead: 'everyPage',
@@ -166,6 +186,8 @@ export async function buildQuotePdf(snap) {
   }
 
   // ── Terms ─────────────────────────────────────────────────────────────────
+  textItemsAt('after');
+
   if ((snap.terms || '').trim()) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
     const termLines = doc.splitTextToSize(snap.terms.trim(), pageW - M * 2);

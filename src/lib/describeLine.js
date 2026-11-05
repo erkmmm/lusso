@@ -113,6 +113,8 @@ export const isBareProductName = (snapshot, productTypes = []) => {
  * @returns {string} e.g. "Wand operated reverse pleat sheer curtain"
  */
 export function describeLine(item, productTypes = [], wording = {}) {
+  // A quote-specific name takes precedence without changing its product type.
+  if (norm(item?.customName)) return norm(item.customName);
   const operationWords = wording.operationWords || OPERATION_WORDS;
   const fabricWords    = wording.fabricWords || FABRIC_WORDS;
   const snapshot = norm(item?.productNameSnapshot || item?.productType);
