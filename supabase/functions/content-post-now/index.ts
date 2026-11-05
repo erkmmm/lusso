@@ -1,3 +1,4 @@
+import { hasStaffAccess } from "../_shared/staffAccess.ts"
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { renderPage } from "../_shared/render.ts"
@@ -125,6 +126,8 @@ Deno.serve(async (req: Request) => {
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return json({ error: "Unauthorized" }, 401)
+  if (!await hasStaffAccess(supabase))
+    return json({ error: "Active staff access required" }, 403)
 
   const token = Deno.env.get("SEO_REPO_TOKEN")?.trim().replace(/^['"]|['"]$/g, "")
   if (!token) return json({ error: "SEO_REPO_TOKEN is not set" })
@@ -147,6 +150,8 @@ Deno.serve(async (req: Request) => {
 
   const body = await req.json().catch(() => ({}))
   const action = ["sync-queue", "preview", "delete"].includes(body?.action) ? body.action : "post"
+  if (action !== "preview" && !await hasStaffAccess(supabase, true))
+    return json({ error: "Active account manager access required" }, 403)
 
   // ── Delete ────────────────────────────────────────────────────────────────
   // A queued page is a FILE on the `queue` branch, not just a row. Removing the

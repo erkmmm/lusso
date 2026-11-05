@@ -1,3 +1,4 @@
+import { requireStaff } from "../_shared/staffRequest.ts"
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
 // Which permissions the SEO repo token actually has.
@@ -23,6 +24,9 @@ const json = (b: unknown, s = 200) =>
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
+
+  const denied = await requireStaff(req, cors)
+  if (denied) return denied
 
   const token = Deno.env.get("SEO_REPO_TOKEN")?.trim().replace(/^['"]|['"]$/g, "")
   if (!token) return json({ ok: false, configured: false, error: "SEO_REPO_TOKEN not set" })

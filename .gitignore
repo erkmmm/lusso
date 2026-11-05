@@ -23,7 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 .mcp.json
-package-lock.json
 
 # wrangler local state (auth cache, build metadata)
 .wrangler/

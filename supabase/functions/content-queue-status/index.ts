@@ -1,3 +1,4 @@
+import { requireStaff } from "../_shared/staffRequest.ts"
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
 // How deep the SEO drip queue is, for the CRM to display.
@@ -24,6 +25,9 @@ const json = (b: unknown, s = 200) =>
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
 
+  const denied = await requireStaff(req, cors)
+  if (denied) return denied
+
   // Two things this can do: report the queue, or publish from it. Publishing is
   // never implicit — the CRM has to ask for it by name, because it puts a page
   // on the live site and there is no undo short of a revert.
@@ -31,6 +35,10 @@ Deno.serve(async (req: Request) => {
   const action = ["publish", "request-run", "request-edit", "get-schedule", "set-schedule"].includes(body?.action)
     ? body.action : "status"
   const count = Math.min(Math.max(Number(body?.count) || 1, 1), 4)
+  if (["publish", "request-run", "request-edit", "set-schedule"].includes(action)) {
+    const denied = await requireStaff(req, cors, true)
+    if (denied) return denied
+  }
 
   // A secret is almost never wrong in an interesting way — it is wrapped in the
   // quotes a shell kept, or carries the newline a paste added. Both are

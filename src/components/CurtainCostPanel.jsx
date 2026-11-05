@@ -152,6 +152,10 @@ export default function CurtainCostPanel({ item, set }) {
 
   const { fabric, making, lining, track, fitting, materialsCost, labourCost, totalCost, warnings } = result;
 
+  // Making — face plus lining — is the part of the material cost that reads
+  // like labour, so the panel has to be able to name it on its own.
+  const materialsMakingCost = making.cost + (lining.makingCost || 0);
+
   // Already applied? Compare against what's on the line so the button reads
   // "Applied" rather than inviting a pointless re-click.
   const applied =
@@ -185,11 +189,15 @@ export default function CurtainCostPanel({ item, set }) {
     set('curtainCostBreakdown', breakdown('both'));
   };
 
-  // Making + fitting on their own. The labour is worked out from the width, the
-  // drop and the heading — the fabric's $/m never enters it — so someone
-  // pricing the materials their own way (a fabric that isn't in the library, a
-  // supplier quote, a number they've negotiated) should not also have to work
-  // out the making and the fitting by hand.
+  // The install charge on its own. It is worked out from the width, the drop
+  // and the track type — no fabric price enters it — so someone pricing the
+  // materials their own way (a fabric that isn't in the library, a supplier
+  // quote, a number they've negotiated) shouldn't have to work the fitting
+  // bands out by hand as well.
+  //
+  // Note this no longer carries the making: making is a workroom charge and
+  // belongs to the material cost, so a hand-typed material figure has to
+  // include it. The button's helper line says so and prints the number.
   const applyLabour = () => {
     set('labourCost', Math.round(labourCost * 100) / 100);
     set('curtainCostBreakdown', breakdown('labour'));
@@ -272,7 +280,7 @@ export default function CurtainCostPanel({ item, set }) {
               : <>⚠ Roll width {fabricWidth.widthMm}mm is the rate-card default, not this fabric&rsquo;s — it decides {fabric.mode === 'Continuous' ? 'railroaded' : 'cut drops'}. Set it on the fabric, or type it below.</>}
         </p>
         <Row label="Making"
-             detail={`${making.drops.toFixed(2)} drops @ ${money(making.ratePerDrop)}`}
+             detail={`${making.drops.toFixed(2)} drops @ ${money(making.ratePerDrop)} · workroom, counts as material`}
              amount={making.cost} />
         {lining.enabled && (
           <Row label="Lining"
@@ -294,7 +302,7 @@ export default function CurtainCostPanel({ item, set }) {
 
         <div className="mt-1.5 flex items-baseline gap-3 border-t border-slate-200 pt-1.5">
           <span className="text-[11px] text-slate-500">Materials {money(materialsCost)}</span>
-          <span className="text-[11px] text-slate-500">Labour {money(labourCost)}</span>
+          <span className="text-[11px] text-slate-500">Labour {money(labourCost)} install</span>
           <span className="ml-auto text-sm font-bold text-teal-800">{money(totalCost)} cost</span>
         </div>
       </div>
@@ -341,11 +349,11 @@ export default function CurtainCostPanel({ item, set }) {
           {applied ? <span className="flex items-center gap-1"><Check size={12} /> Applied to line</span>
                    : 'Apply to Material + Labour cost'}
         </button>
-        {/* The labour on its own. Offered only once the full apply isn't the
-            answer — materials priced some other way, or a fabric this panel is
-            costing off the rate-card default — because the making and the
-            fitting are right either way and are nobody's idea of fun to work
-            out by hand. */}
+        {/* The install charge on its own. Offered only once the full apply
+            isn't the answer — materials priced some other way, or a fabric this
+            panel is costing off the rate-card default — because the fitting
+            bands are right either way and are nobody's idea of fun to work out
+            by hand. */}
         {!applied && labourCost > 0 && (
           <button
             type="button" onClick={applyLabour}
@@ -354,14 +362,33 @@ export default function CurtainCostPanel({ item, set }) {
                             : 'border border-teal-300 bg-white text-teal-700 hover:bg-teal-50'
             }`}
           >
-            {labourApplied ? <span className="flex items-center gap-1"><Check size={12} /> Labour applied</span>
-                           : `Labour only (${money(labourCost)})`}
+            {labourApplied ? <span className="flex items-center gap-1"><Check size={12} /> Install applied</span>
+                           : `Install only (${money(labourCost)})`}
           </button>
         )}
         <span className="text-[11px] text-slate-400">
           Sell price still comes from the line's margin.
         </span>
       </div>
+
+      {/* What "install only" does and doesn't carry. Labour is the fitting and
+          nothing else, so the making is left to the material cost — and whether
+          that's already right depends entirely on where the material figure
+          came from. A supplier quote for a made-up curtain (an FHA line, say)
+          has the making inside it and must NOT have this added. A figure built
+          from raw fabric does not, and must. Only the person typing it knows
+          which, so the panel states the rule and prints the number rather than
+          guessing — getting this wrong either double-charges the making or
+          drops it, and both look identical on the line. */}
+      {!applied && labourCost > 0 && materialsMakingCost > 0 && (
+        <p className={`-mt-1 text-[11px] ${labourApplied ? 'text-amber-700' : 'text-slate-500'}`}>
+          {labourApplied ? '⚠ ' : ''}
+          Install only writes {money(labourCost)} — the fitting, nothing else. Making
+          ({money(materialsMakingCost)}) is not applied: a supplier price for a made-up
+          curtain already includes it. Add it to <strong>Material Cost</strong> yourself only
+          if your figure is raw fabric.
+        </p>
+      )}
     </div>
   );
 }

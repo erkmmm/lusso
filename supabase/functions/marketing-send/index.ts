@@ -1,3 +1,4 @@
+import { hasStaffAccess } from "../_shared/staffAccess.ts"
 /**
  * marketing-send — sends ONE wave of a campaign, by email or by SMS.
  *
@@ -113,6 +114,8 @@ Deno.serve(async (req: Request) => {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return json({ error: "Unauthorized" }, 401)
+    if (!await hasStaffAccess(supabase, true))
+      return json({ error: "Active account manager access required" }, 403)
 
     // Mailing the customer list is an account-manager action. Deliberately
     // stricter than sending one email to one customer.

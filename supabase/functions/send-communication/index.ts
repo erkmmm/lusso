@@ -1,3 +1,4 @@
+import { hasStaffAccess } from "../_shared/staffAccess.ts"
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { renderEmail, renderText } from "./emailLayout.ts"
@@ -58,6 +59,8 @@ Deno.serve(async (req: Request) => {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return json({ error: "Unauthorized" }, 401)
+    if (!await hasStaffAccess(supabase))
+      return json({ error: "Active staff access required" }, 403)
 
     const { channel, jobId, customerId, enquiryId, to, subject, body } = await req.json()
     if (!channel || !body || !to) return json({ error: "channel, to, and body required" }, 400)

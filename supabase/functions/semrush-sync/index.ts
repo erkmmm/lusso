@@ -1,3 +1,4 @@
+import { hasStaffAccess } from "../_shared/staffAccess.ts"
 /**
  * Keeps content_keywords current without anyone exporting a CSV by hand.
  *
@@ -154,6 +155,7 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: auth } } })
     const { data: { user } } = await asUser.auth.getUser()
     if (!user) return json({ error: "not signed in" }, 401)
+    if (!await hasStaffAccess(asUser, true)) return json({ error: "Active account manager access required" }, 403)
   }
 
   const wanted: string = body?.source ?? "auto"     // auto | api | repo

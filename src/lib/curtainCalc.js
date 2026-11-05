@@ -20,6 +20,16 @@
  *
  * Attached lining, when enabled, adds a second fabric + making pair.
  *
+ * ── Materials vs labour ─────────────────────────────────────────────────────
+ * Those four come back split two ways, because the app marks up a cost basis.
+ * The line is not "goods vs work" — it is "bought in vs done by us". Fabric,
+ * MAKING, track and extras are all materials: the workroom makes the curtain
+ * up and invoices us for it, so a made curtain arrives as a finished good in
+ * exactly the way the fabric does. Fitting is the only labour, being the only
+ * part we perform ourselves. Putting that line in the wrong place leaves
+ * totalCost identical and quietly wrongs every margin report that reads the
+ * two halves apart.
+ *
  * ── Deviation from the spreadsheet ──────────────────────────────────────────
  * The lining block in the workbook is broken and has been reimplemented here.
  * In the original, A28 reads `=D22+350` where D22 is an empty cell (so it
@@ -457,10 +467,14 @@ export function calcCurtain(input = {}, rates = DEFAULT_CURTAIN_RATES) {
   // ── Totals ─────────────────────────────────────────────────────────────────
   const extras = num(input.extraCost);
 
-  // Split so the app's margin model stays meaningful: bought-in goods are cost,
-  // work done is labour.
-  const materialsCost = fabric.cost + lining.fabricCost + track.cost + (liningTrack?.cost || 0) + extras;
-  const labourCost    = making.cost + (lining.makingCost || 0) + fitting.cost;
+  // Split so the app's margin model stays meaningful. The line is NOT
+  // "goods vs work" — it's "bought in vs done by us". Making is work, but it's
+  // work the workroom does and invoices us for, so it's a cost of the finished
+  // curtain in exactly the way the fabric is: it arrives made up. Install is
+  // the only labour we perform, so it's the only thing in labourCost.
+  const materialsCost = fabric.cost + making.cost + lining.fabricCost + (lining.makingCost || 0)
+                      + track.cost + (liningTrack?.cost || 0) + extras;
+  const labourCost    = fitting.cost;
 
   return {
     warnings, priced: true,
@@ -693,10 +707,15 @@ export function resolveLineFabricWidth(li = {}, rates = DEFAULT_CURTAIN_RATES, f
  * Warning codes that spoil the MATERIAL cost and leave the labour intact.
  *
  * Fabric $/m and roll width feed the metreage; a track price feeds the
- * hardware. None of them reach making, lining making or fitting, which come
- * off the width, the drop and the heading. Everything else — a missing size,
- * a heading with no making rate — is deliberately absent, so a code added
+ * hardware. Neither reaches the fitting charge, which is the whole of the
+ * labour and comes off the width, the drop and the track type. Everything
+ * else — a missing size above all — is deliberately absent, so a code added
  * later blocks labour too until it has been thought about.
+ *
+ * A heading code could arguably join this list now that making counts as a
+ * material and fitting never reads the heading, which would let an unrated
+ * heading still carry its install charge. Left off on purpose: it widens what
+ * counts as part-costed, and that deserves its own decision.
  */
 export const MATERIAL_ONLY_WARNINGS = new Set([
   'no-fabric-price',
@@ -723,14 +742,17 @@ export const MATERIAL_ONLY_WARNINGS = new Set([
  * A line it can't fully price is reported as blocked rather than part-costed,
  * so a missing cost stays visible instead of quietly under-quoting.
  *
- * The one exception is labour. Making, lining making and fitting are worked out
- * from the width, the drop and the heading — the fabric's $/m and roll width
- * never enter them, and neither does the track's price. So a blocked line whose
- * only problems are MATERIAL_ONLY_WARNINGS still carries a labour figure
- * (`labourPriced`), and callers apply it: the material cost someone then types
- * by hand is the only number they should have to work out. Anything that moves
- * the labour itself — a missing size, an unrated heading — blocks both, and so
- * does a code this list has never heard of.
+ * The one exception is labour, which is the install charge and nothing else.
+ * It comes off the width, the drop and whether the track is a dual — the
+ * fabric's $/m and roll width never enter it, and neither does the track's
+ * price. So a blocked line whose only problems are MATERIAL_ONLY_WARNINGS
+ * still carries a labour figure (`labourPriced`) and callers apply it. A
+ * missing size blocks both, and so does a code this list has never heard of.
+ *
+ * This is a thinner rescue than it was before making moved to the material
+ * side: a line blocked on its fabric no longer carries the making charge
+ * through with it, so whoever types the material cost by hand has to include
+ * the making. The cost panel says so, and prints the figure to use.
  */
 export function autoCostCurtainLine(li = {}, rates = DEFAULT_CURTAIN_RATES, pricedItems = []) {
   if (!isCurtainProduct(li.productNameSnapshot || li.productType || li.productName || '')) return null;

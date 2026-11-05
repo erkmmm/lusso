@@ -1,3 +1,4 @@
+import { hasStaffAccess } from "../_shared/staffAccess.ts"
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
@@ -55,6 +56,8 @@ Deno.serve(async (req: Request) => {
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return json({ error: "Unauthorized" }, 401)
+  if (!await hasStaffAccess(supabase, true))
+    return json({ error: "Active account manager access required" }, 403)
 
   const state = crypto.randomUUID()
   const { error } = await admin.from("meta_oauth_states")

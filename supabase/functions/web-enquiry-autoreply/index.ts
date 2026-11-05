@@ -1,3 +1,4 @@
+import { requireStaff } from "../_shared/staffRequest.ts"
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { renderEmail, renderText } from "../send-communication/emailLayout.ts"
@@ -63,6 +64,8 @@ Deno.serve(async (req: Request) => {
       const jwt = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? ""
       const { data: { user } } = await admin.auth.getUser(jwt)
       if (!user) return json({ error: "unauthorized" }, 401)
+      const denied = await requireStaff(req, cors)
+      if (denied) return denied
     }
 
     // ── Preview ─────────────────────────────────────────────────────────────

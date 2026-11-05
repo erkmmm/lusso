@@ -1,3 +1,4 @@
+import { hasStaffAccess } from "../_shared/staffAccess.ts"
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
@@ -153,6 +154,8 @@ Deno.serve(async (req: Request) => {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return json({ error: "Unauthorized" }, 401)
+    if (!await hasStaffAccess(supabase))
+      return json({ error: "Active staff access required" }, 403)
     const { data: profile } = await supabase.from("profiles").select("role,status,display_name").eq("id", user.id).single()
 
     const { quoteId } = await req.json()

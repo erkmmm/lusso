@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import DOMPurify from 'dompurify';
 import { Link } from 'react-router-dom';
 import {
   FileStack, Plus, RefreshCw, Loader2, AlertTriangle, Clock, Trash2, Wand2,
@@ -1072,7 +1073,7 @@ function Reader({ post, edit, setEdit, busy, job, instruction, setInstruction,
             // no iframe, no <base> and no stylesheet borrowed off the live site —
             // the three workarounds the git-backed preview needs, because its
             // pages only exist as whole documents on a private branch.
-            <article className="article-preview" dangerouslySetInnerHTML={{ __html: post.body_html ?? '' }} />
+            <article className="article-preview" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.body_html ?? '', { USE_PROFILES: { html: true } }) }} />
           ) : (
             <div className="space-y-3">
               {post.images?.length ? (

@@ -1,3 +1,4 @@
+import { hasStaffAccess } from "../_shared/staffAccess.ts"
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { normalise, runKnowledgeTool, KNOWLEDGE_TOOLS, type KnowledgeDoc } from "../_shared/knowledge.ts"
@@ -39,6 +40,8 @@ Deno.serve(async (req: Request) => {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return json({ error: "Unauthorized" }, 401)
+    if (!await hasStaffAccess(supabase))
+      return json({ error: "Active staff access required" }, 403)
     if (!ANTHROPIC_KEY) return json({ error: "NO_API_KEY" }, 400)
 
     const { customerId, jobId, enquiryId, channel, guidance } = await req.json()

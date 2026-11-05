@@ -1,3 +1,4 @@
+import { hasStaffAccess } from "../_shared/staffAccess.ts"
 // GET    → return connection status + settings (no tokens)
 // PATCH  → update settings
 // POST   → switch active org ({ activateTenantId }) or dismiss sync-log
@@ -70,6 +71,8 @@ Deno.serve(async (req: Request) => {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return json({ error: "Unauthorized" }, 401)
+    if (!await hasStaffAccess(supabase, true))
+      return json({ error: "Active account manager access required" }, 403)
 
     const { data: profile } = await supabase
       .from("profiles").select("role,status").eq("id", user.id).single()
