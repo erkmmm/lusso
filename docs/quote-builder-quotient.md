@@ -1,6 +1,6 @@
 # Quotient-style quote builder
 
-Implemented on `feat/quotient-style-builder`, based on `cb17ec8`, in the isolated worktree `/private/tmp/lusso-quotient-builder`. The main checkout and live deployment are unchanged.
+Implemented on `feat/quotient-style-builder`, based on `cb17ec8`, in an isolated worktree, then merged into main for release. The combined release preserves completed mobile, curtain-costing and staff-access fixes.
 
 ## Behaviour
 
@@ -17,14 +17,14 @@ Implemented on `feat/quotient-style-builder`, based on `cb17ec8`, in the isolate
 
 1. Reconcile/cherry-pick this branch with other active work. Changes are concentrated in QuoteBuilder, two customer presentation files and new components/helpers.
 2. Apply `supabase/migrations/20261105_quote_builder_text_items.sql` before deploying the frontend. It adds `text_items` and `price_display`, and preserves the token check and existing public field projection.
-3. Deploy through the usual release workflow. No migration, merge or deployment has been performed here.
+3. Deploy through the usual release workflow. The database update was applied and its token-protected reader checked before frontend deployment on 5 November 2026.
 
 The temporary offline preview harness (`quote-preview.html`, `quote-preview.jsx`) is intentionally uncommitted. It uses synthetic seed data and has no Supabase credentials. Run Vite on port 5181 and open `/quote-preview.html` to inspect it.
 
 ## Validation
 
 - Production Vite build passes (existing bundle-size/dynamic-import warnings).
-- 27 tests pass across quote-builder items, selection progress, motorisation accessories and customer quote addresses.
+- 41 tests pass across quote-builder items, selection progress, motorisation accessories, customer quote addresses, opening workflow and project workspace. The completed security checks also pass.
 - New components/helpers and QuoteBuilder pass ESLint. CustomerQuotePage has a pre-existing static-components lint finding for NavList; no new lint findings were introduced.
 - Browser checks: custom name save/reload; new custom item creation and library reuse; duplicate prevention; customer preview hides line prices in quote-total mode; phone width 390px has no horizontal overflow.
 - Actual PDF exported from the synthetic quote: custom names and text survive, quote-total mode omits individual prices. Its rendered page was visually checked.
