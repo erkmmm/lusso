@@ -19,6 +19,13 @@
 
 const MM_PER_PT = 25.4 / 72;
 
+// Rotation can create a page record before that page has been calibrated.
+export function calibratedPage(pages, pageNumber) {
+  const page = (pages || []).find(p => p.pageNumber === pageNumber);
+  const pxPerMm = Number(page?.pxPerMm);
+  return Number.isFinite(pxPerMm) && pxPerMm > 0 ? { ...page, pxPerMm } : null;
+}
+
 /** ISO A series + the common imperial sheets, long edge first, in mm. */
 export const PAPER_SIZES = [
   { name: 'A0',      long: 1189, short: 841 },

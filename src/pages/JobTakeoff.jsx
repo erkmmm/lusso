@@ -36,7 +36,7 @@ import {
   projectToBisector, sagittaOf, viaForSagitta, viaForRadius, minRadiusFor,
   chordFrame, viaFromFrame,
 } from '../lib/takeoffGeometry';
-import { plausibility } from '../lib/planScale';
+import { plausibility, calibratedPage } from '../lib/planScale';
 import { buildAnnotatedPlan, buildClientPlan } from '../lib/planAnnotate';
 import { buildClientSchedule } from '../lib/clientSchedule';
 import ClientSchedule, { ClientPins, ClientScheduleTray } from '../components/takeoff/ClientView';
@@ -522,7 +522,7 @@ export default function JobTakeoff({active=true,onExit}) {
   }, [persist, syncHistory]);
 
   const pageScale = useCallback((pn) => {
-    return (takeoff?.pages || []).find(p => p.pageNumber === pn) || null;
+    return calibratedPage(takeoff?.pages, pn);
   }, [takeoff]);
 
   const curScale = pageScale(pageNumber);
