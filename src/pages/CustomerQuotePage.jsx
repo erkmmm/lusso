@@ -2010,7 +2010,7 @@ export default function CustomerQuotePage({ previewQuote = null, footer = null }
                 <div style={{ ...card, flex: '1 1 240px' }}>
                   <div style={fieldLabel}>Terms of trade</div>
                   <p style={{ margin: '10px 0 0', fontSize: 13.5, lineHeight: 1.7 }}>
-                    {depoLabel} deposit on acceptance. {settings.termsOfTrade || ''}
+                    {quote.termsAndConditions || `${depoLabel} deposit on acceptance. ${settings.termsOfTrade || ''}`}
                   </p>
                 </div>
               )}

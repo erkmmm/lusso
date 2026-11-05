@@ -1,4 +1,5 @@
 import {isTestQuote} from '../lib/projectWorkspace';
+import {quoteGst} from '../lib/quoteGst';
 import { planUpdate, editOpening, isScopePlaceholder, OPENING_FIELDS } from '../lib/openingWorkflow';
 import { v4 as uuidv4 } from 'uuid';
 import { customerQuoteAddressUpdates,projectQuoteAddressUpdates } from '../lib/customerQuoteAddress';
@@ -3217,7 +3218,7 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
     (li.type === 'Multiple Choice' && selectedIds.includes(li.id))
   );
   let grossSubtotal = 0;   // sell total ex-GST, before quote-level discount
-  let taxableSubtotal = 0; // portion that attracts GST (per-item taxable flag)
+  const taxableLines = []; // preserve line boundaries for imported tax rounding
   let cost     = 0;   // our cost (materials + labour) for items where it's known
   let costKnown = active.length > 0; // false if any active item has no cost basis (e.g. imported quotes)
   active.forEach(li => {
@@ -3236,7 +3237,7 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
     grossSubtotal += lineSell;
     // GST applies per line: a line flagged GST Free (taxable === false) is
     // excluded from the taxable base. Missing flag ⇒ taxable (back-compat).
-    if (li.taxable !== false) taxableSubtotal += lineSell;
+    if (li.taxable !== false) taxableLines.push(lineSell);
   });
   // Quote-level discount (backward-compatible: 'None' ⇒ no change). Applied to
   // the ex-GST subtotal; the taxable base is reduced proportionally so GST is
@@ -3246,8 +3247,7 @@ export const computeQuoteTotals = (lineItems = [], depositType = 'None', deposit
                       : 0;
   const discountFactor = grossSubtotal > 0 ? (1 - quoteDiscount / grossSubtotal) : 1;
   const subtotal        = grossSubtotal - quoteDiscount;
-  const netTaxableBase  = taxableSubtotal * discountFactor;
-  const gst      = includesGST ? netTaxableBase * (gstRate / 100) : 0;
+  const gst      = includesGST ? quoteGst(taxableLines, gstRate, discountFactor, Array.isArray(lineItems) && lineItems.some(li => li.gstRounding === 'line')) : 0;
   const total    = subtotal + gst;
   const deposit  = depositType === 'Percentage' ? total * (depositValue / 100)
                  : depositType === 'Fixed Amount' ? Number(depositValue)
