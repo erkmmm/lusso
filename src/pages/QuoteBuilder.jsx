@@ -1055,10 +1055,21 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
   };
 
   return (
-    <div className="quote-item">
-      <div className="flex justify-end gap-1 mb-2">
-        <button type="button" className="quote-icon" aria-label="Duplicate this item" onClick={() => onDuplicate(item.id)}><Copy size={14}/></button>
-        {canRemove && <button type="button" className="quote-icon" aria-label="Delete price item" onClick={() => onRemove(item.id)}><Trash2 size={14}/></button>}
+    <div className={`quote-item${isExpanded ? ' quote-item-expanded' : ''}`} role="group" aria-label={`Price item: ${describeLine(item, productTypes, wording) || 'New item'}`}>
+      <div className="quote-item-header">
+        <div className="quote-item-identity">
+          <span className="quote-item-room">{item.location || 'General'}</span>
+          <span className="quote-item-heading">{describeLine(item, productTypes, wording) || 'New price item'}</span>
+        </div>
+        <div className="quote-item-header-total">
+          <span className="quote-item-label">Total excl. GST</span>
+          <strong>{fmt(lineTotal)}</strong>
+          {discountTotal > 0 && <span className="quote-item-label">−{fmt(discountTotal)} discount</span>}
+        </div>
+        <div className="quote-item-actions">
+          <button type="button" className="quote-icon" aria-label="Duplicate this item" onClick={() => onDuplicate(item.id)}><Copy size={14}/></button>
+          {canRemove && <button type="button" className="quote-icon" aria-label="Delete price item" onClick={() => onRemove(item.id)}><Trash2 size={14}/></button>}
+        </div>
       </div>
       <div className="quote-item-main">
         <div className="quote-item-copy">
@@ -1067,7 +1078,6 @@ function LineItemCard({ item, productTypes, wording, onChange, onRemove, onDupli
         </div>
         <label><span className="quote-item-label">Quantity</span><input aria-label="Item quantity" className="quote-field" type="number" min="1" step="1" value={item.quantity} onChange={e => set('quantity', e.target.value)}/></label>
         <label><span className="quote-item-label">Price / each</span><input aria-label="Item unit price" className="quote-field" type="number" step="0.01" placeholder={pricing.preDiscountSell.toFixed(2)} value={item.manualSellPrice ?? ''} onChange={e => set('manualSellPrice', e.target.value)}/></label>
-        <div className="quote-line-total text-right"><span className="quote-item-label">Total excl. GST</span><strong className="block py-2">{fmt(lineTotal)}</strong>{discountTotal > 0 && <span className="text-xs text-slate-500">−{fmt(discountTotal)} discount</span>}</div>
       </div>
       <div className="quote-item-tools">
         <button type="button" aria-expanded={isExpanded} onClick={onToggle} className="inline-flex items-center gap-1">{isExpanded ? <ChevronUp size={13}/> : <ChevronDown size={13}/>} {isExpanded ? 'Hide item details' : 'Product, measurements & costing'}</button>
