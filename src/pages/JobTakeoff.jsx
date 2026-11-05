@@ -1872,15 +1872,15 @@ export default function JobTakeoff({active=true,onExit}) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="takeoff-screen flex flex-col h-full min-h-0">
       {/* Header */}
       {/* No back button of our own — the app shell already puts one in the top
           bar on every page but the dashboard, and two arrows side by side in the
           same corner is one arrow too many. The job is still reachable by name
           below. */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white">
-        {onExit && <button type="button" onClick={()=>{flushSave();onExit();}} className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600"><ChevronLeft size={15}/> Back to measurements</button>}
-        <div className="min-w-0">
+      <div className="takeoff-header flex items-center gap-2 px-2 py-2 md:gap-3 md:px-4 md:py-3 border-b border-slate-200 bg-white">
+        {onExit && <button type="button" onClick={()=>{flushSave();onExit();}} aria-label="Back to measurements" className="takeoff-back flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2 md:px-3 py-2 text-xs font-medium text-slate-600"><ChevronLeft size={15}/><span className="md:hidden">Back</span><span className="hidden md:inline">Back to measurements</span></button>}
+        <div className="min-w-0 flex-1">
           <h1 className="font-semibold text-slate-900 text-sm truncate flex items-center gap-2">
             <Ruler size={15} className="text-amber-500" /> Plan Takeoff
             {!clientView && takeoff?.revision > 1 && (
@@ -1898,10 +1898,10 @@ export default function JobTakeoff({active=true,onExit}) {
             </button>
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {takeoff && !clientView && <button aria-expanded={specsOpen} aria-controls="takeoff-opening-specifications" onClick={()=>{if(specsOpen){openingCloseRef.current?.close();return;}flushSave();setOpeningEditor({});}} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white">Openings & specs</button>}
+        <div className="takeoff-header-actions ml-auto flex shrink-0 items-center gap-1 md:gap-2">
+          {takeoff && !clientView && <button aria-label="Openings & specs" aria-expanded={specsOpen} aria-controls="takeoff-opening-specifications" onClick={()=>{if(specsOpen){openingCloseRef.current?.close();return;}flushSave();setOpeningEditor({});}} className="takeoff-open-specs rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white"><span className="md:hidden">Specs</span><span className="hidden md:inline">Openings & specs</span></button>}
 
-          {!clientView && ['window','chain','arc'].includes(mode) && <label className="hidden sm:block text-xs text-slate-500">Measuring<select aria-label="New width measurement basis" value={newWidthBasis} onChange={e=>setNewWidthBasis(e.target.value)} className="ml-1 rounded border border-slate-200 bg-white p-1">{WIDTH_BASES.map(b=><option key={b}>{b}</option>)}</select></label>}
+          {!clientView && ['window','chain','arc'].includes(mode) && <label className="hidden xl:block text-xs text-slate-500">Measuring<select aria-label="New width measurement basis" value={newWidthBasis} onChange={e=>setNewWidthBasis(e.target.value)} className="ml-1 rounded border border-slate-200 bg-white p-1">{WIDTH_BASES.map(b=><option key={b}>{b}</option>)}</select></label>}
           {placementLineId && <button className="text-xs text-amber-700" onClick={()=>setPlacementLineId(null)}>Cancel opening placement</button>}
           {!online && (
             <span className="text-[11px] text-amber-600 flex items-center gap-1" title="Working offline — changes sync when you're back">
@@ -1932,7 +1932,7 @@ export default function JobTakeoff({active=true,onExit}) {
               </button>
               </Tip>
               <span
-                className={`text-[11px] items-center gap-1 ${clientView ? 'hidden' : 'flex'} ${offlineReady ? 'text-green-600' : 'text-slate-400'}`}
+                className={`text-[11px] items-center gap-1 ${clientView ? 'hidden' : 'hidden md:flex'} ${offlineReady ? 'text-green-600' : 'text-slate-400'}`}
                 title={offlineReady ? 'This plan is saved on this device for on-site use' : 'Not yet saved for offline use'}
               >
                 {offlineReady ? <CheckCircle2 size={12} /> : <CloudOff size={12} />}
@@ -1941,7 +1941,7 @@ export default function JobTakeoff({active=true,onExit}) {
               <div className="relative">
                 <button
                   onClick={() => setMenuOpen(v => !v)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                  className="min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500"
                   aria-label="More actions"
                 >
                   <MoreHorizontal size={16} />
@@ -1949,8 +1949,16 @@ export default function JobTakeoff({active=true,onExit}) {
                 {menuOpen && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1 z-40 w-56 bg-white rounded-xl shadow-xl border border-slate-100 py-1 text-sm">
-                      <MenuItem icon={Download} onClick={exportAnnotated} hint="E">Export annotated plan</MenuItem>
+                    <div className="absolute right-0 top-full mt-1 z-40 w-64 max-h-[calc(100dvh-100px)] overflow-y-auto overscroll-contain bg-white rounded-xl shadow-xl border border-slate-100 py-1 text-sm">
+                      <div className="xl:hidden border-b border-slate-100 pb-1 mb-1">
+                      {!clientView && <><MenuItem icon={Undo2} onClick={undo} disabled={!historyCounts.past}>Undo</MenuItem>
+                      <MenuItem icon={Redo2} onClick={redo} disabled={!historyCounts.future}>Redo</MenuItem></>}
+                      <MenuItem icon={ZoomIn} onClick={()=>zoomButton(ZOOM_STEP)}>Zoom in</MenuItem>
+                      <MenuItem icon={ZoomOut} onClick={()=>zoomButton(1/ZOOM_STEP)}>Zoom out</MenuItem>
+                      <MenuItem icon={RotateCw} onClick={()=>rotatePage(1)}>Rotate page</MenuItem>
+                      {!clientView && <><MenuItem icon={Magnet} onClick={()=>setSnapOn(v=>!v)}>{snapOn?'Turn snapping off':'Turn snapping on'}</MenuItem>
+                      <MenuItem icon={Ruler} onClick={()=>setOrthoOn(v=>!v)}>{orthoOn?'Allow angled lines':'Lock straight lines'}</MenuItem><label className="block px-3 py-2 text-xs text-slate-500">New width measurement basis<select aria-label="New width measurement basis" value={newWidthBasis} onChange={e=>setNewWidthBasis(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 bg-white p-2 text-base">{WIDTH_BASES.map(b=><option key={b}>{b}</option>)}</select></label></>}
+                      </div><MenuItem icon={Download} onClick={exportAnnotated} hint="E">Export annotated plan</MenuItem>
                       <MenuItem icon={Eye} onClick={() => { setMenuOpen(false); exportClientPlan(); }}>Export client schedule…</MenuItem>
                       <MenuItem icon={Copy} onClick={() => { setMenuOpen(false); setDuplicateOpen(true); }} hint="D">Copy page takeoff…</MenuItem>
                       <MenuItem icon={DoorOpen} onClick={() => { setMenuOpen(false); setMode('verify'); cancelDraft(); toast('Measure a door leaf to check the scale.'); }} disabled={!curScale}>
@@ -1992,13 +2000,20 @@ export default function JobTakeoff({active=true,onExit}) {
       )}
 
       {status === 'ready' && (
-        <div className={`flex-1 flex min-h-0 ${openingEditor && !clientView?'flex-col lg:flex-row':''}`}>
+        <div className={`flex-1 flex min-h-0 ${openingEditor && !clientView?'flex-col md:flex-row':''}`}>
           {/* Plan stage */}
-          <div className={`flex flex-col min-w-0 min-h-0 ${openingEditor && !clientView?'h-[42vh] shrink-0 lg:h-auto lg:flex-1':'flex-1'}`}>
+          <div className={`flex flex-col min-w-0 min-h-0 ${openingEditor && !clientView?'takeoff-plan-with-specs shrink-0 md:flex-1':'flex-1'}`}>
             {/* View bar — everything about LOOKING at the plan. Kept apart
                 from the tools so the row you reach for while drawing never
                 moves as the page or zoom changes. */}
-            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-100 bg-white overflow-x-auto">
+            <div className="takeoff-phone-viewbar flex lg:hidden shrink-0 items-center justify-between gap-1 px-2 border-b border-slate-100 bg-white">
+              <button aria-label="Previous page" disabled={pageNumber<=1} onClick={()=>setPageNumber(p=>Math.max(1,p-1))} className="takeoff-touch-button disabled:opacity-30"><ChevronLeft size={18}/></button>
+              <PageJump key={`phone-${pageNumber}`} pageNumber={pageNumber} pageCount={pageCount} onGo={setPageNumber}/>
+              <button aria-label="Next page" disabled={pageNumber>=pageCount} onClick={()=>setPageNumber(p=>Math.min(pageCount,p+1))} className="takeoff-touch-button disabled:opacity-30"><ChevronRight size={18}/></button>
+              <button aria-label="Fit page" onClick={()=>fitPage()} className="takeoff-touch-button"><Maximize2 size={18}/></button>
+              {!clientView && <button onClick={()=>setScaleDialog({})} className="min-h-11 px-2 text-xs font-medium whitespace-nowrap text-amber-700">{curScale?.scaleLabel || 'Set scale'}</button>}
+            </div>
+            <div className="takeoff-desktop-viewbar hidden lg:flex items-center gap-1 px-2 lg:gap-1.5 lg:px-3 py-1 lg:py-2 border-b border-slate-100 bg-white overflow-x-auto shrink-0">
               {!clientView && (
                 <>
                   <IconBtn onClick={undo} disabled={!historyCounts.past} title="Undo (⌘Z)"
@@ -2095,7 +2110,7 @@ export default function JobTakeoff({active=true,onExit}) {
             </div>
 
             {/* Mode hint */}
-            <div className="px-3 py-1.5 text-xs text-slate-500 bg-slate-50/60 border-b border-slate-100 flex items-center gap-2">
+            <div className="takeoff-mode-hint px-3 py-1.5 text-xs text-slate-500 bg-slate-50/60 border-b border-slate-100 flex shrink-0 items-center gap-2">
               {clientView && (
                 <span className="truncate">
                   Every numbered pin is one opening we&rsquo;ve allowed for. Tap a pin, or a line in the list, to see which is which.
@@ -2136,9 +2151,9 @@ export default function JobTakeoff({active=true,onExit}) {
             {/* Tools down the left of the plan, stage to their right. The tool
                 you're using stays under the same thumb no matter how long the
                 view bar above gets. */}
-            <div className="flex-1 flex min-h-0">
+            <div className="takeoff-drawing-area flex-1 flex min-h-0">
               {!clientView && (
-                <div className="flex-shrink-0 w-16 border-r border-slate-100 bg-white flex flex-col items-center gap-1 py-2 overflow-y-auto">
+                <div className="takeoff-tool-rail flex-shrink-0 w-16 border-r border-slate-100 bg-white flex flex-col items-center gap-1 py-2 overflow-y-auto">
                   <ToolBtn active={mode === 'pan'} onClick={() => { setMode('pan'); cancelDraft(); }} icon={Hand} label="Pan" hint="V" />
                   <ToolBtn active={mode === 'window'} onClick={() => { setMode('window'); cancelDraft(); }} icon={Square} label="Window" hint="W" disabled={!curScale} />
                   <ToolBtn active={mode === 'measure'} onClick={() => { setMode('measure'); cancelDraft(); }} icon={Ruler} label="Measure" hint="M" disabled={!curScale} />
@@ -2320,12 +2335,12 @@ export default function JobTakeoff({active=true,onExit}) {
           ) : <>
             <AnimatePresence initial={false}>
             {openingEditor && <motion.aside key="opening-specifications" id="takeoff-opening-specifications" aria-label="Opening specifications beside plan"
-              className="takeoff-spec-panel min-h-0 flex-1 overflow-hidden border-t lg:border-t-0 lg:border-l border-slate-200 bg-white lg:flex-none"
+              className="takeoff-spec-panel min-h-0 min-w-0 flex-1 overflow-hidden border-t md:border-t-0 md:border-l border-slate-200 bg-white md:flex-none"
               initial={{width:0,opacity:0,x:24}}
               animate={{width:'var(--opening-panel-width)',opacity:1,x:0}}
               exit={{width:0,opacity:0,x:24}}
               transition={{duration:reducedMotion?0:0.24,ease:[0.16,1,0.3,1]}}>
-              <div className="takeoff-spec-panel-inner h-full overflow-y-auto p-4">
+              <div className="takeoff-spec-panel-inner h-full overflow-y-auto overscroll-contain p-3 lg:p-4">
               <OpeningWorkspace jobId={jobId} takeoff={takeoff} pdf={pdf} initialItemId={openingEditor.itemId}
                 embeddedInPlan closeRef={openingCloseRef} onFocusOpening={focusOpeningOnPlan}
                 onClose={()=>{cancelViewAnimation();setOpeningEditor(null);setPlanFocus(null);}}
@@ -2469,14 +2484,14 @@ function ToolBtn({ active, onClick, icon: Icon, label, disabled, hint }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`relative w-12 py-1.5 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors disabled:opacity-40 flex-shrink-0 ${
+      className={`relative w-12 min-h-11 py-1.5 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors disabled:opacity-40 flex-shrink-0 ${
         active ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-100'
       }`}
     >
       <Icon size={17} />
       <span className="text-[10px] font-medium leading-none">{label}</span>
       {hint && (
-        <kbd className={`absolute top-0.5 right-1 text-[8px] font-semibold leading-none ${
+        <kbd className={`hidden md:block absolute top-0.5 right-1 text-[8px] font-semibold leading-none ${
           active ? 'text-white/70' : 'text-slate-300'
         }`}>
           {hint}
@@ -2510,7 +2525,7 @@ function MenuItem({ icon: Icon, children, onClick, disabled, danger, hint }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40 ${
+      className={`w-full min-h-11 flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40 ${
         danger ? 'text-red-600' : 'text-slate-700'
       }`}
     >
